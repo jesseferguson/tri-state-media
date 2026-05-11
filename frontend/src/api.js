@@ -1,0 +1,114 @@
+const API_BASE = import.meta.env.VITE_TOOLING_API_BASE ?? "/api";
+
+function cleanBase(url) {
+  return url.replace(/\/$/, "");
+}
+
+function endpointUrl(endpoint, id = null) {
+  const base = cleanBase(API_BASE);
+  const cleanEndpoint = String(endpoint).replace(/^\//, "").replace(/\/$/, "");
+  return `${base}/${cleanEndpoint}/${id ? `${id}/` : ""}`;
+}
+
+function absoluteUrl(url) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+  return new URL(url, origin);
+}
+
+async function request(url, options = {}) {
+  const response = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers ?? {}),
+    },
+    ...options,
+  });
+
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`;
+    try {
+      const payload = await response.json();
+      message = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+    } catch {
+      try {
+        message = await response.text();
+      } catch {
+        message = `${response.status} ${response.statusText}`;
+      }
+    }
+    throw new Error(message || "Request failed");
+  }
+
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+export async function fetchApiRoot() {
+  return request(`${cleanBase(API_BASE)}/`);
+}
+
+export async function fetchCollection(endpoint, { search = "", ordering = "", pageSize = 500, filters = {} } = {}) {
+  const url = absoluteUrl(endpointUrl(endpoint));
+  if (search) url.searchParams.set("search", search);
+  if (ordering) url.searchParams.set("ordering", ordering);
+  if (pageSize) url.searchParams.set("page_size", pageSize);
+  Object.entries(filters ?? {}).forEach(([key, value]) => {
+    if (value !== "" && value !== null && value !== undefined) {
+      url.searchParams.set(key, value);
+    }
+  });
+
+  const payload = await request(url.toString());
+  if (Array.isArray(payload)) {
+    return {
+      count: payload.length,
+      results: payload,
+      raw: payload,
+    };
+  }
+
+  const results = [...(payload.results ?? [])];
+  const count = payload.count ?? results.length;
+  let page = Number(url.searchParams.get("page") ?? 1);
+
+  while (results.length < count) {
+    page += 1;
+    url.searchParams.set("page", page);
+    const nextPayload = await request(url.toString());
+    const nextResults = nextPayload.results ?? [];
+    if (!nextResults.length) break;
+    results.push(...nextResults);
+  }
+
+  return {
+    count,
+    results,
+    raw: payload,
+  };
+}
+
+export async function createRecord(endpoint, payload) {
+  return request(endpointUrl(endpoint), {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateRecord(endpoint, id, payload) {
+  return request(endpointUrl(endpoint, id), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function postRecordAction(endpoint, id, action, payload) {
+  const cleanAction = String(action).replace(/^\//, "").replace(/\/$/, "");
+  return request(`${endpointUrl(endpoint, id)}${cleanAction}/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteRecord(endpoint, id) {
+  return request(endpointUrl(endpoint, id), { method: "DELETE" });
+}

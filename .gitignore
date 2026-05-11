@@ -1,0 +1,53 @@
+# =========================
+# Python / Django
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Django local database
+db.sqlite3
+*.sqlite3
+
+# Local environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Django collected/static/media files
+staticfiles/
+media/
+
+# Logs
+*.log
+
+# =========================
+# React / Node / Vite
+# =========================
+node_modules/
+dist/
+build/
+
+# npm/yarn/pnpm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# VS Code / Editor
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS junk
+# =========================
+.DS_Store
+Thumbs.db
