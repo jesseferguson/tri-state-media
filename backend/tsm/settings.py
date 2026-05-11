@@ -44,12 +44,14 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://192.168.1.134:5173",
+    "https://tri-state-media-front-end.onrender.com",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://192.168.1.134:5173",
+    "https://tri-state-media-front-end.onrender.com",
 ]
 
 MIDDLEWARE = [
@@ -86,9 +88,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'tsm.wsgi.application'
 
-
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
     'default': {
