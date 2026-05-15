@@ -168,6 +168,7 @@ const initialOpenGroups = Object.fromEntries(
 );
 
 const topLevelGroups = resourceGroups.filter((group) => !group.parent);
+const groupLabelsByKey = Object.fromEntries(resourceGroups.map((group) => [group.key, group.label]));
 const materialTypePageKeys = new Set([
   "material-faces",
   "material-liners",
@@ -889,6 +890,24 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
 
   return (
     <main className="app-shell">
+      <section className="mobile-shell-bar compact-card">
+        <div>
+          <p className="eyebrow">Tri-State Media</p>
+          <strong>{resource.label}</strong>
+          <span>{currentUser.name} / {currentUser.role}</span>
+        </div>
+        <label>
+          <span>Page</span>
+          <select value={resource.key} onChange={(event) => switchResource(event.target.value)}>
+            {resources.map((item) => (
+              <option value={item.key} key={item.key}>
+                {groupLabelsByKey[item.group] ? `${groupLabelsByKey[item.group]} - ` : ""}{item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
       <aside className="sidebar">
         <div className="brand-card">
           <p className="eyebrow">Tooling Control</p>
