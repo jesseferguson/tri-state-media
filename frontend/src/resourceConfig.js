@@ -253,18 +253,16 @@ const dimFields = [
 ];
 
 const baseMaterialColumns = [
-  "material_type",
-  "code",
   "name",
-  "company",
-  "liner_pounds",
+  "code",
   "is_active",
 ];
 
 const finishedMaterialColumns = [
   "code",
-  "name",
   "material_family",
+  "inventory_total_feet",
+  "name",
   "gsm",
   "is_active",
 ];
@@ -332,7 +330,32 @@ function materialFields(defaultType = "liner", hiddenType = false, namePlacehold
     { name: "material_type", label: "Material Type", type: "select", choices: choiceLists.rawMaterialType, required: true, defaultValue: defaultType, hidden: hiddenType },
     { name: "code", label: "Code", type: "text", placeholder: "Auto-generated", hidden: true },
     { name: "name", label: isFinishedRawMaterial ? "Description" : "Data Type", type: "text", required: true, placeholder: namePlaceholder },
-    { name: "company", label: "Company", type: "text", placeholder: "Supplier or maker name" },
+    ...(isFinishedRawMaterial ? [
+      { name: "company", label: "Company", type: "text", placeholder: "Internal or supplier description" },
+    ] : []),
+    { name: "liner_pounds", label: "Liner Pounds", type: "number", step: "0.01", showWhen: { material_type: "liner" }, clearWhenHidden: null },
+    ...(isFinishedRawMaterial ? [
+      { name: "gsm", label: "Glue GSM", type: "number", step: "0.01" },
+      { name: "material_family", label: "Material Family", type: "text", placeholder: "PM, PMDT, PET, LPO, LV..." },
+    ] : []),
+    ...(isFinishedRawMaterial ? componentRelationFields() : []),
+    ...(!isLiner ? [{ name: "color", label: "Color", type: "text" }] : []),
+    { name: "is_active", label: "Active", type: "checkbox", defaultValue: true },
+    { name: "notes", label: "Notes", type: "textarea" },
+  ];
+}
+
+function materialSupplierOptionFields() {
+  return [
+    {
+      name: "material",
+      label: "Data Type",
+      type: "searchRelation",
+      relation: "materials",
+      searchable: true,
+      required: true,
+      searchFields: ["name", "code", "material_type", "color", "notes"],
+    },
     {
       name: "supplier",
       label: "Supplier",
@@ -341,13 +364,12 @@ function materialFields(defaultType = "liner", hiddenType = false, namePlacehold
       searchable: true,
       searchFields: ["name", "phone", "email", "city", "state"],
     },
-    { name: "liner_pounds", label: "Liner Pounds", type: "number", step: "0.01", showWhen: { material_type: "liner" }, clearWhenHidden: null },
-    ...(isFinishedRawMaterial ? [
-      { name: "gsm", label: "Glue GSM", type: "number", step: "0.01" },
-      { name: "material_family", label: "Material Family", type: "text", placeholder: "PM, PMDT, PET, LPO, LV..." },
-    ] : []),
-    ...(isFinishedRawMaterial ? componentRelationFields() : []),
-    ...(!isLiner ? [{ name: "color", label: "Color", type: "text" }] : []),
+    { name: "supplier_name", label: "Supplier Name", type: "text" },
+    { name: "option_name", label: "Option Description", type: "text", placeholder: "PM 3.5 mil coating" },
+    { name: "supplier_item_number", label: "Supplier Item #", type: "text" },
+    { name: "thickness_mil", label: "Thickness Mil", type: "number", step: "0.001" },
+    { name: "width_inches", label: "Width", type: "number", step: "0.001" },
+    { name: "length_feet", label: "Length", type: "number", step: "0.01" },
     { name: "is_active", label: "Active", type: "checkbox", defaultValue: true },
     { name: "notes", label: "Notes", type: "textarea" },
   ];
@@ -372,6 +394,21 @@ export const resourceGroups = [
 ];
 
 export const resources = [
+  {
+    key: "quote-calculator",
+    label: "Quote Calculator",
+    singular: "Quote Calculator",
+    group: "production",
+    icon: Gauge,
+    accent: "#0ea5e9",
+    staticView: true,
+    viewMode: "quoteCalculator",
+    disableCreate: true,
+    tagline: "Estimate label quote material cost from web width, lane count, repeat, MSI cost, waste, and margin.",
+    columns: [],
+    fields: [],
+  },
+
   {
     key: "customers",
     endpoint: "customers",
@@ -651,6 +688,30 @@ export const resources = [
   })),
 
   {
+    key: "material-supplier-options",
+    endpoint: "material-supplier-options",
+    label: "Material Supplier Options",
+    singular: "Material Supplier Option",
+    group: "production-material",
+    icon: Store,
+    accent: "#14b8a6",
+    defaultOrdering: "material__material_type,material__name,supplier_name,option_name",
+    tagline: "Supplier/order options linked to a face, liner, adhesive, silicone, or coating data type.",
+    columns: [
+      "material_type",
+      "material_name",
+      "supplier_name",
+      "option_name",
+      "supplier_item_number",
+      "thickness_mil",
+      "width_inches",
+      "length_feet",
+      "is_active",
+    ],
+    fields: materialSupplierOptionFields(),
+  },
+
+  {
     key: "boxes",
     endpoint: "boxes",
     label: "Boxes",
@@ -736,7 +797,7 @@ export const resources = [
     group: "inventory",
     icon: Layers3,
     accent: "#22c55e",
-    defaultOrdering: "material__material_family,material__name,width_inches,lot_number",
+    defaultOrdering: "-serial_number",
     tagline: "Physical material inventory by material, lot, width, length, and location.",
     viewMode: "materialInventory",
     columns: [
@@ -765,8 +826,7 @@ export const resources = [
       },
       { name: "lot_number", label: "Lot #", type: "text" },
       { name: "width_inches", label: "Width", type: "number", step: "0.0001" },
-      { name: "length_feet", label: "Length / Qty", type: "number", step: "0.01" },
-      { name: "quantity", label: "Quantity Override", type: "number", step: "0.001", defaultValue: 0 },
+      { name: "length_feet", label: "Length / Feet", type: "number", step: "0.01" },
       { name: "status", label: "Status", type: "select", choices: choiceLists.rawMaterialStatus, defaultValue: "available" },
       {
         name: "location",
@@ -2081,13 +2141,13 @@ export const resources = [
     icon: MapPin,
     accent: "#22c55e",
     defaultOrdering: "name,code",
-    tagline: "Plant, shelf, drawer, supplier, and tooling storage map.",
+    tagline: "Plant, warehouse, shelf, drawer, and tooling storage map.",
+    viewMode: "locations",
     columns: [
       "name",
       "code",
       "location_type",
       "parent_name",
-      "supplier_name",
       "is_active",
     ],
     fields: [
@@ -2119,20 +2179,6 @@ export const resources = [
           "code",
           "location_type",
           "parent_name",
-        ],
-      },
-      {
-        name: "supplier",
-        label: "Supplier",
-        type: "searchRelation",
-        relation: "suppliers",
-        searchable: true,
-        searchFields: [
-          "name",
-          "phone",
-          "email",
-          "city",
-          "state",
         ],
       },
       {

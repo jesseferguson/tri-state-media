@@ -1,9 +1,12 @@
+from django.db.models import DecimalField, Sum
+from django.db.models.functions import Coalesce
 from rest_framework import serializers
 
-from .models import CoaterRollTag, MaterialSpec, MaterialUsage, RawMaterialInventory
+from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
 
 
 class MaterialSpecSerializer(serializers.ModelSerializer):
+    inventory_total_feet = serializers.SerializerMethodField()
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     face_material_name = serializers.CharField(source="face_material.name", read_only=True)
     face_material_code = serializers.CharField(source="face_material.code", read_only=True)
@@ -23,6 +26,36 @@ class MaterialSpecSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MaterialSpec
+        fields = "__all__"
+
+    def get_inventory_total_feet(self, obj):
+        annotated_total = getattr(obj, "inventory_total_feet", None)
+        if annotated_total is not None:
+            return annotated_total
+
+        footage_value = Coalesce(
+            "length_feet",
+            "quantity",
+            output_field=DecimalField(max_digits=12, decimal_places=3),
+        )
+        return obj.inventory.filter(is_active=True).exclude(status__in=["depleted", "scrapped", "in_use"]).aggregate(
+            total=Coalesce(
+                Sum(footage_value),
+                0,
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )
+        )["total"]
+
+
+class MaterialSupplierOptionSerializer(serializers.ModelSerializer):
+    material_name = serializers.CharField(source="material.name", read_only=True)
+    material_code = serializers.CharField(source="material.code", read_only=True)
+    material_type = serializers.CharField(source="material.material_type", read_only=True)
+    material_family = serializers.CharField(source="material.material_family", read_only=True)
+    supplier_lookup_name = serializers.CharField(source="supplier.name", read_only=True)
+
+    class Meta:
+        model = MaterialSupplierOption
         fields = "__all__"
 
 

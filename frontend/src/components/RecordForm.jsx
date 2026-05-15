@@ -148,9 +148,9 @@ function getRelationTitle(row, field) {
 
   if (field.relation === "raw-materials") {
     return [
+      row.material_family,
       row.material_name ?? row.name ?? getRecordTitle(row),
       row.material_code,
-      row.material_family,
       row.lot_number,
       row.width_inches ? `${row.width_inches}"` : "",
       row.location_name,
@@ -174,6 +174,14 @@ function getRelationTitle(row, field) {
   }
 
   if (field.relation === "materials") {
+    if (field.lookupFilters?.material_type === "coated_stock" || row.material_type === "coated_stock") {
+      const type = row.material_family || row.code;
+      const description = row.name ?? getRecordTitle(row);
+      return [type, description && description !== type ? description : "", row.code && row.code !== type ? row.code : ""]
+        .filter(Boolean)
+        .join(" / ");
+    }
+
     if (field.groupByFamily) {
       return [
         row.material_family || row.name || getRecordTitle(row),

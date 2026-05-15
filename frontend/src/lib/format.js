@@ -19,6 +19,13 @@ export function formatInches(value) {
   return number.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") + '"';
 }
 
+export function formatFeet(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  const number = Number(String(value).replace(/,/g, "").replace(/\s*ft$/i, ""));
+  if (Number.isNaN(number)) return String(value);
+  return `${number.toLocaleString()} ft`;
+}
+
 export function labelize(value) {
   if (value === null || value === undefined || value === "") return "--";
   return String(value).replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
@@ -54,6 +61,7 @@ export function formatCell(record, key) {
   if (value === true) return "Yes";
   if (value === false) return "No";
   if (value === null || value === undefined || value === "") return getNestedTitle(record, key) || "--";
+  if (key === "inventory_total_feet") return formatFeet(value);
   if (key.includes("inch") || key === "repeat_inches" || key === "web_width_inches") return formatInches(value);
   if (typeof value === "object") return getRecordTitle(value);
   return labelize(value);

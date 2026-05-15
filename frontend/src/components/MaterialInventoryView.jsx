@@ -9,48 +9,80 @@ function sameId(a, b) {
 
 function materialGroupName(row) {
   const family = row.material_family || row.material_name || row.name || "Unassigned Material";
+  const company = row.material_company || "";
   const name = row.material_name && row.material_name !== family ? row.material_name : "";
-  const code = row.material_code ? `(${row.material_code})` : "";
-  return [family, name, code].filter(Boolean).join(" / ");
+  const fallback = !company && !name && row.material_code ? row.material_code : "";
+  return [family, company || name, fallback].filter(Boolean).join(" / ");
 }
 
 function widthKey(row) {
   return row.width_inches ? `${formatInches(row.width_inches)} wide` : "No width";
 }
 
-function availableQty(rows) {
+function locationKey(row) {
+  return row.location_full_path || row.location_name || "No location";
+}
+
+function inventoryQty(rows) {
   return rows.reduce((sum, row) => {
-    if (row.status !== "available") return sum;
+    if (["depleted", "scrapped", "in_use"].includes(row.status)) return sum;
     const value = Number(row.length_feet ?? row.quantity ?? 0);
     return sum + (Number.isFinite(value) ? value : 0);
   }, 0);
+}
+
+function statusTone(status) {
+  if (status === "on_hold") return "qc";
+  if (["scheduled", "allocated"].includes(status)) return "hold";
+  if (status === "in_use") return "out";
+  if (["depleted", "scrapped"].includes(status)) return "bad";
+  return "ready";
 }
 
 function InventoryRow({ row, selected, onSelect }) {
   const qty = row.length_feet ?? row.quantity;
   return (
     <button type="button" className={`material-inventory-row ${selected ? "selected" : ""} ${row.status !== "available" ? "not-available" : ""}`} onClick={() => onSelect(row)}>
-      <strong>{row.serial_number || row.lot_number || getRecordTitle(row)}</strong>
-      <span>{row.location_full_path || row.location_name || "No location"}</span>
-      <em>{[qty ? `${qty} ft` : "", labelize(row.status)].filter(Boolean).join(" / ") || "--"}</em>
+      <i className={`status-pulse ${statusTone(row.status)}`} aria-hidden="true" />
+      <strong>{Number(qty || 0).toLocaleString()} ft</strong>
+      <span>{row.serial_number || row.lot_number || getRecordTitle(row)}</span>
+      <em>{labelize(row.status)}</em>
     </button>
   );
 }
 
+function LocationGroup({ name, rows, selectedId, onSelect }) {
+  return (
+    <section className="material-location-group">
+      <div className="material-location-head">
+        <strong>{name}</strong>
+        <span>{rows.length} lots</span>
+        <em>{inventoryQty(rows).toLocaleString()} ft</em>
+      </div>
+      <div className="material-inventory-rows compact">
+        {rows.map((row) => (
+          <InventoryRow key={row.id} row={row} selected={sameId(selectedId, row.id)} onSelect={onSelect} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function WidthGroup({ name, rows, selectedId, onSelect }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const byLocation = useMemo(() => groupBy(rows, locationKey), [rows]);
   return (
     <section className="material-width-group">
       <button className="material-width-head" type="button" onClick={() => setOpen((value) => !value)}>
         {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
         <strong>{name}</strong>
         <span>{rows.length} lots</span>
-        <em>{availableQty(rows).toLocaleString()} ft</em>
+        <em>{inventoryQty(rows).toLocaleString()} ft</em>
       </button>
       {open && (
-        <div className="material-inventory-rows">
-          {rows.map((row) => (
-            <InventoryRow key={row.id} row={row} selected={sameId(selectedId, row.id)} onSelect={onSelect} />
+        <div className="material-location-list">
+          {Object.entries(byLocation).map(([location, list]) => (
+            <LocationGroup key={location} name={location} rows={list} selectedId={selectedId} onSelect={onSelect} />
           ))}
         </div>
       )}
@@ -59,7 +91,7 @@ function WidthGroup({ name, rows, selectedId, onSelect }) {
 }
 
 function MaterialGroup({ name, rows, selectedId, onSelect }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const byWidth = useMemo(() => groupBy(rows, widthKey), [rows]);
 
   return (
@@ -68,7 +100,7 @@ function MaterialGroup({ name, rows, selectedId, onSelect }) {
         {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         <strong>{name}</strong>
         <span>{Object.keys(byWidth).length} widths</span>
-        <em>{availableQty(rows).toLocaleString()} ft</em>
+        <em>{inventoryQty(rows).toLocaleString()} ft</em>
       </button>
       {open && (
         <div className="material-width-list">

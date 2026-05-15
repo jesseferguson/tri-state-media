@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CoaterRollTag, MaterialSpec, MaterialUsage, RawMaterialInventory
+from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
 
 
 @admin.register(MaterialSpec)
@@ -49,6 +49,31 @@ class MaterialSpecAdmin(admin.ModelAdmin):
         "silicone_material",
         "coating_material",
     )
+
+
+@admin.register(MaterialSupplierOption)
+class MaterialSupplierOptionAdmin(admin.ModelAdmin):
+    list_display = (
+        "material",
+        "supplier_name",
+        "option_name",
+        "supplier_item_number",
+        "thickness_mil",
+        "width_inches",
+        "length_feet",
+        "is_active",
+    )
+    list_filter = ("material__material_type", "supplier_name", "is_active")
+    search_fields = (
+        "material__name",
+        "material__code",
+        "supplier__name",
+        "supplier_name",
+        "option_name",
+        "supplier_item_number",
+        "notes",
+    )
+    autocomplete_fields = ("material", "supplier")
 
 
 @admin.register(RawMaterialInventory)

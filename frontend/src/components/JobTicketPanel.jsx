@@ -31,6 +31,18 @@ function getBoxCount(row, ticket) {
   return 0;
 }
 
+function numeric(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatNumber(value, suffix = "") {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return "--";
+  const rounded = Math.round(n * 10) / 10;
+  return `${rounded.toLocaleString()}${suffix}`;
+}
+
 function Stat({ label, value }) {
   return (
     <div className="job-stat">
@@ -103,6 +115,14 @@ function matchingOrders(ticket, rows) {
   return (rows ?? []).filter((row) => sameId(row.job_ticket, ticket.id) || row.job_ticket_number === ticket.ticket_number);
 }
 
+function scheduleQuantity(row) {
+  return numeric(row.quantity_to_ship) + numeric(row.quantity_to_stock);
+}
+
+function dateValue(row) {
+  return row.scheduled_date || row.order_date || row.due_date || row.run_date || "";
+}
+
 export default function JobTicketPanel({ ticket, lookups, editing, deleting, onEdit, onDelete, onSchedule }) {
   const [activeTab, setActiveTab] = useState("general");
 
@@ -118,11 +138,6 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
 
   const recipeOptions = useMemo(
     () => matchingRecipeOptions(ticket, lookups["recipe-options"]),
-    [ticket, lookups]
-  );
-
-  const boxInventory = useMemo(
-    () => matchingBoxInventory(ticket, lookups["box-inventory"]),
     [ticket, lookups]
   );
 
@@ -144,7 +159,14 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
 
   const availableInventory = materialInventory.filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status));
   const inventoryByWidth = useMemo(() => groupInventoryByWidth(availableInventory), [availableInventory]);
-  const availableBoxes = boxInventory.filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status));
+  const availableFinished = finishedRows.filter((row) => row.is_active !== false && !["depleted", "scrapped", "shipped"].includes(row.status));
+  const materialFeet = availableInventory.reduce((sum, row) => sum + numeric(row.length_feet ?? row.quantity), 0);
+  const finishedQuantity = availableFinished.reduce((sum, row) => sum + numeric(row.quantity), 0);
+  const scheduleTotal = scheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
+  const averageScheduled = scheduleRows.length ? scheduleTotal / scheduleRows.length : null;
+  const recentSchedules = [...scheduleRows]
+    .sort((a, b) => String(dateValue(b)).localeCompare(String(dateValue(a))))
+    .slice(0, 6);
   const title = getRecordTitle(ticket);
 
   return (
@@ -171,22 +193,17 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
 
       {activeTab === "general" && (
         <div className="job-panel-section">
-          <div className="job-stat-grid">
-            <Stat label="Material Rolls" value={availableInventory.length} />
-            <Stat label="Box Locations" value={availableBoxes.length} />
-            <Stat label="Avg Boxes / Month" value={recentBoxAverage ?? "--"} />
+          <div className="job-stat-grid focus">
+            <Stat label="Material On Hand" value={`${availableInventory.length} rolls / ${formatNumber(materialFeet, " ft")}`} />
+            <Stat label="Finished Stock" value={`${formatNumber(finishedQuantity)} units / ${availableFinished.length} lots`} />
+            <Stat label="Avg Scheduled" value={averageScheduled ? formatNumber(averageScheduled) : "--"} />
+            <Stat label="Avg Shipped / Month" value={recentBoxAverage ?? "--"} />
           </div>
 
-          <div className="job-info-list">
+          <div className="job-info-list compact">
+            <InfoRow label="Customer Item #" value={ticket.product_code || ticket.customer_display} />
             <InfoRow label="Customer" value={ticket.customer_name} />
-            <InfoRow label="Customer Sheet" value={ticket.customer_display} />
-            <InfoRow label="Product" value={ticket.product_code} />
             <InfoRow label="Material" value={materialTitle(ticket)} />
-            <InfoRow label="Label Size" value={`${formatInches(ticket.label_width_inches)} x ${formatInches(ticket.label_length_inches)}`} />
-            <InfoRow label="Repeat" value={formatInches(ticket.repeat_inches)} />
-            <InfoRow label="Cutting" value={labelize(ticket.cutting_type)} />
-            <InfoRow label="Finishing" value={labelize(ticket.finishing_type)} />
-            <InfoRow label="Box" value={[ticket.box_item_number, ticket.box_name, ticket.box_supplier].filter(Boolean).join(" / ")} />
           </div>
 
           <section className="job-subsection">
@@ -212,20 +229,40 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
           <section className="job-subsection">
             <div className="job-subsection-head">
               <PackageCheck size={15} />
-              <strong>Box Inventory Locations</strong>
+              <strong>Finished Stock Inventory</strong>
             </div>
-            {availableBoxes.length ? (
+            {availableFinished.length ? (
               <div className="job-inventory-list">
-                {availableBoxes.slice(0, 8).map((row) => (
+                {availableFinished.slice(0, 8).map((row) => (
                   <div key={row.id} className="job-inventory-row">
-                    <strong>{row.lot_number || row.box_name}</strong>
-                    <span>{row.location_full_path || row.location_name || "No location"}</span>
-                    <em>{[row.quantity ? `${row.quantity} boxes` : "", labelize(row.status)].filter(Boolean).join(" / ")}</em>
+                    <strong>{row.name || row.sku || row.job_ticket_number}</strong>
+                    <span>{[row.quantity ? `${row.quantity} ${row.unit || "units"}` : "", row.run_date, labelize(row.status)].filter(Boolean).join(" / ")}</span>
+                    <em>{row.location_full_path || row.location_name || row.notes || "No location"}</em>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="muted">No active box inventory is linked to this box yet.</p>
+              <p className="muted">No finished stock is linked to this job yet.</p>
+            )}
+          </section>
+
+          <section className="job-subsection">
+            <div className="job-subsection-head">
+              <CalendarPlus size={15} />
+              <strong>Previous Schedule History</strong>
+            </div>
+            {recentSchedules.length ? (
+              <div className="job-inventory-list">
+                {recentSchedules.map((row) => (
+                  <div key={row.id} className="job-inventory-row">
+                    <strong>{[dateValue(row) || "No date", labelize(row.status), labelize(row.priority)].filter(Boolean).join(" / ")}</strong>
+                    <span>{[row.customer_po ? `PO ${row.customer_po}` : "", scheduleQuantity(row) ? `${formatNumber(scheduleQuantity(row))} total` : ""].filter(Boolean).join(" / ")}</span>
+                    <em>{row.notes || "No operator note"}</em>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No previous schedule records are linked to this job yet.</p>
             )}
           </section>
         </div>

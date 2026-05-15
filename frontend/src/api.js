@@ -47,7 +47,7 @@ export async function fetchApiRoot() {
   return request(`${cleanBase(API_BASE)}/`);
 }
 
-export async function fetchCollection(endpoint, { search = "", ordering = "", pageSize = 500, filters = {} } = {}) {
+export async function fetchCollection(endpoint, { search = "", ordering = "", pageSize = 250, filters = {}, fetchAll = false } = {}) {
   const url = absoluteUrl(endpointUrl(endpoint));
   if (search) url.searchParams.set("search", search);
   if (ordering) url.searchParams.set("ordering", ordering);
@@ -71,7 +71,7 @@ export async function fetchCollection(endpoint, { search = "", ordering = "", pa
   const count = payload.count ?? results.length;
   let page = Number(url.searchParams.get("page") ?? 1);
 
-  while (results.length < count) {
+  while (fetchAll && results.length < count) {
     page += 1;
     url.searchParams.set("page", page);
     const nextPayload = await request(url.toString());

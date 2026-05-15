@@ -189,7 +189,7 @@ function perfLabel(option) {
   const r = recipe(option);
   if (needsExternalPerf(option) && needsInternalPerf(option)) return "External + Internal Perf";
   if (needsExternalPerf(option)) return "External Perf";
-  if (needsInternalPerf(option)) return `Internal Perf${r.internal_perf_cutting_type ? ` · ${title(r.internal_perf_cutting_type)}` : ""}`;
+  if (needsInternalPerf(option)) return `Internal Perf${r.internal_perf_cutting_type ? ` - ${title(r.internal_perf_cutting_type)}` : ""}`;
   return "No Perf";
 }
 
@@ -378,7 +378,7 @@ function PerfChip({ option, combo, open, active }) {
   if (needsInternalPerf(option)) {
     const cut = title(r.internal_perf_cutting_type ?? option.internal_perf_cutting_type);
     const tpi = r.internal_perf_tpi ?? option.internal_perf_tpi;
-    return <div className="tool-chip static"><span>PERF</span><strong>Internal Perf</strong><em>{cut !== "--" ? cut : "Required"}{tpi ? ` · ${tpi} TPI` : ""}</em></div>;
+    return <div className="tool-chip static"><span>PERF</span><strong>Internal Perf</strong><em>{cut !== "--" ? cut : "Required"}{tpi ? ` - ${tpi} TPI` : ""}</em></div>;
   }
   return <div className="tool-chip static"><span>PERF</span><strong>No Perf</strong><em>Not required</em></div>;
 }
@@ -426,7 +426,7 @@ function Chain({ name, die, mag, missingDie, missingMag, children, open, active 
     <div className="chain-row">
       <strong className="chain-label">{name}</strong>
       <ToolChip label="FD" tool={die} missing={missingDie} onOpen={() => open(`${name}-fd`, die, `${name} Flex Die`)} active={active === `${name}-fd`} />
-      <span className="arrow">→</span>
+      <span className="arrow">-&gt;</span>
       <ToolChip label="MAG" tool={mag} missing={missingMag} onOpen={() => open(`${name}-mag`, mag, `${name} Mag`)} active={active === `${name}-mag`} />
       {children}
     </div>
@@ -449,7 +449,7 @@ function Combo({ option, combo, muted = false }) {
       <SpecChart combo={combo} />
       <div className="chain-stack">
         <Chain name="MAIN" die={combo.main.die} mag={combo.main.runnableMag ?? combo.main.displayMag} missingDie="Main die missing" missingMag={mainMagMissing} open={open} active={openTool?.id}>
-          <span className="arrow">→</span><PerfChip option={option} combo={combo} open={open} active={openTool?.id} />
+          <span className="arrow">-&gt;</span><PerfChip option={option} combo={combo} open={open} active={openTool?.id} />
         </Chain>
         {combo.undercutRequired && (
           <Chain name="UNDERCUT" die={combo.undercutChain?.die} mag={combo.undercutChain?.runnableMag ?? combo.undercutChain?.displayMag} missingDie="Undercut die missing" missingMag={ucMagMissing} open={open} active={openTool?.id} />
@@ -504,7 +504,7 @@ function OptionCard({ option, onEdit }) {
               option.is_approved !== false ? "Approved" : "Review",
             ]
               .filter(Boolean)
-              .join(" · ")}
+              .join(" - ")}
           </span>
         </div>
 
@@ -581,7 +581,7 @@ function RecipeGroup({ recipeName, options, onEdit }) {
     <section className={`recipe-group-card ${stat.severity}`}>
       <button type="button" className="recipe-head" onClick={() => setOpen((v) => !v)}>
         {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        <div><strong>{recipeName || "No recipe"}</strong><span>{perfLabel(first)} · {stat.ready}/{stat.total} runnable</span></div>
+        <div><strong>{recipeName || "No recipe"}</strong><span>{perfLabel(first)} - {stat.ready}/{stat.total} runnable</span></div>
         <Status severity={stat.severity} label={stat.label} />
       </button>
       {open && <div className="press-stack">{Object.entries(byPress).map(([name, list]) => <PressGroup key={name} pressName={name} options={list} onEdit={onEdit} />)}</div>}

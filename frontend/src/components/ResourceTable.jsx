@@ -1,4 +1,10 @@
-import { formatCell, getRecordTitle } from "../lib/format";
+import { formatCell } from "../lib/format";
+
+function columnLabel(resource, column) {
+  if (column === "inventory_total_feet") return "Inventory Feet";
+  const field = (resource.fields ?? []).find((item) => item.name === column);
+  return field?.label ?? column.replace(/_/g, " ");
+}
 
 export default function ResourceTable({ resource, rows, selectedId, onSelect }) {
   const columns = resource.columns ?? ["name"];
@@ -8,26 +14,26 @@ export default function ResourceTable({ resource, rows, selectedId, onSelect }) 
       <table className="data-table">
         <thead>
           <tr>
-            {columns.map((col) => <th key={col}>{col.replace(/_/g, " ")}</th>)}
+            {columns.map((column) => (
+              <th key={column} className={`col-${column}`}>{columnLabel(resource, column)}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id} className={selectedId === row.id ? "selected" : ""} onClick={() => onSelect(row)}>
-              {columns.map((col, index) => (
-                <td key={col} title={String(formatCell(row, col))}>
-                  {index === 0 ? <strong>{formatCell(row, col) || getRecordTitle(row)}</strong> : formatCell(row, col)}
-                </td>
+            <tr
+              key={row.id}
+              className={selectedId === row.id ? "selected" : ""}
+              onClick={() => onSelect(row)}
+            >
+              {columns.map((column) => (
+                <td key={column} className={`col-${column}`}>{formatCell(row, column) || "--"}</td>
               ))}
             </tr>
           ))}
-          {!rows.length && (
-            <tr>
-              <td colSpan={columns.length} className="empty-row">No records match this view.</td>
-            </tr>
-          )}
         </tbody>
       </table>
+      {!rows.length && <p className="empty-row">No records match this view.</p>}
     </div>
   );
 }

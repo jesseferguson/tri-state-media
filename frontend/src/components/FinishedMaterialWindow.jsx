@@ -1,6 +1,6 @@
 import { CalendarPlus, Pencil, X } from "lucide-react";
 import { useState } from "react";
-import { formatCell, getRecordTitle, labelize } from "../lib/format";
+import { formatCell, formatFeet, getRecordTitle, labelize } from "../lib/format";
 
 function usageTitle(row) {
   return [row.reference, row.inventory_serial, row.inventory_lot].filter(Boolean).join(" / ") || labelize(row.usage_type);
@@ -11,6 +11,7 @@ function dailyUsage(rows) {
   rows.forEach((row) => {
     const qty = Number(row.quantity ?? 0);
     if (!Number.isFinite(qty) || qty <= 0) return;
+    if (!usageConsumes(row)) return;
     const date = row.used_date || "No date";
     byDate.set(date, (byDate.get(date) ?? 0) + qty);
   });
@@ -68,6 +69,96 @@ function widthLabel(value) {
 
 function usageConsumes(row) {
   return ["checkout", "manual", "coater", "finished", "scrap"].includes(row.usage_type);
+}
+
+function inventoryStatusTone(status) {
+  if (status === "on_hold") return "qc";
+  if (["scheduled", "allocated"].includes(status)) return "hold";
+  if (status === "in_use") return "out";
+  if (["depleted", "scrapped"].includes(status)) return "bad";
+  return "ready";
+}
+
+function activeInventoryRows(rows) {
+  return (rows ?? []).filter((row) => row.is_active !== false && !["depleted", "scrapped", "in_use"].includes(row.status));
+}
+
+function inventoryTotalFeet(material, inventoryRows) {
+  if (material.inventory_total_feet !== null && material.inventory_total_feet !== undefined && material.inventory_total_feet !== "") {
+    return formatFeet(material.inventory_total_feet);
+  }
+  const total = activeInventoryRows(inventoryRows).reduce((sum, row) => sum + (Number(row.length_feet ?? row.quantity ?? 0) || 0), 0);
+  return formatFeet(total);
+}
+
+function inventoryByWidth(rows) {
+  const byWidth = new Map();
+  activeInventoryRows(rows).forEach((row) => {
+    const width = widthLabel(row.width_inches);
+    if (!byWidth.has(width)) byWidth.set(width, { width, total: 0, rolls: 0, byLocation: new Map() });
+    const entry = byWidth.get(width);
+    const qty = Number(row.length_feet ?? row.quantity ?? 0);
+    const feet = Number.isFinite(qty) ? qty : 0;
+    const location = row.location_full_path || row.location_name || "No location";
+    entry.total += feet;
+    entry.rolls += 1;
+    if (!entry.byLocation.has(location)) entry.byLocation.set(location, { location, total: 0, rolls: 0, statuses: new Set() });
+    const loc = entry.byLocation.get(location);
+    loc.total += feet;
+    loc.rolls += 1;
+    loc.statuses.add(row.status || "available");
+  });
+
+  return Array.from(byWidth.values()).map((entry) => ({
+    ...entry,
+    locations: Array.from(entry.byLocation.values()),
+  }));
+}
+
+function InventoryByWidth({ rows }) {
+  const groups = inventoryByWidth(rows);
+  const total = groups.reduce((sum, row) => sum + row.total, 0);
+
+  return (
+    <section className="finished-usage-card inventory-by-width-card">
+      <div className="finished-usage-head">
+        <div>
+          <span>Inventory On Hand</span>
+          <strong>{total.toLocaleString()} ft total</strong>
+        </div>
+        <em>Grouped by width and location</em>
+      </div>
+
+      {groups.length ? (
+        <div className="inventory-width-list">
+          {groups.map((group) => (
+            <details key={group.width} className="inventory-width-group" open>
+              <summary>
+                <strong>{group.width}</strong>
+                <span>{group.rolls} lots</span>
+                <em>{group.total.toLocaleString()} ft</em>
+              </summary>
+              <div className="inventory-location-list">
+                {group.locations.map((location) => {
+                  const tone = location.statuses.has("on_hold") ? "qc" : location.statuses.has("scheduled") || location.statuses.has("allocated") ? "hold" : "ready";
+                  return (
+                    <article key={location.location} className="inventory-location-row">
+                      <i className={`status-pulse ${tone}`} aria-hidden="true" />
+                      <strong>{location.location}</strong>
+                      <span>{location.rolls} lots</span>
+                      <em>{location.total.toLocaleString()} ft</em>
+                    </article>
+                  );
+                })}
+              </div>
+            </details>
+          ))}
+        </div>
+      ) : (
+        <p className="finished-usage-empty">No active inventory is linked to this material yet.</p>
+      )}
+    </section>
+  );
 }
 
 function widthUsageData(inventoryRows, usageRows) {
@@ -146,6 +237,7 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
   const fields = [
     ["Code", material.code],
     ["Family", material.material_family],
+    ["Inventory", inventoryTotalFeet(material, inventoryRows)],
     ["Glue GSM", material.gsm],
     ["Face Type", material.face_material_family || material.face_material_name],
     ["Liner Type", material.liner_material_family || material.liner_material_name],
@@ -193,6 +285,8 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
         </div>
 
         <MaterialUsageChart rows={usageRows} />
+
+        <InventoryByWidth rows={inventoryRows} />
 
         <WidthUsageChart inventoryRows={inventoryRows} usageRows={usageRows} />
 

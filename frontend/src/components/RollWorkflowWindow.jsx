@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardCheck, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Pencil, RotateCcw, X } from "lucide-react";
 import { formatCell, getRecordTitle, labelize } from "../lib/format";
 
 const purposeChoices = [
@@ -66,7 +66,7 @@ function UsagePanel({ rows }) {
   );
 }
 
-export default function RollWorkflowWindow({ roll, locations, usageRows = [], submitting, onClose, onCheckOut, onReturn }) {
+export default function RollWorkflowWindow({ roll, locations, usageRows = [], submitting, onClose, onEdit, onCheckOut, onReturn, onUpdateStatus }) {
   const [mode, setMode] = useState("details");
   const [purpose, setPurpose] = useState("coater");
   const [customPurpose, setCustomPurpose] = useState("");
@@ -77,6 +77,7 @@ export default function RollWorkflowWindow({ roll, locations, usageRows = [], su
   const [remaining, setRemaining] = useState(currentQuantity(roll));
   const [location, setLocation] = useState(roll.location || "");
   const [scan, setScan] = useState("");
+  const [holdReference, setHoldReference] = useState("");
 
   const purposeText = purpose === "other" ? customPurpose : purposeChoices.find(([value]) => value === purpose)?.[1];
   const scanned = scan.trim();
@@ -113,6 +114,18 @@ export default function RollWorkflowWindow({ roll, locations, usageRows = [], su
     });
   }
 
+  function submitStatus(event) {
+    event.preventDefault();
+    onUpdateStatus?.({
+      status: qcIssue ? "on_hold" : "scheduled",
+      reference: qcIssue ? "QC issue" : holdReference || "Held for job",
+      used_by: usedBy,
+      notes,
+      qc_issue: qcIssue,
+      qc_notes: qcNotes,
+    });
+  }
+
   return (
     <section className="roll-overlay" role="dialog" aria-modal="true" aria-label="Roll workflow">
       <div className="roll-window compact-card">
@@ -121,7 +134,10 @@ export default function RollWorkflowWindow({ roll, locations, usageRows = [], su
             <p className="eyebrow">Roll Control</p>
             <h2>{getRecordTitle(roll)}</h2>
           </div>
-          <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
+          <div className="roll-window-actions">
+            <button className="primary-btn" type="button" onClick={onEdit}><Pencil size={15} /> Edit Roll</button>
+            <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
+          </div>
         </header>
 
         <div className="roll-id-strip">
@@ -164,6 +180,9 @@ export default function RollWorkflowWindow({ roll, locations, usageRows = [], su
           <button type="button" className={mode === "return" ? "active" : ""} onClick={() => setMode("return")}>
             <RotateCcw size={16} /> Return Roll
           </button>
+          <button type="button" className={mode === "status" ? "active" : ""} onClick={() => setMode("status")}>
+            Hold / QC
+          </button>
         </div>
 
         {mode === "details" && (
@@ -183,6 +202,7 @@ export default function RollWorkflowWindow({ roll, locations, usageRows = [], su
               {submitting ? "Taking Out..." : roll.status === "in_use" ? "Already Out" : "Take Entire Roll Out"}
             </button>
             <button className="ghost-btn" type="button" onClick={() => setMode("return")}>Return / Update Remaining</button>
+            <button className="ghost-btn" type="button" onClick={() => setMode("status")}>Hold For Job / QC</button>
           </div>
         )}
 
@@ -269,6 +289,40 @@ export default function RollWorkflowWindow({ roll, locations, usageRows = [], su
             </label>
             <div className="roll-form-actions">
               <button className="primary-btn" type="submit" disabled={submitting || !canSubmitReturn}>Put Back In Inventory</button>
+            </div>
+          </form>
+        )}
+
+        {mode === "status" && (
+          <form className="roll-form" onSubmit={submitStatus}>
+            <label>
+              <span>Hold Reference</span>
+              <input value={holdReference} onChange={(event) => setHoldReference(event.target.value)} placeholder="Job, coordinator note, or reason" />
+            </label>
+            <label>
+              <span>Coordinator</span>
+              <input value={usedBy} onChange={(event) => setUsedBy(event.target.value)} placeholder="Name or initials" />
+            </label>
+            <label className="roll-check">
+              <input type="checkbox" checked={qcIssue} onChange={(event) => setQcIssue(event.target.checked)} />
+              <span>QC issue instead of job hold</span>
+            </label>
+            {qcIssue && (
+              <label className="field-wide">
+                <span>QC Notes</span>
+                <textarea value={qcNotes} onChange={(event) => setQcNotes(event.target.value)} placeholder="Describe the issue. This keeps the roll in inventory but marks it on hold." />
+              </label>
+            )}
+            <label className="field-wide">
+              <span>Notes</span>
+              <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="This does not consume inventory footage." />
+            </label>
+            <div className="roll-return-summary">
+              <span>Inventory stays on hand</span>
+              <strong>{Number(currentQuantity(roll) || 0).toLocaleString()} {rollUnit(roll)}</strong>
+            </div>
+            <div className="roll-form-actions">
+              <button className="primary-btn" type="submit" disabled={submitting}>{qcIssue ? "Flag QC Hold" : "Hold For Job"}</button>
             </div>
           </form>
         )}

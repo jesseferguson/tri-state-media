@@ -152,6 +152,8 @@ REST_FRAMEWORK = {
     "MAX_PAGE_SIZE": 200,
 }
 
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

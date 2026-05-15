@@ -1026,6 +1026,9 @@ class FinishedInventory(models.Model):
         return self.name
 
 
+def job_ticket_image_upload_path(instance, filename):
+    return f"job_tickets/{instance.id or 'new'}/{filename}"
+
 class JobTicket(models.Model):
     STATUS_CHOICES = [
         ("draft", "Draft"),
@@ -1052,6 +1055,24 @@ class JobTicket(models.Model):
         ("inspect", "Inspect"),
         ("custom", "Custom"),
     ]
+
+    cover_image = models.ImageField(
+    upload_to=job_ticket_image_upload_path,
+    blank=True,
+    null=True,
+    )
+
+    finishing_image = models.ImageField(
+        upload_to=job_ticket_image_upload_path,
+        blank=True,
+        null=True,
+    )
+
+    spec_image = models.ImageField(
+        upload_to=job_ticket_image_upload_path,
+        blank=True,
+        null=True,
+    )
 
     ticket_number = models.CharField(max_length=80, unique=True)
     customer_name = models.CharField(max_length=150, blank=True)

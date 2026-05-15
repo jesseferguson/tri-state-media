@@ -1,15 +1,18 @@
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import DecimalField, Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import CoaterRollTag, MaterialSpec, MaterialUsage, RawMaterialInventory
+from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
 from .serializers import (
     CoaterRollTagSerializer,
     MaterialSpecSerializer,
+    MaterialSupplierOptionSerializer,
     MaterialUsageSerializer,
     RawMaterialInventorySerializer,
 )
@@ -55,6 +58,11 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
     ]
 
     def get_queryset(self):
+        footage_value = Coalesce(
+            "inventory__length_feet",
+            "inventory__quantity",
+            output_field=DecimalField(max_digits=12, decimal_places=3),
+        )
         qs = (
             MaterialSpec.objects.select_related(
                 "supplier",
@@ -64,12 +72,56 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
                 "silicone_material",
                 "coating_material",
             )
+            .annotate(
+                inventory_total_feet=Coalesce(
+                    Sum(
+                        footage_value,
+                        filter=Q(inventory__is_active=True)
+                        & ~Q(inventory__status__in=["depleted", "scrapped", "in_use"]),
+                    ),
+                    Decimal("0"),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                )
+            )
             .all()
             .order_by("material_type", "company", "name")
         )
         material_type = self.request.query_params.get("material_type")
         if material_type:
             qs = qs.filter(material_type=material_type)
+        return qs
+
+
+class MaterialSupplierOptionViewSet(BaseMaterialsViewSet):
+    serializer_class = MaterialSupplierOptionSerializer
+    search_fields = [
+        "material__name",
+        "material__code",
+        "material__material_type",
+        "supplier__name",
+        "supplier_name",
+        "option_name",
+        "supplier_item_number",
+        "notes",
+    ]
+    ordering_fields = [
+        "material__material_type",
+        "material__name",
+        "supplier_name",
+        "option_name",
+        "width_inches",
+        "length_feet",
+        "is_active",
+    ]
+
+    def get_queryset(self):
+        qs = MaterialSupplierOption.objects.select_related("material", "supplier").all()
+        material = self.request.query_params.get("material")
+        material_type = self.request.query_params.get("material_type")
+        if material:
+            qs = qs.filter(material_id=material)
+        if material_type:
+            qs = qs.filter(material__material_type=material_type)
         return qs
 
 
@@ -108,8 +160,11 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             .order_by("material_type", "name", "serial_number")
         )
         material_type = self.request.query_params.get("material_type")
+        material = self.request.query_params.get("material")
         if material_type:
             qs = qs.filter(material_type=material_type)
+        if material:
+            qs = qs.filter(material_id=material)
         return qs
 
     @action(detail=True, methods=["post"], url_path="check-out")

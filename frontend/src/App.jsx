@@ -1,19 +1,23 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Plus, RefreshCcw, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, LogIn, LogOut, Plus, RefreshCcw, Search, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { createRecord, deleteRecord, fetchCollection, updateRecord } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
 import FlexDieSearch from "./components/FlexDieSearch";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
+import GroupedLocationView from "./components/GroupedLocationView";
+import GroupedUsageView from "./components/GroupedUsageView";
 import JobTicketPanel from "./components/JobTicketPanel";
 import MaterialInventoryView from "./components/MaterialInventoryView";
+import MaterialTypeWindow from "./components/MaterialTypeWindow";
 import MaterialUsageWindow from "./components/MaterialUsageWindow";
-import QuickRollEntry from "./components/QuickRollEntry";
+import QuotePricingTool from "./components/QuotePricingTool";
 import RecipeOptionsView from "./components/RecipeOptionsView";
 import RecipeToolStackView from "./components/RecipeToolStackView";
 import RollWorkflowWindow from "./components/RollWorkflowWindow";
+import { clearSession, loadSessionUser, loadUsers, makeUserId, saveUsers, signIn, userIsAdmin, userRoleOptions } from "./lib/localAuth";
 import { emptyFlexDieFilters, filterFlexDies, filterRows } from "./lib/filtering";
 import { formatCell, getRecordTitle } from "./lib/format";
 
@@ -47,14 +51,87 @@ function detailValue(record, key) {
   return formatCell(record, key);
 }
 
-async function loadAllLookups() {
-  return Promise.all(
-    resources.map((resource) =>
-      fetchCollection(resource.endpoint, { ordering: resource.defaultOrdering, pageSize: 1000, filters: resource.filters ?? {} })
-        .then((payload) => [resource.key, payload.results])
-        .catch(() => [resource.key, []])
+function mergeRows(existing = [], next = []) {
+  const byId = new Map(existing.map((row) => [String(row.id), row]));
+  next.forEach((row) => byId.set(String(row.id), { ...(byId.get(String(row.id)) ?? {}), ...row }));
+  return Array.from(byId.values());
+}
+
+function relationLookupSpec(relation, filters = {}, pageSize = 250) {
+  const relationResource = resourceMap[relation];
+  if (!relationResource) return null;
+  return {
+    key: relation,
+    endpoint: relationResource.endpoint,
+    ordering: relationResource.defaultOrdering,
+    filters: { ...(relationResource.filters ?? {}), ...(filters ?? {}) },
+    pageSize,
+  };
+}
+
+function addLookupSpec(specs, spec) {
+  if (!spec) return;
+  specs.push(spec);
+}
+
+function addFieldLookups(specs, fields = []) {
+  fields.forEach((field) => {
+    if (!field.relation || !["relation", "searchRelation", "multiRelation"].includes(field.type)) return;
+    addLookupSpec(specs, relationLookupSpec(field.relation, field.lookupFilters, field.maxResults ?? 250));
+  });
+}
+
+async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
+  const specs = [];
+  addFieldLookups(specs, resource.fields ?? []);
+
+  if (resource.key === "raw-materials" && selected?.id) {
+    addLookupSpec(specs, relationLookupSpec("material-usages", { inventory: selected.id }, 100));
+  }
+
+  if (resource.key === "material-coated-stock") {
+    addLookupSpec(specs, relationLookupSpec("raw-materials", selected?.id ? { material: selected.id } : { material_type: "coated_stock" }, 250));
+    if (selected?.id) addLookupSpec(specs, relationLookupSpec("material-usages", { material: selected.id }, 150));
+    addLookupSpec(specs, relationLookupSpec("presses", {}, 100));
+  }
+
+  if (isMaterialTypePage && selected?.id) {
+    addLookupSpec(specs, relationLookupSpec("material-supplier-options", { material: selected.id }, 150));
+  }
+
+  if (resource.endpoint === "materials" && selected?.id) {
+    addLookupSpec(specs, relationLookupSpec("material-usages", { material: selected.id }, 150));
+  }
+
+  if (resource.key === "finished-inventory" && selected?.material_inventory) {
+    addLookupSpec(specs, relationLookupSpec("material-usages", { inventory: selected.material_inventory }, 150));
+  }
+
+  if (resource.key === "job-tickets" && selected) {
+    if (selected.material_spec) addLookupSpec(specs, relationLookupSpec("raw-materials", { material: selected.material_spec }, 250));
+    addLookupSpec(specs, relationLookupSpec("finished-inventory", {}, 150));
+    addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 150));
+    addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 150));
+    addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 150));
+    addLookupSpec(specs, relationLookupSpec("customer-orders", {}, 150));
+  }
+
+  const entries = await Promise.all(
+    specs.map((spec) =>
+      fetchCollection(spec.endpoint, {
+        ordering: spec.ordering,
+        pageSize: spec.pageSize,
+        filters: spec.filters,
+      })
+        .then((payload) => [spec.key, payload.results])
+        .catch(() => [spec.key, []])
     )
-  ).then(Object.fromEntries);
+  );
+
+  return entries.reduce((acc, [key, results]) => {
+    acc[key] = mergeRows(acc[key], results);
+    return acc;
+  }, {});
 }
 
 function currentInventoryQuantity(roll) {
@@ -71,13 +148,291 @@ function rollUsagePayload(roll, overrides = {}) {
   };
 }
 
+function activeInventoryFeet(rows) {
+  return (rows ?? []).reduce((sum, row) => {
+    if (row.is_active === false || ["depleted", "scrapped", "in_use"].includes(row.status)) return sum;
+    const qty = Number(row.length_feet ?? row.quantity ?? 0);
+    return sum + (Number.isFinite(qty) ? qty : 0);
+  }, 0);
+}
+
+function inventoryTotalFeetForMaterial(row, inventoryRows) {
+  if (row.inventory_total_feet !== null && row.inventory_total_feet !== undefined && row.inventory_total_feet !== "") {
+    return row.inventory_total_feet;
+  }
+  return activeInventoryFeet(inventoryRows.filter((inventory) => String(inventory.material) === String(row.id)));
+}
+
 const initialOpenGroups = Object.fromEntries(
   resourceGroups.map((group) => [group.key, Boolean(group.defaultOpen)])
 );
 
 const topLevelGroups = resourceGroups.filter((group) => !group.parent);
+const materialTypePageKeys = new Set([
+  "material-faces",
+  "material-liners",
+  "material-adhesives",
+  "material-silicone",
+  "material-coatings",
+]);
+
+const materialFormPageKeys = new Set([
+  "materials",
+  "material-coated-stock",
+  "material-faces",
+  "material-liners",
+  "material-adhesives",
+  "material-silicone",
+  "material-coatings",
+  "material-supplier-options",
+  "raw-materials",
+]);
+
+const emptyUserForm = {
+  name: "",
+  username: "",
+  password: "",
+  role: "CSR",
+  active: true,
+};
+
+function SignInScreen({ onSignIn }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  function submit(event) {
+    event.preventDefault();
+    const result = onSignIn(username, password);
+    if (result?.error) setError(result.error);
+  }
+
+  return (
+    <main className="auth-screen">
+      <section className="auth-card compact-card">
+        <div>
+          <p className="eyebrow">Tri-State Media</p>
+          <h1>Sign In</h1>
+          <p>Use your company login to open the tooling and quoting system.</p>
+        </div>
+        <form className="auth-form" onSubmit={submit}>
+          <label className="field">
+            <span>Username</span>
+            <input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Password</span>
+            <input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </label>
+          {error && <div className="auth-error">{error}</div>}
+          <button className="primary-btn" type="submit"><LogIn size={16} /> Sign In</button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function UserAdminPanel({ currentUser, users, onSaveUsers, onClose }) {
+  const [form, setForm] = useState(emptyUserForm);
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
+
+  function update(name, value) {
+    setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function startEdit(user) {
+    setEditingId(user.id);
+    setForm({
+      name: user.name,
+      username: user.username,
+      password: "",
+      role: user.role || "CSR",
+      active: user.active !== false,
+    });
+    setError("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(emptyUserForm);
+    setError("");
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    const name = form.name.trim();
+    const username = form.username.trim();
+    const usernameTaken = users.some((user) => user.id !== editingId && user.username.toLowerCase() === username.toLowerCase());
+
+    if (!name || !username) {
+      setError("Name and username are required.");
+      return;
+    }
+    if (usernameTaken) {
+      setError("That username is already in use.");
+      return;
+    }
+    if (!editingId && !form.password) {
+      setError("Add a starting password for the new user.");
+      return;
+    }
+
+    const nextUser = {
+      id: editingId || makeUserId(),
+      name,
+      username,
+      password: form.password || users.find((user) => user.id === editingId)?.password || "",
+      role: form.role,
+      active: form.active,
+      createdAt: users.find((user) => user.id === editingId)?.createdAt || new Date().toISOString(),
+    };
+
+    const nextUsers = editingId
+      ? users.map((user) => user.id === editingId ? nextUser : user)
+      : [nextUser, ...users];
+    onSaveUsers(nextUsers);
+    cancelEdit();
+  }
+
+  function toggleActive(user) {
+    if (user.username === "admin") return;
+    onSaveUsers(users.map((item) => item.id === user.id ? { ...item, active: item.active === false } : item));
+  }
+
+  return (
+    <section className="admin-overlay" role="dialog" aria-modal="true" aria-label="User administration">
+      <div className="admin-window compact-card">
+        <header className="admin-window-head">
+          <div>
+            <p className="eyebrow">Admin</p>
+            <h2>Company Users</h2>
+            <p>Add active employees, set their role, and give them a login.</p>
+          </div>
+          <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
+        </header>
+
+        <div className="user-admin-grid">
+          <form className="user-admin-form" onSubmit={submit}>
+            <div className="panel-head thin">
+              <div>
+                <p className="eyebrow">{editingId ? "Edit User" : "New User"}</p>
+                <h2>{editingId ? "Update Login" : "Add Employee"}</h2>
+              </div>
+            </div>
+            <label className="field">
+              <span>Name</span>
+              <input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Employee name" />
+            </label>
+            <label className="field">
+              <span>Username</span>
+              <input value={form.username} onChange={(event) => update("username", event.target.value)} placeholder="login id" disabled={editingId && form.username === "admin"} />
+            </label>
+            <label className="field">
+              <span>{editingId ? "New Password" : "Password"}</span>
+              <input type="password" value={form.password} onChange={(event) => update("password", event.target.value)} placeholder={editingId ? "Leave blank to keep current" : "Starting password"} />
+            </label>
+            <label className="field">
+              <span>Role</span>
+              <select value={form.role} onChange={(event) => update("role", event.target.value)} disabled={editingId && form.username === "admin"}>
+                {userRoleOptions.map((role) => <option value={role} key={role}>{role}</option>)}
+              </select>
+            </label>
+            <label className="check-field">
+              <input type="checkbox" checked={form.active} onChange={(event) => update("active", event.target.checked)} disabled={editingId && form.username === "admin"} />
+              <span>Active user</span>
+            </label>
+            {error && <div className="auth-error">{error}</div>}
+            <div className="form-actions">
+              {editingId && <button className="ghost-btn" type="button" onClick={cancelEdit}>Cancel</button>}
+              <button className="primary-btn" type="submit"><UserPlus size={16} /> {editingId ? "Save User" : "Add User"}</button>
+            </div>
+          </form>
+
+          <section className="user-admin-list">
+            <div className="panel-head thin">
+              <div>
+                <p className="eyebrow">Directory</p>
+                <h2>{users.filter((user) => user.active !== false).length} Active Users</h2>
+              </div>
+            </div>
+            <div className="user-list-rows">
+              {users.map((user) => (
+                <article className={`user-list-row ${user.active === false ? "inactive" : ""}`} key={user.id}>
+                  <div>
+                    <strong>{user.name}</strong>
+                    <span>{user.username} / {user.role}</span>
+                  </div>
+                  <em>{user.active === false ? "Inactive" : "Active"}</em>
+                  <button className="ghost-btn xs" type="button" onClick={() => startEdit(user)}>Edit</button>
+                  <button className="ghost-btn xs" type="button" onClick={() => toggleActive(user)} disabled={user.username === "admin" || user.id === currentUser?.id}>
+                    {user.active === false ? "Activate" : "Deactivate"}
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function App() {
+  const [users, setUsers] = useState(() => loadUsers());
+  const [currentUser, setCurrentUser] = useState(() => loadSessionUser());
+  const [userPanelOpen, setUserPanelOpen] = useState(false);
+
+  function handleSignIn(username, password) {
+    const result = signIn(username, password);
+    if (result.error) return result;
+    setUsers(result.users);
+    setCurrentUser(result.user);
+    return result;
+  }
+
+  function handleSignOut() {
+    clearSession();
+    setCurrentUser(null);
+    setUserPanelOpen(false);
+  }
+
+  function handleSaveUsers(nextUsers) {
+    saveUsers(nextUsers);
+    const loaded = loadUsers();
+    setUsers(loaded);
+    const refreshedUser = loaded.find((user) => user.id === currentUser?.id && user.active !== false);
+    if (refreshedUser) {
+      const { password, ...publicCurrentUser } = refreshedUser;
+      setCurrentUser(publicCurrentUser);
+    } else {
+      handleSignOut();
+    }
+  }
+
+  if (!currentUser) return <SignInScreen onSignIn={handleSignIn} />;
+
+  return (
+    <>
+      <SignedInApp
+        currentUser={currentUser}
+        canManageUsers={userIsAdmin(currentUser)}
+        onOpenUserAdmin={() => setUserPanelOpen(true)}
+        onSignOut={handleSignOut}
+      />
+      {userPanelOpen && userIsAdmin(currentUser) && (
+        <UserAdminPanel
+          currentUser={currentUser}
+          users={users}
+          onSaveUsers={handleSaveUsers}
+          onClose={() => setUserPanelOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }) {
   const queryClient = useQueryClient();
   const [activeKey, setActiveKey] = useState("job-tickets");
   const [search, setSearch] = useState("");
@@ -89,16 +444,28 @@ export default function App() {
   const [usageOpen, setUsageOpen] = useState(false);
   const [rollOpen, setRollOpen] = useState(false);
   const [finishedMaterialOpen, setFinishedMaterialOpen] = useState(false);
+  const [materialTypeOpen, setMaterialTypeOpen] = useState(false);
+  const [localInventoryRows, setLocalInventoryRows] = useState([]);
   const [localUsageEvents, setLocalUsageEvents] = useState([]);
 
   const resource = resourceMap[activeKey] ?? resources[0];
+  const showingStaticView = Boolean(resource.staticView);
   const showingJobTicketOverlay = resource.key === "job-tickets" && selected;
+  const isMaterialTypePage = materialTypePageKeys.has(resource.key);
+  const isMaterialFormPage = materialFormPageKeys.has(resource.key);
+  const showingMaterialFormOverlay = Boolean(formMode && isMaterialFormPage);
+  const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
 
   const listQuery = useQuery({
-    queryKey: ["collection", resource.key, resource.filters ?? {}],
+    queryKey: collectionQueryKey,
     queryFn: async () => {
       try {
-        return await fetchCollection(resource.endpoint, { ordering: resource.defaultOrdering, pageSize: 1000, filters: resource.filters ?? {} });
+        return await fetchCollection(resource.endpoint, {
+          ordering: resource.defaultOrdering,
+          pageSize: resource.searchMode === "flexDie" ? 500 : 250,
+          filters: resource.filters ?? {},
+          search: resource.searchMode === "flexDie" ? "" : search,
+        });
       } catch (error) {
         if (resource.key === "material-usages" && String(error.message).includes("404")) {
           return { count: 0, results: [], raw: { missingEndpoint: true } };
@@ -106,16 +473,22 @@ export default function App() {
         throw error;
       }
     },
+    enabled: !showingStaticView,
     keepPreviousData: true,
   });
 
   const lookupQuery = useQuery({
-    queryKey: ["lookups"],
-    queryFn: loadAllLookups,
+    queryKey: ["lookups", resource.key, selected?.id ?? null, formMode ?? "view"],
+    queryFn: () => loadScopedLookups({ resource, selected, isMaterialTypePage }),
+    enabled: !showingStaticView,
     staleTime: 60_000,
   });
 
-  const rows = listQuery.data?.results ?? [];
+  const rows = useMemo(() => {
+    const base = listQuery.data?.results ?? [];
+    if (resource.key !== "raw-materials") return base;
+    return mergeRows(base, localInventoryRows);
+  }, [listQuery.data, localInventoryRows, resource.key]);
   const detailKeys = selected ? getDetailKeys(resource, selected) : [];
   const usageRows = useMemo(() => {
     const usages = [...(lookupQuery.data?.["material-usages"] ?? []), ...localUsageEvents];
@@ -142,6 +515,10 @@ export default function App() {
     if (!selected || resource.key !== "material-coated-stock") return [];
     return (lookupQuery.data?.["raw-materials"] ?? []).filter((row) => String(row.material) === String(selected.id));
   }, [lookupQuery.data, resource.key, selected]);
+  const selectedMaterialSupplierOptions = useMemo(() => {
+    if (!selected || !isMaterialTypePage) return [];
+    return (lookupQuery.data?.["material-supplier-options"] ?? []).filter((row) => String(row.material) === String(selected.id));
+  }, [isMaterialTypePage, lookupQuery.data, selected]);
 
   const canShowUsage = Boolean(selected) && (
     resource.key === "raw-materials" ||
@@ -156,13 +533,72 @@ export default function App() {
       return filtered.filter((row) => !["in_use", "depleted", "scrapped"].includes(row.status));
     }
     return filtered;
-  }, [rows, search, flexFilters, resource.searchMode]);
+  }, [rows, search, flexFilters, resource.key, resource.searchMode]);
+  const tableRows = useMemo(() => {
+    if (resource.key !== "material-coated-stock") return visibleRows;
+    const inventoryRows = lookupQuery.data?.["raw-materials"] ?? [];
+    return visibleRows.map((row) => {
+      return {
+        ...row,
+        inventory_total_feet: inventoryTotalFeetForMaterial(row, inventoryRows),
+      };
+    });
+  }, [lookupQuery.data, resource.key, visibleRows]);
+
+  function prepareSavePayload(payload) {
+    if (resource.key !== "raw-materials") return payload;
+    const quantity = payload.length_feet === "" || payload.length_feet === null || payload.length_feet === undefined
+      ? payload.quantity ?? 0
+      : payload.length_feet;
+    return {
+      ...payload,
+      quantity,
+      unit: payload.unit || "lf",
+    };
+  }
 
   const saveMutation = useMutation({
-    mutationFn: (payload) => formMode === "edit" && selected?.id
-      ? updateRecord(resource.endpoint, selected.id, payload)
-      : createRecord(resource.endpoint, payload),
+    mutationFn: async (payload) => {
+      const cleanPayload = prepareSavePayload(payload);
+      if (formMode === "edit" && selected?.id) {
+        return updateRecord(resource.endpoint, selected.id, cleanPayload);
+      }
+
+      const saved = await createRecord(resource.endpoint, cleanPayload);
+      if (resource.key === "raw-materials") {
+        try {
+          await createRecord("material-usages", {
+            inventory: saved.id,
+            material: saved.material,
+            usage_type: "adjustment",
+            quantity: Number(saved.length_feet ?? saved.quantity ?? cleanPayload.length_feet ?? 0),
+            unit: saved.unit || "lf",
+            used_date: new Date().toISOString().slice(0, 10),
+            reference: "Inventory added",
+            notes: "Roll added to inventory.",
+          });
+        } catch (error) {
+          if (!String(error.message).includes("404")) throw error;
+        }
+      }
+      return saved;
+    },
     onSuccess: (saved) => {
+      if (saved && resource.key === "raw-materials") {
+        setLocalInventoryRows((prev) => mergeRows([saved], prev));
+        queryClient.setQueryData(collectionQueryKey, (current) => {
+          if (!current?.results) return current;
+          const exists = current.results.some((row) => String(row.id) === String(saved.id));
+          const results = exists
+            ? current.results.map((row) => String(row.id) === String(saved.id) ? saved : row)
+            : [saved, ...current.results];
+          return {
+            ...current,
+            count: Math.max(current.count ?? 0, results.length),
+            results,
+          };
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["collection", resource.key] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
       setSelected(saved ?? null);
@@ -225,6 +661,24 @@ export default function App() {
           notes: payload.qc_notes || payload.notes,
         }));
       }
+      return saved;
+    }
+
+    if (action === "status") {
+      const nextNotes = payload.qc_issue && payload.qc_notes
+        ? [roll.notes, `QC: ${payload.qc_notes}`].filter(Boolean).join("\n")
+        : [roll.notes, payload.notes].filter(Boolean).join("\n");
+      const saved = await updateRecord("raw-materials", roll.id, {
+        status: payload.status,
+        notes: nextNotes,
+      });
+      await tryCreateUsage(rollUsagePayload(roll, {
+        usage_type: payload.qc_issue || payload.status === "on_hold" ? "qc_issue" : "adjustment",
+        quantity: 0,
+        used_by: payload.used_by,
+        reference: payload.reference || (payload.status === "scheduled" ? "Held for job" : "Inventory status update"),
+        notes: payload.qc_notes || payload.notes,
+      }));
       return saved;
     }
 
@@ -320,6 +774,25 @@ export default function App() {
             ...prev,
           ]);
         }
+
+        if (variables.action === "status") {
+          setLocalUsageEvents((prev) => [
+            {
+              id: `local-status-${Date.now()}`,
+              inventory: roll.id,
+              material: roll.material,
+              usage_type: variables.payload.qc_issue || variables.payload.status === "on_hold" ? "qc_issue" : "adjustment",
+              quantity: 0,
+              unit: roll.unit || "lf",
+              inventory_width_inches: roll.width_inches,
+              used_date: new Date().toISOString().slice(0, 10),
+              used_by: variables.payload.used_by,
+              reference: variables.payload.reference || "Inventory status update",
+              notes: variables.payload.qc_notes || variables.payload.notes,
+            },
+            ...prev,
+          ]);
+        }
       }
       queryClient.invalidateQueries({ queryKey: ["collection"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
@@ -327,13 +800,6 @@ export default function App() {
     },
   });
 
-  const quickRollMutation = useMutation({
-    mutationFn: (payload) => createRecord("raw-materials", payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
-      queryClient.invalidateQueries({ queryKey: ["lookups"] });
-    },
-  });
   const finishedScheduleMutation = useMutation({
     mutationFn: async ({ material, schedule }) => {
       const required = [
@@ -398,6 +864,27 @@ export default function App() {
 
   function toggleGroup(key) {
     setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function editRecord(row) {
+    setSelected(row);
+    setFormMode("edit");
+  }
+
+  function confirmDeleteRecord(row) {
+    const title = getRecordTitle(row);
+    if (!window.confirm(`Delete ${title}? This cannot be undone.`)) return;
+    setSelected(row);
+    deleteRecord(resource.endpoint, row.id)
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["collection", resource.key] });
+        queryClient.invalidateQueries({ queryKey: ["lookups"] });
+        setSelected(null);
+        setFormMode(null);
+      })
+      .catch((error) => {
+        window.alert(`Could not delete ${title}: ${error.message}`);
+      });
   }
 
   return (
@@ -480,15 +967,17 @@ export default function App() {
             <p>{resource.tagline}</p>
           </div>
           <div className="top-actions">
-            <button className="ghost-btn" type="button" onClick={() => listQuery.refetch()}><RefreshCcw size={15} /> Refresh</button>
-            {!resource.disableCreate && (
-              <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults({}); setFormMode("create"); }}><Plus size={16} /> Add</button>
+            {!showingStaticView && <button className="ghost-btn" type="button" onClick={() => listQuery.refetch()}><RefreshCcw size={15} /> Refresh</button>}
+            {!resource.disableCreate && !showingStaticView && (
+              <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults({}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : "Add"}</button>
             )}
+            {canManageUsers && <button className="ghost-btn" type="button" onClick={onOpenUserAdmin}><Users size={15} /> Users</button>}
+            <span className="user-pill"><ShieldCheck size={14} /> {currentUser.name} <em>{currentUser.role}</em></span>
+            <button className="ghost-btn" type="button" onClick={onSignOut}><LogOut size={15} /> Sign Out</button>
           </div>
         </header>
 
         {saveMutation.error && <div className="error-box">{saveMutation.error.message}</div>}
-        {quickRollMutation.error && <div className="error-box">{quickRollMutation.error.message}</div>}
         {finishedScheduleMutation.error && <div className="error-box">{finishedScheduleMutation.error.message}</div>}
         {deleteMutation.error && <div className="error-box">{deleteMutation.error.message}</div>}
         {rollActionMutation.error && <div className="error-box">{rollActionMutation.error.message}</div>}
@@ -498,119 +987,134 @@ export default function App() {
         )}
         {lookupQuery.error && <div className="error-box">Could not load lookup data: {lookupQuery.error.message}</div>}
 
-        {resource.searchMode === "flexDie" ? (
-          <FlexDieSearch filters={flexFilters} setFilters={setFlexFilters} />
+        {resource.viewMode === "quoteCalculator" ? (
+          <QuotePricingTool currentUser={currentUser} />
         ) : (
-          <section className="search-line compact-card">
-            <Search size={16} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${resource.label.toLowerCase()}...`} />
-            <span>{visibleRows.length} / {rows.length}</span>
-          </section>
-        )}
-
-        {formMode && !(showingJobTicketOverlay && formMode === "edit") && (
-          <RecordForm
-            resource={resource}
-            record={formMode === "edit" ? selected : null}
-            defaults={formMode === "create" ? createDefaults : {}}
-            lookups={lookupQuery.data ?? {}}
-            submitting={saveMutation.isPending}
-            onSubmit={(payload) => saveMutation.mutate(payload)}
-            onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
-          />
-        )}
-
-        <section className={`content-grid ${resource.key === "job-tickets" ? "wide-list" : ""}`}>
-          <div className="list-panel compact-card">
-            <div className="panel-head thin">
-              <div>
-                <p className="eyebrow">Records</p>
-                <h2>{listQuery.isLoading ? "Loading..." : `${visibleRows.length} shown`}</h2>
-              </div>
-            </div>
-
-            {resource.viewMode === "materialInventory" ? (
-              <>
-                <QuickRollEntry
-                  materials={lookupQuery.data?.materials ?? []}
-                  locations={lookupQuery.data?.locations ?? []}
-                  submitting={quickRollMutation.isPending}
-                  onSubmit={(payload) => quickRollMutation.mutate(payload)}
-                />
-                <MaterialInventoryView
-                  rows={visibleRows}
-                  selectedId={selected?.id}
-                  onSelect={(row) => { setSelected(row); setFormMode(null); setUsageOpen(false); setRollOpen(true); }}
-                />
-              </>
-            ) : resource.key === "recipe-options" ? (
-              <RecipeOptionsView rows={visibleRows} onEdit={(row) => { setSelected(row); setFormMode("edit"); }} />
-            ) : resource.key === "recipe-tools" ? (
-              <RecipeToolStackView
-                rows={visibleRows}
-                selectedId={selected?.id}
-                onSelect={(row) => { setSelected(row); setFormMode(null); }}
-                onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
-              />
+          <>
+            {resource.searchMode === "flexDie" ? (
+              <FlexDieSearch filters={flexFilters} setFilters={setFlexFilters} />
             ) : (
-              <ResourceTable
+              <section className="search-line compact-card">
+                <Search size={16} />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${resource.label.toLowerCase()}...`} />
+                <span>{visibleRows.length} / {rows.length}</span>
+              </section>
+            )}
+
+            {formMode && !showingMaterialFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
+              <RecordForm
                 resource={resource}
-                rows={visibleRows}
-                selectedId={selected?.id}
-                onSelect={(row) => {
-                  setSelected(row);
-                  setFormMode(null);
-                  if (resource.key === "material-coated-stock") setFinishedMaterialOpen(true);
-                }}
+                record={formMode === "edit" ? selected : null}
+                defaults={formMode === "create" ? createDefaults : {}}
+                lookups={lookupQuery.data ?? {}}
+                submitting={saveMutation.isPending}
+                onSubmit={(payload) => saveMutation.mutate(payload)}
+                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
               />
             )}
-          </div>
 
-          {resource.key !== "job-tickets" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && (
-            <aside className="detail-panel compact-card">
-              {selected ? (
-              <>
+            <section className={`content-grid ${resource.key === "job-tickets" ? "wide-list" : ""}`}>
+              <div className="list-panel compact-card">
                 <div className="panel-head thin">
                   <div>
-                    <p className="eyebrow">Selected</p>
-                    <h2>{getRecordTitle(selected)}</h2>
+                    <p className="eyebrow">Records</p>
+                    <h2>{listQuery.isLoading ? "Loading..." : `${visibleRows.length} shown`}</h2>
                   </div>
                 </div>
-                <div className="detail-list">
-                  {detailKeys.map((key) => (
-                    <div key={key}><span>{labelForField(resource, key)}</span><strong>{detailValue(selected, key)}</strong></div>
-                  ))}
-                </div>
-                {!resource.disableMutate && (
-                  <div className="detail-actions">
-                    <button className="primary-btn" type="button" onClick={() => setFormMode("edit")}>Edit</button>
-                    {canShowUsage && <button className="ghost-btn" type="button" onClick={() => setUsageOpen(true)}>Usage</button>}
-                    {canConsumeMaterial && (
-                      <button className="ghost-btn" type="button" onClick={() => setRollOpen(true)}>Roll Control</button>
+
+                {resource.viewMode === "materialInventory" ? (
+                  <MaterialInventoryView
+                    rows={visibleRows}
+                    selectedId={selected?.id}
+                    onSelect={(row) => { setSelected(row); setFormMode(null); setUsageOpen(false); setRollOpen(true); }}
+                  />
+                ) : resource.viewMode === "locations" ? (
+                  <GroupedLocationView
+                    rows={visibleRows}
+                    selectedId={selected?.id}
+                    onSelect={(row) => setSelected(row)}
+                    onEdit={editRecord}
+                    onDelete={confirmDeleteRecord}
+                  />
+                ) : resource.key === "material-usages" ? (
+                  <GroupedUsageView
+                    rows={visibleRows}
+                    selectedId={selected?.id}
+                    onSelect={(row) => setSelected(row)}
+                    onEdit={editRecord}
+                    onDelete={confirmDeleteRecord}
+                  />
+                ) : resource.key === "recipe-options" ? (
+                  <RecipeOptionsView rows={visibleRows} onEdit={(row) => { setSelected(row); setFormMode("edit"); }} />
+                ) : resource.key === "recipe-tools" ? (
+                  <RecipeToolStackView
+                    rows={tableRows}
+                    selectedId={selected?.id}
+                    onSelect={(row) => { setSelected(row); setFormMode(null); }}
+                    onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
+                  />
+                ) : (
+                  <ResourceTable
+                    resource={resource}
+                    rows={tableRows}
+                    selectedId={selected?.id}
+                    onSelect={(row) => {
+                      setSelected(row);
+                      setFormMode(null);
+                      if (resource.key === "material-coated-stock") setFinishedMaterialOpen(true);
+                      if (isMaterialTypePage) setMaterialTypeOpen(true);
+                    }}
+                  />
+                )}
+              </div>
+
+              {resource.key !== "job-tickets" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && !isMaterialTypePage && (
+                <aside className="detail-panel compact-card">
+                  {selected ? (
+                  <>
+                    <div className="panel-head thin">
+                      <div>
+                        <p className="eyebrow">Selected</p>
+                        <h2>{getRecordTitle(selected)}</h2>
+                      </div>
+                    </div>
+                    <div className="detail-list">
+                      {detailKeys.map((key) => (
+                        <div key={key}><span>{labelForField(resource, key)}</span><strong>{detailValue(selected, key)}</strong></div>
+                      ))}
+                    </div>
+                    {!resource.disableMutate && (
+                      <div className="detail-actions">
+                        <button className="primary-btn" type="button" onClick={() => setFormMode("edit")}>Edit</button>
+                        {canShowUsage && <button className="ghost-btn" type="button" onClick={() => setUsageOpen(true)}>Usage</button>}
+                        {canConsumeMaterial && (
+                          <button className="ghost-btn" type="button" onClick={() => setRollOpen(true)}>Roll Control</button>
+                        )}
+                        <button className="danger-btn" type="button" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>Delete</button>
+                      </div>
                     )}
-                    <button className="danger-btn" type="button" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>Delete</button>
-                  </div>
-                )}
-                {resource.disableMutate && canShowUsage && (
-                  <div className="detail-actions">
-                    <button className="ghost-btn" type="button" onClick={() => setUsageOpen(true)}>Usage</button>
-                  </div>
-                )}
-              </>
-              ) : (
-              <>
-                <div className="panel-head thin">
-                  <div>
-                    <p className="eyebrow">Selected</p>
-                    <h2>Nothing selected</h2>
-                  </div>
-                </div>
-                <p className="muted">Click a row to inspect it. The form stays closed until you add or edit.</p>
-              </>
+                    {resource.disableMutate && canShowUsage && (
+                      <div className="detail-actions">
+                        <button className="ghost-btn" type="button" onClick={() => setUsageOpen(true)}>Usage</button>
+                      </div>
+                    )}
+                  </>
+                  ) : (
+                  <>
+                    <div className="panel-head thin">
+                      <div>
+                        <p className="eyebrow">Selected</p>
+                        <h2>Nothing selected</h2>
+                      </div>
+                    </div>
+                    <p className="muted">Click a row to inspect it. The form stays closed until you add or edit.</p>
+                  </>
+                  )}
+                </aside>
               )}
-            </aside>
-          )}
-        </section>
+            </section>
+          </>
+        )}
 
         {showingJobTicketOverlay && (
           <section className="job-overlay" role="dialog" aria-modal="true" aria-label="Job ticket packet">
@@ -666,6 +1170,22 @@ export default function App() {
           </section>
         )}
 
+        {showingMaterialFormOverlay && (
+          <section className="material-form-overlay" role="dialog" aria-modal="true" aria-label={`${formMode === "edit" ? "Edit" : "Add"} ${resource.singular}`}>
+            <div className="material-form-window">
+              <RecordForm
+                resource={resource}
+                record={formMode === "edit" ? selected : null}
+                defaults={formMode === "create" ? createDefaults : {}}
+                lookups={lookupQuery.data ?? {}}
+                submitting={saveMutation.isPending}
+                onSubmit={(payload) => saveMutation.mutate(payload)}
+                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+              />
+            </div>
+          </section>
+        )}
+
         {usageOpen && canShowUsage && (
           <MaterialUsageWindow
             title={getRecordTitle(selected)}
@@ -681,8 +1201,13 @@ export default function App() {
             usageRows={usageRows}
             submitting={rollActionMutation.isPending}
             onClose={() => setRollOpen(false)}
+            onEdit={() => {
+              setRollOpen(false);
+              setFormMode("edit");
+            }}
             onCheckOut={(payload) => rollActionMutation.mutate({ action: "check-out", payload })}
             onReturn={(payload) => rollActionMutation.mutate({ action: "return-roll", payload })}
+            onUpdateStatus={(payload) => rollActionMutation.mutate({ action: "status", payload })}
           />
         )}
 
@@ -698,6 +1223,42 @@ export default function App() {
               setFormMode("edit");
             }}
             onSchedule={(schedule) => finishedScheduleMutation.mutate({ material: selected, schedule })}
+          />
+        )}
+
+        {materialTypeOpen && selected && isMaterialTypePage && (
+          <MaterialTypeWindow
+            material={selected}
+            options={selectedMaterialSupplierOptions}
+            onClose={() => setMaterialTypeOpen(false)}
+            onEdit={() => {
+              setMaterialTypeOpen(false);
+              setFormMode("edit");
+            }}
+            onAddSupplierOption={() => {
+              const material = selected;
+              setMaterialTypeOpen(false);
+              setActiveKey("material-supplier-options");
+              setSelected(null);
+              setSearch("");
+              setCreateDefaults({
+                material: material.id,
+                supplier_name: "",
+                option_name: material.name || "",
+                is_active: true,
+              });
+              setFormMode("create");
+              setOpenGroups((prev) => ({ ...prev, "production-material": true }));
+            }}
+            onEditSupplierOption={(option) => {
+              setMaterialTypeOpen(false);
+              setActiveKey("material-supplier-options");
+              setSelected(option);
+              setSearch("");
+              setCreateDefaults({});
+              setFormMode("edit");
+              setOpenGroups((prev) => ({ ...prev, "production-material": true }));
+            }}
           />
         )}
       </section>

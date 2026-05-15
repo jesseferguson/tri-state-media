@@ -124,6 +124,44 @@ class MaterialSpec(models.Model):
         return result
 
 
+class MaterialSupplierOption(models.Model):
+    material = models.ForeignKey(
+        MaterialSpec,
+        on_delete=models.CASCADE,
+        related_name="supplier_options",
+        help_text="The face, liner, adhesive, silicone, or coating data type this supplier option can fulfill.",
+    )
+    supplier = models.ForeignKey(
+        Supplier,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="material_supplier_options",
+    )
+    supplier_name = models.CharField(max_length=140, blank=True)
+    option_name = models.CharField(max_length=160, blank=True)
+    supplier_item_number = models.CharField(max_length=100, blank=True)
+    thickness_mil = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    width_inches = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    length_feet = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["material__material_type", "material__name", "supplier_name", "option_name"]
+
+    def __str__(self):
+        parts = [self.material.name if self.material_id else "", self.option_name, self.supplier_name]
+        return " / ".join([part for part in parts if part])
+
+    def save(self, *args, **kwargs):
+        if self.supplier and not self.supplier_name:
+            self.supplier_name = self.supplier.name
+        super().save(*args, **kwargs)
+
+
 class RawMaterialInventory(models.Model):
     STATUS_CHOICES = [
         ("available", "Available"),
@@ -305,7 +343,7 @@ class MaterialUsage(models.Model):
 
     @property
     def consumes_inventory(self):
-        return self.usage_type not in ["returned", "qc_issue"]
+        return self.usage_type in ["checkout", "manual", "coater", "finished", "scrap"]
 
     def _adjust_inventory(self, inventory, delta):
         if not inventory:
