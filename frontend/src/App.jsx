@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, LogIn, LogOut, Plus, RefreshCcw, Search, ShieldCheck, UserPlus, Users, X } from "lucide-react";
+import { BadgeCheck, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
 import { createRecord, deleteRecord, fetchCollection, updateRecord } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
@@ -17,7 +17,8 @@ import QuotePricingTool from "./components/QuotePricingTool";
 import RecipeOptionsView from "./components/RecipeOptionsView";
 import RecipeToolStackView from "./components/RecipeToolStackView";
 import RollWorkflowWindow from "./components/RollWorkflowWindow";
-import { clearSession, loadSessionUser, loadUsers, makeUserId, saveUsers, signIn, userIsAdmin, userRoleOptions } from "./lib/localAuth";
+import ProductionScheduleView from "./components/ProductionScheduleView";
+import { clearSession, loadRoles, loadSessionUser, loadUsers, makeRoleId, makeUserId, roleHasResourceAccess, saveRoles, saveUsers, signIn, userIsAdmin } from "./lib/localAuth";
 import { emptyFlexDieFilters, filterFlexDies, filterRows } from "./lib/filtering";
 import { formatCell, getRecordTitle } from "./lib/format";
 
@@ -189,12 +190,39 @@ const materialFormPageKeys = new Set([
   "raw-materials",
 ]);
 
+function visibleResourcesForRole(roleDefinitions, roleName) {
+  return resources.filter((item) => roleHasResourceAccess(roleDefinitions, roleName, item.key));
+}
+
+function defaultResourceKeyForRole(roleDefinitions, roleName) {
+  const visible = visibleResourcesForRole(roleDefinitions, roleName);
+  const normalizedRole = String(roleName || "").toLowerCase();
+  if (normalizedRole === "sales" && visible.some((item) => item.key === "quote-calculator")) return "quote-calculator";
+  if (visible.some((item) => item.key === "job-tickets")) return "job-tickets";
+  return visible[0]?.key ?? "quote-calculator";
+}
+
+function userInitials(name) {
+  return String(name || "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "?";
+}
+
 const emptyUserForm = {
   name: "",
   username: "",
   password: "",
   role: "CSR",
   active: true,
+};
+
+const emptyRoleForm = {
+  name: "",
+  description: "",
+  allowedResourceKeys: ["quote-calculator"],
 };
 
 function SignInScreen({ onSignIn }) {
@@ -233,16 +261,34 @@ function SignInScreen({ onSignIn }) {
   );
 }
 
-function UserAdminPanel({ currentUser, users, onSaveUsers, onClose }) {
+function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSaveRoles, onClose }) {
   const [form, setForm] = useState(emptyUserForm);
+  const [roleForm, setRoleForm] = useState(emptyRoleForm);
+  const [adminTab, setAdminTab] = useState("users");
   const [editingId, setEditingId] = useState(null);
+  const [editingRoleId, setEditingRoleId] = useState(null);
   const [error, setError] = useState("");
+  const [roleError, setRoleError] = useState("");
+  const activeUserCount = users.filter((user) => user.active !== false).length;
+  const roleCount = roleDefinitions.length;
+  const currentRole = roleDefinitions.find((role) => role.name === currentUser?.role);
+  const roleScreenGroups = useMemo(() => {
+    const groups = new Map();
+    resources.forEach((item) => {
+      const key = item.group || "other";
+      const label = groupLabelsByKey[key] || "Other";
+      if (!groups.has(key)) groups.set(key, { key, label, screens: [] });
+      groups.get(key).screens.push(item);
+    });
+    return Array.from(groups.values());
+  }, []);
 
   function update(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
   function startEdit(user) {
+    setAdminTab("users");
     setEditingId(user.id);
     setForm({
       name: user.name,
@@ -258,6 +304,89 @@ function UserAdminPanel({ currentUser, users, onSaveUsers, onClose }) {
     setEditingId(null);
     setForm(emptyUserForm);
     setError("");
+  }
+
+  function updateRoleForm(name, value) {
+    setRoleForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function startEditRole(role) {
+    if (role.locked) return;
+    setAdminTab("roles");
+    setEditingRoleId(role.id);
+    setRoleForm({
+      name: role.name,
+      description: role.description || "",
+      allowedResourceKeys: role.allowedResourceKeys.includes("*") ? resources.map((item) => item.key) : [...role.allowedResourceKeys],
+    });
+    setRoleError("");
+  }
+
+  function cancelRoleEdit() {
+    setEditingRoleId(null);
+    setRoleForm(emptyRoleForm);
+    setRoleError("");
+  }
+
+  function toggleRoleScreen(key) {
+    setRoleForm((prev) => {
+      const current = new Set(prev.allowedResourceKeys ?? []);
+      if (current.has(key)) current.delete(key);
+      else current.add(key);
+      return { ...prev, allowedResourceKeys: Array.from(current) };
+    });
+  }
+
+  function submitRole(event) {
+    event.preventDefault();
+    const name = roleForm.name.trim();
+    const nameTaken = roleDefinitions.some((role) => role.id !== editingRoleId && role.name.toLowerCase() === name.toLowerCase());
+    const allowedResourceKeys = (roleForm.allowedResourceKeys ?? []).filter((key) => resources.some((item) => item.key === key));
+
+    if (!name) {
+      setRoleError("Role name is required.");
+      return;
+    }
+    if (name.toLowerCase() === "admin") {
+      setRoleError("The Admin role is protected.");
+      return;
+    }
+    if (nameTaken) {
+      setRoleError("That role name already exists.");
+      return;
+    }
+    if (!allowedResourceKeys.length) {
+      setRoleError("Select at least one screen for this role.");
+      return;
+    }
+
+    const existing = roleDefinitions.find((role) => role.id === editingRoleId);
+    const nextRole = {
+      id: editingRoleId || makeRoleId(),
+      name,
+      description: roleForm.description.trim(),
+      allowedResourceKeys,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+    };
+
+    const nextRoles = editingRoleId
+      ? roleDefinitions.map((role) => role.id === editingRoleId ? nextRole : role)
+      : [nextRole, ...roleDefinitions];
+    onSaveRoles(nextRoles);
+    if (editingRoleId && existing?.name && existing.name !== name) {
+      onSaveUsers(users.map((user) => user.role === existing.name ? { ...user, role: name } : user));
+    }
+    cancelRoleEdit();
+  }
+
+  function deleteRole(role) {
+    if (role.locked) return;
+    if (users.some((user) => user.role === role.name)) {
+      setRoleError(`Move users out of ${role.name} before deleting it.`);
+      return;
+    }
+    onSaveRoles(roleDefinitions.filter((item) => item.id !== role.id));
+    if (editingRoleId === role.id) cancelRoleEdit();
   }
 
   function submit(event) {
@@ -305,14 +434,55 @@ function UserAdminPanel({ currentUser, users, onSaveUsers, onClose }) {
     <section className="admin-overlay" role="dialog" aria-modal="true" aria-label="User administration">
       <div className="admin-window compact-card">
         <header className="admin-window-head">
-          <div>
-            <p className="eyebrow">Admin</p>
-            <h2>Company Users</h2>
-            <p>Add active employees, set their role, and give them a login.</p>
+          <div className="admin-title-block">
+            <div className="admin-title-icon">
+              <UserCog size={22} />
+            </div>
+            <div>
+              <p className="eyebrow">Administration</p>
+              <h2>People + Access</h2>
+              <p>Manage company logins, active employees, and the screens each role can open.</p>
+            </div>
           </div>
-          <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
+          <div className="admin-head-actions">
+            <span className="admin-current-user">
+              <BadgeCheck size={15} />
+              {currentUser.name} / {currentUser.role}
+            </span>
+            <button className="ghost-btn admin-close-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
+          </div>
         </header>
 
+        <section className="admin-stat-row">
+          <div className="admin-stat-card">
+            <Users size={18} />
+            <span>Active Users</span>
+            <strong>{activeUserCount}</strong>
+          </div>
+          <div className="admin-stat-card">
+            <Shield size={18} />
+            <span>Roles</span>
+            <strong>{roleCount}</strong>
+          </div>
+          <div className="admin-stat-card">
+            <KeyRound size={18} />
+            <span>Your Access</span>
+            <strong>{currentRole?.allowedResourceKeys.includes("*") ? "All Screens" : `${currentRole?.allowedResourceKeys.length ?? 0} Screens`}</strong>
+          </div>
+        </section>
+
+        <nav className="admin-tabs" aria-label="User administration sections">
+          <button className={adminTab === "users" ? "active" : ""} type="button" onClick={() => setAdminTab("users")}>
+            <Users size={16} />
+            Users
+          </button>
+          <button className={adminTab === "roles" ? "active" : ""} type="button" onClick={() => setAdminTab("roles")}>
+            <ShieldCheck size={16} />
+            Roles + Screens
+          </button>
+        </nav>
+
+        {adminTab === "users" && (
         <div className="user-admin-grid">
           <form className="user-admin-form" onSubmit={submit}>
             <div className="panel-head thin">
@@ -336,7 +506,7 @@ function UserAdminPanel({ currentUser, users, onSaveUsers, onClose }) {
             <label className="field">
               <span>Role</span>
               <select value={form.role} onChange={(event) => update("role", event.target.value)} disabled={editingId && form.username === "admin"}>
-                {userRoleOptions.map((role) => <option value={role} key={role}>{role}</option>)}
+                {roleDefinitions.map((role) => <option value={role.name} key={role.id}>{role.name}</option>)}
               </select>
             </label>
             <label className="check-field">
@@ -360,27 +530,131 @@ function UserAdminPanel({ currentUser, users, onSaveUsers, onClose }) {
             <div className="user-list-rows">
               {users.map((user) => (
                 <article className={`user-list-row ${user.active === false ? "inactive" : ""}`} key={user.id}>
-                  <div>
-                    <strong>{user.name}</strong>
-                    <span>{user.username} / {user.role}</span>
+                  <div className="user-list-person">
+                    <span className="user-avatar">{userInitials(user.name)}</span>
+                    <div>
+                      <strong>{user.name}</strong>
+                      <span>{user.username} / {user.role}</span>
+                    </div>
                   </div>
-                  <em>{user.active === false ? "Inactive" : "Active"}</em>
-                  <button className="ghost-btn xs" type="button" onClick={() => startEdit(user)}>Edit</button>
-                  <button className="ghost-btn xs" type="button" onClick={() => toggleActive(user)} disabled={user.username === "admin" || user.id === currentUser?.id}>
-                    {user.active === false ? "Activate" : "Deactivate"}
-                  </button>
+                  <span className={`user-status-pill ${user.active === false ? "inactive" : "active"}`}>{user.active === false ? "Inactive" : "Active"}</span>
+                  <div className="admin-row-actions">
+                    <button className="ghost-btn xs" type="button" onClick={() => startEdit(user)}>Edit</button>
+                    <button className="ghost-btn xs" type="button" onClick={() => toggleActive(user)} disabled={user.username === "admin" || user.id === currentUser?.id}>
+                      {user.active === false ? "Activate" : "Deactivate"}
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
           </section>
         </div>
+        )}
+
+        {adminTab === "roles" && (
+          <section className="role-admin-panel">
+            <div className="panel-head thin">
+              <div>
+                <p className="eyebrow">Access</p>
+                <h2>Roles + Screens</h2>
+              </div>
+            </div>
+            <form className="role-admin-form" onSubmit={submitRole}>
+              <label className="field">
+                <span>Role Name</span>
+                <input value={roleForm.name} onChange={(event) => updateRoleForm("name", event.target.value)} placeholder="Example: Shipping" />
+              </label>
+              <label className="field">
+                <span>Description</span>
+                <input value={roleForm.description} onChange={(event) => updateRoleForm("description", event.target.value)} placeholder="What this role is allowed to do" />
+              </label>
+              <div className="role-screen-picker">
+                {roleScreenGroups.map((group) => (
+                  <section className="role-screen-group" key={group.key}>
+                    <header>
+                      <strong>{group.label}</strong>
+                      <span>{group.screens.filter((item) => roleForm.allowedResourceKeys.includes(item.key)).length} / {group.screens.length}</span>
+                    </header>
+                    <div>
+                      {group.screens.map((item) => (
+                        <label className="role-screen-check" key={item.key}>
+                          <input type="checkbox" checked={roleForm.allowedResourceKeys.includes(item.key)} onChange={() => toggleRoleScreen(item.key)} />
+                          <span>{item.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+              {roleError && <div className="auth-error">{roleError}</div>}
+              <div className="form-actions">
+                {editingRoleId && <button className="ghost-btn" type="button" onClick={cancelRoleEdit}>Cancel</button>}
+                <button className="primary-btn" type="submit"><ShieldCheck size={16} /> {editingRoleId ? "Save Role" : "Add Role"}</button>
+              </div>
+            </form>
+            <div className="role-list-rows">
+              {roleDefinitions.map((role) => {
+                const accessCount = role.allowedResourceKeys.includes("*") ? "All screens" : `${role.allowedResourceKeys.length} screens`;
+                return (
+                  <article className="role-list-row" key={role.id}>
+                    <div className="role-list-main">
+                      <span className="role-avatar"><ShieldCheck size={15} /></span>
+                      <div>
+                      <strong>{role.name}</strong>
+                      <span>{role.description || accessCount}</span>
+                      </div>
+                    </div>
+                    <span className="role-access-pill">{accessCount}</span>
+                    <div className="admin-row-actions">
+                      <button className="ghost-btn xs" type="button" onClick={() => startEditRole(role)} disabled={role.locked}>Edit</button>
+                      <button className="ghost-btn xs" type="button" onClick={() => deleteRole(role)} disabled={role.locked}>Delete</button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </section>
   );
 }
 
+function AccountMenu({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }) {
+  const [open, setOpen] = useState(false);
+
+  function openUsers() {
+    setOpen(false);
+    onOpenUserAdmin();
+  }
+
+  return (
+    <div className="account-menu" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
+      <button className="account-menu-trigger" type="button" onClick={() => setOpen((prev) => !prev)}>
+        <ShieldCheck size={16} />
+        <span>{currentUser.name}</span>
+        <em>{currentUser.role}</em>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="account-menu-panel">
+          <div>
+            <strong>{currentUser.name}</strong>
+            <span>{currentUser.username} / {currentUser.role}</span>
+          </div>
+          {canManageUsers && <button type="button" onClick={openUsers}><Users size={15} /> Manage Users</button>}
+          <button type="button" onClick={() => { setOpen(false); onSignOut(); }}><LogOut size={15} /> Sign Out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [users, setUsers] = useState(() => loadUsers());
+  const [roleDefinitions, setRoleDefinitions] = useState(() => loadRoles());
   const [currentUser, setCurrentUser] = useState(() => loadSessionUser());
   const [userPanelOpen, setUserPanelOpen] = useState(false);
 
@@ -411,12 +685,18 @@ export default function App() {
     }
   }
 
+  function handleSaveRoles(nextRoles) {
+    saveRoles(nextRoles);
+    setRoleDefinitions(loadRoles());
+  }
+
   if (!currentUser) return <SignInScreen onSignIn={handleSignIn} />;
 
   return (
     <>
       <SignedInApp
         currentUser={currentUser}
+        roleDefinitions={roleDefinitions}
         canManageUsers={userIsAdmin(currentUser)}
         onOpenUserAdmin={() => setUserPanelOpen(true)}
         onSignOut={handleSignOut}
@@ -425,7 +705,9 @@ export default function App() {
         <UserAdminPanel
           currentUser={currentUser}
           users={users}
+          roleDefinitions={roleDefinitions}
           onSaveUsers={handleSaveUsers}
+          onSaveRoles={handleSaveRoles}
           onClose={() => setUserPanelOpen(false)}
         />
       )}
@@ -433,9 +715,9 @@ export default function App() {
   );
 }
 
-function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }) {
+function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserAdmin, onSignOut }) {
   const queryClient = useQueryClient();
-  const [activeKey, setActiveKey] = useState("job-tickets");
+  const [activeKey, setActiveKey] = useState(() => defaultResourceKeyForRole(roleDefinitions, currentUser?.role));
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [formMode, setFormMode] = useState(null); // null | create | edit
@@ -449,13 +731,27 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
   const [localInventoryRows, setLocalInventoryRows] = useState([]);
   const [localUsageEvents, setLocalUsageEvents] = useState([]);
 
-  const resource = resourceMap[activeKey] ?? resources[0];
+  const allowedResources = useMemo(
+    () => visibleResourcesForRole(roleDefinitions, currentUser?.role),
+    [roleDefinitions, currentUser?.role]
+  );
+  const activeKeyAllowed = allowedResources.some((item) => item.key === activeKey);
+  const resource = activeKeyAllowed
+    ? resourceMap[activeKey]
+    : allowedResources[0] ?? resourceMap["quote-calculator"] ?? resources[0];
+  const singleResourceMode = allowedResources.length === 1 && !canManageUsers;
   const showingStaticView = Boolean(resource.staticView);
   const showingJobTicketOverlay = resource.key === "job-tickets" && selected;
   const isMaterialTypePage = materialTypePageKeys.has(resource.key);
   const isMaterialFormPage = materialFormPageKeys.has(resource.key);
   const showingMaterialFormOverlay = Boolean(formMode && isMaterialFormPage);
+  const showingScheduleFormOverlay = Boolean(formMode && resource.key === "production-schedule");
   const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
+
+  useEffect(() => {
+    if (activeKeyAllowed) return;
+    setActiveKey(defaultResourceKeyForRole(roleDefinitions, currentUser?.role));
+  }, [activeKeyAllowed, currentUser?.role, roleDefinitions]);
 
   const listQuery = useQuery({
     queryKey: collectionQueryKey,
@@ -850,7 +1146,18 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
     },
   });
 
+  const scheduleUpdateMutation = useMutation({
+    mutationFn: ({ id, payload }) => updateRecord("production-schedule", id, payload),
+    onSuccess: (saved) => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      setSelected(saved ?? null);
+    },
+  });
+
   function switchResource(key) {
+    if (!allowedResources.some((item) => item.key === key)) return;
     setActiveKey(key);
     setSelected(null);
     setFormMode(null);
@@ -889,23 +1196,31 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""}`}>
       <section className="mobile-shell-bar compact-card">
         <div>
           <p className="eyebrow">Tri-State Media</p>
           <strong>{resource.label}</strong>
           <span>{currentUser.name} / {currentUser.role}</span>
         </div>
-        <label>
-          <span>Page</span>
-          <select value={resource.key} onChange={(event) => switchResource(event.target.value)}>
-            {resources.map((item) => (
-              <option value={item.key} key={item.key}>
-                {groupLabelsByKey[item.group] ? `${groupLabelsByKey[item.group]} - ` : ""}{item.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <AccountMenu
+          currentUser={currentUser}
+          canManageUsers={canManageUsers}
+          onOpenUserAdmin={onOpenUserAdmin}
+          onSignOut={onSignOut}
+        />
+        {!singleResourceMode && (
+          <label>
+            <span>Page</span>
+            <select value={resource.key} onChange={(event) => switchResource(event.target.value)}>
+              {allowedResources.map((item) => (
+                <option value={item.key} key={item.key}>
+                  {groupLabelsByKey[item.group] ? `${groupLabelsByKey[item.group]} - ` : ""}{item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </section>
 
       <aside className="sidebar">
@@ -917,10 +1232,11 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
 
         {topLevelGroups.map((group) => {
           const childGroups = resourceGroups.filter((item) => item.parent === group.key);
-          const groupResources = resources.filter((item) => item.group === group.key);
-          const activeInGroup = groupResources.some((item) => item.key === resource.key) || childGroups.some((child) => resources.some((item) => item.group === child.key && item.key === resource.key));
+          const groupResources = allowedResources.filter((item) => item.group === group.key);
+          const visibleChildGroups = childGroups.filter((child) => allowedResources.some((item) => item.group === child.key));
+          const activeInGroup = groupResources.some((item) => item.key === resource.key) || visibleChildGroups.some((child) => allowedResources.some((item) => item.group === child.key && item.key === resource.key));
           const open = openGroups[group.key] || activeInGroup;
-          if (!groupResources.length && !childGroups.length) return null;
+          if (!groupResources.length && !visibleChildGroups.length) return null;
 
           return (
             <section className={`nav-group ${activeInGroup ? "has-active" : ""}`} key={group.key}>
@@ -942,8 +1258,8 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
                     );
                   })}
 
-                  {childGroups.map((child) => {
-                    const childResources = resources.filter((item) => item.group === child.key);
+                  {visibleChildGroups.map((child) => {
+                    const childResources = allowedResources.filter((item) => item.group === child.key);
                     const activeInChild = childResources.some((item) => item.key === resource.key);
                     const childOpen = openGroups[child.key] || activeInChild;
                     if (!childResources.length) return null;
@@ -990,14 +1306,18 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
             {!resource.disableCreate && !showingStaticView && (
               <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults({}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : "Add"}</button>
             )}
-            {canManageUsers && <button className="ghost-btn" type="button" onClick={onOpenUserAdmin}><Users size={15} /> Users</button>}
-            <span className="user-pill"><ShieldCheck size={14} /> {currentUser.name} <em>{currentUser.role}</em></span>
-            <button className="ghost-btn" type="button" onClick={onSignOut}><LogOut size={15} /> Sign Out</button>
+            <AccountMenu
+              currentUser={currentUser}
+              canManageUsers={canManageUsers}
+              onOpenUserAdmin={onOpenUserAdmin}
+              onSignOut={onSignOut}
+            />
           </div>
         </header>
 
         {saveMutation.error && <div className="error-box">{saveMutation.error.message}</div>}
         {finishedScheduleMutation.error && <div className="error-box">{finishedScheduleMutation.error.message}</div>}
+        {scheduleUpdateMutation.error && <div className="error-box">{scheduleUpdateMutation.error.message}</div>}
         {deleteMutation.error && <div className="error-box">{deleteMutation.error.message}</div>}
         {rollActionMutation.error && <div className="error-box">{rollActionMutation.error.message}</div>}
         {listQuery.error && <div className="error-box">Could not load {resource.label}: {listQuery.error.message}</div>}
@@ -1020,7 +1340,7 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
               </section>
             )}
 
-            {formMode && !showingMaterialFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
+            {formMode && !showingMaterialFormOverlay && !showingScheduleFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
               <RecordForm
                 resource={resource}
                 record={formMode === "edit" ? selected : null}
@@ -1032,7 +1352,7 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
               />
             )}
 
-            <section className={`content-grid ${resource.key === "job-tickets" ? "wide-list" : ""}`}>
+            <section className={`content-grid ${["job-tickets", "production-schedule"].includes(resource.key) ? "wide-list" : ""}`}>
               <div className="list-panel compact-card">
                 <div className="panel-head thin">
                   <div>
@@ -1041,7 +1361,18 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
                   </div>
                 </div>
 
-                {resource.viewMode === "materialInventory" ? (
+                {resource.viewMode === "productionSchedule" ? (
+                  <ProductionScheduleView
+                    rows={tableRows}
+                    selected={selected}
+                    presses={lookupQuery.data?.presses ?? []}
+                    currentUser={currentUser}
+                    onSelect={(row) => { setSelected(row); setFormMode(null); }}
+                    onClose={() => setSelected(null)}
+                    onEdit={() => setFormMode("edit")}
+                    onUpdate={(id, payload) => scheduleUpdateMutation.mutate({ id, payload })}
+                  />
+                ) : resource.viewMode === "materialInventory" ? (
                   <MaterialInventoryView
                     rows={visibleRows}
                     selectedId={selected?.id}
@@ -1087,7 +1418,7 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
                 )}
               </div>
 
-              {resource.key !== "job-tickets" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && !isMaterialTypePage && (
+              {resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && !isMaterialTypePage && (
                 <aside className="detail-panel compact-card">
                   {selected ? (
                   <>
@@ -1167,18 +1498,29 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
                   onDelete={() => deleteMutation.mutate()}
                   onSchedule={() => {
                     const ticket = selected;
+                    const today = new Date().toISOString().slice(0, 10);
                     setActiveKey("production-schedule");
                     setSelected(null);
                     setFormMode("create");
                     setSearch("");
                     setCreateDefaults({
                       job_ticket: ticket.id,
-                      customer: "",
+                      customer: ticket.customer || "",
                       customer_po: "",
-                      status: "scheduled",
+                      status: "unscheduled",
                       priority: "normal",
+                      order_date: today,
+                      scheduled_date: today,
+                      due_date: "",
+                      scheduled_by: currentUser.name,
+                      last_updated_by: currentUser.name,
                       quantity_to_ship: 0,
                       quantity_to_stock: 0,
+                      press: "",
+                      press_sequence: "",
+                      operator: "",
+                      actual_footage: "",
+                      footage_report: "",
                       notes: ticket.job_notes || ticket.finishing_notes || "",
                     });
                     setOpenGroups((prev) => ({ ...prev, production: true }));
@@ -1199,6 +1541,22 @@ function SignedInApp({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
                 lookups={lookupQuery.data ?? {}}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
+                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+              />
+            </div>
+          </section>
+        )}
+
+        {showingScheduleFormOverlay && (
+          <section className="schedule-form-overlay" role="dialog" aria-modal="true" aria-label={`${formMode === "edit" ? "Edit" : "Schedule"} ${resource.singular}`}>
+            <div className="schedule-form-window">
+              <RecordForm
+                resource={resource}
+                record={formMode === "edit" ? selected : null}
+                defaults={formMode === "create" ? createDefaults : {}}
+                lookups={lookupQuery.data ?? {}}
+                submitting={saveMutation.isPending}
+                onSubmit={(payload) => saveMutation.mutate({ ...payload, last_updated_by: currentUser.name })}
                 onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
               />
             </div>

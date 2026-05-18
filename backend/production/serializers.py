@@ -65,6 +65,10 @@ class JobTicketSerializer(serializers.ModelSerializer):
 class ProductionScheduleSerializer(serializers.ModelSerializer):
     job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
     job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
+    job_product_code = serializers.CharField(source="job_ticket.product_code", read_only=True)
+    job_label_width_inches = serializers.CharField(source="job_ticket.label_width_inches", read_only=True)
+    job_label_length_inches = serializers.CharField(source="job_ticket.label_length_inches", read_only=True)
+    job_repeat_inches = serializers.CharField(source="job_ticket.repeat_inches", read_only=True)
     customer_name = serializers.SerializerMethodField()
     job_material_spec_name = serializers.SerializerMethodField()
     job_material_spec_code = serializers.SerializerMethodField()
@@ -73,6 +77,7 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     box_item_number = serializers.CharField(source="job_ticket.box.item_number", read_only=True)
     material_inventory_name = serializers.CharField(source="material_inventory.name", read_only=True)
     material_inventory_serial = serializers.CharField(source="material_inventory.serial_number", read_only=True)
+    press_name = serializers.CharField(source="press.name", read_only=True)
 
     def get_customer_name(self, obj):
         if obj.customer:

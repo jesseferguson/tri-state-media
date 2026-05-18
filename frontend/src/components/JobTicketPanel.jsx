@@ -201,7 +201,7 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
           </div>
 
           <div className="job-info-list compact">
-            <InfoRow label="Customer Item #" value={ticket.product_code || ticket.customer_display} />
+            <InfoRow label="TSM ID" value={ticket.product_code || ticket.customer_display} />
             <InfoRow label="Customer" value={ticket.customer_name} />
             <InfoRow label="Material" value={materialTitle(ticket)} />
           </div>
@@ -326,7 +326,6 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
           <div className="job-info-list">
             <InfoRow label="Ticket #" value={ticket.ticket_number} />
             <InfoRow label="Job Name" value={ticket.job_name} />
-            <InfoRow label="Requested Qty" value={ticket.requested_quantity} />
             <InfoRow label="Labels / Unit" value={ticket.labels_per_unit} />
             <InfoRow label="Units / Carton" value={ticket.units_per_carton} />
             <InfoRow label="Core Size" value={formatInches(ticket.core_size_inches)} />

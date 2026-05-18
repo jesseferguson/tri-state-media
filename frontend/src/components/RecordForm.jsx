@@ -303,7 +303,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
   }
 
   return (
-    <section className="form-panel compact-card">
+    <section className={`form-panel compact-card ${resource.key}-form-panel`}>
       <div className="panel-head">
         <div>
           <p className="eyebrow">{title}</p>
@@ -312,7 +312,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
         <button className="ghost-btn" type="button" onClick={onCancel}>Close</button>
       </div>
 
-      <form className="record-form" onSubmit={(event) => { event.preventDefault(); onSubmit(cleanPayload()); }}>
+      <form className={`record-form ${resource.key}-record-form`} onSubmit={(event) => { event.preventDefault(); onSubmit(cleanPayload()); }}>
         {visibleFields.map((field) => {
           const lookupField = { ...field, lookupFilters: getFieldLookupFilters(field, form) };
           const value = form[field.name];

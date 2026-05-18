@@ -65,10 +65,14 @@ export function calculateMaxAcross({ labelWidth, gap, materialWidth, sideTrim })
   return Math.max(0, Math.floor((available + EPSILON) / pitch));
 }
 
+export function calculateAutoRepeat({ labelLength, gap }) {
+  return Math.max(0, toQuoteNumber(labelLength) + Math.max(0, toQuoteNumber(gap)));
+}
+
 export function calculateQuotePricing(input) {
   const labelWidth = toQuoteNumber(input.labelWidth);
   const labelLength = toQuoteNumber(input.labelLength);
-  const repeat = toQuoteNumber(input.repeat, labelLength);
+  const repeat = calculateAutoRepeat(input);
   const quantity = toQuoteNumber(input.quantity);
   const materialWidth = toQuoteNumber(input.materialWidth);
   const gap = Math.max(0, toQuoteNumber(input.gap));

@@ -1,7 +1,40 @@
 export const userStorageKey = "tsm_company_users_v1";
 export const sessionStorageKey = "tsm_active_user_v1";
+export const roleStorageKey = "tsm_company_roles_v1";
 
-export const userRoleOptions = ["Admin", "Sales", "CSR", "Production", "Manager"];
+export const defaultRoleDefinitions = [
+  {
+    id: "role-admin",
+    name: "Admin",
+    description: "Full system access",
+    allowedResourceKeys: ["*"],
+    locked: true,
+  },
+  {
+    id: "role-sales",
+    name: "Sales",
+    description: "Quote calculator only",
+    allowedResourceKeys: ["quote-calculator"],
+  },
+  {
+    id: "role-csr",
+    name: "CSR",
+    description: "Customer service quoting, tickets, and scheduling",
+    allowedResourceKeys: ["quote-calculator", "customers", "job-tickets", "production-schedule", "customer-orders"],
+  },
+  {
+    id: "role-production",
+    name: "Production",
+    description: "Production queue, job details, and press workflow",
+    allowedResourceKeys: ["production-schedule", "job-tickets", "customer-orders", "presses"],
+  },
+  {
+    id: "role-manager",
+    name: "Manager",
+    description: "Management access",
+    allowedResourceKeys: ["*"],
+  },
+];
 
 const defaultAdminUser = {
   id: "user-admin",
@@ -21,6 +54,10 @@ export function makeUserId() {
   return `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+export function makeRoleId() {
+  return `role-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export function normalizeUser(user = {}) {
   return {
     id: user.id || makeUserId(),
@@ -30,6 +67,23 @@ export function normalizeUser(user = {}) {
     role: user.role || "CSR",
     active: user.active !== false,
     createdAt: user.createdAt || new Date().toISOString(),
+  };
+}
+
+export function normalizeRole(role = {}) {
+  const name = String(role.name || "").trim();
+  const defaultRole = defaultRoleDefinitions.find((item) => item.name.toLowerCase() === name.toLowerCase());
+  const allowedResourceKeys = Array.isArray(role.allowedResourceKeys)
+    ? role.allowedResourceKeys.map(String).filter(Boolean)
+    : defaultRole?.allowedResourceKeys ?? [];
+
+  return {
+    id: role.id || defaultRole?.id || makeRoleId(),
+    name: name || "New Role",
+    description: String(role.description || defaultRole?.description || "").trim(),
+    allowedResourceKeys,
+    locked: Boolean(role.locked || defaultRole?.locked),
+    createdAt: role.createdAt || new Date().toISOString(),
   };
 }
 
@@ -72,9 +126,50 @@ export function loadUsers() {
   return users;
 }
 
+export function loadRoles() {
+  if (!canUseStorage()) return defaultRoleDefinitions.map(normalizeRole);
+
+  let roles = [];
+  try {
+    const payload = JSON.parse(window.localStorage.getItem(roleStorageKey) || "[]");
+    roles = Array.isArray(payload) ? payload.map(normalizeRole) : [];
+  } catch {
+    roles = [];
+  }
+
+  defaultRoleDefinitions.forEach((defaultRole) => {
+    const index = roles.findIndex((role) => role.name.toLowerCase() === defaultRole.name.toLowerCase());
+    if (index === -1) {
+      roles.push(normalizeRole(defaultRole));
+    } else {
+      roles[index] = {
+        ...normalizeRole({ ...defaultRole, ...roles[index] }),
+        id: defaultRole.locked ? defaultRole.id : roles[index].id,
+        name: defaultRole.locked ? defaultRole.name : roles[index].name,
+        locked: Boolean(defaultRole.locked || roles[index].locked),
+      };
+    }
+  });
+
+  saveRoles(roles);
+  return roles;
+}
+
 export function saveUsers(users) {
   if (!canUseStorage()) return;
   window.localStorage.setItem(userStorageKey, JSON.stringify(users.map(normalizeUser)));
+}
+
+export function saveRoles(roles) {
+  if (!canUseStorage()) return;
+  window.localStorage.setItem(roleStorageKey, JSON.stringify(roles.map(normalizeRole)));
+}
+
+export function roleHasResourceAccess(roleDefinitions, roleName, resourceKey) {
+  if (String(roleName || "").toLowerCase() === "admin") return true;
+  const role = (roleDefinitions ?? []).find((item) => item.name.toLowerCase() === String(roleName || "").toLowerCase());
+  if (!role) return false;
+  return role.allowedResourceKeys.includes("*") || role.allowedResourceKeys.includes(resourceKey);
 }
 
 export function loadSessionUser(users = loadUsers()) {

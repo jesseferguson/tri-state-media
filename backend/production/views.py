@@ -95,6 +95,7 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
             "job_ticket__recipe",
             "job_ticket__box",
             "material_inventory",
+            "press",
         )
         .all()
         .order_by("scheduled_date", "priority", "job_ticket__ticket_number")
@@ -112,7 +113,12 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
         "priority",
         "material_inventory__name",
         "material_inventory__serial_number",
+        "press__name",
+        "operator",
+        "scheduled_by",
+        "last_updated_by",
         "notes",
+        "footage_report",
     ]
     ordering_fields = [
         "scheduled_date",
@@ -123,6 +129,9 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
         "quantity_to_stock",
         "material_width_inches",
         "order_date",
+        "press__name",
+        "press_sequence",
+        "operator",
     ]
 
 

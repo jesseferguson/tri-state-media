@@ -2,7 +2,7 @@ from django.db import models
 from django.utils import timezone
 
 from materials.models import MaterialSpec, MaterialUsage, RawMaterialInventory
-from tooling.models import ToolingLocation, ToolingRecipe, ToolingRecipeOption
+from tooling.models import Press, ToolingLocation, ToolingRecipe, ToolingRecipeOption
 
 
 class Customer(models.Model):
@@ -202,6 +202,8 @@ class ProductionSchedule(models.Model):
     customer_po = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="unscheduled")
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="normal")
+    scheduled_by = models.CharField(max_length=120, blank=True)
+    last_updated_by = models.CharField(max_length=120, blank=True)
 
     quantity_to_ship = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     quantity_to_stock = models.DecimalField(max_digits=12, decimal_places=3, default=0)
@@ -220,6 +222,17 @@ class ProductionSchedule(models.Model):
     )
 
     material_width_inches = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    press = models.ForeignKey(
+        Press,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="production_schedule",
+    )
+    press_sequence = models.PositiveIntegerField(null=True, blank=True)
+    operator = models.CharField(max_length=100, blank=True)
+    actual_footage = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    footage_report = models.TextField(blank=True)
     notes = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -269,6 +282,13 @@ class CustomerOrderManager(models.Manager):
                 "due_date": schedule.due_date,
                 "priority": schedule.priority,
                 "status": schedule.status,
+                "scheduled_by": schedule.scheduled_by,
+                "last_updated_by": schedule.last_updated_by,
+                "press_name": schedule.press.name if schedule.press else "",
+                "press_sequence": schedule.press_sequence,
+                "operator": schedule.operator,
+                "actual_footage": schedule.actual_footage,
+                "footage_report": schedule.footage_report,
                 "operator_note": schedule.notes,
             },
         )
@@ -287,19 +307,35 @@ class CustomerOrderManager(models.Manager):
             order.due_date = schedule.due_date
             order.priority = schedule.priority
             order.status = schedule.status
+            order.scheduled_by = schedule.scheduled_by
+            order.last_updated_by = schedule.last_updated_by
+            order.press_name = schedule.press.name if schedule.press else ""
+            order.press_sequence = schedule.press_sequence
+            order.operator = schedule.operator
+            order.actual_footage = schedule.actual_footage
+            order.footage_report = schedule.footage_report
             order.operator_note = schedule.notes
             order.save()
 
+        actor = schedule.last_updated_by or schedule.scheduled_by or "system"
+        press_label = f" / Press: {schedule.press.name}" if schedule.press else ""
+        operator_label = f" / Operator: {schedule.operator}" if schedule.operator else ""
         CustomerOrderEvent.objects.create(
             order=order,
             event_type="scheduled" if created or order_created else "schedule_updated",
-            summary="Job was scheduled." if created or order_created else "Schedule details were updated.",
+            summary=(
+                f"Job scheduled with status {schedule.get_status_display()}{press_label}{operator_label}."
+                if created or order_created
+                else f"Schedule updated to {schedule.get_status_display()}{press_label}{operator_label}."
+            ),
+            performed_by=actor,
         )
         return order
 
 
 class CustomerOrder(models.Model):
     STATUS_CHOICES = [
+        ("unscheduled", "Unscheduled"),
         ("scheduled", "Scheduled"),
         ("ready", "Ready"),
         ("running", "Running"),
@@ -341,6 +377,13 @@ class CustomerOrder(models.Model):
     due_date = models.DateField(null=True, blank=True)
     priority = models.CharField(max_length=20, choices=ProductionSchedule.PRIORITY_CHOICES, default="normal")
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="scheduled")
+    scheduled_by = models.CharField(max_length=120, blank=True)
+    last_updated_by = models.CharField(max_length=120, blank=True)
+    press_name = models.CharField(max_length=150, blank=True)
+    press_sequence = models.PositiveIntegerField(null=True, blank=True)
+    operator = models.CharField(max_length=100, blank=True)
+    actual_footage = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    footage_report = models.TextField(blank=True)
     operator_note = models.TextField(blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 

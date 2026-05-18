@@ -10,6 +10,7 @@ import {
   finishedMaterialAdderFields,
   quoteExtraCostFields,
   rawComponentTypes,
+  toQuoteNumber,
 } from "../lib/quotePricing";
 
 const materialWidthPresets = ["8", "8.75", "9", "12.75", "16.875"];
@@ -25,7 +26,7 @@ const initialForm = {
   selectedMaterialId: "manual",
   labelWidth: "4",
   labelLength: "2",
-  repeat: "6.5",
+  repeat: "2.125",
   quantity: "10000",
   materialWidth: "8.75",
   gap: "0.125",
@@ -146,6 +147,54 @@ function jobTicketLabel(ticket) {
   ].filter(Boolean).join(" / ");
 }
 
+function dimensionInputValue(value) {
+  const numberValue = toQuoteNumber(value, NaN);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return "";
+  return String(Number(numberValue.toFixed(4))).replace(/\.0+$/, "");
+}
+
+function jobTicketQuoteDimensions(ticket) {
+  if (!ticket) {
+    return {
+      width: "",
+      length: "",
+      gap: "",
+      complete: false,
+      hasAny: false,
+      message: "",
+    };
+  }
+
+  const widthNumber = toQuoteNumber(ticket.label_width_inches, NaN);
+  const lengthNumber = toQuoteNumber(ticket.label_length_inches, NaN);
+  const repeatNumber = toQuoteNumber(ticket.repeat_inches, NaN);
+  const hasWidth = Number.isFinite(widthNumber) && widthNumber > 0;
+  const hasLength = Number.isFinite(lengthNumber) && lengthNumber > 0;
+  const hasRepeat = Number.isFinite(repeatNumber) && repeatNumber > 0;
+  const canDeriveGap = hasLength && hasRepeat;
+  const gapNumber = canDeriveGap ? Math.max(0, repeatNumber - lengthNumber) : NaN;
+  const missing = [
+    !hasWidth ? "label width" : "",
+    !hasLength ? "label length" : "",
+    !canDeriveGap ? "gap/repeat" : "",
+  ].filter(Boolean);
+  const complete = hasWidth && hasLength && canDeriveGap;
+  const hasAny = hasWidth || hasLength || hasRepeat;
+
+  return {
+    width: hasWidth ? dimensionInputValue(widthNumber) : "",
+    length: hasLength ? dimensionInputValue(lengthNumber) : "",
+    gap: canDeriveGap ? String(Number(gapNumber.toFixed(4))).replace(/\.0+$/, "") : "",
+    complete,
+    hasAny,
+    message: complete
+      ? ""
+      : hasAny
+        ? `This job ticket is missing ${missing.join(", ")}. Enter or override the values below.`
+        : "This job ticket does not contain any label size data. Enter the values below.",
+  };
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -165,14 +214,15 @@ function quoteDescription(quote) {
 }
 
 function quoteCustomerDetailRows(quote) {
-  return [
+  const rows = [
     ["Label Size", `${quote.form.labelWidth}" x ${quote.form.labelLength}"`],
     ["Finished Material", quotePublicMaterialName(quote)],
     ["Quantity", Number(quote.form.quantity || 0).toLocaleString()],
-    ["Product Code", quote.productCode || "--"],
     ["Quote Number", quote.quoteNumber],
     ["Quote Date", quoteDateLabel(quote.createdAt)],
   ];
+  if (quote.productCode) rows.splice(3, 0, ["TSM ID", quote.productCode]);
+  return rows;
 }
 
 function quoteCustomerPriceRows(quote) {
@@ -227,7 +277,7 @@ function quoteInternalSections(quote) {
       rows: [
         ["Customer", quote.customerName || "--"],
         ["Job Name", quote.jobName || "--"],
-        ["Product Code", quote.productCode || "--"],
+        ...(quote.productCode ? [["TSM ID", quote.productCode]] : []),
         ["Job Ticket", quote.jobTicketNumber || "Manual quote"],
         ["Contact", quote.contactName || quote.contactEmail || "--"],
         ["Prepared By", `${quotePreparedByName(quote)}${quotePreparedByRole(quote) ? ` / ${quotePreparedByRole(quote)}` : ""}`],
@@ -250,7 +300,7 @@ function quoteInternalSections(quote) {
       title: "MSI Calculation",
       rows: [
         ["Label Size", `${quote.form?.labelWidth || 0}" x ${quote.form?.labelLength || 0}"`],
-        ["Repeat", number(Number(quote.form?.repeat || 0), '"')],
+        ["Auto Repeat", number(Number(quote.pricing?.repeat || quote.form?.repeat || 0), '"')],
         ["Quantity", Number(quote.form?.quantity || 0).toLocaleString()],
         ["Finished Label MSI", number(Number(quote.pricing?.finishedMsi || 0))],
         ["Base Material MSI", number(Number(quote.pricing?.baseMaterialMsi || 0))],
@@ -415,12 +465,6 @@ function FinishedMaterialForm({ form, rawMaterials, update, submit, editing = fa
           <option value="purchased">Purchased Finished</option>
         </select>
       </Field>
-      <Field label="Width" suffix="in">
-        <input type="number" step="0.0001" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} />
-      </Field>
-      <Field label="On Hand" suffix="MSI">
-        <input type="number" step="0.001" value={form.inventoryMsi} onChange={(event) => update("inventoryMsi", event.target.value)} />
-      </Field>
 
       {form.sourceType === "purchased" ? (
         <Field label="Purchased Cost" suffix="/ MSI">
@@ -581,7 +625,7 @@ function InternalQuoteBreakdown({ quote }) {
       <section className="quote-internal-formula">
         <span>Material formula</span>
         <code>
-          ({quote.form?.repeat || 0} repeat x {Number(quote.form?.quantity || 0).toLocaleString()} labels x {quote.form?.materialWidth || 0}" web) / (1000 x {quote.pricing?.numberAcross || 0} across) x {number(Number(quote.pricing?.wasteMultiplier || 1))} waste x {unitMoney(msiUnitCost)}
+          ({quote.pricing?.repeat || quote.form?.repeat || 0} repeat x {Number(quote.form?.quantity || 0).toLocaleString()} labels x {quote.form?.materialWidth || 0}" web) / (1000 x {quote.pricing?.numberAcross || 0} across) x {number(Number(quote.pricing?.wasteMultiplier || 1))} waste x {unitMoney(msiUnitCost)}
         </code>
       </section>
 
@@ -631,6 +675,7 @@ export default function QuotePricingTool({ currentUser }) {
 
   const selectedMaterial = materialOptions.find((material) => String(material.id) === String(form.selectedMaterialId));
   const selectedJobTicket = jobTickets.find((ticket) => String(ticket.id) === String(quoteInfo.jobTicketId));
+  const selectedJobTicketDimensions = useMemo(() => jobTicketQuoteDimensions(selectedJobTicket), [selectedJobTicket]);
   const selectedQuote = savedQuotes.find((quote) => quote.id === selectedQuoteId) ?? savedQuotes[0] ?? null;
   const filteredSavedQuotes = useMemo(() => {
     const search = quoteSearch.trim().toLowerCase();
@@ -657,6 +702,7 @@ export default function QuotePricingTool({ currentUser }) {
   const candidates = useMemo(() => buildLayoutCandidates(form), [form]);
   const fitTone = pricing.fits ? "ready" : "bad";
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
+  const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -701,6 +747,17 @@ export default function QuotePricingTool({ currentUser }) {
     }));
   }, [selectedMaterial?.id, selectedMaterial?.calculatedMsiCost, selectedMaterial?.width_inches]);
 
+  useEffect(() => {
+    if (quoteInfo.linkMode !== "ticket" || !selectedJobTicket) return;
+    const dimensions = jobTicketQuoteDimensions(selectedJobTicket);
+    setForm((prev) => ({
+      ...prev,
+      labelWidth: dimensions.width,
+      labelLength: dimensions.length,
+      gap: dimensions.gap,
+    }));
+  }, [quoteInfo.linkMode, selectedJobTicket?.id]);
+
   function updateField(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
@@ -727,7 +784,7 @@ export default function QuotePricingTool({ currentUser }) {
     const ticket = quoteInfo.linkMode === "ticket" ? selectedJobTicket : null;
     const customerName = ticket?.customer_display || ticket?.customer_name || quoteInfo.customerName;
     const jobName = ticket?.job_name || ticket?.product_name || quoteInfo.jobName;
-    const productCode = ticket?.product_code || quoteInfo.productCode;
+    const productCode = ticket?.product_code || "";
     const preparedBy = currentUser?.name || quoteInfo.preparedBy;
     const record = {
       id: makeId("quote"),
@@ -749,7 +806,7 @@ export default function QuotePricingTool({ currentUser }) {
       materialName: selectedMaterial?.name || "Manual MSI Cost",
       materialSource: selectedMaterial?.sourceType || "manual",
       materialComponents: selectedMaterial?.componentLabel || "",
-      form: { ...form },
+      form: { ...form, repeat: String(pricing.repeat) },
       pricing: { ...pricing },
     };
     return record;
@@ -1061,25 +1118,6 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
 
       {activeTab === "pricing" && (
         <>
-          <div className="quote-summary-strip">
-            <div>
-              <span>Sell Price</span>
-              <strong>{money(pricing.sellPrice)}</strong>
-            </div>
-            <div>
-              <span>Material Cost</span>
-              <strong>{money(pricing.materialCost)}</strong>
-            </div>
-            <div>
-              <span>Price / M</span>
-              <strong>{money(pricing.pricePerThousand)}</strong>
-            </div>
-            <div>
-              <span>Material</span>
-              <strong>{selectedMaterial ? selectedMaterial.name : "Manual MSI"}</strong>
-            </div>
-          </div>
-
           <div className="quote-layout">
             <form className="quote-panel quote-input-panel" onSubmit={(event) => event.preventDefault()}>
               <section className="quote-section quote-primary-section">
@@ -1092,31 +1130,25 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <button className={quoteInfo.linkMode === "manual" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "manual")}>Manual Entry</button>
                 </div>
                 {quoteInfo.linkMode === "ticket" ? (
-                  <div className="quote-simple-grid">
+                  <div className="quote-simple-grid quote-info-grid quote-ticket-grid">
                     <Field label="Job Ticket">
                       <select value={quoteInfo.jobTicketId} onChange={(event) => updateQuoteInfo("jobTicketId", event.target.value)}>
                         <option value="">{jobTicketLoadState === "loading" ? "Loading job tickets..." : "Select job ticket..."}</option>
                         {jobTickets.map((ticket) => <option value={ticket.id} key={ticket.id}>{jobTicketLabel(ticket)}</option>)}
                       </select>
                     </Field>
-                    <Field label="Prepared By">
-                      <input value={currentUser?.name || quoteInfo.preparedBy} readOnly={Boolean(currentUser)} onChange={(event) => updateQuoteInfo("preparedBy", event.target.value)} />
-                    </Field>
+                    {selectedJobTicket && selectedJobTicketDimensions.message && (
+                      <p className="quote-ticket-warning">{selectedJobTicketDimensions.message}</p>
+                    )}
                     {jobTicketLoadState === "error" && <p className="quote-help-text">Job tickets could not load. Use manual entry for this quote.</p>}
                   </div>
                 ) : (
-                  <div className="quote-simple-grid">
+                  <div className="quote-simple-grid quote-info-grid">
                     <Field label="Customer">
                       <input value={quoteInfo.customerName} onChange={(event) => updateQuoteInfo("customerName", event.target.value)} />
                     </Field>
                     <Field label="Job Name">
                       <input value={quoteInfo.jobName} onChange={(event) => updateQuoteInfo("jobName", event.target.value)} />
-                    </Field>
-                    <Field label="Product Code">
-                      <input value={quoteInfo.productCode} onChange={(event) => updateQuoteInfo("productCode", event.target.value)} />
-                    </Field>
-                    <Field label="Prepared By">
-                      <input value={currentUser?.name || quoteInfo.preparedBy} readOnly={Boolean(currentUser)} onChange={(event) => updateQuoteInfo("preparedBy", event.target.value)} />
                     </Field>
                   </div>
                 )}
@@ -1127,7 +1159,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <CircleDollarSign size={16} />
                   <strong>Quote Details</strong>
                 </div>
-                <div className="quote-simple-grid">
+                <div className="quote-top-grid">
                   <Field label="Finished Material">
                     <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>
                       <option value="manual">Manual MSI Cost</option>
@@ -1139,26 +1171,31 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <Field label="Quantity" suffix="labels">
                     <input type="number" step="1" value={form.quantity} onChange={(event) => updateField("quantity", event.target.value)} />
                   </Field>
+                  <Field label={form.pricingMode === "markup" ? "Markup" : "Margin"} suffix="%">
+                    <input type="number" step="0.01" value={form.pricingPercent} onChange={(event) => updateField("pricingPercent", event.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="quote-simple-grid">
                   <Field label="Label Width" suffix="in">
                     <input type="number" step="0.0001" value={form.labelWidth} onChange={(event) => updateField("labelWidth", event.target.value)} />
                   </Field>
                   <Field label="Label Length" suffix="in">
                     <input type="number" step="0.0001" value={form.labelLength} onChange={(event) => updateField("labelLength", event.target.value)} />
                   </Field>
-                  <Field label="Repeat" suffix="in">
-                    <input type="number" step="0.0001" value={form.repeat} onChange={(event) => updateField("repeat", event.target.value)} />
+                  <Field label="Gap" suffix="in">
+                    <input type="number" step="0.0001" value={form.gap} onChange={(event) => updateField("gap", event.target.value)} />
                   </Field>
-                  <Field label="Material Width" suffix="in">
-                    <input type="number" step="0.0001" value={form.materialWidth} onChange={(event) => updateField("materialWidth", event.target.value)} />
-                  </Field>
+                  {manualMaterialWidth && (
+                    <Field label="Material Width" suffix="in">
+                      <input type="number" step="0.0001" value={form.materialWidth} onChange={(event) => updateField("materialWidth", event.target.value)} />
+                    </Field>
+                  )}
                   <Field label="MSI Cost" suffix="/ MSI">
                     <input type="number" step="0.0001" value={form.msiCost} readOnly={form.selectedMaterialId !== "manual"} onChange={(event) => updateField("msiCost", event.target.value)} />
                   </Field>
                   <Field label="Waste" suffix="%">
                     <input type="number" step="0.01" value={form.wastePercent} onChange={(event) => updateField("wastePercent", event.target.value)} />
-                  </Field>
-                  <Field label={form.pricingMode === "markup" ? "Markup" : "Margin"} suffix="%">
-                    <input type="number" step="0.01" value={form.pricingPercent} onChange={(event) => updateField("pricingPercent", event.target.value)} />
                   </Field>
                 </div>
 
@@ -1172,17 +1209,20 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                     Manual
                   </button>
                 </div>
+
+                <div className="quote-auto-repeat">
+                  <Ruler size={15} />
+                  <span>Repeat is calculated automatically from label length plus gap.</span>
+                  <strong>{number(pricing.repeat, '"')}</strong>
+                </div>
               </section>
 
               <details className="quote-advanced-panel">
                 <summary>
                   <span>Layout Options</span>
-                  <em>Gap, side trim, lanes, margin mode</em>
+                  <em>Side trim, lanes, margin mode</em>
                 </summary>
                 <div className="quote-field-grid">
-                  <Field label="Gap" suffix="in">
-                    <input type="number" step="0.0001" value={form.gap} onChange={(event) => updateField("gap", event.target.value)} />
-                  </Field>
                   <Field label="Side Trim" suffix="in">
                     <input type="number" step="0.0001" value={form.sideTrim} onChange={(event) => updateField("sideTrim", event.target.value)} />
                   </Field>
@@ -1243,13 +1283,16 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
               </div>
 
               <div className="quote-metric-grid">
+                <Metric label="Material Cost" value={money(pricing.materialCost)} />
                 <Metric label="Total Cost" value={money(pricing.totalCost)} />
                 <Metric label="Profit" value={money(pricing.profit)} tone="good" />
                 <Metric label="Price / Label" value={unitMoney(pricing.pricePerLabel)} />
-                <Metric label="Unused Width" value={pricing.widthDelta >= 0 ? number(pricing.widthDelta, '"') : `Over ${number(Math.abs(pricing.widthDelta), '"')}`} tone={pricing.widthDelta >= 0 ? "" : "bad"} />
               </div>
 
               <div className="quote-breakdown">
+                <BreakdownRow label="Auto Repeat" value={number(pricing.repeat, '"')} />
+                <BreakdownRow label="Number Across" value={pricing.numberAcross || "--"} />
+                <BreakdownRow label="Unused Width" value={pricing.widthDelta >= 0 ? number(pricing.widthDelta, '"') : `Over ${number(Math.abs(pricing.widthDelta), '"')}`} />
                 <BreakdownRow label="Base Material MSI" value={number(pricing.baseMaterialMsi)} />
                 <BreakdownRow label="Waste MSI" value={number(pricing.wasteMsi)} />
                 <BreakdownRow label="MSI With Waste" value={number(pricing.materialMsiWithWaste)} />
