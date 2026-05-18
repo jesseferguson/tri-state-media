@@ -3983,6 +3983,13 @@ p, .muted { color: #7a7a7a; }
   font-weight: 850;
 }
 
+.quote-preference-note {
+  color: #98a2b3;
+  font-size: .66rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .quote-help-text {
   align-self: center;
   margin: 0;
@@ -4473,13 +4480,13 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-person-tabs button {
-  min-width: 112px;
+  min-width: 190px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
   row-gap: 1px;
-  padding: 8px 9px;
+  padding: 8px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
@@ -4498,6 +4505,30 @@ p, .muted { color: #7a7a7a; }
   box-shadow: 0 1px 4px rgba(15, 23, 42, .08);
 }
 
+.quote-person-tabs i {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.quote-person-tabs button.active i {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.quote-person-tabs button > div {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
 .quote-person-tabs strong,
 .quote-person-tabs em {
   min-width: 0;
@@ -4511,18 +4542,18 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-person-tabs span {
-  min-width: 24px;
-  padding: 2px 6px;
+  grid-column: 2;
+  justify-self: start;
+  min-width: 0;
+  padding: 2px 0 0;
   border-radius: 999px;
-  background: #eef2f7;
+  background: transparent;
   color: #667085;
   font-size: .68rem;
   font-weight: 900;
-  text-align: center;
 }
 
 .quote-person-tabs em {
-  grid-column: 1 / -1;
   color: #667085;
   font-size: .66rem;
   font-style: normal;

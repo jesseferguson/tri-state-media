@@ -18,6 +18,7 @@ import {
 const materialWidthPresets = ["8.75", "9", "12.75", "16.875", "18.5", "21.75"];
 const materialLibraryStorageKey = "tsm_quote_material_library_v1";
 const savedQuotesStorageKey = "tsm_quote_records_v1";
+const quotePreferencesStorageKey = "tsm_quote_preferences_v1";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const unitCurrencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 });
@@ -130,6 +131,32 @@ function loadSavedQuotes() {
   }
 }
 
+function quotePreferenceKey(user) {
+  return user?.id || user?.username || user?.name || "default";
+}
+
+function loadQuotePreference(user) {
+  if (typeof window === "undefined") return {};
+  try {
+    const payload = JSON.parse(window.localStorage.getItem(quotePreferencesStorageKey) || "{}");
+    return payload[quotePreferenceKey(user)] || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveQuotePreference(user, patch) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload = JSON.parse(window.localStorage.getItem(quotePreferencesStorageKey) || "{}");
+    const key = quotePreferenceKey(user);
+    payload[key] = { ...(payload[key] || {}), ...patch };
+    window.localStorage.setItem(quotePreferencesStorageKey, JSON.stringify(payload));
+  } catch {
+    // Preferences are helpful, not required.
+  }
+}
+
 function quoteNumber() {
   const stamp = new Date();
   const y = stamp.getFullYear();
@@ -224,24 +251,20 @@ function quoteRecordPayload(quote) {
 function jobTicketQuoteQuantity(ticket) {
   if (!ticket) return { quantity: "", complete: false, message: "" };
   const labelsPerCarton = toQuoteNumber(ticket.labels_per_carton, NaN);
-  const labelsPerUnit = toQuoteNumber(ticket.labels_per_unit, NaN);
-  const unitsPerCarton = toQuoteNumber(ticket.units_per_carton, NaN);
   const hasLabelsPerCarton = Number.isFinite(labelsPerCarton) && labelsPerCarton > 0;
-  const canCalculateCarton = Number.isFinite(labelsPerUnit) && labelsPerUnit > 0 && Number.isFinite(unitsPerCarton) && unitsPerCarton > 0;
 
-  if (!hasLabelsPerCarton && !canCalculateCarton) {
+  if (!hasLabelsPerCarton) {
     return {
       quantity: "",
       complete: false,
-      message: "This job ticket does not contain labels per carton. Enter the quote quantity below.",
+      message: "This job ticket does not contain number of labels in box. Enter the quote quantity below.",
     };
   }
 
-  const cartonQuantity = hasLabelsPerCarton ? labelsPerCarton : labelsPerUnit * unitsPerCarton;
   return {
-    quantity: quantityInputValue(cartonQuantity),
+    quantity: quantityInputValue(labelsPerCarton),
     complete: true,
-    message: hasLabelsPerCarton ? "" : "Quantity was calculated from labels per roll x rolls per carton. Override it if the carton setup is different.",
+    message: "",
   };
 }
 
@@ -416,15 +439,33 @@ function pricingActualMarkup(pricing) {
   return cost > 0 ? (profit / cost) * 100 : 0;
 }
 
-function profitHealth(pricing, material) {
+function markupToMargin(markupPercent) {
+  const markup = Math.max(0, toQuoteNumber(markupPercent));
+  return markup > 0 ? (markup / (100 + markup)) * 100 : 0;
+}
+
+function profitHealth(pricing, material, displayMode = "margin") {
   const currentMarkup = pricingActualMarkup(pricing);
+  const currentMargin = pricingActualMargin(pricing);
   const baseMarkup = Math.max(0, toQuoteNumber(material?.baseMarkupPercent, 0));
   const targetMarkup = Math.max(baseMarkup, toQuoteNumber(material?.targetMarkupPercent ?? material?.targetMarginPercent, baseMarkup));
-  if (!material || targetMarkup <= 0) return { className: "neutral", currentMarkup, baseMarkup, targetMarkup, progress: 0 };
-  if (currentMarkup <= baseMarkup) return { className: "bad", currentMarkup, baseMarkup, targetMarkup, progress: 0 };
-  if (currentMarkup >= targetMarkup) return { className: "strong", currentMarkup, baseMarkup, targetMarkup, progress: 1 };
+  const baseMargin = markupToMargin(baseMarkup);
+  const targetMargin = markupToMargin(targetMarkup);
+  const displayIsMarkup = displayMode === "markup";
+  const displayCurrent = displayIsMarkup ? currentMarkup : currentMargin;
+  const displayTarget = displayIsMarkup ? targetMarkup : targetMargin;
+  const displayBase = displayIsMarkup ? baseMarkup : baseMargin;
+  const displayLabel = displayIsMarkup ? "Markup" : "Margin";
+  const secondaryLabel = displayIsMarkup
+    ? `Current margin ${percent(currentMargin)}`
+    : `Equivalent markup ${percent(currentMarkup)}`;
+  if (!material || targetMarkup <= 0) {
+    return { className: "neutral", currentMarkup, currentMargin, baseMarkup, targetMarkup, displayCurrent, displayTarget, displayBase, displayLabel, secondaryLabel, progress: 0 };
+  }
+  if (currentMarkup <= baseMarkup) return { className: "bad", currentMarkup, currentMargin, baseMarkup, targetMarkup, displayCurrent, displayTarget, displayBase, displayLabel, secondaryLabel, progress: 0 };
+  if (currentMarkup >= targetMarkup) return { className: "strong", currentMarkup, currentMargin, baseMarkup, targetMarkup, displayCurrent, displayTarget, displayBase, displayLabel, secondaryLabel, progress: 1 };
   const progress = (currentMarkup - baseMarkup) / Math.max(1, targetMarkup - baseMarkup);
-  return { className: progress > 0.66 ? "good" : "watch", currentMarkup, baseMarkup, targetMarkup, progress };
+  return { className: progress > 0.66 ? "good" : "watch", currentMarkup, currentMargin, baseMarkup, targetMarkup, displayCurrent, displayTarget, displayBase, displayLabel, secondaryLabel, progress };
 }
 
 function quoteAddedCostRows(quote) {
@@ -1037,7 +1078,7 @@ export default function QuotePricingTool({ currentUser }) {
     ?? null;
   const pricing = useMemo(() => calculateQuotePricing(form), [form]);
   const candidates = useMemo(() => buildLayoutCandidates(form), [form]);
-  const currentProfitHealth = useMemo(() => profitHealth(pricing, selectedMaterial), [pricing, selectedMaterial]);
+  const currentProfitHealth = useMemo(() => profitHealth(pricing, selectedMaterial, form.pricingMode), [pricing, selectedMaterial, form.pricingMode]);
   const fitTone = pricing.fits ? "ready" : "bad";
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
   const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
@@ -1055,6 +1096,10 @@ export default function QuotePricingTool({ currentUser }) {
   useEffect(() => {
     if (!currentUser?.name) return;
     setQuoteInfo((prev) => ({ ...prev, preparedBy: currentUser.name }));
+    const preference = loadQuotePreference(currentUser);
+    if (preference.pricingMode === "markup" || preference.pricingMode === "margin") {
+      setForm((prev) => ({ ...prev, pricingMode: preference.pricingMode }));
+    }
   }, [currentUser?.id, currentUser?.name]);
 
   useEffect(() => {
@@ -1175,6 +1220,9 @@ export default function QuotePricingTool({ currentUser }) {
   }, [quoteInfo.linkMode, selectedJobTicket?.id]);
 
   function updateField(name, value) {
+    if (name === "pricingMode") {
+      saveQuotePreference(currentUser, { pricingMode: value });
+    }
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
@@ -1752,6 +1800,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                       <button className={form.pricingMode === "margin" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "margin")}>Margin</button>
                       <button className={form.pricingMode === "markup" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "markup")}>Markup</button>
                     </div>
+                    <em className="quote-preference-note">Saved as your default.</em>
                   </div>
                 </div>
               </details>
@@ -1796,8 +1845,8 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                 <div className={`quote-profit-health ${currentProfitHealth.className}`}>
                   <span>Profit</span>
                   <strong>{money(pricing.profit)}</strong>
-                  <em>Markup {percent(currentProfitHealth.currentMarkup)} / target {percent(currentProfitHealth.targetMarkup)}</em>
-                  <small>Current margin {percent(pricingActualMargin(pricing))}</small>
+                  <em>{currentProfitHealth.displayLabel} {percent(currentProfitHealth.displayCurrent)} / target {percent(currentProfitHealth.displayTarget)}</em>
+                  <small>{currentProfitHealth.secondaryLabel}</small>
                 </div>
                 <Metric label="Price / Label" value={unitMoney(pricing.pricePerLabel)} />
               </div>
@@ -1880,14 +1929,21 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
             </div>
             <div className="quote-person-tabs" aria-label="Saved quote people">
               <button className={quotePersonFilter === "all" ? "active" : ""} type="button" onClick={() => setQuotePersonFilter("all")}>
-                <strong>All</strong>
-                <span>{savedQuotes.length}</span>
+                <i>All</i>
+                <div>
+                  <strong>All Quotes</strong>
+                  <em>Everyone</em>
+                </div>
+                <span>{savedQuotes.length} quote{savedQuotes.length === 1 ? "" : "s"}</span>
               </button>
               {quotePersonTabs.map((person) => (
                 <button className={quotePersonFilter === person.key ? "active" : ""} type="button" key={person.key} onClick={() => setQuotePersonFilter(person.key)}>
-                  <strong>{person.isCurrentUser ? "My Quotes" : person.name}</strong>
-                  <span>{person.count}</span>
-                  {person.isCurrentUser && <em>{person.name}</em>}
+                  <i>{(person.name || "U").slice(0, 1).toUpperCase()}</i>
+                  <div>
+                    <strong>{person.isCurrentUser ? "My Quotes" : person.name}</strong>
+                    <em>{person.isCurrentUser ? person.name : person.role || "Sales"}</em>
+                  </div>
+                  <span>{person.count} quote{person.count === 1 ? "" : "s"}</span>
                 </button>
               ))}
             </div>

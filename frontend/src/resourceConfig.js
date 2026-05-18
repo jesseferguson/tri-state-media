@@ -532,7 +532,7 @@ export const resources = [
       { name: "finishing_type", label: "Finishing", type: "select", choices: choiceLists.finishingType, defaultValue: "rolls" },
       { name: "labels_per_unit", label: "Labels per Unit", type: "number" },
       { name: "units_per_carton", label: "Units per Carton", type: "number" },
-      { name: "labels_per_carton", label: "Total Labels per Carton", type: "number" },
+      { name: "labels_per_carton", label: "Number of Labels in Box", type: "number" },
       { name: "core_size_inches", label: "Core Size", type: "number", step: "0.0001", showWhen: { finishing_type: "rolls" }, clearWhenHidden: null },
       { name: "wind_direction", label: "Wind", type: "select", choices: choiceLists.windDirection, showWhen: { finishing_type: "rolls" }, clearWhenHidden: "" },
       { name: "finishing_notes", label: "Finishing Notes", type: "textarea" },
