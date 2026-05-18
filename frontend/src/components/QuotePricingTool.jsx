@@ -153,6 +153,42 @@ function dimensionInputValue(value) {
   return String(Number(numberValue.toFixed(4))).replace(/\.0+$/, "");
 }
 
+function quantityInputValue(value) {
+  const numberValue = toQuoteNumber(value, NaN);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return "";
+  return String(Math.round(numberValue));
+}
+
+function jobTicketQuoteQuantity(ticket) {
+  if (!ticket) return { quantity: "", complete: false, message: "" };
+  const labelsPerUnit = toQuoteNumber(ticket.labels_per_unit, NaN);
+  const unitsPerCarton = toQuoteNumber(ticket.units_per_carton, NaN);
+  const hasLabelsPerUnit = Number.isFinite(labelsPerUnit) && labelsPerUnit > 0;
+  const hasUnitsPerCarton = Number.isFinite(unitsPerCarton) && unitsPerCarton > 0;
+
+  if (!hasLabelsPerUnit && !hasUnitsPerCarton) {
+    return {
+      quantity: "",
+      complete: false,
+      message: "This job ticket does not contain labels per unit or units per carton. Enter the quote quantity below.",
+    };
+  }
+
+  if (!hasLabelsPerUnit || !hasUnitsPerCarton) {
+    return {
+      quantity: "",
+      complete: false,
+      message: `This job ticket is missing ${!hasLabelsPerUnit ? "labels per unit" : "units per carton"}. Enter the quote quantity below.`,
+    };
+  }
+
+  return {
+    quantity: quantityInputValue(labelsPerUnit * unitsPerCarton),
+    complete: true,
+    message: "",
+  };
+}
+
 function jobTicketQuoteDimensions(ticket) {
   if (!ticket) {
     return {
@@ -676,6 +712,7 @@ export default function QuotePricingTool({ currentUser }) {
   const selectedMaterial = materialOptions.find((material) => String(material.id) === String(form.selectedMaterialId));
   const selectedJobTicket = jobTickets.find((ticket) => String(ticket.id) === String(quoteInfo.jobTicketId));
   const selectedJobTicketDimensions = useMemo(() => jobTicketQuoteDimensions(selectedJobTicket), [selectedJobTicket]);
+  const selectedJobTicketQuantity = useMemo(() => jobTicketQuoteQuantity(selectedJobTicket), [selectedJobTicket]);
   const selectedQuote = savedQuotes.find((quote) => quote.id === selectedQuoteId) ?? savedQuotes[0] ?? null;
   const filteredSavedQuotes = useMemo(() => {
     const search = quoteSearch.trim().toLowerCase();
@@ -750,11 +787,13 @@ export default function QuotePricingTool({ currentUser }) {
   useEffect(() => {
     if (quoteInfo.linkMode !== "ticket" || !selectedJobTicket) return;
     const dimensions = jobTicketQuoteDimensions(selectedJobTicket);
+    const quantity = jobTicketQuoteQuantity(selectedJobTicket);
     setForm((prev) => ({
       ...prev,
       labelWidth: dimensions.width,
       labelLength: dimensions.length,
       gap: dimensions.gap,
+      quantity: quantity.quantity,
     }));
   }, [quoteInfo.linkMode, selectedJobTicket?.id]);
 
@@ -1139,6 +1178,9 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                     </Field>
                     {selectedJobTicket && selectedJobTicketDimensions.message && (
                       <p className="quote-ticket-warning">{selectedJobTicketDimensions.message}</p>
+                    )}
+                    {selectedJobTicket && selectedJobTicketQuantity.message && (
+                      <p className="quote-ticket-warning">{selectedJobTicketQuantity.message}</p>
                     )}
                     {jobTicketLoadState === "error" && <p className="quote-help-text">Job tickets could not load. Use manual entry for this quote.</p>}
                   </div>
