@@ -1,15 +1,36 @@
-from rest_framework import filters, viewsets
+from rest_framework import filters, status, viewsets
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
 
-from .models import BoxInventory, BoxSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, ProductionSchedule
+from .models import (
+    BoxInventory,
+    BoxSpec,
+    CompanyRole,
+    CompanyUser,
+    Customer,
+    CustomerOrder,
+    CustomerOrderEvent,
+    FinishedInventory,
+    JobTicket,
+    ProductionSchedule,
+    QuoteFinishedMaterial,
+    QuoteRawMaterial,
+    QuoteRecord,
+)
 from .serializers import (
     BoxInventorySerializer,
     BoxSpecSerializer,
+    CompanyRoleSerializer,
+    CompanyUserSerializer,
     CustomerSerializer,
     CustomerOrderEventSerializer,
     CustomerOrderSerializer,
     FinishedInventorySerializer,
     JobTicketSerializer,
     ProductionScheduleSerializer,
+    QuoteFinishedMaterialSerializer,
+    QuoteRawMaterialSerializer,
+    QuoteRecordSerializer,
 )
 
 
@@ -22,6 +43,74 @@ class CustomerViewSet(BaseProductionViewSet):
     serializer_class = CustomerSerializer
     search_fields = ["name", "customer_code", "contact_name", "phone", "email", "notes"]
     ordering_fields = ["name", "customer_code", "is_active"]
+
+
+class CompanyRoleViewSet(BaseProductionViewSet):
+    queryset = CompanyRole.objects.all().order_by("name")
+    serializer_class = CompanyRoleSerializer
+    search_fields = ["name", "description"]
+    ordering_fields = ["name", "created_at"]
+
+
+class CompanyUserViewSet(BaseProductionViewSet):
+    queryset = CompanyUser.objects.select_related("role").all().order_by("name", "username")
+    serializer_class = CompanyUserSerializer
+    search_fields = ["name", "username", "role__name"]
+    ordering_fields = ["name", "username", "active", "created_at"]
+
+
+class QuoteRawMaterialViewSet(BaseProductionViewSet):
+    queryset = QuoteRawMaterial.objects.all().order_by("component_type", "name")
+    serializer_class = QuoteRawMaterialSerializer
+    lookup_field = "external_id"
+    search_fields = ["name", "component_type", "notes"]
+    ordering_fields = ["name", "component_type", "msi_cost", "updated_at"]
+
+
+class QuoteFinishedMaterialViewSet(BaseProductionViewSet):
+    queryset = QuoteFinishedMaterial.objects.all().order_by("name")
+    serializer_class = QuoteFinishedMaterialSerializer
+    lookup_field = "external_id"
+    search_fields = ["name", "source_type", "notes"]
+    ordering_fields = ["name", "source_type", "updated_at"]
+
+
+class QuoteRecordViewSet(BaseProductionViewSet):
+    queryset = QuoteRecord.objects.select_related("job_ticket").all().order_by("-created_at", "-id")
+    serializer_class = QuoteRecordSerializer
+    lookup_field = "external_id"
+    search_fields = [
+        "quote_number",
+        "customer_name",
+        "job_name",
+        "product_code",
+        "prepared_by_name",
+        "prepared_by_role",
+        "material_name",
+        "notes",
+    ]
+    ordering_fields = ["created_at", "quote_number", "customer_name", "prepared_by_name", "material_name"]
+
+
+@api_view(["POST"])
+def company_sign_in(request):
+    username = str(request.data.get("username", "")).strip().lower()
+    password = str(request.data.get("password", ""))
+    try:
+        user = CompanyUser.objects.select_related("role").get(username__iexact=username)
+    except CompanyUser.DoesNotExist:
+        return Response({"error": "Username or password is not correct."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not user.check_password(password):
+        return Response({"error": "Username or password is not correct."}, status=status.HTTP_400_BAD_REQUEST)
+    if not user.active:
+        return Response({"error": "This user is inactive. Ask an admin to reactivate the account."}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({
+        "user": CompanyUserSerializer(user).data,
+        "users": CompanyUserSerializer(CompanyUser.objects.select_related("role").all(), many=True).data,
+        "roles": CompanyRoleSerializer(CompanyRole.objects.all(), many=True).data,
+    })
 
 
 class BoxSpecViewSet(BaseProductionViewSet):

@@ -3853,6 +3853,17 @@ p, .muted { color: #7a7a7a; }
   font-weight: 800;
 }
 
+.quote-sync-note {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
 .quote-field {
   min-width: 0;
   display: grid;

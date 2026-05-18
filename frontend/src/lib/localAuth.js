@@ -1,3 +1,5 @@
+import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
+
 export const userStorageKey = "tsm_company_users_v1";
 export const sessionStorageKey = "tsm_active_user_v1";
 export const roleStorageKey = "tsm_company_roles_v1";
@@ -172,6 +174,49 @@ export function roleHasResourceAccess(roleDefinitions, roleName, resourceKey) {
   return role.allowedResourceKeys.includes("*") || role.allowedResourceKeys.includes(resourceKey);
 }
 
+export async function loadUsersFromApi() {
+  const payload = await fetchCollection("company-users", { ordering: "name,username", pageSize: 500 });
+  return payload.results.map(normalizeUser);
+}
+
+export async function loadRolesFromApi() {
+  const payload = await fetchCollection("company-roles", { ordering: "name", pageSize: 100 });
+  return payload.results.map(normalizeRole);
+}
+
+export async function saveUserToApi(user) {
+  const payload = {
+    username: user.username,
+    password: user.password || "",
+    name: user.name,
+    role: user.role,
+    active: user.active !== false,
+  };
+  if (String(user.id || "").startsWith("user-")) {
+    return normalizeUser(await createRecord("company-users", payload));
+  }
+  return normalizeUser(await updateRecord("company-users", user.id, payload));
+}
+
+export async function saveRoleToApi(role) {
+  const payload = {
+    name: role.name,
+    description: role.description || "",
+    allowedResourceKeys: role.allowedResourceKeys || [],
+    locked: role.locked || false,
+  };
+  if (String(role.id || "").startsWith("role-")) {
+    return normalizeRole(await createRecord("company-roles", payload));
+  }
+  return normalizeRole(await updateRecord("company-roles", role.id, payload));
+}
+
+export async function deleteRoleFromApi(role) {
+  if (!String(role.id || "").startsWith("role-")) {
+    await deleteRecord("company-roles", role.id);
+  }
+}
+
 export function loadSessionUser(users = loadUsers()) {
   if (!canUseStorage()) return null;
   try {
@@ -194,7 +239,31 @@ export function clearSession() {
   window.localStorage.removeItem(sessionStorageKey);
 }
 
-export function signIn(username, password) {
+export async function signIn(username, password) {
+  try {
+    const payload = await requestApi("auth/sign-in", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+    saveSession(payload.user);
+    saveUsers(payload.users ?? []);
+    saveRoles(payload.roles ?? []);
+    return {
+      user: publicUser(normalizeUser(payload.user)),
+      users: (payload.users ?? []).map(normalizeUser),
+      roles: (payload.roles ?? []).map(normalizeRole),
+    };
+  } catch (apiError) {
+    if (!String(apiError.message || "").includes("Failed to fetch")) {
+      try {
+        const payload = JSON.parse(apiError.message);
+        return { error: payload.error || "Username or password is not correct." };
+      } catch {
+        return { error: apiError.message || "Username or password is not correct." };
+      }
+    }
+  }
+
   const users = loadUsers();
   const cleanUsername = String(username || "").trim().toLowerCase();
   const user = users.find((item) => item.username.toLowerCase() === cleanUsername);

@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Layers3, Pencil, Plus, Printer, Ruler, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { fetchCollection } from "../api";
+import { createRecord, deleteRecord, fetchCollection, updateRecord } from "../api";
 import {
   buildLayoutCandidates,
   calculateFinishedMaterialMsiCost,
@@ -159,31 +159,63 @@ function quantityInputValue(value) {
   return String(Math.round(numberValue));
 }
 
+function moneyInput(value) {
+  return value === "" || value === null || value === undefined ? "0" : String(value);
+}
+
+function rawMaterialPayload(raw) {
+  return {
+    id: raw.id || makeId("raw"),
+    name: raw.name || "",
+    componentType: raw.componentType || "face",
+    msiCost: moneyInput(raw.msiCost),
+    inventoryMsi: moneyInput(raw.inventoryMsi),
+    notes: raw.notes || "",
+  };
+}
+
+function finishedMaterialPayload(material) {
+  return {
+    id: material.id || makeId("finished"),
+    name: material.name || "",
+    sourceType: material.sourceType || "made",
+    purchasedMsiCost: moneyInput(material.purchasedMsiCost),
+    faceRawId: material.faceRawId || "",
+    linerRawId: material.linerRawId || "",
+    adhesiveRawId: material.adhesiveRawId || "",
+    siliconeRawId: material.siliconeRawId || "",
+    inkRawId: material.inkRawId || "",
+    laborMsiCost: moneyInput(material.laborMsiCost),
+    coatingMsiCost: moneyInput(material.coatingMsiCost),
+    complexityMsiCost: moneyInput(material.complexityMsiCost),
+    otherMsiCost: moneyInput(material.otherMsiCost),
+    notes: material.notes || "",
+  };
+}
+
+function quoteRecordPayload(quote) {
+  return {
+    ...quote,
+    jobTicketId: quote.jobTicketId || null,
+    contactEmail: quote.contactEmail || "",
+  };
+}
+
 function jobTicketQuoteQuantity(ticket) {
   if (!ticket) return { quantity: "", complete: false, message: "" };
   const labelsPerUnit = toQuoteNumber(ticket.labels_per_unit, NaN);
-  const unitsPerCarton = toQuoteNumber(ticket.units_per_carton, NaN);
   const hasLabelsPerUnit = Number.isFinite(labelsPerUnit) && labelsPerUnit > 0;
-  const hasUnitsPerCarton = Number.isFinite(unitsPerCarton) && unitsPerCarton > 0;
 
-  if (!hasLabelsPerUnit && !hasUnitsPerCarton) {
+  if (!hasLabelsPerUnit) {
     return {
       quantity: "",
       complete: false,
-      message: "This job ticket does not contain labels per unit or units per carton. Enter the quote quantity below.",
-    };
-  }
-
-  if (!hasLabelsPerUnit || !hasUnitsPerCarton) {
-    return {
-      quantity: "",
-      complete: false,
-      message: `This job ticket is missing ${!hasLabelsPerUnit ? "labels per unit" : "units per carton"}. Enter the quote quantity below.`,
+      message: "This job ticket does not contain labels per carton. Enter the quote quantity below.",
     };
   }
 
   return {
-    quantity: quantityInputValue(labelsPerUnit * unitsPerCarton),
+    quantity: quantityInputValue(labelsPerUnit),
     complete: true,
     message: "",
   };
@@ -700,6 +732,8 @@ export default function QuotePricingTool({ currentUser }) {
   const [selectedQuoteId, setSelectedQuoteId] = useState(storedQuotes[0]?.id ?? null);
   const [jobTickets, setJobTickets] = useState([]);
   const [jobTicketLoadState, setJobTicketLoadState] = useState("idle");
+  const [quoteDataState, setQuoteDataState] = useState("loading");
+  const [quoteDataError, setQuoteDataError] = useState("");
 
   const materialOptions = useMemo(() => {
     return finishedMaterials.map((material) => ({
@@ -755,6 +789,54 @@ export default function QuotePricingTool({ currentUser }) {
     if (!currentUser?.name) return;
     setQuoteInfo((prev) => ({ ...prev, preparedBy: currentUser.name }));
   }, [currentUser?.id, currentUser?.name]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadSharedQuoteData() {
+      setQuoteDataState("loading");
+      setQuoteDataError("");
+      try {
+        let [rawPayload, finishedPayload, quotePayload] = await Promise.all([
+          fetchCollection("quote-raw-materials", { pageSize: 1000, fetchAll: true }),
+          fetchCollection("quote-finished-materials", { pageSize: 1000, fetchAll: true }),
+          fetchCollection("quote-records", { ordering: "-created_at", pageSize: 1000, fetchAll: true }),
+        ]);
+
+        let rawResults = rawPayload.results ?? [];
+        let finishedResults = finishedPayload.results ?? [];
+        let quoteResults = quotePayload.results ?? [];
+
+        if (!rawResults.length && storedLibrary.rawMaterials.length) {
+          rawResults = await Promise.all(storedLibrary.rawMaterials.map((raw) => createRecord("quote-raw-materials", rawMaterialPayload(raw))));
+        }
+
+        if (!finishedResults.length && storedLibrary.finishedMaterials.length) {
+          finishedResults = await Promise.all(storedLibrary.finishedMaterials.map((material) => createRecord("quote-finished-materials", finishedMaterialPayload(material))));
+        }
+
+        if (!quoteResults.length && storedQuotes.length) {
+          quoteResults = await Promise.all(storedQuotes.map((quote) => createRecord("quote-records", quoteRecordPayload(quote))));
+        }
+
+        if (!alive) return;
+        setRawMaterials(rawResults);
+        setFinishedMaterials(finishedResults);
+        setSavedQuotes(quoteResults);
+        setSelectedQuoteId((current) => current && quoteResults.some((quote) => quote.id === current) ? current : quoteResults[0]?.id ?? null);
+        setQuoteDataState("ready");
+      } catch (error) {
+        if (!alive) return;
+        setQuoteDataError(error.message || "Could not load shared quote data.");
+        setQuoteDataState("error");
+      }
+    }
+
+    loadSharedQuoteData();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -851,14 +933,16 @@ export default function QuotePricingTool({ currentUser }) {
     return record;
   }
 
-  function generateQuote() {
+  async function generateQuote() {
     const record = buildQuoteRecord();
-    setSavedQuotes((prev) => [record, ...prev]);
-    setSelectedQuoteId(record.id);
+    const saved = await createRecord("quote-records", quoteRecordPayload(record));
+    setSavedQuotes((prev) => [saved, ...prev]);
+    setSelectedQuoteId(saved.id);
     setActiveTab("quotes");
   }
 
-  function deleteQuote(id) {
+  async function deleteQuote(id) {
+    await deleteRecord("quote-records", id);
     setSavedQuotes((prev) => prev.filter((quote) => quote.id !== id));
     setSelectedQuoteId((current) => current === id ? null : current);
   }
@@ -1043,7 +1127,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
     URL.revokeObjectURL(url);
   }
 
-  function submitRaw(event) {
+  async function submitRaw(event) {
     event.preventDefault();
     const name = rawForm.name.trim();
     if (!name) return;
@@ -1053,15 +1137,18 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
       id: editingRawId || makeId("raw"),
       name,
     };
+    const saved = editingRawId
+      ? await updateRecord("quote-raw-materials", next.id, rawMaterialPayload(next))
+      : await createRecord("quote-raw-materials", rawMaterialPayload(next));
     setRawMaterials((prev) => {
-      if (!editingRawId) return [next, ...prev];
-      return prev.map((raw) => raw.id === editingRawId ? next : raw);
+      if (!editingRawId) return [saved, ...prev];
+      return prev.map((raw) => raw.id === editingRawId ? saved : raw);
     });
     setRawForm(emptyRawForm);
     setEditingRawId(null);
   }
 
-  function submitFinished(event) {
+  async function submitFinished(event) {
     event.preventDefault();
     const name = finishedForm.name.trim();
     if (!name) return;
@@ -1073,23 +1160,27 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
     };
     delete next.calculatedMsiCost;
     delete next.componentLabel;
+    const saved = editingFinishedId
+      ? await updateRecord("quote-finished-materials", next.id, finishedMaterialPayload(next))
+      : await createRecord("quote-finished-materials", finishedMaterialPayload(next));
 
     setFinishedMaterials((prev) => {
-      if (!editingFinishedId) return [next, ...prev];
-      return prev.map((material) => material.id === editingFinishedId ? next : material);
+      if (!editingFinishedId) return [saved, ...prev];
+      return prev.map((material) => material.id === editingFinishedId ? saved : material);
     });
     setForm((prev) => ({
       ...prev,
-      selectedMaterialId: next.id,
-      msiCost: String(calculateFinishedMaterialMsiCost(next, rawMaterials)),
-      materialWidth: next.width_inches || prev.materialWidth,
+      selectedMaterialId: saved.id,
+      msiCost: String(calculateFinishedMaterialMsiCost(saved, rawMaterials)),
+      materialWidth: saved.width_inches || prev.materialWidth,
     }));
     setFinishedForm(emptyFinishedForm);
     setEditingFinishedId(null);
     setActiveTab("pricing");
   }
 
-  function deleteRaw(id) {
+  async function deleteRaw(id) {
+    await deleteRecord("quote-raw-materials", id);
     setRawMaterials((prev) => prev.filter((raw) => raw.id !== id));
     setFinishedMaterials((prev) => prev.map((material) => {
       const next = { ...material };
@@ -1104,7 +1195,8 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
     }
   }
 
-  function deleteFinished(id) {
+  async function deleteFinished(id) {
+    await deleteRecord("quote-finished-materials", id);
     setFinishedMaterials((prev) => prev.filter((material) => material.id !== id));
     setForm((prev) => prev.selectedMaterialId === id ? { ...prev, selectedMaterialId: "manual" } : prev);
     if (editingFinishedId === id) {
@@ -1154,6 +1246,8 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
         <TabButton active={activeTab === "finished"} icon={Layers3} label="Finished Inventory" count={finishedMaterials.length} onClick={() => setActiveTab("finished")} />
         <TabButton active={activeTab === "raw"} icon={Ruler} label="Raw Inventory" count={rawMaterials.length} onClick={() => setActiveTab("raw")} />
       </nav>
+      {quoteDataState === "loading" && <p className="quote-sync-note">Loading shared quote data...</p>}
+      {quoteDataError && <p className="quote-ticket-warning">{quoteDataError}</p>}
 
       {activeTab === "pricing" && (
         <>

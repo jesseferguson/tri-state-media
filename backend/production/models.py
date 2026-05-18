@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.hashers import check_password, make_password
 from django.utils import timezone
 
 from materials.models import MaterialSpec, MaterialUsage, RawMaterialInventory
@@ -19,6 +20,116 @@ class Customer(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class CompanyRole(models.Model):
+    name = models.CharField(max_length=80, unique=True)
+    description = models.CharField(max_length=255, blank=True)
+    allowed_resource_keys = models.JSONField(default=list, blank=True)
+    locked = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class CompanyUser(models.Model):
+    username = models.CharField(max_length=80, unique=True)
+    name = models.CharField(max_length=150)
+    password_hash = models.CharField(max_length=255)
+    role = models.ForeignKey(CompanyRole, on_delete=models.PROTECT, related_name="users")
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "username"]
+
+    def __str__(self):
+        return f"{self.name} / {self.username}"
+
+    def set_password(self, raw_password):
+        self.password_hash = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        return check_password(raw_password, self.password_hash)
+
+
+class QuoteRawMaterial(models.Model):
+    external_id = models.CharField(max_length=120, unique=True)
+    name = models.CharField(max_length=180)
+    component_type = models.CharField(max_length=40, default="face")
+    msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    inventory_msi = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["component_type", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class QuoteFinishedMaterial(models.Model):
+    external_id = models.CharField(max_length=120, unique=True)
+    name = models.CharField(max_length=180)
+    source_type = models.CharField(max_length=40, default="made")
+    purchased_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    face_raw_id = models.CharField(max_length=120, blank=True)
+    liner_raw_id = models.CharField(max_length=120, blank=True)
+    adhesive_raw_id = models.CharField(max_length=120, blank=True)
+    silicone_raw_id = models.CharField(max_length=120, blank=True)
+    ink_raw_id = models.CharField(max_length=120, blank=True)
+    labor_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    coating_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    complexity_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    other_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class QuoteRecord(models.Model):
+    external_id = models.CharField(max_length=120, unique=True)
+    quote_number = models.CharField(max_length=80, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    prepared_by_user_id = models.CharField(max_length=120, blank=True)
+    prepared_by_username = models.CharField(max_length=80, blank=True)
+    prepared_by_name = models.CharField(max_length=150, blank=True)
+    prepared_by_role = models.CharField(max_length=80, blank=True)
+    job_ticket = models.ForeignKey("JobTicket", on_delete=models.SET_NULL, null=True, blank=True, related_name="quote_records")
+    job_ticket_number = models.CharField(max_length=80, blank=True)
+    customer_name = models.CharField(max_length=180, blank=True)
+    job_name = models.CharField(max_length=180, blank=True)
+    product_code = models.CharField(max_length=80, blank=True)
+    contact_name = models.CharField(max_length=120, blank=True)
+    contact_email = models.EmailField(blank=True)
+    prepared_by = models.CharField(max_length=150, blank=True)
+    notes = models.TextField(blank=True)
+    material_name = models.CharField(max_length=180, blank=True)
+    material_source = models.CharField(max_length=40, blank=True)
+    material_components = models.TextField(blank=True)
+    form = models.JSONField(default=dict, blank=True)
+    pricing = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.quote_number
 
 
 class BoxSpec(models.Model):

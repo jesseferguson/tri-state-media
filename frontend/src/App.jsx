@@ -18,7 +18,24 @@ import RecipeOptionsView from "./components/RecipeOptionsView";
 import RecipeToolStackView from "./components/RecipeToolStackView";
 import RollWorkflowWindow from "./components/RollWorkflowWindow";
 import ProductionScheduleView from "./components/ProductionScheduleView";
-import { clearSession, loadRoles, loadSessionUser, loadUsers, makeRoleId, makeUserId, roleHasResourceAccess, saveRoles, saveUsers, signIn, userIsAdmin } from "./lib/localAuth";
+import {
+  clearSession,
+  deleteRoleFromApi,
+  loadRoles,
+  loadRolesFromApi,
+  loadSessionUser,
+  loadUsers,
+  loadUsersFromApi,
+  makeRoleId,
+  makeUserId,
+  roleHasResourceAccess,
+  saveRoleToApi,
+  saveRoles,
+  saveUserToApi,
+  saveUsers,
+  signIn,
+  userIsAdmin,
+} from "./lib/localAuth";
 import { emptyFlexDieFilters, filterFlexDies, filterRows } from "./lib/filtering";
 import { formatCell, getRecordTitle } from "./lib/format";
 
@@ -229,10 +246,13 @@ function SignInScreen({ onSignIn }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
-    const result = onSignIn(username, password);
+    setSubmitting(true);
+    const result = await onSignIn(username, password);
+    setSubmitting(false);
     if (result?.error) setError(result.error);
   }
 
@@ -254,7 +274,7 @@ function SignInScreen({ onSignIn }) {
             <input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
           </label>
           {error && <div className="auth-error">{error}</div>}
-          <button className="primary-btn" type="submit"><LogIn size={16} /> Sign In</button>
+          <button className="primary-btn" type="submit" disabled={submitting}><LogIn size={16} /> {submitting ? "Signing In..." : "Sign In"}</button>
         </form>
       </section>
     </main>
@@ -337,7 +357,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
     });
   }
 
-  function submitRole(event) {
+  async function submitRole(event) {
     event.preventDefault();
     const name = roleForm.name.trim();
     const nameTaken = roleDefinitions.some((role) => role.id !== editingRoleId && role.name.toLowerCase() === name.toLowerCase());
@@ -372,24 +392,24 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
     const nextRoles = editingRoleId
       ? roleDefinitions.map((role) => role.id === editingRoleId ? nextRole : role)
       : [nextRole, ...roleDefinitions];
-    onSaveRoles(nextRoles);
+    await onSaveRoles(nextRoles);
     if (editingRoleId && existing?.name && existing.name !== name) {
-      onSaveUsers(users.map((user) => user.role === existing.name ? { ...user, role: name } : user));
+      await onSaveUsers(users.map((user) => user.role === existing.name ? { ...user, role: name } : user));
     }
     cancelRoleEdit();
   }
 
-  function deleteRole(role) {
+  async function deleteRole(role) {
     if (role.locked) return;
     if (users.some((user) => user.role === role.name)) {
       setRoleError(`Move users out of ${role.name} before deleting it.`);
       return;
     }
-    onSaveRoles(roleDefinitions.filter((item) => item.id !== role.id));
+    await onSaveRoles(roleDefinitions.filter((item) => item.id !== role.id));
     if (editingRoleId === role.id) cancelRoleEdit();
   }
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     const name = form.name.trim();
     const username = form.username.trim();
@@ -421,13 +441,13 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
     const nextUsers = editingId
       ? users.map((user) => user.id === editingId ? nextUser : user)
       : [nextUser, ...users];
-    onSaveUsers(nextUsers);
+    await onSaveUsers(nextUsers);
     cancelEdit();
   }
 
-  function toggleActive(user) {
+  async function toggleActive(user) {
     if (user.username === "admin") return;
-    onSaveUsers(users.map((item) => item.id === user.id ? { ...item, active: item.active === false } : item));
+    await onSaveUsers(users.map((item) => item.id === user.id ? { ...item, active: item.active === false } : item));
   }
 
   return (
@@ -658,10 +678,55 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(() => loadSessionUser());
   const [userPanelOpen, setUserPanelOpen] = useState(false);
 
-  function handleSignIn(username, password) {
-    const result = signIn(username, password);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([loadUsersFromApi(), loadRolesFromApi()])
+      .then(([apiUsers, apiRoles]) => {
+        if (!alive) return;
+        const localRoles = loadRoles();
+        const localUsers = loadUsers();
+        const apiRoleNames = new Set(apiRoles.map((role) => role.name.toLowerCase()));
+        const apiUsernames = new Set(apiUsers.map((user) => user.username.toLowerCase()));
+        const missingLocalRoles = localRoles.filter((role) => !apiRoleNames.has(role.name.toLowerCase()) && !role.locked);
+        const missingLocalUsers = localUsers.filter((user) => !apiUsernames.has(user.username.toLowerCase()) && user.username.toLowerCase() !== "admin");
+
+        if (missingLocalRoles.length || missingLocalUsers.length) {
+          return Promise.all(missingLocalRoles.map(saveRoleToApi))
+            .then(() => Promise.all(missingLocalUsers.map(saveUserToApi)))
+            .then(refreshCompanyAccess)
+            .then(({ apiUsers: refreshedUsers, apiRoles: refreshedRoles }) => {
+              if (!alive) return;
+              const refreshedUser = refreshedUsers.find((user) =>
+                (String(user.id) === String(currentUser?.id) || user.username === currentUser?.username) &&
+                user.active !== false
+              );
+              if (refreshedUser) setCurrentUser(refreshedUser);
+              setUsers(refreshedUsers);
+              setRoleDefinitions(refreshedRoles);
+            });
+        }
+
+        setUsers(apiUsers);
+        setRoleDefinitions(apiRoles);
+        saveUsers(apiUsers);
+        saveRoles(apiRoles);
+        const refreshedUser = apiUsers.find((user) =>
+          (String(user.id) === String(currentUser?.id) || user.username === currentUser?.username) &&
+          user.active !== false
+        );
+        if (refreshedUser) setCurrentUser(refreshedUser);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function handleSignIn(username, password) {
+    const result = await signIn(username, password);
     if (result.error) return result;
     setUsers(result.users);
+    if (result.roles) setRoleDefinitions(result.roles);
     setCurrentUser(result.user);
     return result;
   }
@@ -672,11 +737,30 @@ export default function App() {
     setUserPanelOpen(false);
   }
 
-  function handleSaveUsers(nextUsers) {
-    saveUsers(nextUsers);
-    const loaded = loadUsers();
+  async function refreshCompanyAccess() {
+    const [apiUsers, apiRoles] = await Promise.all([loadUsersFromApi(), loadRolesFromApi()]);
+    saveUsers(apiUsers);
+    saveRoles(apiRoles);
+    setUsers(apiUsers);
+    setRoleDefinitions(apiRoles);
+    return { apiUsers, apiRoles };
+  }
+
+  async function handleSaveUsers(nextUsers) {
+    const currentById = new Map(users.map((user) => [String(user.id), user]));
+    const changedUsers = nextUsers.filter((user) => {
+      const previous = currentById.get(String(user.id));
+      return !previous || JSON.stringify({ ...previous, password: "" }) !== JSON.stringify({ ...user, password: "" }) || user.password;
+    });
+    for (const user of changedUsers) {
+      await saveUserToApi(user);
+    }
+    const { apiUsers: loaded } = await refreshCompanyAccess();
     setUsers(loaded);
-    const refreshedUser = loaded.find((user) => user.id === currentUser?.id && user.active !== false);
+    const refreshedUser = loaded.find((user) =>
+      (String(user.id) === String(currentUser?.id) || user.username === currentUser?.username) &&
+      user.active !== false
+    );
     if (refreshedUser) {
       const { password, ...publicCurrentUser } = refreshedUser;
       setCurrentUser(publicCurrentUser);
@@ -685,9 +769,22 @@ export default function App() {
     }
   }
 
-  function handleSaveRoles(nextRoles) {
-    saveRoles(nextRoles);
-    setRoleDefinitions(loadRoles());
+  async function handleSaveRoles(nextRoles) {
+    const nextIds = new Set(nextRoles.map((role) => String(role.id)));
+    const removedRoles = roleDefinitions.filter((role) => !nextIds.has(String(role.id)));
+    for (const role of removedRoles) {
+      await deleteRoleFromApi(role);
+    }
+
+    const currentById = new Map(roleDefinitions.map((role) => [String(role.id), role]));
+    const changedRoles = nextRoles.filter((role) => {
+      const previous = currentById.get(String(role.id));
+      return !previous || JSON.stringify(previous) !== JSON.stringify(role);
+    });
+    for (const role of changedRoles) {
+      await saveRoleToApi(role);
+    }
+    await refreshCompanyAccess();
   }
 
   if (!currentUser) return <SignInScreen onSignIn={handleSignIn} />;

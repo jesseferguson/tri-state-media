@@ -43,6 +43,14 @@ async function request(url, options = {}) {
   return response.json();
 }
 
+export function apiEndpoint(endpoint, id = null) {
+  return endpointUrl(endpoint, id);
+}
+
+export async function requestApi(endpoint, options = {}) {
+  return request(endpointUrl(endpoint), options);
+}
+
 export async function fetchApiRoot() {
   return request(`${cleanBase(API_BASE)}/`);
 }

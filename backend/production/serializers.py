@@ -1,12 +1,159 @@
 from rest_framework import serializers
 
-from .models import BoxInventory, BoxSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, ProductionSchedule
+from .models import (
+    BoxInventory,
+    BoxSpec,
+    CompanyRole,
+    CompanyUser,
+    Customer,
+    CustomerOrder,
+    CustomerOrderEvent,
+    FinishedInventory,
+    JobTicket,
+    ProductionSchedule,
+    QuoteFinishedMaterial,
+    QuoteRawMaterial,
+    QuoteRecord,
+)
 
 
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = "__all__"
+
+
+class CompanyRoleSerializer(serializers.ModelSerializer):
+    allowedResourceKeys = serializers.JSONField(source="allowed_resource_keys")
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+
+    class Meta:
+        model = CompanyRole
+        fields = ["id", "name", "description", "allowedResourceKeys", "locked", "createdAt"]
+
+
+class CompanyUserSerializer(serializers.ModelSerializer):
+    role = serializers.CharField(source="role.name")
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+
+    class Meta:
+        model = CompanyUser
+        fields = ["id", "username", "password", "name", "role", "active", "createdAt"]
+
+    def create(self, validated_data):
+        password = validated_data.pop("password", "")
+        role_data = validated_data.pop("role", {})
+        role_name = role_data.get("name") or "CSR"
+        role = CompanyRole.objects.get(name=role_name)
+        user = CompanyUser(role=role, **validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", "")
+        role_data = validated_data.pop("role", None)
+        if role_data:
+            instance.role = CompanyRole.objects.get(name=role_data.get("name"))
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
+
+
+class QuoteRawMaterialSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source="external_id")
+    componentType = serializers.CharField(source="component_type")
+    msiCost = serializers.DecimalField(source="msi_cost", max_digits=12, decimal_places=4)
+    inventoryMsi = serializers.DecimalField(source="inventory_msi", max_digits=14, decimal_places=3)
+
+    class Meta:
+        model = QuoteRawMaterial
+        fields = ["id", "name", "componentType", "msiCost", "inventoryMsi", "notes"]
+
+
+class QuoteFinishedMaterialSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source="external_id")
+    sourceType = serializers.CharField(source="source_type")
+    purchasedMsiCost = serializers.DecimalField(source="purchased_msi_cost", max_digits=12, decimal_places=4)
+    faceRawId = serializers.CharField(source="face_raw_id", allow_blank=True, required=False)
+    linerRawId = serializers.CharField(source="liner_raw_id", allow_blank=True, required=False)
+    adhesiveRawId = serializers.CharField(source="adhesive_raw_id", allow_blank=True, required=False)
+    siliconeRawId = serializers.CharField(source="silicone_raw_id", allow_blank=True, required=False)
+    inkRawId = serializers.CharField(source="ink_raw_id", allow_blank=True, required=False)
+    laborMsiCost = serializers.DecimalField(source="labor_msi_cost", max_digits=12, decimal_places=4)
+    coatingMsiCost = serializers.DecimalField(source="coating_msi_cost", max_digits=12, decimal_places=4)
+    complexityMsiCost = serializers.DecimalField(source="complexity_msi_cost", max_digits=12, decimal_places=4)
+    otherMsiCost = serializers.DecimalField(source="other_msi_cost", max_digits=12, decimal_places=4)
+
+    class Meta:
+        model = QuoteFinishedMaterial
+        fields = [
+            "id",
+            "name",
+            "sourceType",
+            "purchasedMsiCost",
+            "faceRawId",
+            "linerRawId",
+            "adhesiveRawId",
+            "siliconeRawId",
+            "inkRawId",
+            "laborMsiCost",
+            "coatingMsiCost",
+            "complexityMsiCost",
+            "otherMsiCost",
+            "notes",
+        ]
+
+
+class QuoteRecordSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source="external_id")
+    quoteNumber = serializers.CharField(source="quote_number")
+    createdAt = serializers.DateTimeField(source="created_at", required=False)
+    preparedByUserId = serializers.CharField(source="prepared_by_user_id", allow_blank=True, required=False)
+    preparedByUsername = serializers.CharField(source="prepared_by_username", allow_blank=True, required=False)
+    preparedByName = serializers.CharField(source="prepared_by_name", allow_blank=True, required=False)
+    preparedByRole = serializers.CharField(source="prepared_by_role", allow_blank=True, required=False)
+    jobTicketId = serializers.PrimaryKeyRelatedField(source="job_ticket", queryset=JobTicket.objects.all(), allow_null=True, required=False)
+    jobTicketNumber = serializers.CharField(source="job_ticket_number", allow_blank=True, required=False)
+    customerName = serializers.CharField(source="customer_name", allow_blank=True, required=False)
+    jobName = serializers.CharField(source="job_name", allow_blank=True, required=False)
+    productCode = serializers.CharField(source="product_code", allow_blank=True, required=False)
+    contactName = serializers.CharField(source="contact_name", allow_blank=True, required=False)
+    contactEmail = serializers.EmailField(source="contact_email", allow_blank=True, required=False)
+    preparedBy = serializers.CharField(source="prepared_by", allow_blank=True, required=False)
+    materialName = serializers.CharField(source="material_name", allow_blank=True, required=False)
+    materialSource = serializers.CharField(source="material_source", allow_blank=True, required=False)
+    materialComponents = serializers.CharField(source="material_components", allow_blank=True, required=False)
+
+    class Meta:
+        model = QuoteRecord
+        fields = [
+            "id",
+            "quoteNumber",
+            "createdAt",
+            "preparedByUserId",
+            "preparedByUsername",
+            "preparedByName",
+            "preparedByRole",
+            "jobTicketId",
+            "jobTicketNumber",
+            "customerName",
+            "jobName",
+            "productCode",
+            "contactName",
+            "contactEmail",
+            "preparedBy",
+            "notes",
+            "materialName",
+            "materialSource",
+            "materialComponents",
+            "form",
+            "pricing",
+        ]
 
 
 class BoxSpecSerializer(serializers.ModelSerializer):
