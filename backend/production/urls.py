@@ -13,6 +13,7 @@ from .views import (
     FinishedInventoryViewSet,
     JobTicketViewSet,
     ProductionScheduleViewSet,
+    QuoteCostRateViewSet,
     QuoteFinishedMaterialViewSet,
     QuoteRawMaterialViewSet,
     QuoteRecordViewSet,
@@ -25,6 +26,7 @@ router.register("customers", CustomerViewSet, basename="customer")
 router.register("company-roles", CompanyRoleViewSet, basename="company-role")
 router.register("company-users", CompanyUserViewSet, basename="company-user")
 router.register("quote-raw-materials", QuoteRawMaterialViewSet, basename="quote-raw-material")
+router.register("quote-cost-rates", QuoteCostRateViewSet, basename="quote-cost-rate")
 router.register("quote-finished-materials", QuoteFinishedMaterialViewSet, basename="quote-finished-material")
 router.register("quote-records", QuoteRecordViewSet, basename="quote-record")
 router.register("customer-orders", CustomerOrderViewSet, basename="customer-order")

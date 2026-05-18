@@ -11,6 +11,7 @@ from .models import (
     FinishedInventory,
     JobTicket,
     ProductionSchedule,
+    QuoteCostRate,
     QuoteFinishedMaterial,
     QuoteRawMaterial,
     QuoteRecord,
@@ -75,6 +76,14 @@ class QuoteRawMaterialSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "componentType", "msiCost", "inventoryMsi", "notes"]
 
 
+class QuoteCostRateSerializer(serializers.ModelSerializer):
+    msiCost = serializers.DecimalField(source="msi_cost", max_digits=12, decimal_places=4)
+
+    class Meta:
+        model = QuoteCostRate
+        fields = ["id", "key", "label", "msiCost", "notes", "locked"]
+
+
 class QuoteFinishedMaterialSerializer(serializers.ModelSerializer):
     id = serializers.CharField(source="external_id")
     sourceType = serializers.CharField(source="source_type")
@@ -88,6 +97,8 @@ class QuoteFinishedMaterialSerializer(serializers.ModelSerializer):
     coatingMsiCost = serializers.DecimalField(source="coating_msi_cost", max_digits=12, decimal_places=4)
     complexityMsiCost = serializers.DecimalField(source="complexity_msi_cost", max_digits=12, decimal_places=4)
     otherMsiCost = serializers.DecimalField(source="other_msi_cost", max_digits=12, decimal_places=4)
+    baseMarkupPercent = serializers.DecimalField(source="base_markup_percent", max_digits=7, decimal_places=3)
+    targetMarkupPercent = serializers.DecimalField(source="target_markup_percent", max_digits=7, decimal_places=3)
 
     class Meta:
         model = QuoteFinishedMaterial
@@ -105,6 +116,8 @@ class QuoteFinishedMaterialSerializer(serializers.ModelSerializer):
             "coatingMsiCost",
             "complexityMsiCost",
             "otherMsiCost",
+            "baseMarkupPercent",
+            "targetMarkupPercent",
             "notes",
         ]
 

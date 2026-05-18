@@ -328,6 +328,7 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
             <InfoRow label="Job Name" value={ticket.job_name} />
             <InfoRow label="Labels / Unit" value={ticket.labels_per_unit} />
             <InfoRow label="Units / Carton" value={ticket.units_per_carton} />
+            <InfoRow label="Total Labels / Carton" value={ticket.labels_per_carton} />
             <InfoRow label="Core Size" value={formatInches(ticket.core_size_inches)} />
             <InfoRow label="Wind" value={ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""} />
             <InfoRow label="Finishing Notes" value={ticket.finishing_notes} />
@@ -341,7 +342,7 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
           <div className="job-info-list">
             <InfoRow label="Tooling Recipe" value={ticket.recipe_name} />
             <InfoRow label="Operator Spec" value={`${formatInches(ticket.label_width_inches)} x ${formatInches(ticket.label_length_inches)} / ${formatInches(ticket.repeat_inches)} repeat / ${labelize(ticket.cutting_type)}`} />
-            <InfoRow label="Finishing" value={[labelize(ticket.finishing_type), ticket.labels_per_unit ? `${ticket.labels_per_unit} labels/unit` : "", ticket.units_per_carton ? `${ticket.units_per_carton} units/carton` : ""].filter(Boolean).join(" / ")} />
+            <InfoRow label="Finishing" value={[labelize(ticket.finishing_type), ticket.labels_per_unit ? `${ticket.labels_per_unit} labels/unit` : "", ticket.units_per_carton ? `${ticket.units_per_carton} units/carton` : "", ticket.labels_per_carton ? `${ticket.labels_per_carton} labels/carton` : ""].filter(Boolean).join(" / ")} />
           </div>
 
           <section className="job-subsection">

@@ -13,6 +13,7 @@ from .models import (
     FinishedInventory,
     JobTicket,
     ProductionSchedule,
+    QuoteCostRate,
     QuoteFinishedMaterial,
     QuoteRawMaterial,
     QuoteRecord,
@@ -28,6 +29,7 @@ from .serializers import (
     FinishedInventorySerializer,
     JobTicketSerializer,
     ProductionScheduleSerializer,
+    QuoteCostRateSerializer,
     QuoteFinishedMaterialSerializer,
     QuoteRawMaterialSerializer,
     QuoteRecordSerializer,
@@ -65,6 +67,13 @@ class QuoteRawMaterialViewSet(BaseProductionViewSet):
     lookup_field = "external_id"
     search_fields = ["name", "component_type", "notes"]
     ordering_fields = ["name", "component_type", "msi_cost", "updated_at"]
+
+
+class QuoteCostRateViewSet(BaseProductionViewSet):
+    queryset = QuoteCostRate.objects.all().order_by("label")
+    serializer_class = QuoteCostRateSerializer
+    search_fields = ["key", "label", "notes"]
+    ordering_fields = ["key", "label", "msi_cost", "updated_at"]
 
 
 class QuoteFinishedMaterialViewSet(BaseProductionViewSet):

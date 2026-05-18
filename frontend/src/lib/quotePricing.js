@@ -28,10 +28,14 @@ export const finishedComponentSlots = [
 ];
 
 export const finishedMaterialAdderFields = [
-  { name: "laborMsiCost", label: "Labor" },
-  { name: "coatingMsiCost", label: "Coating / Hard Coat" },
   { name: "complexityMsiCost", label: "Complexity" },
   { name: "otherMsiCost", label: "Other" },
+];
+
+export const quoteRateDefaults = [
+  { key: "labor", label: "Labor", msiCost: "0", notes: "Added to every made in-house finished material." },
+  { key: "color", label: "Color / Ink", msiCost: "0.03", notes: "Multiplied by the number of colors on a quote item." },
+  { key: "coating", label: "Coating", msiCost: "0", notes: "Multiplied by the number of coatings on a quote item." },
 ];
 
 export function toQuoteNumber(value, fallback = 0) {
@@ -79,6 +83,10 @@ export function calculateQuotePricing(input) {
   const sideTrim = Math.max(0, toQuoteNumber(input.sideTrim));
   const wastePercent = Math.max(0, toQuoteNumber(input.wastePercent));
   const msiCost = Math.max(0, toQuoteNumber(input.msiCost));
+  const colorCount = Math.max(0, Math.floor(toQuoteNumber(input.colorCount)));
+  const coatingCount = Math.max(0, Math.floor(toQuoteNumber(input.coatingCount)));
+  const colorMsiCost = Math.max(0, toQuoteNumber(input.colorMsiCost));
+  const coatingMsiCost = Math.max(0, toQuoteNumber(input.coatingMsiCost));
   const suggestedAcross = calculateMaxAcross({ labelWidth, gap, materialWidth, sideTrim });
   const requestedAcross = input.acrossMode === "manual"
     ? toQuoteNumber(input.numberAcross)
@@ -99,11 +107,14 @@ export function calculateQuotePricing(input) {
   const wasteMsi = baseMaterialMsi * (wastePercent / 100);
   const materialMsiWithWaste = baseMaterialMsi * wasteMultiplier;
   const materialCost = materialMsiWithWaste * msiCost;
+  const colorCost = materialMsiWithWaste * colorMsiCost * colorCount;
+  const coatingCost = materialMsiWithWaste * coatingMsiCost * coatingCount;
+  const processMsiCost = colorCost + coatingCost;
   const extraCost = quoteExtraCostFields.reduce(
     (sum, field) => sum + Math.max(0, toQuoteNumber(input[field.name])),
     0
   );
-  const totalCost = materialCost + extraCost;
+  const totalCost = materialCost + processMsiCost + extraCost;
   const rawPricingPercent = Math.max(0, toQuoteNumber(input.pricingPercent));
   const pricingPercent = input.pricingMode === "markup"
     ? rawPricingPercent
@@ -125,6 +136,10 @@ export function calculateQuotePricing(input) {
     sideTrim,
     wastePercent,
     msiCost,
+    colorCount,
+    coatingCount,
+    colorMsiCost,
+    coatingMsiCost,
     suggestedAcross,
     numberAcross,
     totalLayoutWidth,
@@ -137,6 +152,9 @@ export function calculateQuotePricing(input) {
     wasteMsi,
     materialMsiWithWaste,
     materialCost,
+    colorCost,
+    coatingCost,
+    processMsiCost,
     extraCost,
     totalCost,
     pricingPercent,
@@ -147,7 +165,12 @@ export function calculateQuotePricing(input) {
   };
 }
 
-export function calculateFinishedMaterialMsiCost(material, rawMaterials = []) {
+export function rateCost(rates, key) {
+  const rate = (rates || []).find((item) => item.key === key);
+  return Math.max(0, toQuoteNumber(rate?.msiCost));
+}
+
+export function calculateFinishedMaterialMsiCost(material, rawMaterials = [], rates = []) {
   if (!material) return 0;
   if (material.sourceType === "purchased") return Math.max(0, toQuoteNumber(material.purchasedMsiCost));
 
@@ -160,8 +183,9 @@ export function calculateFinishedMaterialMsiCost(material, rawMaterials = []) {
     (sum, field) => sum + Math.max(0, toQuoteNumber(material[field.name])),
     0
   );
+  const globalLaborCost = rateCost(rates, "labor");
 
-  return componentCost + adderCost;
+  return componentCost + adderCost + globalLaborCost;
 }
 
 export function componentLabelForFinishedMaterial(material, rawMaterials = []) {

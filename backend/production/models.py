@@ -76,6 +76,21 @@ class QuoteRawMaterial(models.Model):
         return self.name
 
 
+class QuoteCostRate(models.Model):
+    key = models.CharField(max_length=60, unique=True)
+    label = models.CharField(max_length=120)
+    msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    notes = models.TextField(blank=True)
+    locked = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["label"]
+
+    def __str__(self):
+        return self.label
+
+
 class QuoteFinishedMaterial(models.Model):
     external_id = models.CharField(max_length=120, unique=True)
     name = models.CharField(max_length=180)
@@ -90,6 +105,8 @@ class QuoteFinishedMaterial(models.Model):
     coating_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
     complexity_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
     other_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    base_markup_percent = models.DecimalField(max_digits=7, decimal_places=3, default=0)
+    target_markup_percent = models.DecimalField(max_digits=7, decimal_places=3, default=0)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -256,6 +273,7 @@ class JobTicket(models.Model):
     finishing_type = models.CharField(max_length=30, choices=FINISHING_TYPE_CHOICES, default="rolls")
     labels_per_unit = models.PositiveIntegerField(null=True, blank=True)
     units_per_carton = models.PositiveIntegerField(null=True, blank=True)
+    labels_per_carton = models.PositiveIntegerField(null=True, blank=True)
     box = models.ForeignKey(
         BoxSpec,
         on_delete=models.SET_NULL,
