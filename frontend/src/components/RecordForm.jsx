@@ -11,6 +11,10 @@ function normalizeInitial(fields, record, defaults = {}) {
       out[field.name] = record?.[field.name] ?? defaults?.[field.name] ?? field.defaultValue ?? false;
       return;
     }
+    if (field.type === "imageUpload") {
+      out[field.name] = null;
+      return;
+    }
     if (field.type === "multiRelation") {
       out[field.name] = record?.[field.name] ?? defaults?.[field.name] ?? field.defaultValue ?? [];
       return;
@@ -46,6 +50,7 @@ function getEmptyValueForField(field) {
   if (Object.prototype.hasOwnProperty.call(field, "clearWhenHidden")) return field.clearWhenHidden;
   if (field.type === "number" || field.type === "relation" || field.type === "searchRelation" || field.type === "date") return null;
   if (field.type === "multiRelation") return [];
+  if (field.type === "imageUpload") return null;
   if (field.type === "checkbox") return false;
   return "";
 }
@@ -55,6 +60,7 @@ function formatValueForPayload(field, value) {
   if (field.type === "date") return value === "" || value === null || value === undefined ? null : value;
   if (field.type === "relation" || field.type === "searchRelation") return value === "" || value === null || value === undefined ? null : Number(value);
   if (field.type === "multiRelation") return Array.isArray(value) ? value : [];
+  if (field.type === "imageUpload") return value ?? null;
   if (field.type === "checkbox") return Boolean(value);
   if (["select", "text", "email", "textarea"].includes(field.type)) return value === null || value === undefined ? "" : value;
   return value === null || value === undefined ? "" : value;
@@ -273,7 +279,7 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
   );
 }
 
-export default function RecordForm({ resource, record, defaults = {}, lookups, onSubmit, onCancel, submitting }) {
+export default function RecordForm({ resource, record, defaults = {}, lookups, onSubmit, onCancel, submitting, canUseField = () => true }) {
   const fields = resource.fields ?? [];
   const [form, setForm] = useState(() => normalizeInitial(fields, record, defaults));
 
@@ -282,7 +288,10 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
   }, [resource.key, record?.id, JSON.stringify(defaults)]);
 
   const title = record ? `Edit ${resource.singular}` : `Add ${resource.singular}`;
-  const visibleFields = useMemo(() => fields.filter((field) => !field.readOnly && !field.hidden && shouldShow(field, form)), [fields, form]);
+  const visibleFields = useMemo(
+    () => fields.filter((field) => !field.readOnly && !field.hidden && canUseField(field) && shouldShow(field, form)),
+    [fields, form, canUseField]
+  );
 
   function update(name, value) {
     setForm((prev) => clearHiddenFields(fields, { ...prev, [name]: value }));
@@ -290,15 +299,24 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
 
   function cleanPayload() {
     const payload = {};
+    const imageUploads = [];
     fields.forEach((field) => {
       if (field.readOnly) return;
+      if (!canUseField(field)) return;
       const visible = shouldShow(field, form);
       const rawValue = visible ? form[field.name] : getEmptyValueForField(field);
+      if (field.type === "imageUpload") {
+        if (rawValue instanceof File) {
+          imageUploads.push({ slot: field.imageSlot, file: rawValue });
+        }
+        return;
+      }
       payload[field.name] = formatValueForPayload(field, rawValue);
     });
     if (resource.endpoint === "materials" && !payload.code) {
       payload.code = generatedMaterialCode(payload.material_type);
     }
+    if (imageUploads.length) payload.__imageUploads = imageUploads;
     return payload;
   }
 
@@ -332,6 +350,21 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
               <label className="check-field" key={field.name} htmlFor={id}>
                 <input id={id} type="checkbox" checked={Boolean(value)} onChange={(event) => update(field.name, event.target.checked)} />
                 <span>{field.label}</span>
+              </label>
+            );
+          }
+
+          if (field.type === "imageUpload") {
+            const existingUrl = record?.[`${field.imageSlot}_image`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.url;
+            const existingName = record?.[`${field.imageSlot}_image_name`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.name;
+            return (
+              <label className="field image-upload-field" key={field.name} htmlFor={id}>
+                <span>{field.label}</span>
+                <div>
+                  {existingUrl ? <img src={existingUrl} alt={existingName || field.label} /> : <em>No image uploaded</em>}
+                  <input id={id} type="file" accept="image/*" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
+                  <strong>{value?.name || existingName || "Choose image"}</strong>
+                </div>
               </label>
             );
           }

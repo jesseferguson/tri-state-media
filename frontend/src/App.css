@@ -2295,13 +2295,20 @@ p, .muted { color: #7a7a7a; }
 }
 
 .job-tabs {
-  margin-bottom: 12px;
-  background: #eef2f7;
-  border-color: #dde5ee;
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid #dfe5ec;
+  border-radius: 10px;
+  background: #f3f6fa;
 }
 
 .job-tabs button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
   color: #526073;
+  font-size: .76rem;
+  font-weight: 900;
 }
 
 .job-tabs button:hover {
@@ -2310,13 +2317,314 @@ p, .muted { color: #7a7a7a; }
 }
 
 .job-tabs button.active {
-  color: #ffffff;
-  background: #1f2937;
-  box-shadow: 0 7px 18px rgba(31, 41, 55, .18);
+  color: #0f172a;
+  background: #ffffff;
+  box-shadow: 0 1px 5px rgba(15, 23, 42, .1);
 }
 
 .job-panel-section {
   color: #111827;
+}
+
+.job-ticket-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+  gap: 14px;
+}
+
+.job-ticket-card {
+  min-width: 0;
+  overflow: hidden;
+  display: grid;
+  padding: 0;
+  border: 1px solid #d9e1ea;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #101828;
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .07);
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+.job-ticket-card:hover,
+.job-ticket-card.active {
+  border-color: #7dd3fc;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, .15);
+  transform: translateY(-2px);
+}
+
+.job-ticket-card-image {
+  aspect-ratio: 4 / 3;
+  position: relative;
+  overflow: hidden;
+  background: #e8eef6;
+}
+
+.job-ticket-card-image img,
+.job-ticket-card-image > div {
+  width: 100%;
+  height: 100%;
+}
+
+.job-ticket-card-image img {
+  display: block;
+  object-fit: cover;
+  transition: transform .24s ease;
+}
+
+.job-ticket-card:hover .job-ticket-card-image img {
+  transform: scale(1.035);
+}
+
+.job-ticket-card-image > div {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: #667085;
+  font-size: .8rem;
+  font-weight: 850;
+}
+
+.job-ticket-card-badge {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .78);
+  color: #ffffff;
+  font-size: .68rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
+.job-ticket-card-body {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+}
+
+.job-ticket-card-body strong,
+.job-ticket-card-body span,
+.job-ticket-card-body em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-ticket-card-body strong {
+  color: #101828;
+  font-size: .96rem;
+  line-height: 1.2;
+}
+
+.job-ticket-card-body span,
+.job-ticket-card-body em {
+  color: #667085;
+  font-size: .74rem;
+  font-style: normal;
+}
+
+.job-mini-chart.empty {
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  border: 1px dashed #d9e1ea;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.job-mini-chart.empty span {
+  color: #98a2b3;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.job-chart-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid #dfe5ec;
+  border-radius: 10px;
+  background: #f3f6fa;
+}
+
+.job-chart-range button {
+  min-height: 30px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #475467;
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.job-chart-range button:hover {
+  background: #ffffff;
+}
+
+.job-chart-range button.featured {
+  border-color: #bae6fd;
+  background: #eff6ff;
+  color: #0369a1;
+}
+
+.job-chart-range button.active {
+  border-color: #7dd3fc;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 5px rgba(15, 23, 42, .1);
+}
+
+.job-mini-bars {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.job-mini-bar-track {
+  height: 42px;
+  display: grid;
+  grid-template-columns: repeat(var(--bar-count), minmax(4px, 1fr));
+  align-items: end;
+  gap: clamp(3px, 1.2vw, 7px);
+  padding: 4px 3px 0;
+  border-bottom: 1px solid #d9e1ea;
+}
+
+.job-mini-bar-track button {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.job-mini-bar-track button span {
+  width: min(8px, 70%);
+  height: var(--bar-height);
+  min-height: 4px;
+  border-radius: 999px 999px 2px 2px;
+  background: #93c5fd;
+  transition: background .16s ease, transform .16s ease;
+}
+
+.job-mini-bar-track button:hover span,
+.job-mini-bar-track button:focus-visible span,
+.job-mini-bar-track button.active span {
+  background: #0369a1;
+  transform: scaleY(1.04);
+}
+
+.job-mini-bars em {
+  overflow: hidden;
+  color: #475467;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-mini-bars small {
+  color: #98a2b3;
+  font-size: .65rem;
+  font-weight: 850;
+}
+
+.job-tickets-form-panel {
+  border: 1px solid #d8e0ea;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.job-tickets-record-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.job-tickets-record-form .field {
+  padding: 10px;
+  border: 1px solid #e5eaf1;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.job-tickets-record-form .field > span,
+.job-tickets-record-form .check-field span {
+  color: #475467;
+  font-size: .72rem;
+  font-weight: 900;
+}
+
+.job-tickets-record-form input,
+.job-tickets-record-form select,
+.job-tickets-record-form textarea,
+.job-tickets-record-form .lookup-selected {
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.job-tickets-record-form .field-wide,
+.job-tickets-record-form .image-upload-field {
+  grid-column: span 2;
+}
+
+.image-upload-field > div {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.image-upload-field img,
+.image-upload-field em {
+  width: 84px;
+  height: 64px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.image-upload-field img {
+  object-fit: cover;
+}
+
+.image-upload-field em {
+  display: grid;
+  place-items: center;
+  color: #98a2b3;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 850;
+  text-align: center;
+}
+
+.image-upload-field input {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.image-upload-field strong {
+  grid-column: 2;
+  overflow: hidden;
+  color: #344054;
+  font-size: .75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .job-info-row,
@@ -2352,6 +2660,152 @@ p, .muted { color: #7a7a7a; }
 
 .job-subsection-head {
   color: #243447;
+}
+
+.job-image-search {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.job-image-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #101828;
+}
+
+.job-image-search span {
+  color: #667085;
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.job-image-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.job-image-card {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #e5eaf1;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.job-image-preview {
+  min-height: 145px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.job-image-preview a,
+.job-image-preview img,
+.job-image-preview > div {
+  width: 100%;
+  height: 100%;
+  min-height: 145px;
+}
+
+.job-image-preview img {
+  display: block;
+  object-fit: cover;
+}
+
+.job-image-preview > div {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  color: #667085;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.job-image-detail {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.job-image-detail header {
+  display: grid;
+  gap: 2px;
+}
+
+.job-image-detail header strong {
+  color: #101828;
+}
+
+.job-image-detail header span,
+.job-image-detail p {
+  color: #667085;
+  font-size: .78rem;
+}
+
+.job-image-detail label {
+  display: grid;
+  gap: 5px;
+}
+
+.job-image-detail label span {
+  color: #667085;
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.job-image-detail input,
+.job-image-detail textarea {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 9px;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+  outline: 0;
+  background: #f8fafc;
+  color: #101828;
+}
+
+.job-image-detail textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+
+.job-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.job-image-actions label.ghost-btn {
+  cursor: pointer;
+}
+
+.job-image-actions input[type="file"] {
+  display: none;
+}
+
+.job-image-error {
+  margin: 0;
+  padding: 8px 9px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #b91c1c;
+  font-size: .78rem;
+  font-weight: 800;
 }
 
 .recipe-group-card,
@@ -2510,6 +2964,29 @@ p, .muted { color: #7a7a7a; }
 /* Inline tooling path and focused job summary */
 .job-stat-grid.focus {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.job-stat-grid.focus .job-stat {
+  display: grid;
+  align-content: space-between;
+  min-height: 112px;
+  padding: 11px;
+  border-color: #dce5ef;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .06);
+}
+
+.job-stat-grid.focus .job-stat strong {
+  color: #0f172a;
+  font-size: 1.05rem;
+}
+
+.job-stat-grid.focus .job-stat span {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 900;
 }
 
 .job-info-list.compact {
@@ -5937,9 +6414,25 @@ p, .muted { color: #7a7a7a; }
   .schedule-card-controls,
   .schedule-detail-grid,
   .schedule-workflow-panel,
+  .job-ticket-gallery,
   .job-tickets-record-form,
   .production-schedule-record-form {
     grid-template-columns: 1fr;
+  }
+
+  .job-tickets-record-form .field-wide,
+  .job-tickets-record-form .image-upload-field {
+    grid-column: auto;
+  }
+
+  .image-upload-field > div {
+    grid-template-columns: 1fr;
+  }
+
+  .image-upload-field img,
+  .image-upload-field em {
+    width: 100%;
+    height: 150px;
   }
 
   .schedule-card-title,

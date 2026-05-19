@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
-import { createRecord, deleteRecord, fetchCollection, updateRecord } from "./api";
+import { createRecord, deleteRecord, fetchCollection, updateRecord, uploadRecordAction } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
@@ -9,6 +9,7 @@ import FlexDieSearch from "./components/FlexDieSearch";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
 import GroupedLocationView from "./components/GroupedLocationView";
 import GroupedUsageView from "./components/GroupedUsageView";
+import JobTicketGallery from "./components/JobTicketGallery";
 import JobTicketPanel from "./components/JobTicketPanel";
 import MaterialInventoryView from "./components/MaterialInventoryView";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
@@ -208,7 +209,7 @@ const materialFormPageKeys = new Set([
 ]);
 
 function visibleResourcesForRole(roleDefinitions, roleName) {
-  return resources.filter((item) => roleHasResourceAccess(roleDefinitions, roleName, item.key));
+  return resources.filter((item) => !item.permissionOnly && roleHasResourceAccess(roleDefinitions, roleName, item.key));
 }
 
 function defaultResourceKeyForRole(roleDefinitions, roleName) {
@@ -940,25 +941,34 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   }, [lookupQuery.data, resource.key, visibleRows]);
 
   function prepareSavePayload(payload) {
+    const { __imageUploads, ...dataPayload } = payload ?? {};
     if (resource.key !== "raw-materials") return payload;
-    const quantity = payload.length_feet === "" || payload.length_feet === null || payload.length_feet === undefined
-      ? payload.quantity ?? 0
-      : payload.length_feet;
+    const quantity = dataPayload.length_feet === "" || dataPayload.length_feet === null || dataPayload.length_feet === undefined
+      ? dataPayload.quantity ?? 0
+      : dataPayload.length_feet;
     return {
-      ...payload,
+      ...dataPayload,
       quantity,
-      unit: payload.unit || "lf",
+      unit: dataPayload.unit || "lf",
     };
+  }
+
+  function canUseRecordField(field) {
+    if (!field.requiresResourceAccess) return true;
+    return roleHasResourceAccess(roleDefinitions, currentUser?.role, field.requiresResourceAccess);
   }
 
   const saveMutation = useMutation({
     mutationFn: async (payload) => {
+      const imageUploads = Array.isArray(payload?.__imageUploads) ? payload.__imageUploads : [];
       const cleanPayload = prepareSavePayload(payload);
+      delete cleanPayload.__imageUploads;
+      let saved;
       if (formMode === "edit" && selected?.id) {
-        return updateRecord(resource.endpoint, selected.id, cleanPayload);
+        saved = await updateRecord(resource.endpoint, selected.id, cleanPayload);
+      } else {
+        saved = await createRecord(resource.endpoint, cleanPayload);
       }
-
-      const saved = await createRecord(resource.endpoint, cleanPayload);
       if (resource.key === "raw-materials") {
         try {
           await createRecord("material-usages", {
@@ -973,6 +983,16 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           });
         } catch (error) {
           if (!String(error.message).includes("404")) throw error;
+        }
+      }
+      if (resource.key === "job-tickets" && imageUploads.length && saved?.id) {
+        for (const upload of imageUploads) {
+          if (!upload.file || !upload.slot) continue;
+          const formData = new FormData();
+          formData.append("image", upload.file);
+          formData.append("name", cleanPayload[`${upload.slot}_image_name`] || upload.file.name);
+          formData.append("description", cleanPayload[`${upload.slot}_image_description`] || "");
+          saved = await uploadRecordAction(resource.endpoint, saved.id, `images/${upload.slot}`, formData);
         }
       }
       return saved;
@@ -1446,6 +1466,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                canUseField={canUseRecordField}
               />
             )}
 
@@ -1468,6 +1489,12 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onClose={() => setSelected(null)}
                     onEdit={() => setFormMode("edit")}
                     onUpdate={(id, payload) => scheduleUpdateMutation.mutate({ id, payload })}
+                  />
+                ) : resource.viewMode === "jobTicketGallery" ? (
+                  <JobTicketGallery
+                    rows={visibleRows}
+                    selectedId={selected?.id}
+                    onSelect={(row) => { setSelected(row); setFormMode(null); }}
                   />
                 ) : resource.viewMode === "materialInventory" ? (
                   <MaterialInventoryView
@@ -1584,6 +1611,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   submitting={saveMutation.isPending}
                   onSubmit={(payload) => saveMutation.mutate(payload)}
                   onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                  canUseField={canUseRecordField}
                 />
               ) : (
                 <JobTicketPanel
@@ -1639,6 +1667,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                canUseField={canUseRecordField}
               />
             </div>
           </section>
@@ -1655,6 +1684,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate({ ...payload, last_updated_by: currentUser.name })}
                 onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                canUseField={canUseRecordField}
               />
             </div>
           </section>

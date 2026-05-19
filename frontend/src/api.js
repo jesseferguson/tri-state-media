@@ -16,9 +16,10 @@ function absoluteUrl(url) {
 }
 
 async function request(url, options = {}) {
+  const bodyIsFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const response = await fetch(url, {
     headers: {
-      "Content-Type": "application/json",
+      ...(bodyIsFormData ? {} : { "Content-Type": "application/json" }),
       ...(options.headers ?? {}),
     },
     ...options,
@@ -115,6 +116,19 @@ export async function postRecordAction(endpoint, id, action, payload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function uploadRecordAction(endpoint, id, action, formData) {
+  const cleanAction = String(action).replace(/^\//, "").replace(/\/$/, "");
+  return request(`${endpointUrl(endpoint, id)}${cleanAction}/`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function deleteRecordAction(endpoint, id, action) {
+  const cleanAction = String(action).replace(/^\//, "").replace(/\/$/, "");
+  return request(`${endpointUrl(endpoint, id)}${cleanAction}/`, { method: "DELETE" });
 }
 
 export async function deleteRecord(endpoint, id) {

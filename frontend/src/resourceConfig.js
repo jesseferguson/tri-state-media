@@ -405,6 +405,19 @@ export const resourceGroups = [
 
 export const resources = [
   {
+    key: "job-ticket-images",
+    label: "Job Ticket Images",
+    singular: "Job Ticket Image Permission",
+    group: "production",
+    icon: PackageCheck,
+    permissionOnly: true,
+    disableCreate: true,
+    tagline: "Allows a role to view, upload, replace, and delete job ticket images.",
+    columns: [],
+    fields: [],
+  },
+
+  {
     key: "quote-calculator",
     label: "Quote Calculator",
     singular: "Quote Calculator",
@@ -462,7 +475,8 @@ export const resources = [
     icon: Factory,
     accent: "#38bdf8",
     defaultOrdering: "ticket_number",
-    tagline: "Job information, label specs, finished raw material family, box size, and finishing instructions. Specific inventory rolls are assigned on the Production Schedule page.",
+    viewMode: "jobTicketGallery",
+    tagline: "Visual job packet gallery with the job image, job name, and key customer identifiers.",
     columns: [
       "ticket_number",
       "customer_display",
@@ -496,6 +510,15 @@ export const resources = [
       { name: "customer_name", label: "Customer Name Override", type: "text" },
       { name: "job_name", label: "Job Name", type: "text", required: true, placeholder: "4 x 4 PolyMatte DT Roll" },
       { name: "product_code", label: "TSM ID", type: "text" },
+      { name: "general_image", label: "General Image", type: "imageUpload", imageSlot: "general", requiresResourceAccess: "job-ticket-images" },
+      { name: "general_image_name", label: "General Image Name", type: "text", requiresResourceAccess: "job-ticket-images" },
+      { name: "general_image_description", label: "General Image Description", type: "textarea", requiresResourceAccess: "job-ticket-images" },
+      { name: "spec_image", label: "Spec Image", type: "imageUpload", imageSlot: "spec", requiresResourceAccess: "job-ticket-images" },
+      { name: "spec_image_name", label: "Spec Image Name", type: "text", requiresResourceAccess: "job-ticket-images" },
+      { name: "spec_image_description", label: "Spec Image Description", type: "textarea", requiresResourceAccess: "job-ticket-images" },
+      { name: "finishing_image", label: "Finishing Image", type: "imageUpload", imageSlot: "finishing", requiresResourceAccess: "job-ticket-images" },
+      { name: "finishing_image_name", label: "Finishing Image Name", type: "text", requiresResourceAccess: "job-ticket-images" },
+      { name: "finishing_image_description", label: "Finishing Image Description", type: "textarea", requiresResourceAccess: "job-ticket-images" },
       {
         name: "material_spec",
         label: "Finished Raw Material",

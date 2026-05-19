@@ -1,9 +1,15 @@
 from django.db import models
 from django.contrib.auth.hashers import check_password, make_password
 from django.utils import timezone
+from uuid import uuid4
 
 from materials.models import MaterialSpec, MaterialUsage, RawMaterialInventory
 from tooling.models import Press, ToolingLocation, ToolingRecipe, ToolingRecipeOption
+
+
+def job_ticket_image_upload_path(instance, filename):
+    safe_ticket = str(instance.ticket_number or instance.pk or "job-ticket").replace("/", "-").replace("\\", "-")
+    return f"production/job-tickets/{safe_ticket}/{uuid4().hex}-{filename}"
 
 
 class Customer(models.Model):
@@ -242,6 +248,16 @@ class JobTicket(models.Model):
     customer_name = models.CharField(max_length=150, blank=True)
     job_name = models.CharField(max_length=150)
     product_code = models.CharField(max_length=80, blank=True)
+
+    general_image = models.ImageField(upload_to=job_ticket_image_upload_path, blank=True, null=True)
+    general_image_name = models.CharField(max_length=180, blank=True)
+    general_image_description = models.TextField(blank=True)
+    spec_image = models.ImageField(upload_to=job_ticket_image_upload_path, blank=True, null=True)
+    spec_image_name = models.CharField(max_length=180, blank=True)
+    spec_image_description = models.TextField(blank=True)
+    finishing_image = models.ImageField(upload_to=job_ticket_image_upload_path, blank=True, null=True)
+    finishing_image_name = models.CharField(max_length=180, blank=True)
+    finishing_image_description = models.TextField(blank=True)
 
     label_width_inches = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     label_length_inches = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)

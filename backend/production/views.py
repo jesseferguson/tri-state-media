@@ -1,5 +1,6 @@
 from rest_framework import filters, status, viewsets
-from rest_framework.decorators import api_view
+from rest_framework.decorators import action, api_view
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from .models import (
@@ -38,6 +39,7 @@ from .serializers import (
 
 class BaseProductionViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
 
 
 class CustomerViewSet(BaseProductionViewSet):
@@ -167,6 +169,12 @@ class JobTicketViewSet(BaseProductionViewSet):
         "box__name",
         "box__item_number",
         "box__supplier",
+        "general_image_name",
+        "general_image_description",
+        "spec_image_name",
+        "spec_image_description",
+        "finishing_image_name",
+        "finishing_image_description",
         "finishing_type",
         "cutting_type",
         "finishing_notes",
@@ -181,6 +189,45 @@ class JobTicketViewSet(BaseProductionViewSet):
         "repeat_inches",
         "requested_quantity",
     ]
+
+    image_slots = {"general", "spec", "finishing"}
+
+    @action(detail=True, methods=["post", "delete"], url_path=r"images/(?P<slot>general|spec|finishing)")
+    def images(self, request, pk=None, slot=None):
+        ticket = self.get_object()
+        if slot not in self.image_slots:
+            return Response({"error": "Unknown image slot."}, status=status.HTTP_400_BAD_REQUEST)
+
+        image_field = f"{slot}_image"
+        name_field = f"{slot}_image_name"
+        description_field = f"{slot}_image_description"
+
+        if request.method == "DELETE":
+            current_file = getattr(ticket, image_field)
+            if current_file:
+                current_file.delete(save=False)
+            setattr(ticket, image_field, None)
+            setattr(ticket, name_field, "")
+            setattr(ticket, description_field, "")
+            ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
+            return Response(self.get_serializer(ticket).data)
+
+        upload = request.FILES.get("image")
+        if upload:
+            current_file = getattr(ticket, image_field)
+            if current_file:
+                current_file.delete(save=False)
+            setattr(ticket, image_field, upload)
+            if not request.data.get("name"):
+                setattr(ticket, name_field, upload.name)
+
+        if "name" in request.data:
+            setattr(ticket, name_field, str(request.data.get("name") or "").strip())
+        if "description" in request.data:
+            setattr(ticket, description_field, str(request.data.get("description") or "").strip())
+
+        ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
+        return Response(self.get_serializer(ticket).data)
 
 
 class ProductionScheduleViewSet(BaseProductionViewSet):

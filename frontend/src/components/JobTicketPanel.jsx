@@ -10,6 +10,16 @@ const tabs = [
   { key: "spec", label: "Spec" },
 ];
 
+const chartRangeOptions = [
+  { key: "all", label: "All" },
+  { key: "last-quarter", label: "Last Quarter" },
+  { key: "last-year", label: "Last Year" },
+  { key: "ytd", label: "YTD" },
+  { key: "30bd", label: "30 Days", featured: true },
+  { key: "60bd", label: "60 Days", featured: true },
+  { key: "90bd", label: "90 Days", featured: true },
+];
+
 function sameId(a, b) {
   if (a === null || a === undefined || b === null || b === undefined) return false;
   return String(a) === String(b);
@@ -43,11 +53,44 @@ function formatNumber(value, suffix = "") {
   return `${rounded.toLocaleString()}${suffix}`;
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, bars, rangeLabel }) {
   return (
     <div className="job-stat">
-      <span>{label}</span>
-      <strong>{value ?? "--"}</strong>
+      <div>
+        <span>{label}</span>
+        <strong>{value ?? "--"}</strong>
+      </div>
+      {bars && <MiniBarChart bars={bars} rangeLabel={rangeLabel} />}
+    </div>
+  );
+}
+
+function MiniBarChart({ bars, rangeLabel }) {
+  const [selected, setSelected] = useState(null);
+  if (!bars?.length) {
+    return <div className="job-mini-chart empty"><span>No data</span></div>;
+  }
+  const max = Math.max(...bars.map((bar) => bar.value), 1);
+  const active = selected || bars[bars.length - 1];
+  return (
+    <div className="job-mini-bars">
+      <div className="job-mini-bar-track" style={{ "--bar-count": bars.length }}>
+        {bars.map((bar) => (
+          <button
+            type="button"
+            key={bar.key}
+            title={`${bar.label}: ${formatNumber(bar.value)}`}
+            className={active.key === bar.key ? "active" : ""}
+            style={{ "--bar-height": `${Math.max(4, (bar.value / max) * 100)}%` }}
+            onMouseEnter={() => setSelected(bar)}
+            onFocus={() => setSelected(bar)}
+            onClick={() => setSelected(bar)}
+          >
+            <span />
+          </button>
+        ))}
+      </div>
+      <em>{active.label}: {formatNumber(active.value)} <small>{rangeLabel}</small></em>
     </div>
   );
 }
@@ -123,8 +166,86 @@ function dateValue(row) {
   return row.scheduled_date || row.order_date || row.due_date || row.run_date || "";
 }
 
+function subtractBusinessDays(days) {
+  const now = new Date();
+  const date = new Date(now);
+  let remaining = days;
+  while (remaining > 0) {
+    date.setDate(date.getDate() - 1);
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) remaining -= 1;
+  }
+  return date;
+}
+
+function rangeStart(rangeKey) {
+  const now = new Date();
+  if (rangeKey === "all") return null;
+  if (rangeKey === "ytd") return new Date(now.getFullYear(), 0, 1);
+  if (rangeKey === "last-year") return new Date(now.getFullYear() - 1, 0, 1);
+  if (rangeKey === "last-quarter") {
+    const currentQuarter = Math.floor(now.getMonth() / 3);
+    const startMonth = currentQuarter === 0 ? 9 : (currentQuarter - 1) * 3;
+    const year = currentQuarter === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    return new Date(year, startMonth, 1);
+  }
+  if (rangeKey === "30bd") return subtractBusinessDays(30);
+  if (rangeKey === "60bd") return subtractBusinessDays(60);
+  if (rangeKey === "90bd") return subtractBusinessDays(90);
+  return null;
+}
+
+function rangeEnd(rangeKey) {
+  const now = new Date();
+  if (rangeKey === "last-year") return new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
+  if (rangeKey === "last-quarter") {
+    const start = rangeStart(rangeKey);
+    return new Date(start.getFullYear(), start.getMonth() + 3, 0, 23, 59, 59);
+  }
+  return now;
+}
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(date) {
+  return date.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+}
+
+function monthlyBars(rows, dateGetter, quantityGetter, rangeKey) {
+  const start = rangeStart(rangeKey);
+  const end = rangeEnd(rangeKey);
+  const grouped = new Map();
+  rows
+    .map((row) => {
+      const rawDate = dateGetter(row);
+      const date = rawDate ? new Date(`${rawDate}T00:00:00`) : null;
+      const quantity = quantityGetter(row);
+      return date && !Number.isNaN(date.getTime()) && (!start || date >= start) && date <= end && quantity > 0
+        ? { date, quantity }
+        : null;
+    })
+    .filter(Boolean)
+    .forEach((point) => {
+      const key = monthKey(point.date);
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label: monthLabel(point.date),
+          value: 0,
+          sort: new Date(point.date.getFullYear(), point.date.getMonth(), 1).getTime(),
+        });
+      }
+      grouped.get(key).value += point.quantity;
+    });
+
+  return Array.from(grouped.values()).sort((a, b) => a.sort - b.sort);
+}
+
 export default function JobTicketPanel({ ticket, lookups, editing, deleting, onEdit, onDelete, onSchedule }) {
   const [activeTab, setActiveTab] = useState("general");
+  const [chartRange, setChartRange] = useState("90bd");
 
   const materialInventory = useMemo(
     () => matchingMaterialInventory(ticket, lookups["raw-materials"]),
@@ -164,6 +285,20 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
   const finishedQuantity = availableFinished.reduce((sum, row) => sum + numeric(row.quantity), 0);
   const scheduleTotal = scheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
   const averageScheduled = scheduleRows.length ? scheduleTotal / scheduleRows.length : null;
+  const selectedRangeLabel = chartRangeOptions.find((option) => option.key === chartRange)?.label || "90 Days";
+  const scheduledBars = useMemo(
+    () => monthlyBars(scheduleRows, dateValue, scheduleQuantity, chartRange),
+    [chartRange, scheduleRows]
+  );
+  const shippedBars = useMemo(
+    () => monthlyBars(
+      finishedRows.filter((row) => row.status === "shipped"),
+      (row) => row.run_date,
+      (row) => getBoxCount(row, ticket) || numeric(row.quantity),
+      chartRange
+    ),
+    [chartRange, finishedRows, ticket]
+  );
   const recentSchedules = [...scheduleRows]
     .sort((a, b) => String(dateValue(b)).localeCompare(String(dateValue(a))))
     .slice(0, 6);
@@ -193,11 +328,23 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
 
       {activeTab === "general" && (
         <div className="job-panel-section">
+          <div className="job-chart-range">
+            {chartRangeOptions.map((option) => (
+              <button
+                className={`${chartRange === option.key ? "active" : ""} ${option.featured ? "featured" : ""}`}
+                type="button"
+                key={option.key}
+                onClick={() => setChartRange(option.key)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <div className="job-stat-grid focus">
             <Stat label="Material On Hand" value={`${availableInventory.length} rolls / ${formatNumber(materialFeet, " ft")}`} />
             <Stat label="Finished Stock" value={`${formatNumber(finishedQuantity)} units / ${availableFinished.length} lots`} />
-            <Stat label="Avg Scheduled" value={averageScheduled ? formatNumber(averageScheduled) : "--"} />
-            <Stat label="Avg Shipped / Month" value={recentBoxAverage ?? "--"} />
+            <Stat label="Avg Scheduled" value={averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} />
+            <Stat label="Avg Shipped / Month" value={recentBoxAverage ?? "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} />
           </div>
 
           <div className="job-info-list compact">

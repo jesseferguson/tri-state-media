@@ -189,6 +189,7 @@ class BoxInventorySerializer(serializers.ModelSerializer):
 
 class JobTicketSerializer(serializers.ModelSerializer):
     customer_display = serializers.SerializerMethodField()
+    job_images = serializers.SerializerMethodField()
     recipe_name = serializers.CharField(source="recipe.name", read_only=True)
     box_name = serializers.CharField(source="box.name", read_only=True)
     box_item_number = serializers.CharField(source="box.item_number", read_only=True)
@@ -216,6 +217,32 @@ class JobTicketSerializer(serializers.ModelSerializer):
 
     def get_material_spec_liner_pounds(self, obj):
         return obj.material_spec.liner_pounds if obj.material_spec else None
+
+    def image_payload(self, obj, slot):
+        image = getattr(obj, f"{slot}_image", None)
+        url = ""
+        if image:
+            try:
+                url = image.url
+            except ValueError:
+                url = ""
+        return {
+            "slot": slot,
+            "label": {
+                "general": "General Image",
+                "spec": "Spec Image",
+                "finishing": "Finishing Image",
+            }.get(slot, slot.title()),
+            "url": url,
+            "fileName": image.name.split("/")[-1] if image else "",
+            "storageName": image.name if image else "",
+            "name": getattr(obj, f"{slot}_image_name", ""),
+            "description": getattr(obj, f"{slot}_image_description", ""),
+            "hasImage": bool(image),
+        }
+
+    def get_job_images(self, obj):
+        return [self.image_payload(obj, slot) for slot in ["general", "spec", "finishing"]]
 
     class Meta:
         model = JobTicket
