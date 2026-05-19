@@ -14,7 +14,7 @@ function customerName(ticket) {
 }
 
 function ticketMeta(ticket) {
-  return [ticket.product_code ? `TSM ${ticket.product_code}` : "", ticket.ticket_number].filter(Boolean).join(" / ") || "No ID";
+  return ticket.product_code ? `TSM ${ticket.product_code}` : "No TSM ID";
 }
 
 export default function JobTicketGallery({ rows, selectedId, onSelect }) {

@@ -154,6 +154,7 @@ function getRelationTitle(row, field) {
 
   if (field.relation === "raw-materials") {
     return [
+      row.material_master_type_code,
       row.material_family,
       row.material_name ?? row.name ?? getRecordTitle(row),
       row.material_code,
@@ -181,7 +182,7 @@ function getRelationTitle(row, field) {
 
   if (field.relation === "materials") {
     if (field.lookupFilters?.material_type === "coated_stock" || row.material_type === "coated_stock") {
-      const type = row.material_family || row.code;
+      const type = row.master_type_code || row.material_family || row.code;
       const description = row.name ?? getRecordTitle(row);
       return [type, description && description !== type ? description : "", row.code && row.code !== type ? row.code : ""]
         .filter(Boolean)
@@ -198,12 +199,21 @@ function getRelationTitle(row, field) {
 
     return [
       row.code,
+      row.master_type_code,
       row.material_type,
       row.company,
       row.name ?? getRecordTitle(row),
       row.material_family,
       row.gsm ? `${row.gsm} GSM` : "",
       row.liner_pounds ? `${row.liner_pounds}#` : "",
+    ].filter(Boolean).join(" / ");
+  }
+
+  if (field.relation === "material-master-types") {
+    return [
+      row.code,
+      row.name ?? getRecordTitle(row),
+      row.is_active === false ? "Inactive" : "",
     ].filter(Boolean).join(" / ");
   }
 

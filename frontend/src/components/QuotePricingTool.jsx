@@ -61,6 +61,7 @@ const emptyRawForm = {
 
 const emptyFinishedForm = {
   name: "",
+  materialMasterTypeId: "",
   sourceType: "made",
   width_inches: "8.75",
   inventoryMsi: "",
@@ -176,7 +177,7 @@ function quoteDateLabel(value) {
 function jobTicketLabel(ticket) {
   if (!ticket) return "";
   return [
-    ticket.ticket_number,
+    ticket.product_code ? `TSM ${ticket.product_code}` : "",
     ticket.customer_display || ticket.customer_name,
     ticket.job_name || ticket.product_name,
   ].filter(Boolean).join(" / ");
@@ -223,6 +224,7 @@ function finishedMaterialPayload(material) {
   return {
     id: material.id || makeId("finished"),
     name: material.name || "",
+    materialMasterTypeId: material.materialMasterTypeId || null,
     sourceType: material.sourceType || "made",
     purchasedMsiCost: moneyInput(material.purchasedMsiCost),
     faceRawId: material.faceRawId || "",
@@ -251,21 +253,64 @@ function quoteRecordPayload(quote) {
 function jobTicketQuoteQuantity(ticket) {
   if (!ticket) return { quantity: "", complete: false, message: "" };
   const labelsPerCarton = toQuoteNumber(ticket.labels_per_carton, NaN);
+  const labelsPerUnit = toQuoteNumber(ticket.labels_per_unit, NaN);
   const hasLabelsPerCarton = Number.isFinite(labelsPerCarton) && labelsPerCarton > 0;
+  const hasLabelsPerUnit = Number.isFinite(labelsPerUnit) && labelsPerUnit > 0;
 
-  if (!hasLabelsPerCarton) {
+  if (hasLabelsPerCarton) {
     return {
-      quantity: "",
-      complete: false,
-      message: "This job ticket does not contain number of labels in box. Enter the quote quantity below.",
+      quantity: quantityInputValue(labelsPerCarton),
+      complete: true,
+      message: "",
+    };
+  }
+
+  if (hasLabelsPerUnit) {
+    return {
+      quantity: quantityInputValue(labelsPerUnit),
+      complete: true,
+      message: "",
     };
   }
 
   return {
-    quantity: quantityInputValue(labelsPerCarton),
-    complete: true,
-    message: "",
+    quantity: "",
+    complete: false,
+    message: "This job ticket does not contain number of labels in box or labels per unit. Enter the quote quantity below.",
   };
+}
+
+function jobTicketMasterTypeId(ticket) {
+  return ticket?.material_master_type || ticket?.material_spec_master_type || "";
+}
+
+function jobTicketMasterTypeLabel(ticket) {
+  return [
+    ticket?.material_master_type_code || ticket?.material_spec_master_type_code,
+    ticket?.material_master_type_name || ticket?.material_spec_master_type_name,
+  ].filter(Boolean).join(" / ");
+}
+
+function materialMatchesJobTicket(material, ticket) {
+  if (!material || !ticket) return false;
+  const masterTypeId = jobTicketMasterTypeId(ticket);
+  if (masterTypeId && String(material.materialMasterTypeId || "") === String(masterTypeId)) return true;
+
+  const candidates = [
+    ticket.material_master_type_code,
+    ticket.material_spec_master_type_code,
+    ticket.material_master_type_name,
+    ticket.material_spec_master_type_name,
+    ticket.material_spec_family,
+    ticket.material_spec_name,
+  ].filter(Boolean).map((value) => String(value).trim().toLowerCase());
+  const materialText = [
+    material.name,
+    material.materialMasterTypeCode,
+    material.materialMasterTypeName,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  return candidates.some((value) => value && (materialText === value || materialText.includes(value)));
 }
 
 function jobTicketQuoteDimensions(ticket) {
@@ -485,7 +530,7 @@ function quoteInternalSections(quote) {
         title: "Quote Inputs",
         rows: [
           ["Customer", quote.customerName || "--"],
-          ["Job Name", quote.jobName || "--"],
+          ["Job Number", quote.jobName || "--"],
           ...(quote.productCode ? [["TSM ID", quote.productCode]] : []),
           ["Job Ticket", quote.jobTicketNumber || "Manual quote"],
           ["Contact", quote.contactName || quote.contactEmail || "--"],
@@ -512,7 +557,7 @@ function quoteInternalSections(quote) {
       title: "Quote Inputs",
       rows: [
         ["Customer", quote.customerName || "--"],
-        ["Job Name", quote.jobName || "--"],
+        ["Job Number", quote.jobName || "--"],
         ...(quote.productCode ? [["TSM ID", quote.productCode]] : []),
         ["Job Ticket", quote.jobTicketNumber || "Manual quote"],
         ["Contact", quote.contactName || quote.contactEmail || "--"],
@@ -974,7 +1019,7 @@ function InternalQuoteBreakdown({ quote, materialOptions = [] }) {
   );
 }
 
-export default function QuotePricingTool({ currentUser }) {
+export default function QuotePricingTool({ currentUser, initialJobTicketId = "" }) {
   const storedLibrary = useMemo(loadMaterialLibrary, []);
   const storedQuotes = useMemo(loadSavedQuotes, []);
   const [activeTab, setActiveTab] = useState("pricing");
@@ -1003,6 +1048,7 @@ export default function QuotePricingTool({ currentUser }) {
       ...material,
       calculatedMsiCost: calculateFinishedMaterialMsiCost(material, rawMaterials, quoteRates),
       componentLabel: componentLabelForFinishedMaterial(material, rawMaterials),
+      masterTypeLabel: [material.materialMasterTypeCode, material.materialMasterTypeName].filter(Boolean).join(" / "),
     }));
   }, [finishedMaterials, rawMaterials, quoteRates]);
 
@@ -1010,6 +1056,12 @@ export default function QuotePricingTool({ currentUser }) {
   const selectedJobTicket = jobTickets.find((ticket) => String(ticket.id) === String(quoteInfo.jobTicketId));
   const selectedJobTicketDimensions = useMemo(() => jobTicketQuoteDimensions(selectedJobTicket), [selectedJobTicket]);
   const selectedJobTicketQuantity = useMemo(() => jobTicketQuoteQuantity(selectedJobTicket), [selectedJobTicket]);
+  const selectedJobTicketMasterTypeId = jobTicketMasterTypeId(selectedJobTicket);
+  const selectedJobTicketMasterTypeLabel = jobTicketMasterTypeLabel(selectedJobTicket);
+  const jobTicketMaterialMatch = useMemo(() => {
+    if (!selectedJobTicket) return null;
+    return materialOptions.find((material) => materialMatchesJobTicket(material, selectedJobTicket)) || null;
+  }, [materialOptions, selectedJobTicket, selectedJobTicketMasterTypeId]);
   const quotePersonTabs = useMemo(() => {
     const groups = new Map();
     if (currentUser?.name) {
@@ -1171,6 +1223,16 @@ export default function QuotePricingTool({ currentUser }) {
   }, []);
 
   useEffect(() => {
+    if (!initialJobTicketId) return;
+    setActiveTab("pricing");
+    setQuoteInfo((prev) => ({
+      ...prev,
+      linkMode: "ticket",
+      jobTicketId: String(initialJobTicketId),
+    }));
+  }, [initialJobTicketId]);
+
+  useEffect(() => {
     let alive = true;
     setJobTicketLoadState("loading");
     fetchCollection("job-tickets", { pageSize: 500 })
@@ -1210,14 +1272,18 @@ export default function QuotePricingTool({ currentUser }) {
     if (quoteInfo.linkMode !== "ticket" || !selectedJobTicket) return;
     const dimensions = jobTicketQuoteDimensions(selectedJobTicket);
     const quantity = jobTicketQuoteQuantity(selectedJobTicket);
+    const material = materialOptions.find((item) => materialMatchesJobTicket(item, selectedJobTicket)) || null;
     setForm((prev) => ({
       ...prev,
       labelWidth: dimensions.width,
       labelLength: dimensions.length,
       gap: dimensions.gap,
       quantity: quantity.quantity,
+      selectedMaterialId: material?.id || prev.selectedMaterialId,
+      msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
+      materialWidth: material?.width_inches || prev.materialWidth,
     }));
-  }, [quoteInfo.linkMode, selectedJobTicket?.id]);
+  }, [quoteInfo.linkMode, selectedJobTicket?.id, materialOptions.length]);
 
   function updateField(name, value) {
     if (name === "pricingMode") {
@@ -1682,6 +1748,9 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                     {selectedJobTicket && selectedJobTicketQuantity.message && (
                       <p className="quote-ticket-warning">{selectedJobTicketQuantity.message}</p>
                     )}
+                    {selectedJobTicket && selectedJobTicketMasterTypeLabel && !jobTicketMaterialMatch && (
+                      <p className="quote-ticket-warning">No finished quote material matched this job. Pick a material below or link one in Finished Inventory.</p>
+                    )}
                     {jobTicketLoadState === "error" && <p className="quote-help-text">Job tickets could not load. Use manual entry for this quote.</p>}
                   </div>
                 ) : (
@@ -1689,7 +1758,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                     <Field label="Customer">
                       <input value={quoteInfo.customerName} onChange={(event) => updateQuoteInfo("customerName", event.target.value)} />
                     </Field>
-                    <Field label="Job Name">
+                    <Field label="Job Number">
                       <input value={quoteInfo.jobName} onChange={(event) => updateQuoteInfo("jobName", event.target.value)} />
                     </Field>
                   </div>
@@ -2054,7 +2123,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <article className={`quote-library-row ${form.selectedMaterialId === material.id ? "active" : ""}`} key={material.id}>
                     <div>
                       <strong>{material.name}</strong>
-                      <span>{material.sourceType === "purchased" ? "Purchased" : "Made in-house"} / {material.componentLabel}</span>
+                      <span>{material.masterTypeLabel ? `${material.masterTypeLabel} / ` : ""}{material.sourceType === "purchased" ? "Purchased" : "Made in-house"} / {material.componentLabel}</span>
                     </div>
                     <em>{unitMoney(material.calculatedMsiCost)}/MSI</em>
                     <span>{percentFormatter.format(Number(material.baseMarkupPercent || 0))}% base / {percentFormatter.format(Number((material.targetMarkupPercent ?? material.targetMarginPercent) || 0))}% target markup</span>

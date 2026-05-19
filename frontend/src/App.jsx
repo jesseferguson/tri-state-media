@@ -128,6 +128,9 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
 
   if (resource.key === "job-tickets" && selected) {
     if (selected.material_spec) addLookupSpec(specs, relationLookupSpec("raw-materials", { material: selected.material_spec }, 250));
+    if (selected.material_master_type || selected.material_spec_master_type) {
+      addLookupSpec(specs, relationLookupSpec("raw-materials", { master_type: selected.material_master_type || selected.material_spec_master_type }, 250));
+    }
     addLookupSpec(specs, relationLookupSpec("finished-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 150));
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 150));
@@ -180,6 +183,24 @@ function inventoryTotalFeetForMaterial(row, inventoryRows) {
     return row.inventory_total_feet;
   }
   return activeInventoryFeet(inventoryRows.filter((inventory) => String(inventory.material) === String(row.id)));
+}
+
+function generatedJobTicketNumber(payload = {}) {
+  const tsmId = String(payload.product_code || "").trim();
+  if (tsmId) return tsmId;
+  const existing = String(payload.ticket_number || "").trim();
+  if (existing) return existing;
+  return `JT-${Date.now().toString(36).toUpperCase()}`;
+}
+
+function autoImageName(slot, ticket = {}) {
+  const label = {
+    general: "General",
+    spec: "Spec",
+    finishing: "Finishing",
+  }[slot] || "Image";
+  const job = String(ticket.job_name || ticket.product_code || ticket.ticket_number || "Job").trim().replace(/\s+/g, "-");
+  return `${label}-${job}`;
 }
 
 const initialOpenGroups = Object.fromEntries(
@@ -828,6 +849,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const [materialTypeOpen, setMaterialTypeOpen] = useState(false);
   const [localInventoryRows, setLocalInventoryRows] = useState([]);
   const [localUsageEvents, setLocalUsageEvents] = useState([]);
+  const [quoteJobTicketId, setQuoteJobTicketId] = useState("");
 
   const allowedResources = useMemo(
     () => visibleResourcesForRole(roleDefinitions, currentUser?.role),
@@ -942,6 +964,12 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
 
   function prepareSavePayload(payload) {
     const { __imageUploads, ...dataPayload } = payload ?? {};
+    if (resource.key === "job-tickets") {
+      return {
+        ...dataPayload,
+        ticket_number: generatedJobTicketNumber(dataPayload),
+      };
+    }
     if (resource.key !== "raw-materials") return payload;
     const quantity = dataPayload.length_feet === "" || dataPayload.length_feet === null || dataPayload.length_feet === undefined
       ? dataPayload.quantity ?? 0
@@ -957,6 +985,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     if (!field.requiresResourceAccess) return true;
     return roleHasResourceAccess(roleDefinitions, currentUser?.role, field.requiresResourceAccess);
   }
+
+  const canEditJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-editor");
+  const canScheduleFromJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-schedule");
+  const canQuoteJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-calculator");
 
   const saveMutation = useMutation({
     mutationFn: async (payload) => {
@@ -990,7 +1022,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           if (!upload.file || !upload.slot) continue;
           const formData = new FormData();
           formData.append("image", upload.file);
-          formData.append("name", cleanPayload[`${upload.slot}_image_name`] || upload.file.name);
+          formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
           formData.append("description", cleanPayload[`${upload.slot}_image_description`] || "");
           saved = await uploadRecordAction(resource.endpoint, saved.id, `images/${upload.slot}`, formData);
         }
@@ -1444,7 +1476,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {lookupQuery.error && <div className="error-box">Could not load lookup data: {lookupQuery.error.message}</div>}
 
         {resource.viewMode === "quoteCalculator" ? (
-          <QuotePricingTool currentUser={currentUser} />
+          <QuotePricingTool currentUser={currentUser} initialJobTicketId={quoteJobTicketId} />
         ) : (
           <>
             {resource.searchMode === "flexDie" ? (
@@ -1596,7 +1628,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               <header className="job-overlay-head">
                 <div>
                   <p className="eyebrow">{formMode === "edit" ? "Edit Job Ticket" : "Job Ticket"}</p>
-                  <h2>{getRecordTitle(selected)}</h2>
+                  <h2>{selected.job_name || getRecordTitle(selected)}</h2>
                 </div>
                 <button className="ghost-btn" type="button" onClick={() => { setSelected(null); setFormMode(null); }}>
                   <X size={16} /> Close
@@ -1619,8 +1651,19 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   lookups={lookupQuery.data ?? {}}
                   editing={formMode === "edit"}
                   deleting={deleteMutation.isPending}
+                  canEdit={canEditJobTicket}
+                  canSchedule={canScheduleFromJobTicket}
+                  canQuote={canQuoteJobTicket}
                   onEdit={() => setFormMode("edit")}
                   onDelete={() => deleteMutation.mutate()}
+                  onQuoteJob={() => {
+                    setQuoteJobTicketId(String(selected.id));
+                    setActiveKey("quote-calculator");
+                    setSelected(null);
+                    setFormMode(null);
+                    setSearch("");
+                    setOpenGroups((prev) => ({ ...prev, production: true }));
+                  }}
                   onSchedule={() => {
                     const ticket = selected;
                     const today = new Date().toISOString().slice(0, 10);

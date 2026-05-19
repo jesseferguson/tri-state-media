@@ -1,13 +1,12 @@
 import { useMemo, useState } from "react";
-import { CalendarPlus, Edit3, PackageCheck, Trash2 } from "lucide-react";
+import { CalendarPlus, Edit3, FileText, Image as ImageIcon, PackageCheck, Trash2 } from "lucide-react";
 import RecipeOptionsView from "./RecipeOptionsView";
-import { formatInches, getRecordTitle, labelize } from "../lib/format";
+import { formatInches, labelize } from "../lib/format";
 
 const tabs = [
   { key: "general", label: "General" },
   { key: "schedule", label: "Schedule" },
   { key: "editor", label: "Editor" },
-  { key: "spec", label: "Spec" },
 ];
 
 const chartRangeOptions = [
@@ -104,8 +103,18 @@ function InfoRow({ label, value }) {
   );
 }
 
+function primaryImage(ticket) {
+  const images = Array.isArray(ticket.job_images) ? ticket.job_images : [];
+  return (
+    images.find((image) => image.slot === "general" && image.url) ||
+    images.find((image) => image.url) ||
+    null
+  );
+}
+
 function materialTitle(ticket) {
   return [
+    ticket.material_master_type_code || ticket.material_spec_master_type_code,
     ticket.material_spec_code,
     ticket.material_spec_name,
     ticket.material_spec_family,
@@ -117,6 +126,8 @@ function materialTitle(ticket) {
 function matchingMaterialInventory(ticket, rows) {
   return (rows ?? []).filter((row) => {
     if (sameId(row.material, ticket.material_spec)) return true;
+    if (ticket.material_master_type && sameId(row.material_master_type, ticket.material_master_type)) return true;
+    if (ticket.material_spec_master_type && sameId(row.material_master_type, ticket.material_spec_master_type)) return true;
     if (ticket.material_spec_code && row.material_code === ticket.material_spec_code) return true;
     if (ticket.material_spec_code && row.code === ticket.material_spec_code) return true;
     return false;
@@ -243,7 +254,19 @@ function monthlyBars(rows, dateGetter, quantityGetter, rangeKey) {
   return Array.from(grouped.values()).sort((a, b) => a.sort - b.sort);
 }
 
-export default function JobTicketPanel({ ticket, lookups, editing, deleting, onEdit, onDelete, onSchedule }) {
+export default function JobTicketPanel({
+  ticket,
+  lookups,
+  editing,
+  deleting,
+  canEdit = false,
+  canSchedule = false,
+  canQuote = false,
+  onEdit,
+  onDelete,
+  onSchedule,
+  onQuoteJob,
+}) {
   const [activeTab, setActiveTab] = useState("general");
   const [chartRange, setChartRange] = useState("90bd");
 
@@ -302,24 +325,48 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
   const recentSchedules = [...scheduleRows]
     .sort((a, b) => String(dateValue(b)).localeCompare(String(dateValue(a))))
     .slice(0, 6);
-  const title = getRecordTitle(ticket);
+  const image = primaryImage(ticket);
+  const visibleTabs = tabs.filter((tab) => {
+    if (tab.key === "schedule") return canSchedule;
+    if (tab.key === "editor") return canEdit;
+    return true;
+  });
+
+  function selectTab(key) {
+    if (key === "schedule") {
+      onSchedule?.();
+      return;
+    }
+    if (key === "editor") {
+      onEdit?.();
+      return;
+    }
+    setActiveTab(key);
+  }
 
   return (
-    <>
-      <div className="panel-head thin">
+    <div className="job-ticket-panel">
+      <div className="job-packet-toolbar">
         <div>
           <p className="eyebrow">Job Packet</p>
-          <h2>{title}</h2>
+          <strong>{ticket.product_code ? `TSM ${ticket.product_code}` : ticket.customer_display || ticket.customer_name || "Job details"}</strong>
+        </div>
+        <div>
+          {canQuote && (
+            <button className="primary-btn" type="button" onClick={onQuoteJob}>
+              <FileText size={15} /> Quote Job
+            </button>
+          )}
         </div>
       </div>
 
       <div className="job-tabs" role="tablist" aria-label="Job ticket sections">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
             className={activeTab === tab.key ? "active" : ""}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => selectTab(tab.key)}
           >
             {tab.label}
           </button>
@@ -328,6 +375,37 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
 
       {activeTab === "general" && (
         <div className="job-panel-section">
+          <section className="job-hero-section">
+            <div className="job-hero-image">
+              {image?.url ? (
+                <img src={image.url} alt={image.name || ticket.job_name || "Job image"} />
+              ) : (
+                <div>
+                  <ImageIcon size={30} />
+                  <span>No job image</span>
+                </div>
+              )}
+            </div>
+            <div className="job-hero-details">
+              <div>
+                <span>Customer</span>
+                <strong>{ticket.customer_display || ticket.customer_name || "--"}</strong>
+              </div>
+              <div>
+                <span>TSM ID</span>
+                <strong>{ticket.product_code || "--"}</strong>
+              </div>
+              <div>
+                <span>Material Type</span>
+                <strong>{ticket.material_master_type_code || ticket.material_spec_master_type_code || "--"}</strong>
+              </div>
+              <div>
+                <span>Finished Material</span>
+                <strong>{materialTitle(ticket) || "--"}</strong>
+              </div>
+            </div>
+          </section>
+
           <div className="job-chart-range">
             {chartRangeOptions.map((option) => (
               <button
@@ -347,11 +425,63 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
             <Stat label="Avg Shipped / Month" value={recentBoxAverage ?? "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} />
           </div>
 
-          <div className="job-info-list compact">
-            <InfoRow label="TSM ID" value={ticket.product_code || ticket.customer_display} />
-            <InfoRow label="Customer" value={ticket.customer_name} />
-            <InfoRow label="Material" value={materialTitle(ticket)} />
-          </div>
+          <section className="job-spec-layout">
+            <div className="job-subsection job-spec-card">
+              <div className="job-subsection-head">
+                <PackageCheck size={15} />
+                <strong>Label Specs</strong>
+              </div>
+              <div className="job-info-list compact">
+                <InfoRow label="Size" value={`${formatInches(ticket.label_width_inches)} x ${formatInches(ticket.label_length_inches)}`} />
+                <InfoRow label="Repeat" value={formatInches(ticket.repeat_inches)} />
+                <InfoRow label="Cutting" value={labelize(ticket.cutting_type)} />
+                <InfoRow label="Recipe" value={ticket.recipe_name} />
+              </div>
+            </div>
+
+            <div className="job-subsection job-spec-card">
+              <div className="job-subsection-head">
+                <PackageCheck size={15} />
+                <strong>Packaging Specs</strong>
+              </div>
+              <div className="job-info-list compact">
+                <InfoRow label="Finishing" value={labelize(ticket.finishing_type)} />
+                <InfoRow label="Labels / Unit" value={ticket.labels_per_unit} />
+                <InfoRow label="Units / Carton" value={ticket.units_per_carton} />
+                <InfoRow label="Labels in Box" value={ticket.labels_per_carton || ticket.labels_per_unit} />
+                <InfoRow label="Core / Wind" value={[formatInches(ticket.core_size_inches), ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} />
+              </div>
+            </div>
+          </section>
+
+          {(ticket.finishing_notes || ticket.job_notes) && (
+            <section className="job-notes-grid">
+              {ticket.finishing_notes && (
+                <div>
+                  <span>Finishing Notes</span>
+                  <p>{ticket.finishing_notes}</p>
+                </div>
+              )}
+              {ticket.job_notes && (
+                <div>
+                  <span>Job Notes</span>
+                  <p>{ticket.job_notes}</p>
+                </div>
+              )}
+            </section>
+          )}
+
+          <section className="job-subsection">
+            <div className="job-subsection-head">
+              <PackageCheck size={15} />
+              <strong>Recipe Tooling</strong>
+            </div>
+            {recipeOptions.length ? (
+              <RecipeOptionsView rows={recipeOptions} />
+            ) : (
+              <p className="muted">Attach a tooling recipe to show operator tooling information here.</p>
+            )}
+          </section>
 
           <section className="job-subsection">
             <div className="job-subsection-head">
@@ -471,8 +601,8 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
           </div>
 
           <div className="job-info-list">
-            <InfoRow label="Ticket #" value={ticket.ticket_number} />
-            <InfoRow label="Job Name" value={ticket.job_name} />
+            <InfoRow label="TSM ID" value={ticket.product_code} />
+            <InfoRow label="Job Number" value={ticket.job_name} />
             <InfoRow label="Labels / Unit" value={ticket.labels_per_unit} />
             <InfoRow label="Units / Carton" value={ticket.units_per_carton} />
             <InfoRow label="Labels in Box" value={ticket.labels_per_carton} />
@@ -483,28 +613,6 @@ export default function JobTicketPanel({ ticket, lookups, editing, deleting, onE
           </div>
         </div>
       )}
-
-      {activeTab === "spec" && (
-        <div className="job-panel-section">
-          <div className="job-info-list">
-            <InfoRow label="Tooling Recipe" value={ticket.recipe_name} />
-            <InfoRow label="Operator Spec" value={`${formatInches(ticket.label_width_inches)} x ${formatInches(ticket.label_length_inches)} / ${formatInches(ticket.repeat_inches)} repeat / ${labelize(ticket.cutting_type)}`} />
-            <InfoRow label="Finishing" value={[labelize(ticket.finishing_type), ticket.labels_per_unit ? `${ticket.labels_per_unit} labels/unit` : "", ticket.units_per_carton ? `${ticket.units_per_carton} units/carton` : "", ticket.labels_per_carton ? `${ticket.labels_per_carton} labels/box` : ""].filter(Boolean).join(" / ")} />
-          </div>
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Recipe Tooling</strong>
-            </div>
-            {recipeOptions.length ? (
-              <RecipeOptionsView rows={recipeOptions} />
-            ) : (
-              <p className="muted">Attach a tooling recipe to show operator tooling information here.</p>
-            )}
-          </section>
-        </div>
-      )}
-    </>
+    </div>
   );
 }

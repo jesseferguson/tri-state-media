@@ -1,4 +1,5 @@
 import {
+  CalendarPlus,
   Factory,
   Gauge,
   History,
@@ -263,6 +264,7 @@ const dimFields = [
 ];
 
 const baseMaterialColumns = [
+  "master_type_code",
   "name",
   "code",
   "is_active",
@@ -270,6 +272,7 @@ const baseMaterialColumns = [
 
 const finishedMaterialColumns = [
   "code",
+  "master_type_code",
   "material_family",
   "inventory_total_feet",
   "name",
@@ -340,6 +343,15 @@ function materialFields(defaultType = "liner", hiddenType = false, namePlacehold
     { name: "material_type", label: "Material Type", type: "select", choices: choiceLists.rawMaterialType, required: true, defaultValue: defaultType, hidden: hiddenType },
     { name: "code", label: "Code", type: "text", placeholder: "Auto-generated", hidden: true },
     { name: "name", label: isFinishedRawMaterial ? "Description" : "Data Type", type: "text", required: true, placeholder: namePlaceholder },
+    {
+      name: "master_type",
+      label: "Master Material Type",
+      type: "searchRelation",
+      relation: "material-master-types",
+      searchable: true,
+      searchFields: ["code", "name", "description"],
+      helpText: "Central type such as PM, PMDT, PET, LPO, or LV. This links job tickets, inventory, and quoting.",
+    },
     ...(isFinishedRawMaterial ? [
       { name: "company", label: "Company", type: "text", placeholder: "Internal or supplier description" },
     ] : []),
@@ -416,6 +428,30 @@ export const resources = [
     columns: [],
     fields: [],
   },
+  {
+    key: "job-ticket-schedule",
+    label: "Job Ticket Scheduling",
+    singular: "Job Ticket Scheduling Permission",
+    group: "production",
+    icon: CalendarPlus,
+    permissionOnly: true,
+    disableCreate: true,
+    tagline: "Allows a role to open the schedule form directly from a job ticket.",
+    columns: [],
+    fields: [],
+  },
+  {
+    key: "job-ticket-editor",
+    label: "Job Ticket Editor",
+    singular: "Job Ticket Editor Permission",
+    group: "production",
+    icon: Settings2,
+    permissionOnly: true,
+    disableCreate: true,
+    tagline: "Allows a role to open the job ticket editor and make job-ticket changes.",
+    columns: [],
+    fields: [],
+  },
 
   {
     key: "quote-calculator",
@@ -478,11 +514,11 @@ export const resources = [
     viewMode: "jobTicketGallery",
     tagline: "Visual job packet gallery with the job image, job name, and key customer identifiers.",
     columns: [
-      "ticket_number",
       "customer_display",
       "customer_name",
       "job_name",
       "product_code",
+      "material_master_type_code",
       "material_spec_code",
       "material_spec_name",
       "label_width_inches",
@@ -498,7 +534,7 @@ export const resources = [
       "labels_per_carton",
     ],
     fields: [
-      { name: "ticket_number", label: "Ticket #", type: "text", required: true, placeholder: "JT-1001" },
+      { name: "ticket_number", label: "Ticket #", type: "text", hidden: true },
       {
         name: "customer",
         label: "Customer",
@@ -508,17 +544,24 @@ export const resources = [
         searchFields: ["name", "customer_code", "contact_name", "phone", "email"],
       },
       { name: "customer_name", label: "Customer Name Override", type: "text" },
-      { name: "job_name", label: "Job Name", type: "text", required: true, placeholder: "4 x 4 PolyMatte DT Roll" },
-      { name: "product_code", label: "TSM ID", type: "text" },
+      { name: "job_name", label: "Job Number", type: "text", required: true, placeholder: "Customer job number or description" },
+      { name: "product_code", label: "TSM ID", type: "text", required: true },
       { name: "general_image", label: "General Image", type: "imageUpload", imageSlot: "general", requiresResourceAccess: "job-ticket-images" },
-      { name: "general_image_name", label: "General Image Name", type: "text", requiresResourceAccess: "job-ticket-images" },
       { name: "general_image_description", label: "General Image Description", type: "textarea", requiresResourceAccess: "job-ticket-images" },
       { name: "spec_image", label: "Spec Image", type: "imageUpload", imageSlot: "spec", requiresResourceAccess: "job-ticket-images" },
-      { name: "spec_image_name", label: "Spec Image Name", type: "text", requiresResourceAccess: "job-ticket-images" },
       { name: "spec_image_description", label: "Spec Image Description", type: "textarea", requiresResourceAccess: "job-ticket-images" },
       { name: "finishing_image", label: "Finishing Image", type: "imageUpload", imageSlot: "finishing", requiresResourceAccess: "job-ticket-images" },
-      { name: "finishing_image_name", label: "Finishing Image Name", type: "text", requiresResourceAccess: "job-ticket-images" },
       { name: "finishing_image_description", label: "Finishing Image Description", type: "textarea", requiresResourceAccess: "job-ticket-images" },
+      {
+        name: "material_master_type",
+        label: "Master Material Type",
+        type: "searchRelation",
+        relation: "material-master-types",
+        searchable: true,
+        maxResults: 250,
+        searchFields: ["code", "name", "description"],
+        helpText: "Central material type used by quoting and inventory matching.",
+      },
       {
         name: "material_spec",
         label: "Finished Raw Material",
@@ -527,7 +570,7 @@ export const resources = [
         searchable: true,
         maxResults: 250,
         lookupFilters: { material_type: "coated_stock" },
-        searchFields: ["code", "name", "company", "material_family", "gsm", "liner_pounds", "notes"],
+        searchFields: ["code", "name", "company", "master_type_code", "master_type_name", "material_family", "gsm", "liner_pounds", "notes"],
       },
       { name: "label_width_inches", label: "Label Width", type: "number", step: "0.0001" },
       { name: "label_length_inches", label: "Label Length", type: "number", step: "0.0001" },
@@ -694,6 +737,30 @@ export const resources = [
   },
 
   {
+    key: "material-master-types",
+    endpoint: "material-master-types",
+    label: "Master Material Types",
+    singular: "Master Material Type",
+    group: "production-material",
+    icon: Layers3,
+    accent: "#0ea5e9",
+    defaultOrdering: "code,name",
+    tagline: "Central material type list used to connect job tickets, material specs, inventory, and quoting.",
+    columns: [
+      "code",
+      "name",
+      "is_active",
+      "description",
+    ],
+    fields: [
+      { name: "code", label: "Type Code", type: "text", required: true, placeholder: "PM" },
+      { name: "name", label: "Name", type: "text", required: true, placeholder: "Poly Matte" },
+      { name: "is_active", label: "Active", type: "checkbox", defaultValue: true },
+      { name: "description", label: "Description", type: "textarea" },
+    ],
+  },
+
+  {
     key: "materials",
     endpoint: "materials",
     label: "All Material Options",
@@ -706,6 +773,7 @@ export const resources = [
     columns: [
       "material_type",
       "code",
+      "master_type_code",
       "name",
       "company",
       "face_material_name",
@@ -853,6 +921,7 @@ export const resources = [
       "serial_number",
       "material_code",
       "material_name",
+      "material_master_type_code",
       "material_family",
       "lot_number",
       "width_inches",
@@ -871,7 +940,7 @@ export const resources = [
         maxResults: 250,
         required: true,
         lookupFilters: { material_type: "coated_stock" },
-        searchFields: ["material_family", "name", "code", "company", "gsm", "notes"],
+        searchFields: ["material_master_type_code", "material_master_type_name", "material_family", "name", "code", "company", "gsm", "notes"],
       },
       { name: "lot_number", label: "Lot #", type: "text" },
       { name: "width_inches", label: "Width", type: "number", step: "0.0001" },
