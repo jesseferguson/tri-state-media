@@ -498,15 +498,41 @@ class ProductionSchedule(models.Model):
         )
 
     def delete(self, *args, **kwargs):
+        reason = getattr(self, "_delete_reason", "")
+        actor = getattr(self, "_delete_actor", "") or self.last_updated_by or self.scheduled_by or "system"
+        def short_summary(value):
+            text = str(value)
+            return text if len(text) <= 255 else f"{text[:252]}..."
+
+        if self.job_ticket_id:
+            summary = f"{actor} removed this job from the schedule"
+            if reason:
+                summary = f"{summary}: {reason}"
+            JobTicketEvent.objects.create(
+                job_ticket=self.job_ticket,
+                event_type="schedule_removed",
+                summary=short_summary(f"{summary}."),
+                performed_by=actor,
+                details={
+                    "schedule_id": self.id,
+                    "reason": reason,
+                    "status": self.status,
+                    "press": self.press.name if self.press else "",
+                },
+            )
         orders = list(self.customer_orders.all())
         for order in orders:
             order.schedule_entry = None
             order.status = "schedule_removed"
             order.save(update_fields=["schedule_entry", "status", "updated_at"])
+            summary = "Schedule entry was removed; customer order record retained."
+            if reason:
+                summary = f"Schedule entry was removed: {reason}"
             CustomerOrderEvent.objects.create(
                 order=order,
                 event_type="schedule_removed",
-                summary="Schedule entry was removed; customer order record retained.",
+                summary=short_summary(summary),
+                performed_by=actor,
             )
         return super().delete(*args, **kwargs)
 

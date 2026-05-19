@@ -1,4 +1,5 @@
-import { CalendarClock, ClipboardList, Gauge, PackageCheck } from "lucide-react";
+import { useState } from "react";
+import { CalendarClock, ClipboardList, Gauge, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
 import { formatInches, getRecordTitle } from "../lib/format";
 
 function numeric(value) {
@@ -42,6 +43,17 @@ function scheduleTitle(row) {
 
 function orderQuantity(row) {
   return numeric(row.quantity_to_ship) + numeric(row.quantity_to_stock);
+}
+
+function formatQty(value) {
+  const number = numeric(value);
+  return number.toLocaleString(undefined, {
+    maximumFractionDigits: Number.isInteger(number) ? 0 : 3,
+  });
+}
+
+function scheduleImage(row) {
+  return row.job_general_image_url || row.general_image_url || "";
 }
 
 function sortScheduleRows(rows) {
@@ -96,6 +108,81 @@ function buildLineupGroups(rows, presses) {
 
 function updateOnBlur(event, value, onSave) {
   if (String(event.target.value ?? "") !== String(value ?? "")) onSave(event.target.value);
+}
+
+function ScheduleThumb({ row }) {
+  const src = scheduleImage(row);
+  return (
+    <div className="schedule-thumb">
+      {src ? (
+        <img src={src} alt={row.job_general_image_name || row.job_name || "Scheduled job"} />
+      ) : (
+        <ImageIcon size={17} />
+      )}
+    </div>
+  );
+}
+
+function ScheduleFact({ label, value }) {
+  return (
+    <div className="schedule-fact">
+      <span>{label}</span>
+      <strong>{value || "--"}</strong>
+    </div>
+  );
+}
+
+function RemoveScheduleDialog({ row, onClose, onConfirm }) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  if (!row) return null;
+
+  async function submit(event) {
+    event.preventDefault();
+    const cleanReason = reason.trim();
+    if (!cleanReason) {
+      setError("Enter a reason before removing this job from the schedule.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onConfirm(row, cleanReason);
+      onClose();
+    } catch (err) {
+      setError(err.message || "Could not remove this job from the schedule.");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="schedule-remove-overlay" role="dialog" aria-modal="true" aria-label="Remove scheduled job">
+      <form className="schedule-remove-window" onSubmit={submit}>
+        <div>
+          <p className="eyebrow">Remove From Schedule</p>
+          <h2>{scheduleTitle(row)}</h2>
+          <span>{row.customer_name || "No customer"} / {shipLabel(row)}</span>
+        </div>
+        <label>
+          <span>Reason Required</span>
+          <textarea
+            autoFocus
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Example: customer changed quantity, duplicate schedule entry, job cancelled..."
+          />
+        </label>
+        {error && <p className="schedule-remove-error">{error}</p>}
+        <div className="schedule-remove-actions">
+          <button className="ghost-btn" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button className="danger-btn" type="submit" disabled={submitting}>
+            {submitting ? "Removing..." : "Remove Job"}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
 }
 
 function ScheduleDetailOverlay({ row, presses, currentUser, onClose, onEdit, onUpdate }) {
@@ -201,7 +288,8 @@ function ScheduleDetailOverlay({ row, presses, currentUser, onClose, onEdit, onU
   );
 }
 
-export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, onSelect, onClose, onEdit, onUpdate }) {
+export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, onSelect, onClose, onEdit, onUpdate, onRemove }) {
+  const [removeRow, setRemoveRow] = useState(null);
   const grouped = buildLineupGroups(rows, presses);
 
   return (
@@ -217,16 +305,24 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
           <div className="schedule-card-list">
             {group.rows.map((row) => (
               <article className={`schedule-card ${selected?.id === row.id ? "active" : ""}`} key={row.id}>
-                <button type="button" onClick={() => onSelect(row)}>
-                  <div className="schedule-card-title">
-                    <strong>{scheduleTitle(row)}</strong>
-                    <span className={`schedule-ship-pill ${shipTone(row)}`}>{shipLabel(row)}</span>
-                  </div>
-                  <div className="schedule-card-meta">
-                    <span><PackageCheck size={13} /> {row.customer_name || "No customer"}</span>
-                    <span><ClipboardList size={13} /> {row.customer_po || "No PO"} / {orderQuantity(row).toLocaleString()} total</span>
-                    <span><Gauge size={13} /> {row.press_sequence ? `Lineup #${row.press_sequence}` : group.label}</span>
-                    <span><CalendarClock size={13} /> {row.operator || row.scheduled_by || "No operator"}</span>
+                <button className="schedule-receipt-main" type="button" onClick={() => onSelect(row)}>
+                  <ScheduleThumb row={row} />
+                  <div className="schedule-receipt-body">
+                    <div className="schedule-card-title">
+                      <strong>{scheduleTitle(row)}</strong>
+                      <span className={`schedule-ship-pill ${shipTone(row)}`}>{shipLabel(row)}</span>
+                    </div>
+                    <div className="schedule-receipt-grid">
+                      <ScheduleFact label="Customer" value={row.customer_name} />
+                      <ScheduleFact label="Ship" value={formatQty(row.quantity_to_ship)} />
+                      <ScheduleFact label="Stock" value={formatQty(row.quantity_to_stock)} />
+                      <ScheduleFact label="Scheduled By" value={row.scheduled_by || row.last_updated_by} />
+                    </div>
+                    <div className="schedule-receipt-foot">
+                      <span><ClipboardList size={12} /> {row.customer_po || "No PO"}</span>
+                      <span><Gauge size={12} /> {row.press_sequence ? `Lineup #${row.press_sequence}` : group.label}</span>
+                      <span><CalendarClock size={12} /> {row.due_date || "No ship date"}</span>
+                    </div>
                   </div>
                 </button>
                 <div className="schedule-card-controls">
@@ -235,6 +331,16 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
                     {presses.map((press) => <option value={press.id} key={press.id}>{press.name}</option>)}
                   </select>
                   <input type="number" min="1" placeholder="#" defaultValue={row.press_sequence ?? ""} onBlur={(event) => updateOnBlur(event, row.press_sequence, (value) => onUpdate(row.id, { press_sequence: value ? Number(value) : null, last_updated_by: currentUser?.name || "" }))} />
+                  {row.press && (
+                    <button className="ghost-btn xs" type="button" onClick={() => moveToLineup(row, "", onUpdate, currentUser)}>
+                      <RotateCcw size={12} /> Unassign
+                    </button>
+                  )}
+                  {onRemove && (
+                    <button className="danger-btn xs" type="button" onClick={() => setRemoveRow(row)}>
+                      <Trash2 size={12} /> Delete
+                    </button>
+                  )}
                 </div>
               </article>
             ))}
@@ -250,6 +356,11 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
         onClose={onClose}
         onEdit={onEdit}
         onUpdate={onUpdate}
+      />
+      <RemoveScheduleDialog
+        row={removeRow}
+        onClose={() => setRemoveRow(null)}
+        onConfirm={onRemove}
       />
     </section>
   );

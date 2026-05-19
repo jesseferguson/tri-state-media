@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
-import { createRecord, deleteRecord, fetchCollection, updateRecord, uploadRecordAction } from "./api";
+import { createRecord, deleteRecord, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
@@ -1391,6 +1391,19 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     },
   });
 
+  const scheduleRemoveMutation = useMutation({
+    mutationFn: ({ id, payload }) => postRecordAction("production-schedule", id, "remove-from-schedule", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-order-events"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-ticket-events"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      setSelected(null);
+      setFormMode(null);
+    },
+  });
+
   const jobTicketEditMutation = useMutation({
     mutationFn: async (payload) => {
       if (!selected?.id) throw new Error("No job ticket selected.");
@@ -1615,6 +1628,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {saveMutation.error && <div className="error-box">{saveMutation.error.message}</div>}
         {finishedScheduleMutation.error && <div className="error-box">{finishedScheduleMutation.error.message}</div>}
         {scheduleUpdateMutation.error && <div className="error-box">{scheduleUpdateMutation.error.message}</div>}
+        {scheduleRemoveMutation.error && <div className="error-box">{scheduleRemoveMutation.error.message}</div>}
         {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {deleteMutation.error && <div className="error-box">{deleteMutation.error.message}</div>}
@@ -1671,6 +1685,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onClose={() => setSelected(null)}
                     onEdit={() => setFormMode("edit")}
                     onUpdate={(id, payload) => scheduleUpdateMutation.mutate({ id, payload })}
+                    onRemove={(row, reason) => scheduleRemoveMutation.mutateAsync({
+                      id: row.id,
+                      payload: { reason, performed_by: currentUser.name },
+                    })}
                   />
                 ) : resource.viewMode === "jobTicketGallery" ? (
                   <JobTicketGallery

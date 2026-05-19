@@ -331,6 +331,19 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
         "operator",
     ]
 
+    @action(detail=True, methods=["post"], url_path="remove-from-schedule")
+    def remove_from_schedule(self, request, pk=None):
+        schedule = self.get_object()
+        reason = str(request.data.get("reason", "")).strip()
+        if not reason:
+            return Response({"reason": ["A reason is required to remove a scheduled job."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        actor = str(request.data.get("performed_by", "")).strip() or schedule.last_updated_by or schedule.scheduled_by or "system"
+        schedule._delete_reason = reason
+        schedule._delete_actor = actor
+        schedule.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class CustomerOrderViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = (

@@ -292,6 +292,8 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
     job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
     job_product_code = serializers.CharField(source="job_ticket.product_code", read_only=True)
+    job_general_image_url = serializers.SerializerMethodField()
+    job_general_image_name = serializers.CharField(source="job_ticket.general_image_name", read_only=True)
     job_label_width_inches = serializers.CharField(source="job_ticket.label_width_inches", read_only=True)
     job_label_length_inches = serializers.CharField(source="job_ticket.label_length_inches", read_only=True)
     job_repeat_inches = serializers.CharField(source="job_ticket.repeat_inches", read_only=True)
@@ -317,6 +319,15 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
 
     def get_job_material_spec_code(self, obj):
         return obj.job_ticket.material_spec.code if obj.job_ticket and obj.job_ticket.material_spec else None
+
+    def get_job_general_image_url(self, obj):
+        image = obj.job_ticket.general_image if obj.job_ticket else None
+        if not image:
+            return ""
+        try:
+            return image.url
+        except ValueError:
+            return ""
 
     class Meta:
         model = ProductionSchedule
