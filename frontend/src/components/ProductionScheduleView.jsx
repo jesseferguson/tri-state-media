@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarClock, ClipboardList, Gauge, Image as ImageIcon, Trash2 } from "lucide-react";
+import { Image as ImageIcon, Trash2 } from "lucide-react";
 import { formatInches, getRecordTitle } from "../lib/format";
 
 function numeric(value) {
@@ -41,6 +41,10 @@ function scheduleTitle(row) {
   return [row.job_ticket_number, row.job_name].filter(Boolean).join(" / ") || getRecordTitle(row);
 }
 
+function schedulePartNumber(row) {
+  return row.job_name || row.job_product_code || row.job_ticket_number || getRecordTitle(row);
+}
+
 function orderQuantity(row) {
   return numeric(row.quantity_to_ship) + numeric(row.quantity_to_stock);
 }
@@ -54,6 +58,21 @@ function formatQty(value) {
 
 function scheduleImage(row) {
   return row.job_general_image_url || row.general_image_url || "";
+}
+
+function formatShortDate(value) {
+  if (!value) return "--";
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString();
+}
+
+function daysOnSchedule(row) {
+  const value = row.order_date || row.scheduled_date || row.created_at;
+  if (!value) return "--";
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "--";
+  return Math.max(0, Math.floor((todayStart() - date) / 86_400_000));
 }
 
 function sortScheduleRows(rows) {
@@ -124,12 +143,12 @@ function ScheduleThumb({ row }) {
 }
 
 function ScheduleFact({ label, value }) {
-  const key = label.toLowerCase().replaceAll(" ", "-");
   return (
-    <div className={`schedule-fact ${key}`}>
-      <span>{label}</span>
+    <span className="schedule-qty-line">
+      <em>{label}</em>
+      <i aria-hidden="true" />
       <strong>{value || "--"}</strong>
-    </div>
+    </span>
   );
 }
 
@@ -304,26 +323,20 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
             </div>
           </header>
           <div className="schedule-card-list">
-            {group.rows.map((row) => (
+            {group.rows.map((row, index) => (
               <article className={`schedule-card ${selected?.id === row.id ? "active" : ""}`} key={row.id}>
                 <button className="schedule-receipt-main" type="button" onClick={() => onSelect(row)}>
                   <ScheduleThumb row={row} />
                   <div className="schedule-receipt-body">
-                    <div className="schedule-card-title">
-                      <strong>{scheduleTitle(row)}</strong>
-                      <span className={`schedule-ship-pill ${shipTone(row)}`}>{shipLabel(row)}</span>
-                    </div>
-                    <div className="schedule-receipt-grid">
-                      <ScheduleFact label="Customer" value={row.customer_name} />
-                      <ScheduleFact label="Ship" value={formatQty(row.quantity_to_ship)} />
+                    <span className="schedule-sequence">{row.press_sequence || index + 1}</span>
+                    <strong className="schedule-part-number" title={schedulePartNumber(row)}>{schedulePartNumber(row)}</strong>
+                    <span className="schedule-subdata" title={row.customer_name || ""}>{formatShortDate(row.order_date || row.scheduled_date)}{row.customer_name ? ` / ${row.customer_name}` : ""}</span>
+                    <span className="schedule-scheduled-by">{row.scheduled_by || row.last_updated_by || "--"}</span>
+                    <div className="schedule-qty-lines">
                       <ScheduleFact label="Stock" value={formatQty(row.quantity_to_stock)} />
-                      <ScheduleFact label="Scheduled By" value={row.scheduled_by || row.last_updated_by} />
+                      <ScheduleFact label="Ship" value={formatQty(row.quantity_to_ship)} />
                     </div>
-                    <div className="schedule-receipt-foot">
-                      <span><ClipboardList size={12} /> {row.customer_po || "No PO"}</span>
-                      <span><Gauge size={12} /> {row.press_sequence ? `Lineup #${row.press_sequence}` : group.label}</span>
-                      <span><CalendarClock size={12} /> {row.due_date || "No ship date"}</span>
-                    </div>
+                    <span className="schedule-days-on">{daysOnSchedule(row)} Day(s) On Schedule</span>
                   </div>
                 </button>
                 <div className="schedule-card-controls">
