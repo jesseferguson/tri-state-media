@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from materials.models import MaterialMasterType
+
 from .models import (
     BoxInventory,
     BoxSpec,
@@ -86,6 +88,9 @@ class QuoteCostRateSerializer(serializers.ModelSerializer):
 
 class QuoteFinishedMaterialSerializer(serializers.ModelSerializer):
     id = serializers.CharField(source="external_id")
+    materialMasterTypeId = serializers.PrimaryKeyRelatedField(source="material_master_type", queryset=MaterialMasterType.objects.all(), allow_null=True, required=False)
+    materialMasterTypeCode = serializers.CharField(source="material_master_type.code", read_only=True)
+    materialMasterTypeName = serializers.CharField(source="material_master_type.name", read_only=True)
     sourceType = serializers.CharField(source="source_type")
     purchasedMsiCost = serializers.DecimalField(source="purchased_msi_cost", max_digits=12, decimal_places=4)
     faceRawId = serializers.CharField(source="face_raw_id", allow_blank=True, required=False)
@@ -105,6 +110,9 @@ class QuoteFinishedMaterialSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "materialMasterTypeId",
+            "materialMasterTypeCode",
+            "materialMasterTypeName",
             "sourceType",
             "purchasedMsiCost",
             "faceRawId",
@@ -199,6 +207,11 @@ class JobTicketSerializer(serializers.ModelSerializer):
     material_spec_family = serializers.SerializerMethodField()
     material_spec_gsm = serializers.SerializerMethodField()
     material_spec_liner_pounds = serializers.SerializerMethodField()
+    material_master_type_code = serializers.SerializerMethodField()
+    material_master_type_name = serializers.SerializerMethodField()
+    material_spec_master_type = serializers.SerializerMethodField()
+    material_spec_master_type_code = serializers.SerializerMethodField()
+    material_spec_master_type_name = serializers.SerializerMethodField()
 
     def get_customer_display(self, obj):
         return obj.customer.name if obj.customer else obj.customer_name or None
@@ -217,6 +230,21 @@ class JobTicketSerializer(serializers.ModelSerializer):
 
     def get_material_spec_liner_pounds(self, obj):
         return obj.material_spec.liner_pounds if obj.material_spec else None
+
+    def get_material_master_type_code(self, obj):
+        return obj.material_master_type.code if obj.material_master_type else None
+
+    def get_material_master_type_name(self, obj):
+        return obj.material_master_type.name if obj.material_master_type else None
+
+    def get_material_spec_master_type(self, obj):
+        return obj.material_spec.master_type_id if obj.material_spec else None
+
+    def get_material_spec_master_type_code(self, obj):
+        return obj.material_spec.master_type.code if obj.material_spec and obj.material_spec.master_type else None
+
+    def get_material_spec_master_type_name(self, obj):
+        return obj.material_spec.master_type.name if obj.material_spec and obj.material_spec.master_type else None
 
     def image_payload(self, obj, slot):
         image = getattr(obj, f"{slot}_image", None)

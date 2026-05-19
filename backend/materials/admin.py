@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+from .models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+
+
+@admin.register(MaterialMasterType)
+class MaterialMasterTypeAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "is_active", "updated_at")
+    list_filter = ("is_active",)
+    search_fields = ("code", "name", "description")
 
 
 @admin.register(MaterialSpec)
@@ -18,14 +25,17 @@ class MaterialSpecAdmin(admin.ModelAdmin):
         "liner_pounds",
         "gsm",
         "material_family",
+        "master_type",
         "is_active",
     )
-    list_filter = ("material_type", "company", "is_active")
+    list_filter = ("material_type", "master_type", "company", "is_active")
     search_fields = (
         "code",
         "name",
         "company",
         "material_family",
+        "master_type__code",
+        "master_type__name",
         "face_material__name",
         "face_material__code",
         "liner_material__name",
@@ -43,6 +53,7 @@ class MaterialSpecAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = (
         "supplier",
+        "master_type",
         "face_material",
         "liner_material",
         "adhesive_material",

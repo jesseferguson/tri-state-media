@@ -3,7 +3,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.utils import timezone
 from uuid import uuid4
 
-from materials.models import MaterialSpec, MaterialUsage, RawMaterialInventory
+from materials.models import MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
 from tooling.models import Press, ToolingLocation, ToolingRecipe, ToolingRecipeOption
 
 
@@ -100,6 +100,14 @@ class QuoteCostRate(models.Model):
 class QuoteFinishedMaterial(models.Model):
     external_id = models.CharField(max_length=120, unique=True)
     name = models.CharField(max_length=180)
+    material_master_type = models.ForeignKey(
+        MaterialMasterType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="quote_finished_materials",
+        help_text="Central material type this quote material prices, such as PM or PET.",
+    )
     source_type = models.CharField(max_length=40, default="made")
     purchased_msi_cost = models.DecimalField(max_digits=12, decimal_places=4, default=0)
     face_raw_id = models.CharField(max_length=120, blank=True)
@@ -275,6 +283,14 @@ class JobTicket(models.Model):
         limit_choices_to={"material_type": "coated_stock"},
         help_text="The finished raw material family/spec this job should run on. Specific inventory rolls are assigned on the production schedule.",
     )
+    material_master_type = models.ForeignKey(
+        MaterialMasterType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="job_tickets",
+        help_text="Central material type used to connect this job to quoting and matching inventory.",
+    )
 
     recipe = models.ForeignKey(
         ToolingRecipe,
@@ -311,6 +327,11 @@ class JobTicket(models.Model):
 
     def __str__(self):
         return f"{self.ticket_number} / {self.job_name}"
+
+    def save(self, *args, **kwargs):
+        if self.material_spec_id and not self.material_master_type_id:
+            self.material_master_type = self.material_spec.master_type
+        super().save(*args, **kwargs)
 
 
 class ProductionSchedule(models.Model):

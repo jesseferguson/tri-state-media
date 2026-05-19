@@ -2,12 +2,20 @@ from django.db.models import DecimalField, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import serializers
 
-from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+from .models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+
+
+class MaterialMasterTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MaterialMasterType
+        fields = "__all__"
 
 
 class MaterialSpecSerializer(serializers.ModelSerializer):
     inventory_total_feet = serializers.SerializerMethodField()
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
+    master_type_code = serializers.CharField(source="master_type.code", read_only=True)
+    master_type_name = serializers.CharField(source="master_type.name", read_only=True)
     face_material_name = serializers.CharField(source="face_material.name", read_only=True)
     face_material_code = serializers.CharField(source="face_material.code", read_only=True)
     face_material_family = serializers.CharField(source="face_material.material_family", read_only=True)
@@ -52,6 +60,9 @@ class MaterialSupplierOptionSerializer(serializers.ModelSerializer):
     material_code = serializers.CharField(source="material.code", read_only=True)
     material_type = serializers.CharField(source="material.material_type", read_only=True)
     material_family = serializers.CharField(source="material.material_family", read_only=True)
+    material_master_type = serializers.IntegerField(source="material.master_type_id", read_only=True)
+    material_master_type_code = serializers.CharField(source="material.master_type.code", read_only=True)
+    material_master_type_name = serializers.CharField(source="material.master_type.name", read_only=True)
     supplier_lookup_name = serializers.CharField(source="supplier.name", read_only=True)
 
     class Meta:
@@ -63,6 +74,9 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
     material_name = serializers.CharField(source="material.name", read_only=True)
     material_code = serializers.CharField(source="material.code", read_only=True)
     material_family = serializers.CharField(source="material.material_family", read_only=True)
+    material_master_type = serializers.IntegerField(source="material.master_type_id", read_only=True)
+    material_master_type_code = serializers.CharField(source="material.master_type.code", read_only=True)
+    material_master_type_name = serializers.CharField(source="material.master_type.name", read_only=True)
     material_company = serializers.CharField(source="material.company", read_only=True)
     material_gsm = serializers.DecimalField(source="material.gsm", max_digits=8, decimal_places=2, read_only=True)
     material_liner_pounds = serializers.DecimalField(source="material.liner_pounds", max_digits=7, decimal_places=2, read_only=True)

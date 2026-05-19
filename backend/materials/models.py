@@ -17,6 +17,21 @@ MATERIAL_TYPE_PREFIXES = {
 }
 
 
+class MaterialMasterType(models.Model):
+    code = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["code", "name"]
+
+    def __str__(self):
+        return f"{self.code} / {self.name}" if self.name and self.name != self.code else self.code
+
+
 class MaterialSpec(models.Model):
     MATERIAL_TYPE_CHOICES = [
         ("liner", "Liner"),
@@ -46,6 +61,14 @@ class MaterialSpec(models.Model):
         max_length=100,
         blank=True,
         help_text="User-defined family/type, such as SCK liner, PolyMatte face, removable adhesive, or easy-release silicone.",
+    )
+    master_type = models.ForeignKey(
+        MaterialMasterType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="material_specs",
+        help_text="Central material type such as PM, PMDT, PET, LPO, or LV. Used to link tickets, inventory, and quoting.",
     )
 
     face_material = models.ForeignKey(

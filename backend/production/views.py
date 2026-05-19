@@ -84,11 +84,18 @@ class QuoteCostRateViewSet(BaseProductionViewSet):
 
 
 class QuoteFinishedMaterialViewSet(BaseProductionViewSet):
-    queryset = QuoteFinishedMaterial.objects.all().order_by("name")
+    queryset = QuoteFinishedMaterial.objects.select_related("material_master_type").all().order_by("name")
     serializer_class = QuoteFinishedMaterialSerializer
     lookup_field = "external_id"
-    search_fields = ["name", "source_type", "notes"]
-    ordering_fields = ["name", "source_type", "updated_at"]
+    search_fields = ["name", "material_master_type__code", "material_master_type__name", "source_type", "notes"]
+    ordering_fields = ["name", "material_master_type__code", "source_type", "updated_at"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        master_type = self.request.query_params.get("master_type")
+        if master_type:
+            qs = qs.filter(material_master_type_id=master_type)
+        return qs
 
 
 class QuoteRecordViewSet(BaseProductionViewSet):
@@ -153,6 +160,8 @@ class JobTicketViewSet(BaseProductionViewSet):
             "customer",
             "recipe",
             "material_spec",
+            "material_spec__master_type",
+            "material_master_type",
             "box",
         )
         .all()
@@ -171,6 +180,10 @@ class JobTicketViewSet(BaseProductionViewSet):
         "material_spec__name",
         "material_spec__company",
         "material_spec__material_family",
+        "material_spec__master_type__code",
+        "material_spec__master_type__name",
+        "material_master_type__code",
+        "material_master_type__name",
         "box__name",
         "box__item_number",
         "box__supplier",

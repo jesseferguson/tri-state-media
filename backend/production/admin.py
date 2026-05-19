@@ -31,6 +31,7 @@ class JobTicketAdmin(admin.ModelAdmin):
         "ticket_number",
         "customer",
         "job_name",
+        "material_master_type",
         "material_spec",
         "label_width_inches",
         "label_length_inches",
@@ -40,7 +41,7 @@ class JobTicketAdmin(admin.ModelAdmin):
         "box",
         "finishing_type",
     )
-    list_filter = ("finishing_type", "cutting_type", "material_spec", "box")
+    list_filter = ("finishing_type", "cutting_type", "material_master_type", "material_spec", "box")
     search_fields = (
         "ticket_number",
         "customer__name",
@@ -51,13 +52,15 @@ class JobTicketAdmin(admin.ModelAdmin):
         "material_spec__code",
         "material_spec__name",
         "material_spec__material_family",
+        "material_master_type__code",
+        "material_master_type__name",
         "box__name",
         "box__item_number",
         "box__supplier",
         "job_notes",
         "finishing_notes",
     )
-    autocomplete_fields = ("customer", "material_spec", "recipe", "box")
+    autocomplete_fields = ("customer", "material_master_type", "material_spec", "recipe", "box")
 
 
 @admin.register(ProductionSchedule)

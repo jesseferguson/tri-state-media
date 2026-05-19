@@ -8,9 +8,10 @@ from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+from .models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
 from .serializers import (
     CoaterRollTagSerializer,
+    MaterialMasterTypeSerializer,
     MaterialSpecSerializer,
     MaterialSupplierOptionSerializer,
     MaterialUsageSerializer,
@@ -22,6 +23,13 @@ class BaseMaterialsViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
 
 
+class MaterialMasterTypeViewSet(BaseMaterialsViewSet):
+    queryset = MaterialMasterType.objects.all().order_by("code", "name")
+    serializer_class = MaterialMasterTypeSerializer
+    search_fields = ["code", "name", "description"]
+    ordering_fields = ["code", "name", "is_active", "updated_at"]
+
+
 class MaterialSpecViewSet(BaseMaterialsViewSet):
     serializer_class = MaterialSpecSerializer
     search_fields = [
@@ -30,6 +38,8 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
         "name",
         "company",
         "material_family",
+        "master_type__code",
+        "master_type__name",
         "color",
         "supplier__name",
         "face_material__name",
@@ -52,6 +62,7 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
         "code",
         "name",
         "company",
+        "master_type__code",
         "liner_pounds",
         "gsm",
         "is_active",
@@ -66,6 +77,7 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
         qs = (
             MaterialSpec.objects.select_related(
                 "supplier",
+                "master_type",
                 "face_material",
                 "liner_material",
                 "adhesive_material",
@@ -87,8 +99,11 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
             .order_by("material_type", "company", "name")
         )
         material_type = self.request.query_params.get("material_type")
+        master_type = self.request.query_params.get("master_type")
         if material_type:
             qs = qs.filter(material_type=material_type)
+        if master_type:
+            qs = qs.filter(master_type_id=master_type)
         return qs
 
 
@@ -98,6 +113,8 @@ class MaterialSupplierOptionViewSet(BaseMaterialsViewSet):
         "material__name",
         "material__code",
         "material__material_type",
+        "material__master_type__code",
+        "material__master_type__name",
         "supplier__name",
         "supplier_name",
         "option_name",
@@ -115,13 +132,16 @@ class MaterialSupplierOptionViewSet(BaseMaterialsViewSet):
     ]
 
     def get_queryset(self):
-        qs = MaterialSupplierOption.objects.select_related("material", "supplier").all()
+        qs = MaterialSupplierOption.objects.select_related("material", "material__master_type", "supplier").all()
         material = self.request.query_params.get("material")
         material_type = self.request.query_params.get("material_type")
+        master_type = self.request.query_params.get("master_type")
         if material:
             qs = qs.filter(material_id=material)
         if material_type:
             qs = qs.filter(material__material_type=material_type)
+        if master_type:
+            qs = qs.filter(material__master_type_id=master_type)
         return qs
 
 
@@ -135,6 +155,8 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
         "lot_number",
         "material__code",
         "material__name",
+        "material__master_type__code",
+        "material__master_type__name",
         "supplier__name",
         "location__name",
         "status",
@@ -155,16 +177,19 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
 
     def get_queryset(self):
         qs = (
-            RawMaterialInventory.objects.select_related("material", "supplier", "location", "source_roll_tag")
+            RawMaterialInventory.objects.select_related("material", "material__master_type", "supplier", "location", "source_roll_tag")
             .all()
             .order_by("material_type", "name", "serial_number")
         )
         material_type = self.request.query_params.get("material_type")
         material = self.request.query_params.get("material")
+        master_type = self.request.query_params.get("master_type")
         if material_type:
             qs = qs.filter(material_type=material_type)
         if material:
             qs = qs.filter(material_id=material)
+        if master_type:
+            qs = qs.filter(material__master_type_id=master_type)
         return qs
 
     @action(detail=True, methods=["post"], url_path="check-out")
