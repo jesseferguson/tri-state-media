@@ -169,9 +169,10 @@ STORAGES = {
 
 if os.environ.get("AWS_STORAGE_BUCKET_NAME"):
     AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_STORAGE_BUCKET_NAME")
-    AWS_S3_ENDPOINT_URL = os.environ.get("AWS_S3_ENDPOINT_URL")
+    AWS_S3_ENDPOINT_URL = os.environ.get("AWS_S3_ENDPOINT_URL", "").rstrip("/")
     AWS_S3_REGION_NAME = os.environ.get("AWS_S3_REGION_NAME", "auto")
     AWS_S3_SIGNATURE_VERSION = os.environ.get("AWS_S3_SIGNATURE_VERSION", "s3v4")
+    AWS_S3_ADDRESSING_STYLE = os.environ.get("AWS_S3_ADDRESSING_STYLE", "path")
     AWS_S3_FILE_OVERWRITE = False
     AWS_DEFAULT_ACL = None
     AWS_QUERYSTRING_AUTH = os.environ.get("AWS_QUERYSTRING_AUTH", "True") != "False"
@@ -182,6 +183,7 @@ if os.environ.get("AWS_STORAGE_BUCKET_NAME"):
             "endpoint_url": AWS_S3_ENDPOINT_URL,
             "region_name": AWS_S3_REGION_NAME,
             "signature_version": AWS_S3_SIGNATURE_VERSION,
+            "addressing_style": AWS_S3_ADDRESSING_STYLE,
             "file_overwrite": AWS_S3_FILE_OVERWRITE,
             "default_acl": AWS_DEFAULT_ACL,
             "querystring_auth": AWS_QUERYSTRING_AUTH,

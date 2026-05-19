@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -35,6 +37,9 @@ from .serializers import (
     QuoteRawMaterialSerializer,
     QuoteRecordSerializer,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class BaseProductionViewSet(viewsets.ModelViewSet):
@@ -203,14 +208,18 @@ class JobTicketViewSet(BaseProductionViewSet):
         description_field = f"{slot}_image_description"
 
         if request.method == "DELETE":
-            current_file = getattr(ticket, image_field)
-            if current_file:
-                current_file.delete(save=False)
-            setattr(ticket, image_field, None)
-            setattr(ticket, name_field, "")
-            setattr(ticket, description_field, "")
-            ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
-            return Response(self.get_serializer(ticket).data)
+            try:
+                current_file = getattr(ticket, image_field)
+                if current_file:
+                    current_file.delete(save=False)
+                setattr(ticket, image_field, None)
+                setattr(ticket, name_field, "")
+                setattr(ticket, description_field, "")
+                ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
+                return Response(self.get_serializer(ticket).data)
+            except Exception as error:
+                logger.exception("Could not delete job ticket image from storage.")
+                return Response({"error": f"Could not delete image from storage: {error}"}, status=status.HTTP_502_BAD_GATEWAY)
 
         upload = request.FILES.get("image")
         if upload:
@@ -226,7 +235,11 @@ class JobTicketViewSet(BaseProductionViewSet):
         if "description" in request.data:
             setattr(ticket, description_field, str(request.data.get("description") or "").strip())
 
-        ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
+        try:
+            ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
+        except Exception as error:
+            logger.exception("Could not upload job ticket image to storage.")
+            return Response({"error": f"Could not upload image to storage: {error}"}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(self.get_serializer(ticket).data)
 
 
