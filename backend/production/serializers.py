@@ -297,6 +297,19 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     job_label_width_inches = serializers.CharField(source="job_ticket.label_width_inches", read_only=True)
     job_label_length_inches = serializers.CharField(source="job_ticket.label_length_inches", read_only=True)
     job_repeat_inches = serializers.CharField(source="job_ticket.repeat_inches", read_only=True)
+    job_recipe = serializers.IntegerField(source="job_ticket.recipe_id", read_only=True)
+    job_cutting_type = serializers.CharField(source="job_ticket.cutting_type", read_only=True)
+    job_finishing_type = serializers.CharField(source="job_ticket.finishing_type", read_only=True)
+    job_labels_per_unit = serializers.DecimalField(source="job_ticket.labels_per_unit", max_digits=12, decimal_places=3, read_only=True)
+    job_units_per_carton = serializers.DecimalField(source="job_ticket.units_per_carton", max_digits=12, decimal_places=3, read_only=True)
+    job_labels_per_carton = serializers.DecimalField(source="job_ticket.labels_per_carton", max_digits=12, decimal_places=3, read_only=True)
+    job_core_size_inches = serializers.DecimalField(source="job_ticket.core_size_inches", max_digits=8, decimal_places=4, read_only=True)
+    job_wind_direction = serializers.CharField(source="job_ticket.wind_direction", read_only=True)
+    job_material_spec = serializers.IntegerField(source="job_ticket.material_spec_id", read_only=True)
+    job_material_master_type = serializers.IntegerField(source="job_ticket.material_master_type_id", read_only=True)
+    job_material_master_type_code = serializers.SerializerMethodField()
+    job_material_spec_master_type = serializers.SerializerMethodField()
+    job_material_spec_master_type_code = serializers.SerializerMethodField()
     customer_name = serializers.SerializerMethodField()
     job_material_spec_name = serializers.SerializerMethodField()
     job_material_spec_code = serializers.SerializerMethodField()
@@ -319,6 +332,17 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
 
     def get_job_material_spec_code(self, obj):
         return obj.job_ticket.material_spec.code if obj.job_ticket and obj.job_ticket.material_spec else None
+
+    def get_job_material_master_type_code(self, obj):
+        return obj.job_ticket.material_master_type.code if obj.job_ticket and obj.job_ticket.material_master_type else None
+
+    def get_job_material_spec_master_type(self, obj):
+        return obj.job_ticket.material_spec.master_type_id if obj.job_ticket and obj.job_ticket.material_spec else None
+
+    def get_job_material_spec_master_type_code(self, obj):
+        if not obj.job_ticket or not obj.job_ticket.material_spec or not obj.job_ticket.material_spec.master_type:
+            return None
+        return obj.job_ticket.material_spec.master_type.code
 
     def get_job_general_image_url(self, obj):
         image = obj.job_ticket.general_image if obj.job_ticket else None

@@ -141,6 +141,13 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("presses", {}, 150));
   }
 
+  if (resource.key === "production-schedule") {
+    addLookupSpec(specs, relationLookupSpec("job-tickets", {}, 1000));
+    addLookupSpec(specs, relationLookupSpec("raw-materials", { material_type: "coated_stock" }, 1000));
+    addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 1000));
+    addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 250));
+  }
+
   const entries = await Promise.all(
     specs.map((spec) =>
       fetchCollection(spec.endpoint, {
@@ -1387,7 +1394,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
-      setSelected(saved ?? null);
+      setSelected((current) => (current?.id && saved?.id && String(current.id) === String(saved.id) ? saved : current));
     },
   });
 
@@ -1681,9 +1688,13 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     selected={selected}
                     presses={lookupQuery.data?.presses ?? []}
                     currentUser={currentUser}
+                    lookups={lookupQuery.data ?? {}}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onClose={() => setSelected(null)}
-                    onEdit={() => setFormMode("edit")}
+                    onEdit={(row) => {
+                      if (row) setSelected(row);
+                      setFormMode("edit");
+                    }}
                     onUpdate={(id, payload) => scheduleUpdateMutation.mutate({ id, payload })}
                     onRemove={(row, reason) => scheduleRemoveMutation.mutateAsync({
                       id: row.id,

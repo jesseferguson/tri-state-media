@@ -289,6 +289,8 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
             "customer",
             "job_ticket__customer",
             "job_ticket__material_spec",
+            "job_ticket__material_spec__master_type",
+            "job_ticket__material_master_type",
             "job_ticket__recipe",
             "job_ticket__box",
             "material_inventory",

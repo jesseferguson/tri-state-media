@@ -5886,7 +5886,7 @@ p, .muted { color: #7a7a7a; }
   place-items: center;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
-  background: #f8fafc;
+  background: #ffffff;
   color: #94a3b8;
 }
 
@@ -5894,7 +5894,7 @@ p, .muted { color: #7a7a7a; }
   width: 100%;
   height: 100%;
   object-fit: contain;
-  padding: 5px;
+  padding: 0;
   background: #ffffff;
 }
 
@@ -5912,7 +5912,8 @@ p, .muted { color: #7a7a7a; }
 }
 
 .schedule-part-number,
-.schedule-subdata,
+.schedule-date,
+.schedule-customer,
 .schedule-scheduled-by,
 .schedule-days-on {
   display: block;
@@ -5929,7 +5930,8 @@ p, .muted { color: #7a7a7a; }
   line-height: 1.12;
 }
 
-.schedule-subdata,
+.schedule-date,
+.schedule-customer,
 .schedule-scheduled-by {
   color: #667085;
   font-size: .88rem;
@@ -6023,10 +6025,6 @@ p, .muted { color: #7a7a7a; }
   padding: 5px 7px;
   border-radius: 8px;
   font-size: .68rem;
-}
-
-.schedule-card-controls .danger-btn.xs {
-  grid-column: span 2;
 }
 
 .schedule-empty {
@@ -6145,6 +6143,17 @@ p, .muted { color: #7a7a7a; }
   flex-wrap: wrap;
 }
 
+.schedule-packet-hero {
+  display: grid;
+  grid-template-columns: minmax(220px, .45fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.schedule-packet-hero .schedule-thumb {
+  height: 240px;
+}
+
 .schedule-detail-grid,
 .schedule-workflow-panel {
   display: grid;
@@ -6173,9 +6182,80 @@ p, .muted { color: #7a7a7a; }
 
 .schedule-detail-grid strong {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
   color: #101828;
   font-size: .86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-detail-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.schedule-operator-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.schedule-operator-card {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid #dfe7f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+}
+
+.schedule-operator-card.wide {
+  grid-column: 1 / -1;
+}
+
+.schedule-operator-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: #101828;
+  font-size: .9rem;
+}
+
+.schedule-material-chart {
+  display: grid;
+  gap: 6px;
+}
+
+.schedule-material-chart div {
+  display: grid;
+  grid-template-columns: minmax(78px, .55fr) minmax(74px, .35fr) minmax(110px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.schedule-material-chart span,
+.schedule-material-chart strong {
+  overflow: hidden;
+  color: #344054;
+  font-size: .7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-material-chart span {
+  color: #667085;
+}
+
+.schedule-material-chart em {
+  display: block;
+  width: var(--bar-width);
+  height: 8px;
+  min-width: 8px;
+  border-radius: 999px;
+  background: #0ea5e9;
 }
 
 .schedule-control.wide {
@@ -6937,8 +7017,12 @@ p, .muted { color: #7a7a7a; }
   .schedule-receipt-main,
   .schedule-receipt-grid,
   .schedule-card-controls,
+  .schedule-packet-hero,
   .schedule-detail-grid,
+  .schedule-detail-grid.compact,
   .schedule-workflow-panel,
+  .schedule-operator-sections,
+  .schedule-material-chart div,
   .job-ticket-gallery,
   .job-tickets-record-form,
   .production-schedule-record-form {
@@ -6980,6 +7064,14 @@ p, .muted { color: #7a7a7a; }
 
   .schedule-card-list {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .schedule-packet-hero .schedule-thumb {
+    height: 180px;
+  }
+
+  .schedule-operator-card.wide {
+    grid-column: auto;
   }
 
   .schedule-card-controls .danger-btn.xs {
