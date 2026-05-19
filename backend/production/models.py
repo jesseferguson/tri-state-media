@@ -334,6 +334,25 @@ class JobTicket(models.Model):
         super().save(*args, **kwargs)
 
 
+class JobTicketEvent(models.Model):
+    job_ticket = models.ForeignKey(
+        JobTicket,
+        on_delete=models.CASCADE,
+        related_name="events",
+    )
+    event_type = models.CharField(max_length=50)
+    summary = models.CharField(max_length=255)
+    performed_by = models.CharField(max_length=120, default="system", blank=True)
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.job_ticket_id} / {self.event_type}"
+
+
 class ProductionSchedule(models.Model):
     STATUS_CHOICES = [
         ("unscheduled", "Unscheduled"),
@@ -412,8 +431,71 @@ class ProductionSchedule(models.Model):
 
     def save(self, *args, **kwargs):
         is_create = self.pk is None
+        previous = None
+        if not is_create:
+            previous = ProductionSchedule.objects.select_related("press").filter(pk=self.pk).first()
         super().save(*args, **kwargs)
         CustomerOrder.objects.sync_from_schedule(self, created=is_create)
+        self._log_job_ticket_event(previous=previous, created=is_create)
+
+    def _log_job_ticket_event(self, previous=None, created=False):
+        actor = self.last_updated_by or self.scheduled_by or "system"
+        if created:
+            JobTicketEvent.objects.create(
+                job_ticket=self.job_ticket,
+                event_type="scheduled",
+                summary=(
+                    f"{actor} scheduled {self.quantity_to_ship} ship / {self.quantity_to_stock} stock"
+                    f"{f' for {self.due_date}' if self.due_date else ''}."
+                ),
+                performed_by=actor,
+                details={
+                    "schedule_id": self.id,
+                    "status": self.status,
+                    "press": self.press.name if self.press else "",
+                    "quantity_to_ship": str(self.quantity_to_ship),
+                    "quantity_to_stock": str(self.quantity_to_stock),
+                    "due_date": str(self.due_date or ""),
+                },
+            )
+            return
+
+        if not previous:
+            return
+
+        changes = []
+        if previous.status != self.status:
+            changes.append(f"status {previous.get_status_display()} to {self.get_status_display()}")
+        if previous.press_id != self.press_id:
+            changes.append(f"press {previous.press.name if previous.press else 'Unassigned'} to {self.press.name if self.press else 'Unassigned'}")
+        if previous.press_sequence != self.press_sequence:
+            changes.append(f"press order {previous.press_sequence or '--'} to {self.press_sequence or '--'}")
+        if previous.quantity_to_ship != self.quantity_to_ship:
+            changes.append(f"ship qty {previous.quantity_to_ship} to {self.quantity_to_ship}")
+        if previous.quantity_to_stock != self.quantity_to_stock:
+            changes.append(f"stock qty {previous.quantity_to_stock} to {self.quantity_to_stock}")
+        if previous.due_date != self.due_date:
+            changes.append(f"ship date {previous.due_date or '--'} to {self.due_date or '--'}")
+        if previous.operator != self.operator:
+            changes.append(f"operator {previous.operator or '--'} to {self.operator or '--'}")
+        if previous.actual_footage != self.actual_footage:
+            changes.append(f"footage {previous.actual_footage or '--'} to {self.actual_footage or '--'}")
+
+        if not changes:
+            return
+
+        JobTicketEvent.objects.create(
+            job_ticket=self.job_ticket,
+            event_type="schedule_updated",
+            summary=f"{actor} updated schedule: {', '.join(changes[:4])}{'...' if len(changes) > 4 else ''}.",
+            performed_by=actor,
+            details={
+                "schedule_id": self.id,
+                "changes": changes,
+                "status": self.status,
+                "press": self.press.name if self.press else "",
+            },
+        )
 
     def delete(self, *args, **kwargs):
         orders = list(self.customer_orders.all())

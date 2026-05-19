@@ -1,18 +1,6 @@
 import { CalendarClock, ClipboardList, Gauge, PackageCheck } from "lucide-react";
 import { formatInches, getRecordTitle } from "../lib/format";
 
-const statusGroups = [
-  ["unscheduled", "Unassigned"],
-  ["scheduled", "Scheduled"],
-  ["ready", "Ready"],
-  ["running", "Running"],
-  ["complete", "Complete"],
-  ["on_hold", "On Hold"],
-  ["cancelled", "Cancelled"],
-];
-
-const statusChoices = statusGroups.map(([value, label]) => [value, label]);
-
 function numeric(value) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? number : 0;
@@ -58,12 +46,52 @@ function orderQuantity(row) {
 
 function sortScheduleRows(rows) {
   return [...rows].sort((a, b) => {
-    const press = String(a.press_name || "").localeCompare(String(b.press_name || ""));
-    if (press) return press;
-    const sequence = numeric(a.press_sequence) - numeric(b.press_sequence);
+    const aSequence = a.press_sequence ? numeric(a.press_sequence) : Number.MAX_SAFE_INTEGER;
+    const bSequence = b.press_sequence ? numeric(b.press_sequence) : Number.MAX_SAFE_INTEGER;
+    const sequence = aSequence - bSequence;
     if (sequence) return sequence;
     return String(a.due_date || a.order_date || "").localeCompare(String(b.due_date || b.order_date || ""));
   });
+}
+
+function moveToLineup(row, pressId, onUpdate, currentUser) {
+  const nextPress = pressId ? Number(pressId) : null;
+  onUpdate(row.id, {
+    press: nextPress,
+    status: nextPress ? "scheduled" : "unscheduled",
+    last_updated_by: currentUser?.name || "",
+  });
+}
+
+function buildLineupGroups(rows, presses) {
+  const knownPressIds = new Set(presses.map((press) => String(press.id)));
+  const groups = [
+    {
+      key: "unassigned",
+      label: "Unassigned",
+      rows: sortScheduleRows(rows.filter((row) => !row.press)),
+    },
+    ...presses.map((press) => ({
+      key: `press-${press.id}`,
+      label: press.name,
+      rows: sortScheduleRows(rows.filter((row) => String(row.press ?? "") === String(press.id))),
+    })),
+  ];
+
+  const extraPressRows = rows.filter((row) => row.press && !knownPressIds.has(String(row.press)));
+  const extraGroups = new Map();
+  extraPressRows.forEach((row) => {
+    const key = `press-extra-${row.press}`;
+    if (!extraGroups.has(key)) {
+      extraGroups.set(key, { key, label: row.press_name || "Other Press", rows: [] });
+    }
+    extraGroups.get(key).rows.push(row);
+  });
+
+  return [
+    ...groups,
+    ...Array.from(extraGroups.values()).map((group) => ({ ...group, rows: sortScheduleRows(group.rows) })),
+  ];
 }
 
 function updateOnBlur(event, value, onSave) {
@@ -118,14 +146,8 @@ function ScheduleDetailOverlay({ row, presses, currentUser, onClose, onEdit, onU
 
         <section className="schedule-workflow-panel">
           <div className="schedule-control">
-            <span>Status</span>
-            <select value={row.status || "unscheduled"} onChange={(event) => onUpdate(row.id, { status: event.target.value, last_updated_by: currentUser?.name || "" })}>
-              {statusChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-            </select>
-          </div>
-          <div className="schedule-control">
-            <span>Press</span>
-            <select value={row.press || ""} onChange={(event) => onUpdate(row.id, { press: event.target.value ? Number(event.target.value) : null, last_updated_by: currentUser?.name || "" })}>
+            <span>Current Lineup</span>
+            <select value={row.press || ""} onChange={(event) => moveToLineup(row, event.target.value, onUpdate, currentUser)}>
               <option value="">Unassigned</option>
               {presses.map((press) => <option value={press.id} key={press.id}>{press.name}</option>)}
             </select>
@@ -180,17 +202,12 @@ function ScheduleDetailOverlay({ row, presses, currentUser, onClose, onEdit, onU
 }
 
 export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, onSelect, onClose, onEdit, onUpdate }) {
-  const grouped = statusGroups.map(([status, label]) => ({
-    status,
-    label,
-    rows: sortScheduleRows(rows.filter((row) => (row.status || "unscheduled") === status)),
-  }));
-  const fallbackRows = rows.filter((row) => !statusGroups.some(([status]) => status === (row.status || "unscheduled")));
+  const grouped = buildLineupGroups(rows, presses);
 
   return (
     <section className="schedule-board">
-      {[...grouped, ...(fallbackRows.length ? [{ status: "other", label: "Other", rows: fallbackRows }] : [])].map((group) => (
-        <section className="schedule-status-group" key={group.status}>
+      {grouped.map((group) => (
+        <section className="schedule-status-group" key={group.key}>
           <header>
             <div>
               <strong>{group.label}</strong>
@@ -208,16 +225,13 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
                   <div className="schedule-card-meta">
                     <span><PackageCheck size={13} /> {row.customer_name || "No customer"}</span>
                     <span><ClipboardList size={13} /> {row.customer_po || "No PO"} / {orderQuantity(row).toLocaleString()} total</span>
-                    <span><Gauge size={13} /> {row.press_name || "No press"}{row.press_sequence ? ` #${row.press_sequence}` : ""}</span>
+                    <span><Gauge size={13} /> {row.press_sequence ? `Lineup #${row.press_sequence}` : group.label}</span>
                     <span><CalendarClock size={13} /> {row.operator || row.scheduled_by || "No operator"}</span>
                   </div>
                 </button>
                 <div className="schedule-card-controls">
-                  <select value={row.status || "unscheduled"} onChange={(event) => onUpdate(row.id, { status: event.target.value, last_updated_by: currentUser?.name || "" })}>
-                    {statusChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                  </select>
-                  <select value={row.press || ""} onChange={(event) => onUpdate(row.id, { press: event.target.value ? Number(event.target.value) : null, last_updated_by: currentUser?.name || "" })}>
-                    <option value="">Press</option>
+                  <select aria-label="Move to lineup" value={row.press || ""} onChange={(event) => moveToLineup(row, event.target.value, onUpdate, currentUser)}>
+                    <option value="">Unassigned</option>
                     {presses.map((press) => <option value={press.id} key={press.id}>{press.name}</option>)}
                   </select>
                   <input type="number" min="1" placeholder="#" defaultValue={row.press_sequence ?? ""} onBlur={(event) => updateOnBlur(event, row.press_sequence, (value) => onUpdate(row.id, { press_sequence: value ? Number(value) : null, last_updated_by: currentUser?.name || "" }))} />

@@ -11,6 +11,7 @@ from .views import (
     CustomerOrderViewSet,
     CustomerViewSet,
     FinishedInventoryViewSet,
+    JobTicketEventViewSet,
     JobTicketViewSet,
     ProductionScheduleViewSet,
     QuoteCostRateViewSet,
@@ -34,6 +35,7 @@ router.register("customer-order-events", CustomerOrderEventViewSet, basename="cu
 router.register("boxes", BoxSpecViewSet, basename="box")
 router.register("box-inventory", BoxInventoryViewSet, basename="box-inventory")
 router.register("job-tickets", JobTicketViewSet, basename="job-ticket")
+router.register("job-ticket-events", JobTicketEventViewSet, basename="job-ticket-event")
 router.register("production-schedule", ProductionScheduleViewSet, basename="production-schedule")
 router.register("finished-inventory", FinishedInventoryViewSet, basename="finished-inventory")
 

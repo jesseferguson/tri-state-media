@@ -14,6 +14,7 @@ from .models import (
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
+    JobTicketEvent,
     JobTicket,
     ProductionSchedule,
     QuoteCostRate,
@@ -30,6 +31,7 @@ from .serializers import (
     CustomerOrderEventSerializer,
     CustomerOrderSerializer,
     FinishedInventorySerializer,
+    JobTicketEventSerializer,
     JobTicketSerializer,
     ProductionScheduleSerializer,
     QuoteCostRateSerializer,
@@ -254,6 +256,30 @@ class JobTicketViewSet(BaseProductionViewSet):
             logger.exception("Could not upload job ticket image to storage.")
             return Response({"error": f"Could not upload image to storage: {error}"}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(self.get_serializer(ticket).data)
+
+
+class JobTicketEventViewSet(BaseProductionViewSet):
+    serializer_class = JobTicketEventSerializer
+    search_fields = [
+        "event_type",
+        "summary",
+        "performed_by",
+        "job_ticket__ticket_number",
+        "job_ticket__job_name",
+        "job_ticket__product_code",
+    ]
+    ordering_fields = ["created_at", "event_type", "performed_by"]
+
+    def get_queryset(self):
+        qs = (
+            JobTicketEvent.objects.select_related("job_ticket")
+            .all()
+            .order_by("-created_at", "-id")
+        )
+        job_ticket = self.request.query_params.get("job_ticket")
+        if job_ticket:
+            qs = qs.filter(job_ticket_id=job_ticket)
+        return qs
 
 
 class ProductionScheduleViewSet(BaseProductionViewSet):

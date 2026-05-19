@@ -45,7 +45,7 @@ export default function JobTicketGallery({ rows, selectedId, onSelect }) {
             <div className="job-ticket-card-body">
               <strong>{ticket.job_name || "Untitled Job"}</strong>
               <span>{customerName(ticket)}</span>
-              <em>{image?.name || image?.description || "Open job packet"}</em>
+              <em>{image?.name || "Open job packet"}</em>
             </div>
           </button>
         );

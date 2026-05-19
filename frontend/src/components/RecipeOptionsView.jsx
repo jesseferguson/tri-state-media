@@ -193,6 +193,11 @@ function perfLabel(option) {
   return "No Perf";
 }
 
+function recipeName(option) {
+  const r = recipe(option);
+  return option.recipe_name ?? r.name ?? "";
+}
+
 function dieSpec(die) {
   const d = details(die);
   return {
@@ -461,18 +466,7 @@ function Combo({ option, combo, muted = false }) {
   );
 }
 
-function Additional({ option, combos }) {
-  if (!combos.length) return null;
-  return (
-    <details className="additional-tools">
-      <summary><ChevronRight size={14} /><strong>Additional tooling not ready</strong><em>{combos.length}</em></summary>
-      <div className="combo-list">{combos.map((combo, idx) => <Combo key={idx} option={option} combo={combo} muted />)}</div>
-    </details>
-  );
-}
-
 function OptionCard({ option, onEdit }) {
-  const [open, setOpen] = useState(false);
   const result = useMemo(() => evaluateOption(option), [option]);
 
   const visibleCombos = result.readyCombos.length
@@ -482,63 +476,61 @@ function OptionCard({ option, onEdit }) {
   const hiddenCombos = result.readyCombos.length
     ? result.problemCombos
     : result.problemCombos.slice(1);
+  const meta = [
+    recipeName(option),
+    title(option.setup_type || "standard"),
+    perfLabel(option),
+    option.estimated_setup_minutes ? `${option.estimated_setup_minutes} min` : null,
+    option.is_preferred ? "Preferred" : null,
+    option.is_approved !== false ? "Approved" : "Review",
+  ].filter(Boolean);
 
   return (
     <article className={`recipe-option-card ${result.severity}`}>
-      <button
-        type="button"
-        className="option-headline"
-        onClick={() => setOpen((v) => !v)}
-      >
-        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-
+      <div className="option-card-head">
         <div className="option-title">
           <strong>{option.name || "Option"}</strong>
-          <span>
-            {[
-              title(option.setup_type || "standard"),
-              option.estimated_setup_minutes
-                ? `${option.estimated_setup_minutes} min`
-                : null,
-              option.is_preferred ? "Preferred" : null,
-              option.is_approved !== false ? "Approved" : "Review",
-            ]
-              .filter(Boolean)
-              .join(" - ")}
-          </span>
+          <span>{meta.join(" - ")}</span>
         </div>
 
-        <span className="perf-tag">{perfLabel(option)}</span>
-      </button>
+        <Status severity={result.severity} label={result.label} />
 
-      {open && (
-        <div className="option-body">
-          <div className="option-actions">
-            <button
-              type="button"
-              className="ghost-btn xs"
-              onClick={() => onEdit?.(option)}
-            >
-              <Edit3 size={13} /> Edit option
-            </button>
-          </div>
+        {onEdit && (
+          <button type="button" className="ghost-btn xs" onClick={() => onEdit(option)}>
+            <Edit3 size={13} /> Edit
+          </button>
+        )}
+      </div>
 
-          <div className="combo-list">
-            {visibleCombos.map((combo, idx) => (
-              <Combo key={idx} option={option} combo={combo} />
-            ))}
-          </div>
-
-          <Additional option={option} combos={hiddenCombos} />
+      <div className="option-body">
+        <div className="combo-list">
+          {visibleCombos.map((combo, idx) => (
+            <Combo key={idx} option={option} combo={combo} />
+          ))}
         </div>
-      )}
+
+        {hiddenCombos.length > 0 && (
+          <div className="problem-line subdued">
+            <span>{hiddenCombos.length} alternate tooling path{hiddenCombos.length === 1 ? "" : "s"} not ready</span>
+          </div>
+        )}
+      </div>
     </article>
   );
 }
 
-function PressGroup({ pressName, options, onEdit }) {
-  const [open, setOpen] = useState(false);
+function PressGroup({ pressName, options, onEdit, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
   const stat = useMemo(() => aggregate(options), [options]);
+  const orderedOptions = useMemo(
+    () => [...options].sort((a, b) => {
+      const aResult = evaluateOption(a);
+      const bResult = evaluateOption(b);
+      const rank = { ready: 0, warn: 1, bad: 2 };
+      return (rank[aResult.severity] ?? 9) - (rank[bResult.severity] ?? 9) || String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    }),
+    [options]
+  );
 
   return (
     <section className={`press-group-card ${stat.severity}`}>
@@ -556,13 +548,13 @@ function PressGroup({ pressName, options, onEdit }) {
 
         <div className="press-master-status">
           <Status severity={stat.severity} label={stat.label} />
-          <span>{stat.ready} ready</span>
+          <span>{stat.ready}/{stat.total} ready</span>
         </div>
       </button>
 
       {open && (
         <div className="option-stack">
-          {options.map((option) => (
+          {orderedOptions.map((option) => (
             <OptionCard key={option.id} option={option} onEdit={onEdit} />
           ))}
         </div>
@@ -571,32 +563,26 @@ function PressGroup({ pressName, options, onEdit }) {
   );
 }
 
-function RecipeGroup({ recipeName, options, onEdit }) {
-  const [open, setOpen] = useState(false);
-  const stat = useMemo(() => aggregate(options), [options]);
-  const byPress = useMemo(() => groupBy(options, (o) => o.press_name ?? o.press_details?.name ?? "No press"), [options]);
-  const first = options[0];
-
-  return (
-    <section className={`recipe-group-card ${stat.severity}`}>
-      <button type="button" className="recipe-head" onClick={() => setOpen((v) => !v)}>
-        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        <div><strong>{recipeName || "No recipe"}</strong><span>{perfLabel(first)} - {stat.ready}/{stat.total} runnable</span></div>
-        <Status severity={stat.severity} label={stat.label} />
-      </button>
-      {open && <div className="press-stack">{Object.entries(byPress).map(([name, list]) => <PressGroup key={name} pressName={name} options={list} onEdit={onEdit} />)}</div>}
-    </section>
-  );
-}
-
 export default function RecipeOptionsView({ rows, onEdit }) {
-  const byRecipe = useMemo(() => groupBy(rows ?? [], (r) => r.recipe_name ?? r.recipe_details?.name ?? "No recipe"), [rows]);
+  const byPress = useMemo(() => groupBy(rows ?? [], (r) => r.press_name ?? r.press_details?.name ?? "No press"), [rows]);
+  const pressGroups = useMemo(
+    () => Object.entries(byPress).sort(([aName], [bName]) => aName.localeCompare(bName)),
+    [byPress]
+  );
 
   if (!rows?.length) return <div className="empty-recipe-options">No recipe options match this view.</div>;
 
   return (
     <div className="recipe-options-view">
-      {Object.entries(byRecipe).map(([recipeName, list]) => <RecipeGroup key={recipeName} recipeName={recipeName} options={list} onEdit={onEdit} />)}
+      {pressGroups.map(([pressName, list]) => (
+        <PressGroup
+          key={pressName}
+          pressName={pressName}
+          options={list}
+          onEdit={onEdit}
+          defaultOpen={pressGroups.length === 1}
+        />
+      ))}
     </div>
   );
 }

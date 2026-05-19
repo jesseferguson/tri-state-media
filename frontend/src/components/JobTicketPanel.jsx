@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CalendarPlus, Edit3, FileText, Image as ImageIcon, PackageCheck, Trash2 } from "lucide-react";
+import { CalendarPlus, FileText, Image as ImageIcon, PackageCheck } from "lucide-react";
 import RecipeOptionsView from "./RecipeOptionsView";
 import { formatInches, labelize } from "../lib/format";
 
@@ -45,11 +45,23 @@ function numeric(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function inventoryFootage(row) {
+  return numeric(row?.length_feet ?? row?.quantity);
+}
+
 function formatNumber(value, suffix = "") {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n)) return "--";
   const rounded = Math.round(n * 10) / 10;
   return `${rounded.toLocaleString()}${suffix}`;
+}
+
+function inventoryRollName(row) {
+  return row?.name || row?.source_roll_tag_number || row?.serial_number || row?.lot_number || row?.code || "Roll";
+}
+
+function inventoryLocation(row) {
+  return row?.location_full_path || row?.location_name || "No location";
 }
 
 function Stat({ label, value, bars, rangeLabel }) {
@@ -112,17 +124,6 @@ function primaryImage(ticket) {
   );
 }
 
-function materialTitle(ticket) {
-  return [
-    ticket.material_master_type_code || ticket.material_spec_master_type_code,
-    ticket.material_spec_code,
-    ticket.material_spec_name,
-    ticket.material_spec_family,
-    ticket.material_spec_gsm ? `${ticket.material_spec_gsm} GSM` : "",
-    ticket.material_spec_liner_pounds ? `${ticket.material_spec_liner_pounds}#` : "",
-  ].filter(Boolean).join(" / ");
-}
-
 function matchingMaterialInventory(ticket, rows) {
   return (rows ?? []).filter((row) => {
     if (sameId(row.material, ticket.material_spec)) return true;
@@ -136,11 +137,12 @@ function matchingMaterialInventory(ticket, rows) {
 
 function groupInventoryByWidth(rows) {
   return (rows ?? []).reduce((acc, row) => {
+    const qty = inventoryFootage(row);
+    if (qty <= 0 || ["depleted", "scrapped"].includes(row.status)) return acc;
     const key = row.width_inches ? `${formatInches(row.width_inches)} wide` : "No width";
     if (!acc[key]) acc[key] = { rows: [], total: 0 };
     acc[key].rows.push(row);
-    const qty = Number(row.length_feet ?? row.quantity ?? 0);
-    if (Number.isFinite(qty) && !["depleted", "scrapped"].includes(row.status)) acc[key].total += qty;
+    acc[key].total += qty;
     return acc;
   }, {});
 }
@@ -162,10 +164,6 @@ function matchingBoxInventory(ticket, rows) {
 }
 
 function matchingSchedule(ticket, rows) {
-  return (rows ?? []).filter((row) => sameId(row.job_ticket, ticket.id) || row.job_ticket_number === ticket.ticket_number);
-}
-
-function matchingOrders(ticket, rows) {
   return (rows ?? []).filter((row) => sameId(row.job_ticket, ticket.id) || row.job_ticket_number === ticket.ticket_number);
 }
 
@@ -254,18 +252,70 @@ function monthlyBars(rows, dateGetter, quantityGetter, rangeKey) {
   return Array.from(grouped.values()).sort((a, b) => a.sort - b.sort);
 }
 
+function WidthFootageChart({ rows }) {
+  const [selectedLabel, setSelectedLabel] = useState("");
+  const groups = Object.entries(groupInventoryByWidth(rows ?? []))
+    .map(([label, group]) => ({
+      label,
+      value: group.total,
+      rows: [...group.rows].sort((a, b) => inventoryLocation(a).localeCompare(inventoryLocation(b))),
+    }))
+    .filter((group) => group.value > 0);
+  if (!groups.length) return <p className="muted">No active material widths yet.</p>;
+  const max = Math.max(...groups.map((group) => group.value), 1);
+  const selectedGroup = groups.find((group) => group.label === selectedLabel);
+  return (
+    <div className="job-width-chart">
+      {groups.map((group) => (
+        <button
+          key={group.label}
+          type="button"
+          className={selectedGroup?.label === group.label ? "active" : ""}
+          onClick={() => setSelectedLabel((current) => (current === group.label ? "" : group.label))}
+        >
+          <span>{group.label}</span>
+          <strong>{formatNumber(group.value, " ft")}</strong>
+          <em style={{ "--bar-width": `${Math.max(5, (group.value / max) * 100)}%` }} />
+        </button>
+      ))}
+      {selectedGroup && (
+        <div className="job-width-detail">
+          <strong>{selectedGroup.label} Locations</strong>
+          <table>
+            <thead>
+              <tr>
+                <th>Roll</th>
+                <th>Location</th>
+                <th>Feet</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedGroup.rows.map((row) => (
+                <tr key={row.id || `${inventoryRollName(row)}-${inventoryLocation(row)}`}>
+                  <td>{inventoryRollName(row)}</td>
+                  <td>{inventoryLocation(row)}</td>
+                  <td>{formatNumber(inventoryFootage(row), " ft")}</td>
+                  <td>{labelize(row.status || "available")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function JobTicketPanel({
   ticket,
   lookups,
-  editing,
-  deleting,
   canEdit = false,
   canSchedule = false,
   canQuote = false,
-  onEdit,
-  onDelete,
-  onSchedule,
   onQuoteJob,
+  renderEditorForm,
+  renderScheduleForm,
 }) {
   const [activeTab, setActiveTab] = useState("general");
   const [chartRange, setChartRange] = useState("90bd");
@@ -290,11 +340,6 @@ export default function JobTicketPanel({
     [ticket, lookups]
   );
 
-  const orderRows = useMemo(
-    () => matchingOrders(ticket, lookups["customer-orders"]),
-    [ticket, lookups]
-  );
-
   const recentBoxAverage = useMemo(() => {
     const recent = finishedRows.filter((row) => row.status === "shipped" && dateInLastMonths(row.run_date, 3));
     const boxes = recent.reduce((sum, row) => sum + getBoxCount(row, ticket), 0);
@@ -302,9 +347,10 @@ export default function JobTicketPanel({
   }, [finishedRows, ticket]);
 
   const availableInventory = materialInventory.filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status));
-  const inventoryByWidth = useMemo(() => groupInventoryByWidth(availableInventory), [availableInventory]);
+  const availableInventoryWithFeet = availableInventory.filter((row) => inventoryFootage(row) > 0);
+  const inventoryByWidth = useMemo(() => groupInventoryByWidth(availableInventoryWithFeet), [availableInventoryWithFeet]);
   const availableFinished = finishedRows.filter((row) => row.is_active !== false && !["depleted", "scrapped", "shipped"].includes(row.status));
-  const materialFeet = availableInventory.reduce((sum, row) => sum + numeric(row.length_feet ?? row.quantity), 0);
+  const materialFeet = availableInventoryWithFeet.reduce((sum, row) => sum + inventoryFootage(row), 0);
   const finishedQuantity = availableFinished.reduce((sum, row) => sum + numeric(row.quantity), 0);
   const scheduleTotal = scheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
   const averageScheduled = scheduleRows.length ? scheduleTotal / scheduleRows.length : null;
@@ -333,14 +379,6 @@ export default function JobTicketPanel({
   });
 
   function selectTab(key) {
-    if (key === "schedule") {
-      onSchedule?.();
-      return;
-    }
-    if (key === "editor") {
-      onEdit?.();
-      return;
-    }
     setActiveTab(key);
   }
 
@@ -360,18 +398,20 @@ export default function JobTicketPanel({
         </div>
       </div>
 
-      <div className="job-tabs" role="tablist" aria-label="Job ticket sections">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            className={activeTab === tab.key ? "active" : ""}
-            onClick={() => selectTab(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {visibleTabs.length > 1 && (
+        <div className="job-tabs" role="tablist" aria-label="Job ticket sections">
+          {visibleTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={activeTab === tab.key ? "active" : ""}
+              onClick={() => selectTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {activeTab === "general" && (
         <div className="job-panel-section">
@@ -399,9 +439,10 @@ export default function JobTicketPanel({
                 <span>Material Type</span>
                 <strong>{ticket.material_master_type_code || ticket.material_spec_master_type_code || "--"}</strong>
               </div>
-              <div>
-                <span>Finished Material</span>
-                <strong>{materialTitle(ticket) || "--"}</strong>
+              <div className="job-material-on-hand">
+                <span>Material On Hand</span>
+                <strong>{`${availableInventoryWithFeet.length} rolls / ${formatNumber(materialFeet, " ft")}`}</strong>
+                <WidthFootageChart rows={availableInventoryWithFeet} />
               </div>
             </div>
           </section>
@@ -419,7 +460,6 @@ export default function JobTicketPanel({
             ))}
           </div>
           <div className="job-stat-grid focus">
-            <Stat label="Material On Hand" value={`${availableInventory.length} rolls / ${formatNumber(materialFeet, " ft")}`} />
             <Stat label="Finished Stock" value={`${formatNumber(finishedQuantity)} units / ${availableFinished.length} lots`} />
             <Stat label="Avg Scheduled" value={averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} />
             <Stat label="Avg Shipped / Month" value={recentBoxAverage ?? "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} />
@@ -546,71 +586,14 @@ export default function JobTicketPanel({
       )}
 
       {activeTab === "schedule" && (
-        <div className="job-panel-section">
-          <div className="job-editor-actions">
-            <button className="primary-btn" type="button" onClick={onSchedule}>
-              <CalendarPlus size={15} /> Schedule This Job
-            </button>
-          </div>
-
-          {scheduleRows.length ? (
-            <div className="job-inventory-list">
-              {scheduleRows.map((row) => (
-                <div key={row.id} className="job-inventory-row">
-                  <strong>{[row.scheduled_date, labelize(row.priority), labelize(row.status)].filter(Boolean).join(" / ")}</strong>
-                  <span>{[row.customer_po ? `PO ${row.customer_po}` : "", row.quantity_to_ship ? `${row.quantity_to_ship} ship` : "", row.quantity_to_stock ? `${row.quantity_to_stock} stock` : ""].filter(Boolean).join(" / ")}</span>
-                  <em>{row.notes || "No operator note"}</em>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">This job is not actively scheduled yet.</p>
-          )}
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Customer Order Pool</strong>
-            </div>
-            {orderRows.length ? (
-              <div className="job-inventory-list">
-                {orderRows.map((row) => (
-                  <div key={row.id} className="job-inventory-row">
-                    <strong>{[row.order_date, row.customer_name, row.customer_po ? `PO ${row.customer_po}` : ""].filter(Boolean).join(" / ")}</strong>
-                    <span>{[row.quantity_to_ship ? `${row.quantity_to_ship} ship` : "", row.quantity_to_stock ? `${row.quantity_to_stock} stock` : "", labelize(row.status)].filter(Boolean).join(" / ")}</span>
-                    <em>{row.operator_note || "No note"}</em>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No permanent customer order records exist for this job yet.</p>
-            )}
-          </section>
+        <div className="job-panel-section job-schedule-form-only">
+          {renderScheduleForm?.({ onCancel: () => setActiveTab("general") })}
         </div>
       )}
 
       {activeTab === "editor" && (
-        <div className="job-panel-section">
-          <div className="job-editor-actions">
-            <button className="primary-btn" type="button" onClick={onEdit} disabled={editing}>
-              <Edit3 size={15} /> Edit Job Ticket
-            </button>
-            <button className="danger-btn" type="button" onClick={onDelete} disabled={deleting}>
-              <Trash2 size={15} /> Delete
-            </button>
-          </div>
-
-          <div className="job-info-list">
-            <InfoRow label="TSM ID" value={ticket.product_code} />
-            <InfoRow label="Job Number" value={ticket.job_name} />
-            <InfoRow label="Labels / Unit" value={ticket.labels_per_unit} />
-            <InfoRow label="Units / Carton" value={ticket.units_per_carton} />
-            <InfoRow label="Labels in Box" value={ticket.labels_per_carton} />
-            <InfoRow label="Core Size" value={formatInches(ticket.core_size_inches)} />
-            <InfoRow label="Wind" value={ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""} />
-            <InfoRow label="Finishing Notes" value={ticket.finishing_notes} />
-            <InfoRow label="Job Notes" value={ticket.job_notes} />
-          </div>
+        <div className="job-panel-section job-editor-form-only">
+          {renderEditorForm?.({ onCancel: () => setActiveTab("general") })}
         </div>
       )}
     </div>

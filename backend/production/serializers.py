@@ -11,6 +11,7 @@ from .models import (
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
+    JobTicketEvent,
     JobTicket,
     ProductionSchedule,
     QuoteCostRate,
@@ -274,6 +275,16 @@ class JobTicketSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = JobTicket
+        fields = "__all__"
+
+
+class JobTicketEventSerializer(serializers.ModelSerializer):
+    job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
+    job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
+    product_code = serializers.CharField(source="job_ticket.product_code", read_only=True)
+
+    class Meta:
+        model = JobTicketEvent
         fields = "__all__"
 
 

@@ -252,10 +252,20 @@ function quoteRecordPayload(quote) {
 
 function jobTicketQuoteQuantity(ticket) {
   if (!ticket) return { quantity: "", complete: false, message: "" };
+  const unitsPerCarton = toQuoteNumber(ticket.units_per_carton, NaN);
   const labelsPerCarton = toQuoteNumber(ticket.labels_per_carton, NaN);
   const labelsPerUnit = toQuoteNumber(ticket.labels_per_unit, NaN);
+  const hasUnitsPerCarton = Number.isFinite(unitsPerCarton) && unitsPerCarton > 0;
   const hasLabelsPerCarton = Number.isFinite(labelsPerCarton) && labelsPerCarton > 0;
   const hasLabelsPerUnit = Number.isFinite(labelsPerUnit) && labelsPerUnit > 0;
+
+  if (hasUnitsPerCarton) {
+    return {
+      quantity: quantityInputValue(unitsPerCarton),
+      complete: true,
+      message: "",
+    };
+  }
 
   if (hasLabelsPerCarton) {
     return {
@@ -276,7 +286,7 @@ function jobTicketQuoteQuantity(ticket) {
   return {
     quantity: "",
     complete: false,
-    message: "This job ticket does not contain number of labels in box or labels per unit. Enter the quote quantity below.",
+    message: "This job ticket does not contain units per carton. Enter the quote quantity below.",
   };
 }
 

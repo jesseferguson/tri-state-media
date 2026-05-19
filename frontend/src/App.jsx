@@ -136,6 +136,9 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-orders", {}, 150));
+    addLookupSpec(specs, relationLookupSpec("customer-order-events", {}, 250));
+    addLookupSpec(specs, relationLookupSpec("job-ticket-events", { job_ticket: selected.id }, 250));
+    addLookupSpec(specs, relationLookupSpec("presses", {}, 150));
   }
 
   const entries = await Promise.all(
@@ -201,6 +204,51 @@ function autoImageName(slot, ticket = {}) {
   }[slot] || "Image";
   const job = String(ticket.job_name || ticket.product_code || ticket.ticket_number || "Job").trim().replace(/\s+/g, "-");
   return `${label}-${job}`;
+}
+
+function scheduleDefaultsForTicket(ticket, currentUser) {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    job_ticket: ticket?.id || "",
+    customer: ticket?.customer || "",
+    customer_po: "",
+    priority: "normal",
+    order_date: today,
+    due_date: "",
+    quantity_to_ship: 0,
+    quantity_to_stock: 0,
+    notes: ticket?.job_notes || ticket?.finishing_notes || "",
+    scheduled_by: currentUser?.name || "",
+    last_updated_by: currentUser?.name || "",
+    status: "unscheduled",
+  };
+}
+
+const jobTicketChangeFields = [
+  ["customer", "Customer"],
+  ["job_name", "Job Number"],
+  ["product_code", "TSM ID"],
+  ["material_master_type", "Material Type"],
+  ["material_spec", "Finished Material"],
+  ["label_width_inches", "Label Width"],
+  ["label_length_inches", "Label Length"],
+  ["repeat_inches", "Repeat"],
+  ["cutting_type", "Cutting"],
+  ["finishing_type", "Finishing"],
+  ["labels_per_unit", "Labels per Unit"],
+  ["units_per_carton", "Units per Carton"],
+  ["labels_per_carton", "Labels in Box"],
+  ["core_size_inches", "Core Size"],
+  ["wind_direction", "Wind"],
+  ["box", "Box"],
+  ["recipe", "Recipe"],
+];
+
+function summarizeJobTicketChanges(previous, next) {
+  if (!previous || !next) return [];
+  return jobTicketChangeFields
+    .filter(([key]) => String(previous[key] ?? "") !== String(next[key] ?? ""))
+    .map(([key, label]) => `${label}: ${previous[key] || "--"} to ${next[key] || "--"}`);
 }
 
 const initialOpenGroups = Object.fromEntries(
@@ -989,6 +1037,27 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const canEditJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-editor");
   const canScheduleFromJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-schedule");
   const canQuoteJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-calculator");
+  const jobTicketScheduleResource = useMemo(() => {
+    const schedule = resourceMap["production-schedule"];
+    const hiddenOnTicket = new Set([
+      "job_ticket",
+      "customer",
+      "scheduled_by",
+      "last_updated_by",
+      "status",
+      "scheduled_date",
+      "press",
+      "press_sequence",
+      "operator",
+      "actual_footage",
+      "footage_report",
+    ]);
+    return {
+      ...schedule,
+      key: "job-ticket-schedule-form",
+      fields: (schedule.fields ?? []).filter((field) => !hiddenOnTicket.has(field.name)),
+    };
+  }, []);
 
   const saveMutation = useMutation({
     mutationFn: async (payload) => {
@@ -1023,13 +1092,30 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           const formData = new FormData();
           formData.append("image", upload.file);
           formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
-          formData.append("description", cleanPayload[`${upload.slot}_image_description`] || "");
           saved = await uploadRecordAction(resource.endpoint, saved.id, `images/${upload.slot}`, formData);
         }
       }
       return saved;
     },
-    onSuccess: (saved) => {
+    onSuccess: async (saved) => {
+      if (saved && resource.key === "job-tickets") {
+        const changes = formMode === "edit" ? summarizeJobTicketChanges(selected, saved) : [];
+        try {
+          await createRecord("job-ticket-events", {
+            job_ticket: saved.id,
+            event_type: formMode === "edit" ? "updated" : "created",
+            summary: formMode === "edit"
+              ? (changes.length
+                ? `${currentUser.name} updated ${changes.slice(0, 4).join(", ")}${changes.length > 4 ? "..." : ""}.`
+                : `${currentUser.name} updated the job ticket.`)
+              : `${currentUser.name} created the job ticket.`,
+            performed_by: currentUser.name,
+            details: { changes },
+          });
+        } catch {
+          // The ticket save should still succeed if history logging is unavailable.
+        }
+      }
       if (saved && resource.key === "raw-materials") {
         setLocalInventoryRows((prev) => mergeRows([saved], prev));
         queryClient.setQueryData(collectionQueryKey, (current) => {
@@ -1305,6 +1391,68 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     },
   });
 
+  const jobTicketEditMutation = useMutation({
+    mutationFn: async (payload) => {
+      if (!selected?.id) throw new Error("No job ticket selected.");
+      const imageUploads = Array.isArray(payload?.__imageUploads) ? payload.__imageUploads : [];
+      const cleanPayload = {
+        ...payload,
+        ticket_number: generatedJobTicketNumber(payload),
+      };
+      delete cleanPayload.__imageUploads;
+      let saved = await updateRecord("job-tickets", selected.id, cleanPayload);
+      for (const upload of imageUploads) {
+        if (!upload.file || !upload.slot) continue;
+        const formData = new FormData();
+        formData.append("image", upload.file);
+        formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
+        saved = await uploadRecordAction("job-tickets", saved.id, `images/${upload.slot}`, formData);
+      }
+      return saved;
+    },
+    onSuccess: async (saved) => {
+      const changes = summarizeJobTicketChanges(selected, saved);
+      if (saved?.id) {
+        try {
+          await createRecord("job-ticket-events", {
+            job_ticket: saved.id,
+            event_type: "updated",
+            summary: changes.length
+              ? `${currentUser.name} updated ${changes.slice(0, 4).join(", ")}${changes.length > 4 ? "..." : ""}.`
+              : `${currentUser.name} updated the job ticket.`,
+            performed_by: currentUser.name,
+            details: { changes },
+          });
+        } catch {
+          // History is helpful, but the ticket save should not be blocked by it.
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      setSelected(saved ?? selected);
+    },
+  });
+
+  const jobTicketScheduleCreateMutation = useMutation({
+    mutationFn: (payload) => createRecord("production-schedule", {
+      ...payload,
+      job_ticket: selected.id,
+      customer: selected.customer || null,
+      status: "unscheduled",
+      scheduled_by: currentUser.name,
+      last_updated_by: currentUser.name,
+      scheduled_date: payload.order_date || new Date().toISOString().slice(0, 10),
+      press: null,
+      press_sequence: null,
+      operator: "",
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   function switchResource(key) {
     if (!allowedResources.some((item) => item.key === key)) return;
     setActiveKey(key);
@@ -1467,6 +1615,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {saveMutation.error && <div className="error-box">{saveMutation.error.message}</div>}
         {finishedScheduleMutation.error && <div className="error-box">{finishedScheduleMutation.error.message}</div>}
         {scheduleUpdateMutation.error && <div className="error-box">{scheduleUpdateMutation.error.message}</div>}
+        {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
+        {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {deleteMutation.error && <div className="error-box">{deleteMutation.error.message}</div>}
         {rollActionMutation.error && <div className="error-box">{rollActionMutation.error.message}</div>}
         {listQuery.error && <div className="error-box">Could not load {resource.label}: {listQuery.error.message}</div>}
@@ -1635,66 +1785,43 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 </button>
               </header>
 
-              {formMode === "edit" ? (
-                <RecordForm
-                  resource={resource}
-                  record={selected}
-                  lookups={lookupQuery.data ?? {}}
-                  submitting={saveMutation.isPending}
-                  onSubmit={(payload) => saveMutation.mutate(payload)}
-                  onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
-                  canUseField={canUseRecordField}
-                />
-              ) : (
-                <JobTicketPanel
-                  ticket={selected}
-                  lookups={lookupQuery.data ?? {}}
-                  editing={formMode === "edit"}
-                  deleting={deleteMutation.isPending}
-                  canEdit={canEditJobTicket}
-                  canSchedule={canScheduleFromJobTicket}
-                  canQuote={canQuoteJobTicket}
-                  onEdit={() => setFormMode("edit")}
-                  onDelete={() => deleteMutation.mutate()}
-                  onQuoteJob={() => {
-                    setQuoteJobTicketId(String(selected.id));
-                    setActiveKey("quote-calculator");
-                    setSelected(null);
-                    setFormMode(null);
-                    setSearch("");
-                    setOpenGroups((prev) => ({ ...prev, production: true }));
-                  }}
-                  onSchedule={() => {
-                    const ticket = selected;
-                    const today = new Date().toISOString().slice(0, 10);
-                    setActiveKey("production-schedule");
-                    setSelected(null);
-                    setFormMode("create");
-                    setSearch("");
-                    setCreateDefaults({
-                      job_ticket: ticket.id,
-                      customer: ticket.customer || "",
-                      customer_po: "",
-                      status: "unscheduled",
-                      priority: "normal",
-                      order_date: today,
-                      scheduled_date: today,
-                      due_date: "",
-                      scheduled_by: currentUser.name,
-                      last_updated_by: currentUser.name,
-                      quantity_to_ship: 0,
-                      quantity_to_stock: 0,
-                      press: "",
-                      press_sequence: "",
-                      operator: "",
-                      actual_footage: "",
-                      footage_report: "",
-                      notes: ticket.job_notes || ticket.finishing_notes || "",
-                    });
-                    setOpenGroups((prev) => ({ ...prev, production: true }));
-                  }}
-                />
-              )}
+              <JobTicketPanel
+                ticket={selected}
+                lookups={lookupQuery.data ?? {}}
+                canEdit={canEditJobTicket}
+                canSchedule={canScheduleFromJobTicket}
+                canQuote={canQuoteJobTicket}
+                onQuoteJob={() => {
+                  setQuoteJobTicketId(String(selected.id));
+                  setActiveKey("quote-calculator");
+                  setSelected(null);
+                  setFormMode(null);
+                  setSearch("");
+                  setOpenGroups((prev) => ({ ...prev, production: true }));
+                }}
+                renderEditorForm={({ onCancel }) => (
+                  <RecordForm
+                    resource={resource}
+                    record={selected}
+                    lookups={lookupQuery.data ?? {}}
+                    submitting={jobTicketEditMutation.isPending}
+                    onSubmit={(payload) => jobTicketEditMutation.mutate(payload)}
+                    onCancel={onCancel}
+                    canUseField={canUseRecordField}
+                  />
+                )}
+                renderScheduleForm={({ onCancel }) => (
+                  <RecordForm
+                    resource={jobTicketScheduleResource}
+                    defaults={scheduleDefaultsForTicket(selected, currentUser)}
+                    lookups={{ ...(lookupQuery.data ?? {}), "job-tickets": selected ? [selected] : [] }}
+                    submitting={jobTicketScheduleCreateMutation.isPending}
+                    onSubmit={(payload) => jobTicketScheduleCreateMutation.mutate(payload)}
+                    onCancel={onCancel}
+                    canUseField={canUseRecordField}
+                  />
+                )}
+              />
             </div>
           </section>
         )}

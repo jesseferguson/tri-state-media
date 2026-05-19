@@ -173,6 +173,7 @@ function getRelationTitle(row, field) {
   }
 
   if (field.relation === "customers") {
+    if (field.displayMode === "nameOnly") return row.name ?? getRecordTitle(row);
     return [
       row.name ?? getRecordTitle(row),
       row.customer_code,

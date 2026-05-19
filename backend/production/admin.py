@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BoxInventory, BoxSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, ProductionSchedule
+from .models import BoxInventory, BoxSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, ProductionSchedule
 
 
 @admin.register(Customer)
@@ -61,6 +61,15 @@ class JobTicketAdmin(admin.ModelAdmin):
         "finishing_notes",
     )
     autocomplete_fields = ("customer", "material_master_type", "material_spec", "recipe", "box")
+
+
+@admin.register(JobTicketEvent)
+class JobTicketEventAdmin(admin.ModelAdmin):
+    list_display = ("job_ticket", "event_type", "summary", "performed_by", "created_at")
+    list_filter = ("event_type", "performed_by", "created_at")
+    search_fields = ("summary", "performed_by", "job_ticket__ticket_number", "job_ticket__job_name", "job_ticket__product_code")
+    autocomplete_fields = ("job_ticket",)
+    readonly_fields = ("created_at",)
 
 
 @admin.register(ProductionSchedule)
