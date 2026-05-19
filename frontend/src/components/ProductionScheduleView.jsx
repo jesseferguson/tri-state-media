@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarClock, ClipboardList, Gauge, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
+import { CalendarClock, ClipboardList, Gauge, Image as ImageIcon, Trash2 } from "lucide-react";
 import { formatInches, getRecordTitle } from "../lib/format";
 
 function numeric(value) {
@@ -124,8 +124,9 @@ function ScheduleThumb({ row }) {
 }
 
 function ScheduleFact({ label, value }) {
+  const key = label.toLowerCase().replaceAll(" ", "-");
   return (
-    <div className="schedule-fact">
+    <div className={`schedule-fact ${key}`}>
       <span>{label}</span>
       <strong>{value || "--"}</strong>
     </div>
@@ -331,11 +332,6 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
                     {presses.map((press) => <option value={press.id} key={press.id}>{press.name}</option>)}
                   </select>
                   <input type="number" min="1" placeholder="#" defaultValue={row.press_sequence ?? ""} onBlur={(event) => updateOnBlur(event, row.press_sequence, (value) => onUpdate(row.id, { press_sequence: value ? Number(value) : null, last_updated_by: currentUser?.name || "" }))} />
-                  {row.press && (
-                    <button className="ghost-btn xs" type="button" onClick={() => moveToLineup(row, "", onUpdate, currentUser)}>
-                      <RotateCcw size={12} /> Unassign
-                    </button>
-                  )}
                   {onRemove && (
                     <button className="danger-btn xs" type="button" onClick={() => setRemoveRow(row)}>
                       <Trash2 size={12} /> Delete
