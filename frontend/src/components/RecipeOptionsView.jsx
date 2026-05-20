@@ -337,9 +337,31 @@ function Detail({ label, value }) {
   return <div><span>{label}</span><strong>{String(value)}</strong></div>;
 }
 
-function ToolDetails({ title, tool, onClose }) {
+function ToolDetails({ title, tool, onClose, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
+  const [requestNote, setRequestNote] = useState("");
+  const [countValue, setCountValue] = useState("");
+  const [countNote, setCountNote] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
   if (!tool) return null;
   const d = details(tool);
+  const isFlex = norm(d.type) === "flex die" || toolType(tool).includes("flex_die");
+  const canManageDie = isFlex && d.id && (onFlexDieReorder || onFlexDieCountUpdate);
+
+  async function run(actionName, action) {
+    setBusy(actionName);
+    setError("");
+    try {
+      await action();
+      if (actionName === "request") setRequestNote("");
+      if (actionName === "count") setCountNote("");
+    } catch (err) {
+      setError(err.message || "Could not update the die.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <div className="tool-detail-panel">
       <div className="tool-detail-head">
@@ -356,12 +378,36 @@ function ToolDetails({ title, tool, onClose }) {
         <Detail label="Cut" value={labelize(d.cutting_type)} />
         <Detail label="Repeat" value={d.repeat ?? d.repeat_inches} />
         <Detail label="Width" value={d.width ?? d.label_width_inches ?? d.face_width_inches ?? d.cylinder_width_inches} />
+        <Detail label="Gap" value={d.gap_across} />
+        <Detail label="Web" value={d.web_width} />
+        <Detail label="Original Serial" value={d.original_serial_number} />
+        <Detail label="Active / Target" value={isFlex ? `${d.active_die_count ?? 0} / ${d.target_die_count ?? 0}` : ""} />
         <Detail label="Location" value={locationText(tool)} />
         <Detail label="Parent" value={locationParentText(tool)} />
-        <Detail label="Tool #" value={d.tool_number} />
-        <Detail label="Drawing #" value={d.drawing_number} />
-        <Detail label="Notes" value={d.notes ?? tool.notes} />
       </div>
+      {d.dieline_image_url && (
+        <a className="tool-dieline-link" href={d.dieline_image_url} target="_blank" rel="noreferrer">View dieline image</a>
+      )}
+      {canManageDie && (
+        <div className="tool-die-actions">
+          {onFlexDieReorder && (
+            <form onSubmit={(event) => { event.preventDefault(); run("request", () => onFlexDieReorder(d, requestNote, operatorName)); }}>
+              <strong>Request new die</strong>
+              <textarea value={requestNote} onChange={(event) => setRequestNote(event.target.value)} placeholder="Optional note" />
+              <button className="primary-btn xs" type="submit" disabled={busy === "request"}>{busy === "request" ? "Requesting..." : "Request Reorder"}</button>
+            </form>
+          )}
+          {onFlexDieCountUpdate && (
+            <form onSubmit={(event) => { event.preventDefault(); run("count", () => onFlexDieCountUpdate(d, { activeCount: countValue || d.active_die_count || 0, notes: countNote, operatorName })); }}>
+              <strong>Update active count</strong>
+              <input type="number" min="0" value={countValue} onChange={(event) => setCountValue(event.target.value)} placeholder={String(d.active_die_count ?? 0)} />
+              <textarea value={countNote} onChange={(event) => setCountNote(event.target.value)} placeholder="Optional reason" />
+              <button className="ghost-btn xs" type="submit" disabled={busy === "count"}>{busy === "count" ? "Saving..." : "Save Count"}</button>
+            </form>
+          )}
+        </div>
+      )}
+      {error && <p className="tool-die-error">{error}</p>}
     </div>
   );
 }
@@ -438,7 +484,7 @@ function Chain({ name, die, mag, missingDie, missingMag, children, open, active 
   );
 }
 
-function Combo({ option, combo, muted = false }) {
+function Combo({ option, combo, muted = false, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
   const [openTool, setOpenTool] = useState(null);
   const open = (id, tool, label) => {
     if (!tool) return;
@@ -461,12 +507,21 @@ function Combo({ option, combo, muted = false }) {
         )}
       </div>
       {combo.problems.length > 0 && <div className="problem-line">{combo.problems.map((p) => <span key={p}>{p}</span>)}</div>}
-      {openTool && <ToolDetails title={openTool.label} tool={openTool.tool} onClose={() => setOpenTool(null)} />}
+      {openTool && (
+        <ToolDetails
+          title={openTool.label}
+          tool={openTool.tool}
+          onClose={() => setOpenTool(null)}
+          onFlexDieReorder={onFlexDieReorder}
+          onFlexDieCountUpdate={onFlexDieCountUpdate}
+          operatorName={operatorName}
+        />
+      )}
     </article>
   );
 }
 
-function OptionCard({ option, onEdit }) {
+function OptionCard({ option, onEdit, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
   const result = useMemo(() => evaluateOption(option), [option]);
 
   const visibleCombos = result.readyCombos.length
@@ -505,7 +560,14 @@ function OptionCard({ option, onEdit }) {
       <div className="option-body">
         <div className="combo-list">
           {visibleCombos.map((combo, idx) => (
-            <Combo key={idx} option={option} combo={combo} />
+            <Combo
+              key={idx}
+              option={option}
+              combo={combo}
+              onFlexDieReorder={onFlexDieReorder}
+              onFlexDieCountUpdate={onFlexDieCountUpdate}
+              operatorName={operatorName}
+            />
           ))}
         </div>
 
@@ -519,7 +581,7 @@ function OptionCard({ option, onEdit }) {
   );
 }
 
-function PressGroup({ pressName, options, onEdit, defaultOpen = false }) {
+function PressGroup({ pressName, options, onEdit, defaultOpen = false, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
   const [open, setOpen] = useState(defaultOpen);
   const stat = useMemo(() => aggregate(options), [options]);
   const orderedOptions = useMemo(
@@ -555,7 +617,14 @@ function PressGroup({ pressName, options, onEdit, defaultOpen = false }) {
       {open && (
         <div className="option-stack">
           {orderedOptions.map((option) => (
-            <OptionCard key={option.id} option={option} onEdit={onEdit} />
+            <OptionCard
+              key={option.id}
+              option={option}
+              onEdit={onEdit}
+              onFlexDieReorder={onFlexDieReorder}
+              onFlexDieCountUpdate={onFlexDieCountUpdate}
+              operatorName={operatorName}
+            />
           ))}
         </div>
       )}
@@ -563,7 +632,7 @@ function PressGroup({ pressName, options, onEdit, defaultOpen = false }) {
   );
 }
 
-export default function RecipeOptionsView({ rows, onEdit }) {
+export default function RecipeOptionsView({ rows, onEdit, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
   const byPress = useMemo(() => groupBy(rows ?? [], (r) => r.press_name ?? r.press_details?.name ?? "No press"), [rows]);
   const pressGroups = useMemo(
     () => Object.entries(byPress).sort(([aName], [bName]) => aName.localeCompare(bName)),
@@ -581,6 +650,9 @@ export default function RecipeOptionsView({ rows, onEdit }) {
           options={list}
           onEdit={onEdit}
           defaultOpen={pressGroups.length === 1}
+          onFlexDieReorder={onFlexDieReorder}
+          onFlexDieCountUpdate={onFlexDieCountUpdate}
+          operatorName={operatorName}
         />
       ))}
     </div>

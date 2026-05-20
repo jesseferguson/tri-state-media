@@ -245,6 +245,22 @@ function getRelationTitle(row, field) {
   return getRecordTitle(row);
 }
 
+function lookupChoiceValue(row, field) {
+  if (!row) return "";
+  const valueField = field.lookupValueField ?? "name";
+  return row[valueField] ?? row.name ?? row.code ?? getRecordTitle(row);
+}
+
+function lookupChoiceLabel(row, field) {
+  if (!row) return "";
+  const parts = (field.lookupLabelFields ?? ["name", "code"]).map((key) => {
+    const value = row[key];
+    if (key === "liner_pounds" && value) return `${value}#`;
+    return value;
+  });
+  return parts.filter(Boolean).join(" / ") || getRecordTitle(row);
+}
+
 function RelationPicker({ field, rows, value, onChange, id, required }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -360,13 +376,13 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
             return (
               <label className="check-field" key={field.name} htmlFor={id}>
                 <input id={id} type="checkbox" checked={Boolean(value)} onChange={(event) => update(field.name, event.target.checked)} />
-                <span>{field.label}</span>
+                <span>{field.label}{field.helpText && <small>{field.helpText}</small>}</span>
               </label>
             );
           }
 
           if (field.type === "imageUpload") {
-            const existingUrl = record?.[`${field.imageSlot}_image`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.url;
+            const existingUrl = record?.[`${field.imageSlot}_image_url`] || record?.[`${field.imageSlot}_image`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.url;
             const existingName = record?.[`${field.imageSlot}_image_name`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.name;
             return (
               <label className="field image-upload-field" key={field.name} htmlFor={id}>
@@ -381,13 +397,21 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
           }
 
           if (field.type === "select") {
+            const lookupRows = field.lookupRelation
+              ? scopeRows(lookups[field.lookupRelation] ?? [], lookupField)
+              : [];
+            const dynamicChoices = lookupRows.map((row) => [lookupChoiceValue(row, field), lookupChoiceLabel(row, field)]);
+            const choices = dynamicChoices.length ? dynamicChoices : (field.choices ?? []);
+            const valueExists = choices.some(([choiceValue]) => String(choiceValue) === String(value ?? ""));
             return (
               <label className="field" key={field.name} htmlFor={id}>
                 <span>{field.label}</span>
                 <select id={id} value={value ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value)}>
                   {!field.required && <option value="">Select...</option>}
-                  {(field.choices ?? []).map(([choiceValue, label]) => <option key={choiceValue} value={choiceValue}>{label}</option>)}
+                  {value && !valueExists && <option value={value}>{value}</option>}
+                  {choices.map(([choiceValue, label]) => <option key={choiceValue} value={choiceValue}>{label}</option>)}
                 </select>
+                {field.helpText && <small>{field.helpText}</small>}
               </label>
             );
           }
@@ -433,6 +457,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
             <label className="field" key={field.name} htmlFor={id}>
               <span>{field.label}</span>
               <input id={id} type={field.type ?? "text"} step={field.step} required={field.required} value={value ?? ""} placeholder={field.placeholder ?? ""} onChange={(event) => update(field.name, event.target.value)} />
+              {field.helpText && <small>{field.helpText}</small>}
             </label>
           );
         })}

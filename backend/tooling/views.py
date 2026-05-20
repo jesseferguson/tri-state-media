@@ -1,5 +1,7 @@
-from rest_framework import filters, viewsets
+from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.response import Response
 
 from .models import (
     FlexDie,
@@ -80,15 +82,15 @@ class MagViewSet(BaseToolingViewSet):
 
 class FlexDieViewSet(BaseToolingViewSet):
     serializer_class = FlexDieSerializer
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
     search_fields = [
         "name",
-        "tool_number",
-        "drawing_number",
+        "original_serial_number",
+        "serial_numbers",
         "face_type",
         "liner_type",
         "shape_type",
         "cutting_type",
-        "notes",
         "supplier__name",
         "status",
     ]
@@ -151,6 +153,131 @@ class FlexDieViewSet(BaseToolingViewSet):
             qs = qs.filter(cutting_type=cutting_type)
 
         return qs
+
+    def create_history(self, die, event_type, summary, request, notes=""):
+        actor = (
+            str(request.data.get("performed_by", "")).strip()
+            or str(request.data.get("requested_by", "")).strip()
+            or str(request.data.get("received_by", "")).strip()
+            or "system"
+        )
+        return ToolingHistory.objects.create(
+            tooling_type="flex_die",
+            flex_die=die,
+            event_type=event_type,
+            performed_by=actor,
+            summary=summary[:200],
+            notes=notes,
+        )
+
+    @action(detail=True, methods=["post", "delete"], url_path="dieline-image")
+    def dieline_image(self, request, pk=None):
+        die = self.get_object()
+
+        if request.method == "DELETE":
+            current_file = die.dieline_image
+            if current_file:
+                current_file.delete(save=False)
+            die.dieline_image = None
+            die.dieline_image_name = ""
+            die.save(update_fields=["dieline_image", "dieline_image_name"])
+            return Response(self.get_serializer(die).data)
+
+        upload = request.FILES.get("image")
+        if not upload:
+            return Response({"image": ["Choose a dieline image to upload."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        current_file = die.dieline_image
+        if current_file:
+            current_file.delete(save=False)
+        die.dieline_image = upload
+        die.dieline_image_name = str(request.data.get("name") or upload.name).strip()
+        die.save(update_fields=["dieline_image", "dieline_image_name"])
+        return Response(self.get_serializer(die).data)
+
+    @action(detail=True, methods=["post"], url_path="request-reorder")
+    def request_reorder(self, request, pk=None):
+        die = self.get_object()
+        note = str(request.data.get("notes", "") or "").strip()
+        actor = str(request.data.get("requested_by", "") or request.data.get("performed_by", "") or "system").strip()
+        if die.active_die_count < 1:
+            die.status = "needs_ordered"
+            die.save(update_fields=["status"])
+        self.create_history(
+            die,
+            "die_reorder_requested",
+            f"{actor} requested a replacement die for {die.name}.",
+            request,
+            notes=note,
+        )
+        return Response(self.get_serializer(die).data)
+
+    @action(detail=True, methods=["post"], url_path="mark-ordered")
+    def mark_ordered(self, request, pk=None):
+        die = self.get_object()
+        note = str(request.data.get("notes", "") or "").strip()
+        actor = str(request.data.get("performed_by", "") or "system").strip()
+        die.status = "ordered"
+        die.save(update_fields=["status"])
+        self.create_history(
+            die,
+            "die_ordered",
+            f"{actor} marked {die.name} ordered.",
+            request,
+            notes=note,
+        )
+        return Response(self.get_serializer(die).data)
+
+    @action(detail=True, methods=["post"], url_path="receive-die")
+    def receive_die(self, request, pk=None):
+        die = self.get_object()
+        serial = str(request.data.get("serial_number", "") or "").strip()
+        note = str(request.data.get("notes", "") or "").strip()
+        quantity = request.data.get("quantity", 1)
+        try:
+            quantity = max(1, int(quantity))
+        except (TypeError, ValueError):
+            return Response({"quantity": ["Enter a valid whole number."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        serials = [line.strip() for line in (die.serial_numbers or "").splitlines() if line.strip()]
+        if serial and serial not in serials:
+            serials.append(serial)
+        die.serial_numbers = "\n".join(serials)
+        die.active_die_count = die.active_die_count + quantity
+        die.status = "in_stock"
+        die.save(update_fields=["serial_numbers", "active_die_count", "status", "web_width_inches"])
+        self.create_history(
+            die,
+            "die_received",
+            f"{request.data.get('received_by') or request.data.get('performed_by') or 'system'} received {quantity} die for {die.name}.",
+            request,
+            notes="\n".join([part for part in [f"Serial: {serial}" if serial else "", note] if part]),
+        )
+        return Response(self.get_serializer(die).data)
+
+    @action(detail=True, methods=["post"], url_path="adjust-count")
+    def adjust_count(self, request, pk=None):
+        die = self.get_object()
+        value = request.data.get("active_die_count")
+        try:
+            next_count = int(value)
+        except (TypeError, ValueError):
+            return Response({"active_die_count": ["Enter a valid whole number."]}, status=status.HTTP_400_BAD_REQUEST)
+        if next_count < 0:
+            return Response({"active_die_count": ["Count cannot be negative."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        note = str(request.data.get("notes", "") or "").strip()
+        previous = die.active_die_count
+        die.active_die_count = next_count
+        die.save(update_fields=["active_die_count", "status", "web_width_inches"])
+        self.create_history(
+            die,
+            "die_count_adjusted",
+            f"{request.data.get('performed_by') or 'system'} adjusted {die.name} count from {previous} to {next_count}.",
+            request,
+            notes=note,
+        )
+        return Response(self.get_serializer(die).data)
 
 class PerfCylinderViewSet(BaseToolingViewSet):
     queryset = (
@@ -218,8 +345,8 @@ class ToolingRecipeOptionViewSet(BaseToolingViewSet):
         "operator_notes",
         "tools__mag__name",
         "tools__flex_die__name",
-        "tools__flex_die__tool_number",
-        "tools__flex_die__drawing_number",
+        "tools__flex_die__original_serial_number",
+        "tools__flex_die__serial_numbers",
         "tools__perf_cylinder__name",
         "tools__perf_blade_setup__name",
     ]
@@ -264,19 +391,6 @@ class ToolingRecipeToolViewSet(BaseToolingViewSet):
 
 
 class ToolingHistoryViewSet(BaseToolingViewSet):
-    queryset = (
-        ToolingHistory.objects.select_related(
-            "mag",
-            "flex_die",
-            "perf_cylinder",
-            "from_location",
-            "to_location",
-            "press",
-            "supplier",
-        )
-        .all()
-        .order_by("-event_date")
-    )
     serializer_class = ToolingHistorySerializer
     search_fields = [
         "summary",
@@ -289,6 +403,31 @@ class ToolingHistoryViewSet(BaseToolingViewSet):
         "supplier__name",
     ]
     ordering_fields = ["event_date", "event_type", "performed_by", "tooling_type"]
+
+    def get_queryset(self):
+        qs = (
+            ToolingHistory.objects.select_related(
+                "mag",
+                "flex_die",
+                "perf_cylinder",
+                "from_location",
+                "to_location",
+                "press",
+                "supplier",
+            )
+            .all()
+            .order_by("-event_date")
+        )
+        flex_die = self.request.query_params.get("flex_die")
+        mag = self.request.query_params.get("mag")
+        perf_cylinder = self.request.query_params.get("perf_cylinder")
+        if flex_die:
+            qs = qs.filter(flex_die_id=flex_die)
+        if mag:
+            qs = qs.filter(mag_id=mag)
+        if perf_cylinder:
+            qs = qs.filter(perf_cylinder_id=perf_cylinder)
+        return qs
 
 
 class RawMaterialInventoryViewSet(BaseToolingViewSet):

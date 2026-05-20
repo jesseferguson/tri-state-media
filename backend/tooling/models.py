@@ -1,5 +1,13 @@
+from decimal import Decimal
+from uuid import uuid4
+
 from django.core.exceptions import ValidationError
 from django.db import models
+
+
+def flex_die_image_upload_path(instance, filename):
+    safe_name = str(instance.name or instance.pk or "flex-die").replace("/", "-").replace("\\", "-")
+    return f"tooling/flex-dies/{safe_name}/{uuid4().hex}-{filename}"
 
 
 # =========================
@@ -187,6 +195,7 @@ class FlexDie(models.Model):
         ("ordered", "Ordered"),
         ("in_stock", "In Stock"),
         ("in_use", "In Use"),
+        ("needs_ordered", "Needs Ordered"),
         ("needs_repair", "Needs Repair"),
         ("out_for_retool", "Out for Retool"),
         ("retired", "Retired"),
@@ -254,11 +263,45 @@ class FlexDie(models.Model):
     gap_across_inches = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
     gap_around_inches = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
     web_width_inches = models.DecimalField(max_digits=7, decimal_places=3, null=True, blank=True)
+    manual_web_width = models.BooleanField(default=False)
 
     tool_number = models.CharField(max_length=50, blank=True)
     drawing_number = models.CharField(max_length=50, blank=True)
+    original_serial_number = models.CharField(max_length=100, blank=True)
+    serial_numbers = models.TextField(
+        blank=True,
+        help_text="One serial number per line. Keeps a history of dies that have lived in this jacket.",
+    )
+    active_die_count = models.PositiveIntegerField(default=1)
+    target_die_count = models.PositiveIntegerField(default=1)
+    dieline_image = models.ImageField(upload_to=flex_die_image_upload_path, blank=True, null=True)
+    dieline_image_name = models.CharField(max_length=180, blank=True)
 
     notes = models.TextField(blank=True)
+
+    @property
+    def computed_web_width_inches(self):
+        width = self.label_width_inches
+        across = self.number_across or 1
+        gap = self.gap_across_inches or Decimal("0")
+        if width is None:
+            return None
+        return (width * across) + (gap * max(across - 1, 0))
+
+    @property
+    def die_count_status(self):
+        if self.active_die_count < 1:
+            return "needs_ordered"
+        if self.active_die_count < self.target_die_count:
+            return "below_target"
+        return "ok"
+
+    def save(self, *args, **kwargs):
+        if not self.manual_web_width:
+            self.web_width_inches = self.computed_web_width_inches
+        if self.active_die_count < 1:
+            self.status = "needs_ordered"
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} - {self.label_width_inches}\" x {self.label_length_inches}\""
@@ -769,6 +812,10 @@ class ToolingHistory(models.Model):
         ("inspection", "Inspection"),
         ("note", "Note"),
         ("retired", "Retired"),
+        ("die_reorder_requested", "Die Reorder Requested"),
+        ("die_ordered", "Die Ordered"),
+        ("die_received", "Die Received"),
+        ("die_count_adjusted", "Die Count Adjusted"),
     ]
 
     tooling_type = models.CharField(max_length=30, choices=TOOLING_TYPE_CHOICES)

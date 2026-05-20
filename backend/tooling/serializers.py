@@ -53,10 +53,25 @@ class FlexDieSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     current_location_name = serializers.CharField(source="current_location.name", read_only=True)
     current_location_full_path = serializers.ReadOnlyField(source="current_location.full_path")
+    computed_web_width_inches = serializers.DecimalField(max_digits=7, decimal_places=3, read_only=True)
+    die_count_status = serializers.CharField(read_only=True)
+    serial_number_list = serializers.SerializerMethodField()
+    dieline_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = FlexDie
         fields = "__all__"
+
+    def get_serial_number_list(self, obj):
+        return [line.strip() for line in (obj.serial_numbers or "").splitlines() if line.strip()]
+
+    def get_dieline_image_url(self, obj):
+        if not obj.dieline_image:
+            return ""
+        try:
+            return obj.dieline_image.url
+        except ValueError:
+            return ""
 
 class PerfCylinderSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
@@ -117,19 +132,26 @@ class ToolingRecipeToolNestedSerializer(serializers.ModelSerializer):
             die = obj.flex_die
             return {
                 "type": "Flex Die",
+                "id": die.id,
                 "name": die.name,
                 "width": die.label_width_inches,
                 "length": die.label_length_inches,
                 "repeat": die.repeat_inches,
                 "across": die.number_across,
                 "around": die.number_around,
+                "gap_across": die.gap_across_inches,
+                "computed_web_width": die.computed_web_width_inches,
                 "gear": die.gear,
                 "face_type": die.face_type,
                 "liner_type": die.liner_type,
                 "shape_type": die.shape_type,
                 "cutting_type": die.cutting_type,
-                "tool_number": die.tool_number,
-                "drawing_number": die.drawing_number,
+                "original_serial_number": die.original_serial_number,
+                "serial_numbers": [line.strip() for line in (die.serial_numbers or "").splitlines() if line.strip()],
+                "active_die_count": die.active_die_count,
+                "target_die_count": die.target_die_count,
+                "die_count_status": die.die_count_status,
+                "dieline_image_url": die.dieline_image.url if die.dieline_image else "",
                 "web_width": die.web_width_inches,
                 "status": die.status,
                 "location": self.get_location_path(die.current_location),
@@ -224,6 +246,7 @@ class ToolingHistorySerializer(serializers.ModelSerializer):
     mag_name = serializers.CharField(source="mag.name", read_only=True)
     flex_die_name = serializers.CharField(source="flex_die.name", read_only=True)
     perf_cylinder_name = serializers.CharField(source="perf_cylinder.name", read_only=True)
+    tool_label = serializers.SerializerMethodField()
     from_location_name = serializers.CharField(source="from_location.name", read_only=True)
     to_location_name = serializers.CharField(source="to_location.name", read_only=True)
     press_name = serializers.CharField(source="press.name", read_only=True)
@@ -232,6 +255,9 @@ class ToolingHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = ToolingHistory
         fields = "__all__"
+
+    def get_tool_label(self, obj):
+        return str(obj.mag or obj.flex_die or obj.perf_cylinder or "")
 
 class RawMaterialInventorySerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)

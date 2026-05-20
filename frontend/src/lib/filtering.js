@@ -19,11 +19,11 @@ export function filterFlexDies(rows, filters) {
   return rows.filter((die) => {
     const textHaystack = [
       die.name,
-      die.tool_number,
-      die.drawing_number,
-      die.notes,
+      die.original_serial_number,
+      die.serial_numbers,
       die.supplier_name,
       die.current_location_name,
+      die.current_location_full_path,
       die.shape_type,
       die.cutting_type,
       die.face_type,

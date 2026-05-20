@@ -94,11 +94,13 @@ class FlexDieAdmin(admin.ModelAdmin):
         "label_length_inches",
         "repeat_inches",
         "shape_type",
+        "active_die_count",
+        "target_die_count",
     )
     list_filter = ("status", "shape_type", "cutting_type", "supplier")
-    search_fields = ("name", "tool_number", "drawing_number", "face_type", "liner_type", "notes")
+    search_fields = ("name", "original_serial_number", "serial_numbers", "face_type", "liner_type")
     autocomplete_fields = ("supplier", "current_location")
-    filter_horizontal = ("compatible_mags",)
+    exclude = ("tool_number", "drawing_number", "compatible_mags", "notes")
 
 
 @admin.register(PerfCylinder)
@@ -245,4 +247,3 @@ class ToolingHistoryAdmin(admin.ModelAdmin):
     @admin.display(description="Tooling Item")
     def tooling_item(self, obj):
         return obj.mag or obj.flex_die or obj.perf_cylinder
-

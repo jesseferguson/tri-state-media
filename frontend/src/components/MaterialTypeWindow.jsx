@@ -1,4 +1,4 @@
-import { Edit3, Plus, X } from "lucide-react";
+import { Edit3, Plus, Trash2, X } from "lucide-react";
 import { getRecordTitle, labelize } from "../lib/format";
 
 function Detail({ label, value }) {
@@ -14,7 +14,7 @@ function optionTitle(option) {
   return option.option_name || option.supplier_item_number || option.supplier_name || "Supplier option";
 }
 
-export default function MaterialTypeWindow({ material, options, onClose, onEdit, onAddSupplierOption, onEditSupplierOption }) {
+export default function MaterialTypeWindow({ material, options, onClose, onEdit, onDelete, onAddSupplierOption, onEditSupplierOption }) {
   const activeOptions = (options ?? []).filter((option) => option.is_active !== false);
   const summaryItems = [
     ["Code", material.code],
@@ -40,6 +40,11 @@ export default function MaterialTypeWindow({ material, options, onClose, onEdit,
             <button className="primary-btn" type="button" onClick={onAddSupplierOption}>
               <Plus size={15} /> Supplier Option
             </button>
+            {onDelete && (
+              <button className="danger-btn" type="button" onClick={onDelete}>
+                <Trash2 size={15} /> Delete
+              </button>
+            )}
             <button className="ghost-btn" type="button" onClick={onClose}>
               <X size={15} /> Close
             </button>

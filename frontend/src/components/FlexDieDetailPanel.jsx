@@ -1,0 +1,201 @@
+import { useEffect, useState } from "react";
+import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Trash2 } from "lucide-react";
+import { formatInches, getRecordTitle, labelize } from "../lib/format";
+
+function numberValue(value) {
+  const next = Number(value ?? 0);
+  return Number.isFinite(next) ? next : 0;
+}
+
+function serialsForDie(die) {
+  if (Array.isArray(die?.serial_number_list)) return die.serial_number_list;
+  return String(die?.serial_numbers ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function countTone(die) {
+  const active = numberValue(die?.active_die_count);
+  const target = numberValue(die?.target_die_count);
+  if (active < 1) return "bad";
+  if (target && active < target) return "warn";
+  return "ready";
+}
+
+function Detail({ label, value }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong title={String(value ?? "--")}>{value || "--"}</strong>
+    </div>
+  );
+}
+
+function HistoryList({ rows }) {
+  if (!rows?.length) return <p className="muted">No die requests or count changes yet.</p>;
+  return (
+    <div className="flex-die-history-list">
+      {rows.slice(0, 12).map((row) => (
+        <article key={row.id}>
+          <strong>{labelize(row.event_type)}</strong>
+          <span>{row.summary}</span>
+          <em>{[row.performed_by, row.event_date ? new Date(row.event_date).toLocaleString() : ""].filter(Boolean).join(" / ")}</em>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export default function FlexDieDetailPanel({
+  die,
+  historyRows = [],
+  onEdit,
+  onDelete,
+  onRequestReorder,
+  onMarkOrdered,
+  onReceiveDie,
+  onAdjustCount,
+  onDeleteDieline,
+}) {
+  const [requestNote, setRequestNote] = useState("");
+  const [orderNote, setOrderNote] = useState("");
+  const [receiveSerial, setReceiveSerial] = useState("");
+  const [receiveQty, setReceiveQty] = useState(1);
+  const [receiveNote, setReceiveNote] = useState("");
+  const [countValue, setCountValue] = useState(die?.active_die_count ?? 0);
+  const [countNote, setCountNote] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  const serials = serialsForDie(die);
+  const tone = countTone(die);
+  const imageUrl = die?.dieline_image_url || die?.dieline_image;
+
+  useEffect(() => {
+    setCountValue(die?.active_die_count ?? 0);
+    setCountNote("");
+    setError("");
+  }, [die?.id, die?.active_die_count]);
+
+  async function run(actionName, action) {
+    setBusy(actionName);
+    setError("");
+    try {
+      await action();
+      if (actionName === "request") setRequestNote("");
+      if (actionName === "ordered") setOrderNote("");
+      if (actionName === "receive") {
+        setReceiveSerial("");
+        setReceiveQty(1);
+        setReceiveNote("");
+      }
+      if (actionName === "count") setCountNote("");
+    } catch (err) {
+      setError(err.message || "Could not update this die.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <aside className="flex-die-detail-panel compact-card">
+      <header className="flex-die-detail-head">
+        <div>
+          <p className="eyebrow">Flex Die Folder</p>
+          <h2>{getRecordTitle(die)}</h2>
+          <span className={`flex-die-count-pill ${tone}`}>
+            {numberValue(die.active_die_count)} active / {numberValue(die.target_die_count)} target
+          </span>
+        </div>
+        <div className="flex-die-actions">
+          <button className="primary-btn" type="button" onClick={onEdit}><Edit3 size={15} /> Edit</button>
+          <button className="danger-btn" type="button" onClick={onDelete}><Trash2 size={15} /> Delete</button>
+        </div>
+      </header>
+
+      {tone !== "ready" && (
+        <div className={`flex-die-alert ${tone}`}>
+          <AlertTriangle size={16} />
+          <strong>{tone === "bad" ? "Needs ordered" : "Below target"}</strong>
+          <span>This jacket is below the count production wants on hand.</span>
+        </div>
+      )}
+
+      <section className="flex-die-image-card">
+        {imageUrl ? <img src={imageUrl} alt={die.dieline_image_name || die.name} /> : <div><ImageIcon size={22} /><span>No dieline image</span></div>}
+        {imageUrl && onDeleteDieline && (
+          <button className="ghost-btn xs" type="button" onClick={() => run("image", onDeleteDieline)}>
+            <Trash2 size={12} /> Delete Image
+          </button>
+        )}
+      </section>
+
+      <section className="flex-die-detail-grid">
+        <Detail label="Size" value={`${formatInches(die.label_width_inches)} x ${formatInches(die.label_length_inches)}`} />
+        <Detail label="Repeat" value={formatInches(die.repeat_inches)} />
+        <Detail label="Gap" value={formatInches(die.gap_across_inches)} />
+        <Detail label="Web" value={formatInches(die.web_width_inches)} />
+        <Detail label="Across / Around" value={`${die.number_across || "--"} / ${die.number_around || "--"}`} />
+        <Detail label="Gear" value={die.gear ? `${die.gear}T` : ""} />
+        <Detail label="Face" value={labelize(die.face_type)} />
+        <Detail label="Liner" value={die.liner_type} />
+        <Detail label="Original Serial" value={die.original_serial_number} />
+        <Detail label="Location" value={die.current_location_full_path || die.current_location_name} />
+      </section>
+
+      <section className="flex-die-section">
+        <div className="type-section-head">
+          <strong>Serial History</strong>
+          <span>{serials.length} recorded</span>
+        </div>
+        {serials.length ? (
+          <div className="flex-die-serial-list">
+            {serials.map((serial) => <span key={serial}>{serial}</span>)}
+          </div>
+        ) : (
+          <p className="muted">No serial numbers have been recorded yet.</p>
+        )}
+      </section>
+
+      <section className="flex-die-control-grid">
+        <form onSubmit={(event) => { event.preventDefault(); run("request", () => onRequestReorder(requestNote)); }}>
+          <strong><PackagePlus size={14} /> Request Die</strong>
+          <textarea value={requestNote} onChange={(event) => setRequestNote(event.target.value)} placeholder="Optional note for production engineering" />
+          <button className="primary-btn" type="submit" disabled={busy === "request"}>{busy === "request" ? "Requesting..." : "Request Reorder"}</button>
+        </form>
+
+        <form onSubmit={(event) => { event.preventDefault(); run("ordered", () => onMarkOrdered(orderNote)); }}>
+          <strong><PackagePlus size={14} /> Order Status</strong>
+          <textarea value={orderNote} onChange={(event) => setOrderNote(event.target.value)} placeholder="Optional order note" />
+          <button className="ghost-btn" type="submit" disabled={busy === "ordered"}>{busy === "ordered" ? "Saving..." : "Mark Ordered"}</button>
+        </form>
+
+        <form onSubmit={(event) => { event.preventDefault(); run("receive", () => onReceiveDie({ serialNumber: receiveSerial, quantity: receiveQty, notes: receiveNote })); }}>
+          <strong><Box size={14} /> Receive Die</strong>
+          <input value={receiveSerial} onChange={(event) => setReceiveSerial(event.target.value)} placeholder="Serial number" />
+          <input type="number" min="1" value={receiveQty} onChange={(event) => setReceiveQty(event.target.value)} />
+          <textarea value={receiveNote} onChange={(event) => setReceiveNote(event.target.value)} placeholder="Optional receive note" />
+          <button className="primary-btn" type="submit" disabled={busy === "receive"}>{busy === "receive" ? "Receiving..." : "Receive"}</button>
+        </form>
+
+        <form onSubmit={(event) => { event.preventDefault(); run("count", () => onAdjustCount({ activeCount: countValue, notes: countNote })); }}>
+          <strong><Box size={14} /> Active Count</strong>
+          <input type="number" min="0" value={countValue} onChange={(event) => setCountValue(event.target.value)} />
+          <textarea value={countNote} onChange={(event) => setCountNote(event.target.value)} placeholder="Optional reason" />
+          <button className="ghost-btn" type="submit" disabled={busy === "count"}>{busy === "count" ? "Saving..." : "Save Count"}</button>
+        </form>
+      </section>
+
+      {error && <p className="flex-die-error">{error}</p>}
+
+      <section className="flex-die-section">
+        <div className="type-section-head">
+          <strong>Requests + History</strong>
+          <span>{historyRows.length} events</span>
+        </div>
+        <HistoryList rows={historyRows} />
+      </section>
+    </aside>
+  );
+}

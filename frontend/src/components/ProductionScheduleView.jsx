@@ -318,7 +318,7 @@ function RemoveScheduleDialog({ row, onClose, onConfirm }) {
   );
 }
 
-function ScheduleDetailOverlay({ row, lookups, onClose }) {
+function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlexDieCountUpdate }) {
   if (!row) return null;
   const tone = shipTone(row);
   const ticket = ticketForSchedule(row, lookups) ?? scheduleTicketFallback(row);
@@ -388,7 +388,12 @@ function ScheduleDetailOverlay({ row, lookups, onClose }) {
           <div className="schedule-operator-card wide">
             <h3><PackageCheck size={15} /> Tooling</h3>
             {recipeOptions.length ? (
-              <RecipeOptionsView rows={recipeOptions} />
+              <RecipeOptionsView
+                rows={recipeOptions}
+                operatorName={row.operator || row.last_updated_by || row.scheduled_by}
+                onFlexDieReorder={onFlexDieReorder}
+                onFlexDieCountUpdate={onFlexDieCountUpdate}
+              />
             ) : (
               <p className="muted">No tooling options are linked to this job yet.</p>
             )}
@@ -399,7 +404,7 @@ function ScheduleDetailOverlay({ row, lookups, onClose }) {
   );
 }
 
-export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, lookups = {}, onSelect, onClose, onEdit, onUpdate, onRemove }) {
+export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, lookups = {}, onSelect, onClose, onEdit, onUpdate, onRemove, onFlexDieReorder, onFlexDieCountUpdate }) {
   const [removeRow, setRemoveRow] = useState(null);
   const grouped = useMemo(() => buildLineupGroups(rows, presses), [rows, presses]);
 
@@ -457,6 +462,8 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
         row={selected}
         lookups={lookups}
         onClose={onClose}
+        onFlexDieReorder={onFlexDieReorder}
+        onFlexDieCountUpdate={onFlexDieCountUpdate}
       />
       <RemoveScheduleDialog
         row={removeRow}

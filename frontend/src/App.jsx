@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
-import { createRecord, deleteRecord, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
+import { createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
 import FlexDieSearch from "./components/FlexDieSearch";
+import FlexDieDetailPanel from "./components/FlexDieDetailPanel";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
 import GroupedLocationView from "./components/GroupedLocationView";
 import GroupedUsageView from "./components/GroupedUsageView";
@@ -95,6 +96,9 @@ function addLookupSpec(specs, spec) {
 
 function addFieldLookups(specs, fields = []) {
   fields.forEach((field) => {
+    if (field.lookupRelation) {
+      addLookupSpec(specs, relationLookupSpec(field.lookupRelation, field.lookupFilters, field.maxResults ?? 250));
+    }
     if (!field.relation || !["relation", "searchRelation", "multiRelation"].includes(field.type)) return;
     addLookupSpec(specs, relationLookupSpec(field.relation, field.lookupFilters, field.maxResults ?? 250));
   });
@@ -146,6 +150,10 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("raw-materials", { material_type: "coated_stock" }, 1000));
     addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 1000));
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 250));
+  }
+
+  if (resource.key === "flex-dies" && selected?.id) {
+    addLookupSpec(specs, relationLookupSpec("history", { flex_die: selected.id }, 250));
   }
 
   const entries = await Promise.all(
@@ -991,6 +999,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     if (!selected || !isMaterialTypePage) return [];
     return (lookupQuery.data?.["material-supplier-options"] ?? []).filter((row) => String(row.material) === String(selected.id));
   }, [isMaterialTypePage, lookupQuery.data, selected]);
+  const selectedFlexDieHistory = useMemo(() => {
+    if (!selected || resource.key !== "flex-dies") return [];
+    return (lookupQuery.data?.history ?? []).filter((row) => String(row.flex_die) === String(selected.id));
+  }, [lookupQuery.data, resource.key, selected]);
 
   const canShowUsage = Boolean(selected) && (
     resource.key === "raw-materials" ||
@@ -1100,6 +1112,15 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           formData.append("image", upload.file);
           formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
           saved = await uploadRecordAction(resource.endpoint, saved.id, `images/${upload.slot}`, formData);
+        }
+      }
+      if (resource.key === "flex-dies" && imageUploads.length && saved?.id) {
+        const upload = imageUploads.find((item) => item.slot === "dieline" && item.file);
+        if (upload) {
+          const formData = new FormData();
+          formData.append("image", upload.file);
+          formData.append("name", upload.file.name);
+          saved = await uploadRecordAction(resource.endpoint, saved.id, "dieline-image", formData);
         }
       }
       return saved;
@@ -1473,6 +1494,57 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     },
   });
 
+  async function refreshFlexDie(saved = null) {
+    if (saved && resource.key === "flex-dies") setSelected(saved);
+    await queryClient.invalidateQueries({ queryKey: ["collection", "flex-dies"] });
+    await queryClient.invalidateQueries({ queryKey: ["lookups"] });
+  }
+
+  async function requestFlexDieReorder(dieOrId, note = "") {
+    const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
+    const saved = await postRecordAction("flex-dies", id, "request-reorder", {
+      requested_by: currentUser.name,
+      notes: note,
+    });
+    await refreshFlexDie(saved);
+  }
+
+  async function markFlexDieOrdered(dieOrId, note = "") {
+    const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
+    const saved = await postRecordAction("flex-dies", id, "mark-ordered", {
+      performed_by: currentUser.name,
+      notes: note,
+    });
+    await refreshFlexDie(saved);
+  }
+
+  async function receiveFlexDie(dieOrId, { serialNumber = "", quantity = 1, notes = "" } = {}) {
+    const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
+    const saved = await postRecordAction("flex-dies", id, "receive-die", {
+      received_by: currentUser.name,
+      serial_number: serialNumber,
+      quantity,
+      notes,
+    });
+    await refreshFlexDie(saved);
+  }
+
+  async function adjustFlexDieCount(dieOrId, { activeCount = 0, notes = "" } = {}) {
+    const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
+    const saved = await postRecordAction("flex-dies", id, "adjust-count", {
+      performed_by: currentUser.name,
+      active_die_count: activeCount,
+      notes,
+    });
+    await refreshFlexDie(saved);
+  }
+
+  async function deleteFlexDieDieline(dieOrId) {
+    const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
+    const saved = await deleteRecordAction("flex-dies", id, "dieline-image");
+    await refreshFlexDie(saved);
+  }
+
   function switchResource(key) {
     if (!allowedResources.some((item) => item.key === key)) return;
     setActiveKey(key);
@@ -1651,7 +1723,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         ) : (
           <>
             {resource.searchMode === "flexDie" ? (
-              <FlexDieSearch filters={flexFilters} setFilters={setFlexFilters} />
+              <FlexDieSearch filters={flexFilters} setFilters={setFlexFilters} liners={lookupQuery.data?.materials ?? []} />
             ) : (
               <section className="search-line compact-card">
                 <Search size={16} />
@@ -1700,6 +1772,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                       id: row.id,
                       payload: { reason, performed_by: currentUser.name },
                     })}
+                    onFlexDieReorder={(die, note) => requestFlexDieReorder(die, note)}
+                    onFlexDieCountUpdate={(die, payload) => adjustFlexDieCount(die, payload)}
                   />
                 ) : resource.viewMode === "jobTicketGallery" ? (
                   <JobTicketGallery
@@ -1754,8 +1828,21 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               </div>
 
               {resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && !isMaterialTypePage && (
-                <aside className="detail-panel compact-card">
+                <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : "detail-panel compact-card"}>
                   {selected ? (
+                  resource.key === "flex-dies" ? (
+                    <FlexDieDetailPanel
+                      die={selected}
+                      historyRows={selectedFlexDieHistory}
+                      onEdit={() => setFormMode("edit")}
+                      onDelete={() => deleteMutation.mutate()}
+                      onRequestReorder={(note) => requestFlexDieReorder(selected, note)}
+                      onMarkOrdered={(note) => markFlexDieOrdered(selected, note)}
+                      onReceiveDie={(payload) => receiveFlexDie(selected, payload)}
+                      onAdjustCount={(payload) => adjustFlexDieCount(selected, payload)}
+                      onDeleteDieline={() => deleteFlexDieDieline(selected)}
+                    />
+                  ) : (
                   <>
                     <div className="panel-head thin">
                       <div>
@@ -1784,6 +1871,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                       </div>
                     )}
                   </>
+                  )
                   ) : (
                   <>
                     <div className="panel-head thin">
@@ -1938,6 +2026,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               setMaterialTypeOpen(false);
               setFormMode("edit");
             }}
+            onDelete={canManageUsers ? () => {
+              setMaterialTypeOpen(false);
+              confirmDeleteRecord(selected);
+            } : undefined}
             onAddSupplierOption={() => {
               const material = selected;
               setMaterialTypeOpen(false);

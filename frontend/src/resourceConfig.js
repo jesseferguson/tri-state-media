@@ -211,6 +211,7 @@ export const choiceLists = {
     ["ordered", "Ordered"],
     ["in_stock", "In Stock"],
     ["in_use", "In Use"],
+    ["needs_ordered", "Needs Ordered"],
     ["available", "Available"],
     ["needs_repair", "Needs Repair"],
     ["out_for_retool", "Out for Retool"],
@@ -260,8 +261,18 @@ const dimFields = [
   { name: "label_width_inches", label: "Width", type: "number", step: "0.0001" },
   { name: "label_length_inches", label: "Length", type: "number", step: "0.0001" },
   { name: "repeat_inches", label: "Repeat", type: "number", step: "0.0001" },
-  { name: "web_width_inches", label: "Web", type: "number", step: "0.0001" },
 ];
+
+const linerDataTypeField = {
+  name: "liner_type",
+  label: "Liner",
+  type: "select",
+  choices: choiceLists.linerType,
+  lookupRelation: "materials",
+  lookupFilters: { material_type: "liner" },
+  lookupValueField: "name",
+  lookupLabelFields: ["name", "code", "liner_pounds", "material_family"],
+};
 
 const baseMaterialColumns = [
   "master_type_code",
@@ -591,7 +602,7 @@ export const resources = [
       { name: "repeat_inches", label: "Label Repeat", type: "number", step: "0.0001" },
       { name: "cutting_type", label: "Label Cutting Type", type: "select", choices: choiceLists.cuttingType, defaultValue: "to_liner" },
       { name: "face_type", label: "Face Type", type: "select", choices: choiceLists.faceType },
-      { name: "liner_type", label: "Liner Type", type: "select", choices: choiceLists.linerType },
+      { ...linerDataTypeField, label: "Liner Type" },
       {
         name: "recipe",
         label: "Tooling Recipe",
@@ -1279,7 +1290,7 @@ export const resources = [
       { name: "material_width_inches", label: "Material Width", type: "number", step: "0.0001" },
       { name: "material_length_feet", label: "Material Length", type: "number", step: "0.01" },
       { name: "face_type", label: "Face Type", type: "select", choices: choiceLists.faceType },
-      { name: "liner_type", label: "Liner Type", type: "select", choices: choiceLists.linerType },
+      { ...linerDataTypeField, label: "Liner Type" },
       { name: "liner_serial_number", label: "Liner Serial #", type: "text" },
       { name: "face_serial_number", label: "Face Serial #", type: "text" },
       { name: "quantity", label: "Quantity", type: "number", step: "0.001", defaultValue: 0 },
@@ -1472,12 +1483,7 @@ export const resources = [
         type: "select",
         choices: choiceLists.faceType,
       },
-      {
-        name: "liner_type",
-        label: "Liner",
-        type: "select",
-        choices: choiceLists.linerType,
-      },
+      { ...linerDataTypeField },
       {
         name: "perf_option",
         label: "External Perf",
@@ -1622,15 +1628,18 @@ export const resources = [
         clearWhenHidden: null,
         searchFields: [
           "name",
-          "tool_number",
-          "drawing_number",
+          "original_serial_number",
+          "serial_numbers",
           "gear",
           "number_across",
           "number_around",
+          "gap_across_inches",
           "label_width_inches",
           "label_length_inches",
           "repeat_inches",
           "web_width_inches",
+          "active_die_count",
+          "target_die_count",
           "shape_type",
           "cutting_type",
           "face_type",
@@ -1639,9 +1648,8 @@ export const resources = [
           "supplier_name",
           "current_location_name",
           "current_location_full_path",
-          "compatible_mags",
         ],
-        helpText: "Search by die number, gear, size, across/around, face, liner, or location.",
+        helpText: "Search by die jacket, serial, gear, size, across/around, face, liner, or location.",
       },
 
       {
@@ -1747,14 +1755,19 @@ export const resources = [
     icon: Scissors,
     accent: "#34d399",
     defaultOrdering: "label_width_inches,label_length_inches,gear,name",
-    tagline: "Search by dimensions, tooth/gear, across, around, face, cutting, liner, and tool numbers.",
+    tagline: "Die jackets by size, gap, count, serial history, and reorder status.",
     columns: [
       "name",
-      "tool_number",
+      "original_serial_number",
       "label_width_inches",
       "label_length_inches",
       "number_across",
       "number_around",
+      "gap_across_inches",
+      "web_width_inches",
+      "active_die_count",
+      "target_die_count",
+      "die_count_status",
       "face_type",
       "liner_type",
       "gear",
@@ -1765,22 +1778,37 @@ export const resources = [
     fields: [
       {
         name: "name",
-        label: "Name",
+        label: "Die Jacket / Tool #",
         type: "text",
         required: true,
+        placeholder: "FD-13-1-1",
       },
       {
-        name: "tool_number",
-        label: "Tool #",
+        name: "original_serial_number",
+        label: "Original Serial #",
         type: "text",
       },
       {
-        name: "drawing_number",
-        label: "Drawing #",
-        type: "text",
+        name: "dieline_image",
+        label: "Dieline Image",
+        type: "imageUpload",
+        imageSlot: "dieline",
       },
 
       ...dimFields,
+
+      {
+        name: "gap_across_inches",
+        label: "Gap Across",
+        type: "number",
+        step: "0.0001",
+      },
+      {
+        name: "gap_around_inches",
+        label: "Gap Around",
+        type: "number",
+        step: "0.0001",
+      },
 
       {
         name: "gear",
@@ -1796,6 +1824,38 @@ export const resources = [
         name: "number_around",
         label: "Around",
         type: "number",
+      },
+      {
+        name: "manual_web_width",
+        label: "Manual Web Width",
+        type: "checkbox",
+        helpText: "Leave off to calculate web width from width, gap, and across.",
+      },
+      {
+        name: "web_width_inches",
+        label: "Manual Web Width",
+        type: "number",
+        step: "0.0001",
+        showWhen: { manual_web_width: true },
+        clearWhenHidden: null,
+      },
+      {
+        name: "active_die_count",
+        label: "Active Dies In Jacket",
+        type: "number",
+        defaultValue: 1,
+      },
+      {
+        name: "target_die_count",
+        label: "Target Dies",
+        type: "number",
+        defaultValue: 1,
+      },
+      {
+        name: "serial_numbers",
+        label: "Serial Numbers",
+        type: "textarea",
+        placeholder: "One serial number per line",
       },
       {
         name: "shape_type",
@@ -1815,12 +1875,7 @@ export const resources = [
         type: "select",
         choices: choiceLists.faceType,
       },
-      {
-        name: "liner_type",
-        label: "Liner",
-        type: "select",
-        choices: choiceLists.linerType,
-      },
+      { ...linerDataTypeField },
       {
         name: "supplier",
         label: "Supplier",
@@ -1844,22 +1899,11 @@ export const resources = [
         ],
       },
       {
-        name: "compatible_mags",
-        label: "Compatible Mags",
-        type: "multiRelation",
-        relation: "mags",
-      },
-      {
         name: "status",
         label: "Status",
         type: "select",
         choices: choiceLists.toolStatus,
         defaultValue: "in_stock",
-      },
-      {
-        name: "notes",
-        label: "Notes",
-        type: "textarea",
       },
     ],
   },
