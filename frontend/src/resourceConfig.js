@@ -491,6 +491,18 @@ export const resources = [
     columns: [],
     fields: [],
   },
+  {
+    key: "quote-material-admin",
+    label: "Quote Material Setup",
+    singular: "Quote Material Setup Permission",
+    group: "production",
+    icon: Layers3,
+    permissionOnly: true,
+    disableCreate: true,
+    tagline: "Allows a role to view and edit the quote calculator finished material and raw material setup tabs.",
+    columns: [],
+    fields: [],
+  },
 
   {
     key: "quote-calculator",

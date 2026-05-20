@@ -5683,6 +5683,84 @@ p, .muted { color: #7a7a7a; }
   white-space: nowrap;
 }
 
+.quote-waste-recommendation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.quote-waste-recommendation > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.quote-waste-recommendation span {
+  color: #0369a1;
+  font-size: .68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.quote-waste-recommendation strong {
+  color: #0c4a6e;
+  font-size: .92rem;
+}
+
+.quote-waste-recommendation em {
+  min-width: 0;
+  overflow: hidden;
+  color: #075985;
+  font-size: .72rem;
+  font-style: normal;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-waste-recommendation button {
+  min-height: 30px;
+  border: 1px solid #7dd3fc;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0369a1;
+  font-size: .74rem;
+  font-weight: 900;
+}
+
+.quote-pass-through-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #e4e9f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475467;
+  font-size: .76rem;
+  font-weight: 750;
+}
+
+@media (max-width: 640px) {
+  .quote-waste-recommendation {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .quote-waste-recommendation em {
+    white-space: normal;
+  }
+
+  .quote-waste-recommendation button {
+    grid-column: 1 / -1;
+  }
+}
+
 .quote-selected-material {
   display: grid;
   gap: 2px;

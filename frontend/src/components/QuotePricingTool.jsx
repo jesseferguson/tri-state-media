@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createRecord, deleteRecord, fetchCollection, updateRecord } from "../api";
 import {
   buildLayoutCandidates,
+  calculateBestMaterialWidth,
   calculateFinishedMaterialMsiCost,
   calculateQuotePricing,
   componentLabelForFinishedMaterial,
@@ -15,7 +16,7 @@ import {
   toQuoteNumber,
 } from "../lib/quotePricing";
 
-const materialWidthPresets = ["8.75", "9", "12.75", "16.875", "18.5", "21.75"];
+const materialWidthPresets = ["8.75", "9", "12.75", "13.875", "16.875", "18.5", "21.75"];
 const materialLibraryStorageKey = "tsm_quote_material_library_v1";
 const savedQuotesStorageKey = "tsm_quote_records_v1";
 const quotePreferencesStorageKey = "tsm_quote_preferences_v1";
@@ -197,6 +198,12 @@ function quantityInputValue(value) {
 
 function moneyInput(value) {
   return value === "" || value === null || value === undefined ? "0" : String(value);
+}
+
+function percentInputValue(value) {
+  const numberValue = toQuoteNumber(value, NaN);
+  if (!Number.isFinite(numberValue)) return "";
+  return String(Number(numberValue.toFixed(2))).replace(/\.0+$/, "");
 }
 
 function rawMaterialPayload(raw) {
@@ -404,15 +411,23 @@ function quoteTotals(quote) {
   const quantity = items.reduce((sum, item) => sum + Number(item.form?.quantity || item.pricing?.quantity || 0), 0);
   const sellPrice = items.reduce((sum, item) => sum + Number(item.pricing?.sellPrice || 0), 0);
   const totalCost = items.reduce((sum, item) => sum + Number(item.pricing?.totalCost || 0), 0);
+  const productionCost = items.reduce((sum, item) => sum + Number(item.pricing?.productionCost || 0), 0);
+  const extraCost = items.reduce((sum, item) => sum + Number(item.pricing?.extraCost || 0), 0);
+  const markedUpProductionSellPrice = items.reduce((sum, item) => sum + Number(item.pricing?.markedUpProductionSellPrice || 0), 0);
   const materialCost = items.reduce((sum, item) => sum + Number(item.pricing?.materialCost || 0), 0);
   const materialMsiWithWaste = items.reduce((sum, item) => sum + Number(item.pricing?.materialMsiWithWaste || 0), 0);
+  const runFootage = items.reduce((sum, item) => sum + Number(item.pricing?.runFootage || 0), 0);
   const profit = sellPrice - totalCost;
   return {
     quantity,
     sellPrice,
     totalCost,
+    productionCost,
+    extraCost,
+    markedUpProductionSellPrice,
     materialCost,
     materialMsiWithWaste,
+    runFootage,
     profit,
     pricePerThousand: quantity > 0 ? sellPrice / (quantity / 1000) : 0,
     pricePerLabel: quantity > 0 ? sellPrice / quantity : 0,
@@ -470,27 +485,31 @@ function quotePricingModeLabel(quote) {
 
 function quoteActualMargin(quote) {
   const totals = quoteTotals(quote);
-  const sell = Number(totals.sellPrice || 0);
-  const profit = Number(totals.profit || 0);
+  const sell = Number(totals.markedUpProductionSellPrice || totals.sellPrice || 0);
+  const cost = Number(totals.productionCost || totals.totalCost || 0);
+  const profit = sell - cost;
   return sell > 0 ? (profit / sell) * 100 : 0;
 }
 
 function quoteActualMarkup(quote) {
   const totals = quoteTotals(quote);
-  const cost = Number(totals.totalCost || 0);
-  const profit = Number(totals.profit || 0);
+  const cost = Number(totals.productionCost || totals.totalCost || 0);
+  const sell = Number(totals.markedUpProductionSellPrice || totals.sellPrice || 0);
+  const profit = sell - cost;
   return cost > 0 ? (profit / cost) * 100 : 0;
 }
 
 function pricingActualMargin(pricing) {
-  const sell = Number(pricing?.sellPrice || 0);
-  const profit = Number(pricing?.profit || 0);
+  const sell = Number(pricing?.markedUpProductionSellPrice || pricing?.sellPrice || 0);
+  const cost = Number(pricing?.productionCost || pricing?.totalCost || 0);
+  const profit = sell - cost;
   return sell > 0 ? (profit / sell) * 100 : 0;
 }
 
 function pricingActualMarkup(pricing) {
-  const cost = Number(pricing?.totalCost || 0);
-  const profit = Number(pricing?.profit || 0);
+  const cost = Number(pricing?.productionCost || pricing?.totalCost || 0);
+  const sell = Number(pricing?.markedUpProductionSellPrice || pricing?.sellPrice || 0);
+  const profit = sell - cost;
   return cost > 0 ? (profit / cost) * 100 : 0;
 }
 
@@ -499,11 +518,24 @@ function markupToMargin(markupPercent) {
   return markup > 0 ? (markup / (100 + markup)) * 100 : 0;
 }
 
+function materialTargetMarkup(material) {
+  if (!material) return 0;
+  const minimumMarkup = Math.max(0, toQuoteNumber(material.baseMarkupPercent, 0));
+  const targetMarkup = Math.max(0, toQuoteNumber(material.targetMarkupPercent ?? material.targetMarginPercent, 0));
+  return Math.max(minimumMarkup, targetMarkup);
+}
+
+function materialTargetPricingPercent(material, pricingMode) {
+  const targetMarkup = materialTargetMarkup(material);
+  if (targetMarkup <= 0) return "";
+  return percentInputValue(pricingMode === "margin" ? markupToMargin(targetMarkup) : targetMarkup);
+}
+
 function profitHealth(pricing, material, displayMode = "margin") {
   const currentMarkup = pricingActualMarkup(pricing);
   const currentMargin = pricingActualMargin(pricing);
   const baseMarkup = Math.max(0, toQuoteNumber(material?.baseMarkupPercent, 0));
-  const targetMarkup = Math.max(baseMarkup, toQuoteNumber(material?.targetMarkupPercent ?? material?.targetMarginPercent, baseMarkup));
+  const targetMarkup = materialTargetMarkup(material);
   const baseMargin = markupToMargin(baseMarkup);
   const targetMargin = markupToMargin(targetMarkup);
   const displayIsMarkup = displayMode === "markup";
@@ -592,10 +624,12 @@ function quoteInternalSections(quote) {
       rows: [
         ["Label Size", `${quote.form?.labelWidth || 0}" x ${quote.form?.labelLength || 0}"`],
         ["Auto Repeat", number(Number(quote.pricing?.repeat || quote.form?.repeat || 0), '"')],
+        ["Run Footage", number(Number(quote.pricing?.runFootage || 0), " ft")],
         ["Quantity", Number(quote.form?.quantity || 0).toLocaleString()],
         ["Finished Label MSI", number(Number(quote.pricing?.finishedMsi || 0))],
         ["Base Material MSI", number(Number(quote.pricing?.baseMaterialMsi || 0))],
         ["Waste Percent", percent(Number(quote.form?.wastePercent || 0))],
+        ["Recommended Waste", percent(Number(quote.pricing?.recommendedWastePercent || 0))],
         ["Waste MSI", number(Number(quote.pricing?.wasteMsi || 0))],
         ["MSI With Waste", number(Number(quote.pricing?.materialMsiWithWaste || 0))],
       ],
@@ -608,8 +642,9 @@ function quoteInternalSections(quote) {
         ["Color Count", Number(quote.form?.colorCount || 0)],
         ["Coating Count", Number(quote.form?.coatingCount || 0)],
         ["Color / Coating Cost", money(Number(quote.pricing?.processMsiCost || 0))],
+        ["Markup Base Cost", money(Number(quote.pricing?.productionCost || 0))],
         ...quoteAddedCostRows(quote),
-        ["Added Costs Total", money(Number(quote.pricing?.extraCost || 0))],
+        ["Added Costs Total", `${money(Number(quote.pricing?.extraCost || 0))} pass-through`],
         ["Total Internal Cost", money(Number(quote.pricing?.totalCost || 0))],
       ],
     },
@@ -805,7 +840,7 @@ function FinishedMaterialForm({ form, rawMaterials, update, submit, editing = fa
           <option value="purchased">Purchased Finished</option>
         </select>
       </Field>
-      <Field label="Base Markup" suffix="%">
+      <Field label="Minimum Markup" suffix="%">
         <input type="number" step="0.01" value={form.baseMarkupPercent} onChange={(event) => update("baseMarkupPercent", event.target.value)} />
       </Field>
       <Field label="Target Markup" suffix="%">
@@ -1029,12 +1064,13 @@ function InternalQuoteBreakdown({ quote, materialOptions = [] }) {
   );
 }
 
-export default function QuotePricingTool({ currentUser, initialJobTicketId = "" }) {
+export default function QuotePricingTool({ currentUser, initialJobTicketId = "", canManageQuoteMaterials = false }) {
   const storedLibrary = useMemo(loadMaterialLibrary, []);
   const storedQuotes = useMemo(loadSavedQuotes, []);
   const [activeTab, setActiveTab] = useState("pricing");
   const [savedQuoteView, setSavedQuoteView] = useState("customer");
   const [form, setForm] = useState(initialForm);
+  const [wasteManuallyEdited, setWasteManuallyEdited] = useState(false);
   const [quoteInfo, setQuoteInfo] = useState(emptyQuoteInfo);
   const [quoteSearch, setQuoteSearch] = useState("");
   const [quotePersonFilter, setQuotePersonFilter] = useState(() => currentUserQuoteKey(currentUser));
@@ -1061,6 +1097,11 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
       masterTypeLabel: [material.materialMasterTypeCode, material.materialMasterTypeName].filter(Boolean).join(" / "),
     }));
   }, [finishedMaterials, rawMaterials, quoteRates]);
+  const visibleQuoteTabs = useMemo(() => {
+    const tabs = ["pricing", "quotes"];
+    if (canManageQuoteMaterials) tabs.push("finished", "raw");
+    return tabs;
+  }, [canManageQuoteMaterials]);
 
   const selectedMaterial = materialOptions.find((material) => String(material.id) === String(form.selectedMaterialId));
   const selectedJobTicket = jobTickets.find((ticket) => String(ticket.id) === String(quoteInfo.jobTicketId));
@@ -1140,10 +1181,28 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
     ?? null;
   const pricing = useMemo(() => calculateQuotePricing(form), [form]);
   const candidates = useMemo(() => buildLayoutCandidates(form), [form]);
+  const bestPresetWidth = useMemo(() => calculateBestMaterialWidth(form, materialWidthPresets), [
+    form.labelWidth,
+    form.labelLength,
+    form.quantity,
+    form.gap,
+    form.sideTrim,
+    form.msiCost,
+    form.colorCount,
+    form.coatingCount,
+    form.colorMsiCost,
+    form.coatingMsiCost,
+  ]);
   const currentProfitHealth = useMemo(() => profitHealth(pricing, selectedMaterial, form.pricingMode), [pricing, selectedMaterial, form.pricingMode]);
   const fitTone = pricing.fits ? "ready" : "bad";
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
   const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
+  const wasteMatchesRecommendation = Math.abs(toQuoteNumber(form.wastePercent) - toQuoteNumber(pricing.recommendedWastePercent)) < 0.01;
+
+  useEffect(() => {
+    if (visibleQuoteTabs.includes(activeTab)) return;
+    setActiveTab("pricing");
+  }, [activeTab, visibleQuoteTabs]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1176,6 +1235,18 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
     }
     setSelectedQuoteId((current) => filteredSavedQuotes.some((quote) => quote.id === current) ? current : filteredSavedQuotes[0].id);
   }, [filteredSavedQuotes]);
+
+  useEffect(() => {
+    if (!bestPresetWidth || manualMaterialWidth) return;
+    setForm((prev) => prev.materialWidth === bestPresetWidth ? prev : { ...prev, materialWidth: bestPresetWidth });
+  }, [bestPresetWidth, manualMaterialWidth]);
+
+  useEffect(() => {
+    if (wasteManuallyEdited || pricing.recommendedWastePercent <= 0) return;
+    const recommended = percentInputValue(pricing.recommendedWastePercent);
+    if (!recommended) return;
+    setForm((prev) => prev.wastePercent === recommended ? prev : { ...prev, wastePercent: recommended });
+  }, [pricing.recommendedWastePercent, wasteManuallyEdited]);
 
   useEffect(() => {
     let alive = true;
@@ -1240,6 +1311,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
   useEffect(() => {
     if (!initialJobTicketId) return;
     setActiveTab("pricing");
+    setWasteManuallyEdited(false);
     setQuoteInfo((prev) => ({
       ...prev,
       linkMode: "ticket",
@@ -1271,7 +1343,6 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
     setForm((prev) => ({
       ...prev,
       msiCost: String(selectedMaterial.calculatedMsiCost),
-      materialWidth: selectedMaterial.width_inches || prev.materialWidth,
     }));
   }, [selectedMaterial?.id, selectedMaterial?.calculatedMsiCost, selectedMaterial?.width_inches]);
 
@@ -1296,7 +1367,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
       quantity: quantity.quantity,
       selectedMaterialId: material?.id || prev.selectedMaterialId,
       msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
-      materialWidth: material?.width_inches || prev.materialWidth,
+      pricingPercent: material ? materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent : prev.pricingPercent,
     }));
   }, [quoteInfo.linkMode, selectedJobTicket?.id, materialOptions.length]);
 
@@ -1304,11 +1375,29 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
     if (name === "pricingMode") {
       saveQuotePreference(currentUser, { pricingMode: value });
     }
-    setForm((prev) => ({ ...prev, [name]: value }));
+    if (name === "wastePercent") {
+      setWasteManuallyEdited(true);
+    }
+    setForm((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === "pricingMode" && selectedMaterial) {
+        const targetPercent = materialTargetPricingPercent(selectedMaterial, value);
+        if (targetPercent) next.pricingPercent = targetPercent;
+      }
+      return next;
+    });
   }
 
   function updateQuoteInfo(name, value) {
+    if (name === "jobTicketId" || name === "linkMode") {
+      setWasteManuallyEdited(false);
+    }
     setQuoteInfo((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function applyRecommendedWaste() {
+    setWasteManuallyEdited(false);
+    setForm((prev) => ({ ...prev, wastePercent: percentInputValue(pricing.recommendedWastePercent) }));
   }
 
   async function updateQuoteRate(key, field, value) {
@@ -1339,7 +1428,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
       ...prev,
       selectedMaterialId: value,
       msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
-      materialWidth: material?.width_inches ? String(material.width_inches) : prev.materialWidth,
+      pricingPercent: material ? materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent : prev.pricingPercent,
     }));
   }
 
@@ -1616,6 +1705,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
 
   async function submitRaw(event) {
     event.preventDefault();
+    if (!canManageQuoteMaterials) return;
     const name = rawForm.name.trim();
     if (!name) return;
     const next = {
@@ -1637,6 +1727,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
 
   async function submitFinished(event) {
     event.preventDefault();
+    if (!canManageQuoteMaterials) return;
     const name = finishedForm.name.trim();
     if (!name) return;
     const next = {
@@ -1659,7 +1750,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
       ...prev,
       selectedMaterialId: saved.id,
       msiCost: String(calculateFinishedMaterialMsiCost(saved, rawMaterials, quoteRates)),
-      materialWidth: saved.width_inches || prev.materialWidth,
+      pricingPercent: materialTargetPricingPercent(saved, prev.pricingMode) || prev.pricingPercent,
     }));
     setFinishedForm(emptyFinishedForm);
     setEditingFinishedId(null);
@@ -1667,6 +1758,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
   }
 
   async function deleteRaw(id) {
+    if (!canManageQuoteMaterials) return;
     await deleteRecord("quote-raw-materials", id);
     setRawMaterials((prev) => prev.filter((raw) => raw.id !== id));
     setFinishedMaterials((prev) => prev.map((material) => {
@@ -1683,6 +1775,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
   }
 
   async function deleteFinished(id) {
+    if (!canManageQuoteMaterials) return;
     await deleteRecord("quote-finished-materials", id);
     setFinishedMaterials((prev) => prev.filter((material) => material.id !== id));
     setForm((prev) => prev.selectedMaterialId === id ? { ...prev, selectedMaterialId: "manual" } : prev);
@@ -1697,12 +1790,13 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
       ...prev,
       selectedMaterialId: material.id,
       msiCost: String(material.calculatedMsiCost),
-      materialWidth: material.width_inches || prev.materialWidth,
+      pricingPercent: materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent,
     }));
     setActiveTab("pricing");
   }
 
   function editFinishedMaterial(material) {
+    if (!canManageQuoteMaterials) return;
     const { calculatedMsiCost, componentLabel, ...editable } = material;
     setEditingFinishedId(material.id);
     setFinishedForm({ ...emptyFinishedForm, ...editable });
@@ -1715,6 +1809,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
   }
 
   function editRawMaterial(raw) {
+    if (!canManageQuoteMaterials) return;
     setEditingRawId(raw.id);
     setRawForm({ ...emptyRawForm, ...raw });
     setActiveTab("raw");
@@ -1730,8 +1825,12 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
       <nav className="quote-tabs" aria-label="Quote calculator sections">
         <TabButton active={activeTab === "pricing"} icon={CircleDollarSign} label="Pricing Tool" onClick={() => setActiveTab("pricing")} />
         <TabButton active={activeTab === "quotes"} icon={FileText} label="Saved Quotes" count={savedQuotes.length} onClick={() => setActiveTab("quotes")} />
-        <TabButton active={activeTab === "finished"} icon={Layers3} label="Finished Inventory" count={finishedMaterials.length} onClick={() => setActiveTab("finished")} />
-        <TabButton active={activeTab === "raw"} icon={Ruler} label="Raw Inventory" count={rawMaterials.length} onClick={() => setActiveTab("raw")} />
+        {canManageQuoteMaterials && (
+          <>
+            <TabButton active={activeTab === "finished"} icon={Layers3} label="Finished Inventory" count={finishedMaterials.length} onClick={() => setActiveTab("finished")} />
+            <TabButton active={activeTab === "raw"} icon={Ruler} label="Raw Inventory" count={rawMaterials.length} onClick={() => setActiveTab("raw")} />
+          </>
+        )}
       </nav>
       {quoteDataState === "loading" && <p className="quote-sync-note">Loading shared quote data...</p>}
       {quoteDataError && <p className="quote-ticket-warning">{quoteDataError}</p>}
@@ -1815,7 +1914,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                 {selectedMaterial && (
                   <div className="quote-material-targets">
                     <Metric label="Material MSI" value={`${unitMoney(selectedMaterial.calculatedMsiCost)} / MSI`} />
-                    <Metric label="Base Markup" value={`${percentFormatter.format(Number(selectedMaterial.baseMarkupPercent || 0))}%`} />
+                    <Metric label="Minimum Markup" value={`${percentFormatter.format(Number(selectedMaterial.baseMarkupPercent || 0))}%`} />
                     <Metric label="Target Markup" value={`${percentFormatter.format(Number((selectedMaterial.targetMarkupPercent ?? selectedMaterial.targetMarginPercent) || 0))}%`} />
                   </div>
                 )}
@@ -1862,6 +1961,20 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <span>Repeat is calculated automatically from label length plus gap.</span>
                   <strong>{number(pricing.repeat, '"')}</strong>
                 </div>
+                <div className="quote-waste-recommendation">
+                  <AlertTriangle size={15} />
+                  <div>
+                    <span>Waste recommendation</span>
+                    <strong>{percent(pricing.recommendedWastePercent)}</strong>
+                    <em>
+                      {number(pricing.runFootage, " ft")} run footage / {percent(pricing.baseWastePercent)} from {pricing.wasteRuleLabel}
+                      {pricing.colorCount > 0 ? ` + ${percent(pricing.colorWastePercent)} for ${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} at 6% each` : " + 0% color waste"}
+                    </em>
+                  </div>
+                  {!wasteMatchesRecommendation && (
+                    <button type="button" onClick={applyRecommendedWaste}>Use</button>
+                  )}
+                </div>
               </section>
 
               <details className="quote-advanced-panel">
@@ -1899,6 +2012,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                       <input type="number" step="0.01" value={form[field.name]} onChange={(event) => updateField(field.name, event.target.value)} />
                     </Field>
                   ))}
+                  <p className="quote-pass-through-note">Added costs are added after markup. Example: $178 quote + $100 added cost = $278 total.</p>
                   <label className="quote-field quote-field-wide">
                     <span>Quote Notes</span>
                     <textarea value={quoteInfo.notes} onChange={(event) => updateQuoteInfo("notes", event.target.value)} />
@@ -1936,13 +2050,14 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
 
               <div className="quote-breakdown">
                 <BreakdownRow label="Auto Repeat" value={number(pricing.repeat, '"')} />
+                <BreakdownRow label="Run Footage" value={number(pricing.runFootage, " ft")} />
                 <BreakdownRow label="Number Across" value={pricing.numberAcross || "--"} />
                 <BreakdownRow label="Unused Width" value={pricing.widthDelta >= 0 ? number(pricing.widthDelta, '"') : `Over ${number(Math.abs(pricing.widthDelta), '"')}`} />
                 <BreakdownRow label="Base Material MSI" value={number(pricing.baseMaterialMsi)} />
                 <BreakdownRow label="Waste MSI" value={number(pricing.wasteMsi)} />
                 <BreakdownRow label="MSI With Waste" value={number(pricing.materialMsiWithWaste)} />
                 <BreakdownRow label="Colors / Coatings" value={money(pricing.processMsiCost)} />
-                <BreakdownRow label="Extra Costs" value={money(pricing.extraCost)} />
+                <BreakdownRow label="Added Costs" value={`${money(pricing.extraCost)} pass-through`} />
               </div>
 
               {quoteItemsDraft.length > 0 && (
@@ -2077,7 +2192,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
         </section>
       )}
 
-      {activeTab === "finished" && (
+      {canManageQuoteMaterials && activeTab === "finished" && (
         <section className="quote-inventory-page">
           <div className="quote-inventory-head">
             <div>
@@ -2140,7 +2255,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                       <span>{material.masterTypeLabel ? `${material.masterTypeLabel} / ` : ""}{material.sourceType === "purchased" ? "Purchased" : "Made in-house"} / {material.componentLabel}</span>
                     </div>
                     <em>{unitMoney(material.calculatedMsiCost)}/MSI</em>
-                    <span>{percentFormatter.format(Number(material.baseMarkupPercent || 0))}% base / {percentFormatter.format(Number((material.targetMarkupPercent ?? material.targetMarginPercent) || 0))}% target markup</span>
+                    <span>{percentFormatter.format(Number(material.baseMarkupPercent || 0))}% minimum / {percentFormatter.format(Number((material.targetMarkupPercent ?? material.targetMarginPercent) || 0))}% target markup</span>
                     <button className="ghost-btn xs" type="button" onClick={() => useFinishedMaterial(material)}>Use</button>
                     <button className="ghost-btn xs" type="button" onClick={() => editFinishedMaterial(material)}><Pencil size={13} /></button>
                     <button className="ghost-btn xs" type="button" onClick={() => deleteFinished(material.id)}><Trash2 size={13} /></button>
@@ -2154,7 +2269,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
         </section>
       )}
 
-      {activeTab === "raw" && (
+      {canManageQuoteMaterials && activeTab === "raw" && (
         <section className="quote-inventory-page">
           <div className="quote-inventory-head">
             <div>

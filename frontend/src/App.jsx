@@ -1085,6 +1085,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const canEditJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-editor");
   const canScheduleFromJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-schedule");
   const canQuoteJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-calculator");
+  const canManageQuoteMaterials = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-material-admin");
   const jobTicketScheduleResource = useMemo(() => {
     const schedule = resourceMap["production-schedule"];
     const hiddenOnTicket = new Set([
@@ -1746,7 +1747,11 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {lookupQuery.error && <div className="error-box">Could not load lookup data: {lookupQuery.error.message}</div>}
 
         {resource.viewMode === "quoteCalculator" ? (
-          <QuotePricingTool currentUser={currentUser} initialJobTicketId={quoteJobTicketId} />
+          <QuotePricingTool
+            currentUser={currentUser}
+            initialJobTicketId={quoteJobTicketId}
+            canManageQuoteMaterials={canManageQuoteMaterials}
+          />
         ) : resource.viewMode === "dataImport" ? (
           <DataImportTool currentUser={currentUser} />
         ) : (

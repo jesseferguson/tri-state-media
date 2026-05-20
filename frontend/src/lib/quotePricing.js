@@ -1,5 +1,13 @@
 const EPSILON = 0.000001;
 
+export const wasteRecommendationRules = [
+  { minFootage: 150001, wastePercent: 6, label: "> 150,000 ft" },
+  { minFootage: 150000, wastePercent: 8, label: "150,000 ft" },
+  { minFootage: 10000, wastePercent: 10, label: "10,000-149,999 ft" },
+  { minFootage: 5000, wastePercent: 15, label: "5,000-9,999 ft" },
+  { minFootage: 0, wastePercent: 25, label: "under 5,000 ft" },
+];
+
 export const quoteExtraCostFields = [
   { name: "setupCost", label: "Setup" },
   { name: "printCost", label: "Print / Complexity" },
@@ -73,6 +81,26 @@ export function calculateAutoRepeat({ labelLength, gap }) {
   return Math.max(0, toQuoteNumber(labelLength) + Math.max(0, toQuoteNumber(gap)));
 }
 
+export function calculateRunFootage({ quantity, repeat, numberAcross }) {
+  const labelQuantity = Math.max(0, toQuoteNumber(quantity));
+  const repeatInches = Math.max(0, toQuoteNumber(repeat));
+  const lanes = Math.max(0, Math.floor(toQuoteNumber(numberAcross)));
+  if (labelQuantity <= 0 || repeatInches <= 0 || lanes <= 0) return 0;
+  return (labelQuantity * repeatInches) / 12 / lanes;
+}
+
+export function calculateRecommendedWastePercent({ runFootage, colorCount }) {
+  const footage = Math.max(0, toQuoteNumber(runFootage));
+  const colors = Math.max(0, Math.floor(toQuoteNumber(colorCount)));
+  const baseRule = wasteRecommendationRules.find((rule) => footage >= rule.minFootage) || wasteRecommendationRules[wasteRecommendationRules.length - 1];
+  return {
+    baseWastePercent: baseRule.wastePercent,
+    colorWastePercent: colors * 6,
+    recommendedWastePercent: baseRule.wastePercent + colors * 6,
+    ruleLabel: baseRule.label,
+  };
+}
+
 export function calculateQuotePricing(input) {
   const labelWidth = toQuoteNumber(input.labelWidth);
   const labelLength = toQuoteNumber(input.labelLength);
@@ -100,6 +128,8 @@ export function calculateQuotePricing(input) {
   const finishedMsi = labelWidth > 0 && labelLength > 0 && quantity > 0
     ? (labelWidth * labelLength * quantity) / 1000
     : 0;
+  const runFootage = fits ? calculateRunFootage({ quantity, repeat, numberAcross }) : 0;
+  const wasteRecommendation = calculateRecommendedWastePercent({ runFootage, colorCount });
   const baseMaterialMsi = fits
     ? (repeat * quantity * materialWidth) / (1000 * numberAcross)
     : 0;
@@ -110,18 +140,20 @@ export function calculateQuotePricing(input) {
   const colorCost = materialMsiWithWaste * colorMsiCost * colorCount;
   const coatingCost = materialMsiWithWaste * coatingMsiCost * coatingCount;
   const processMsiCost = colorCost + coatingCost;
+  const productionCost = materialCost + processMsiCost;
   const extraCost = quoteExtraCostFields.reduce(
     (sum, field) => sum + Math.max(0, toQuoteNumber(input[field.name])),
     0
   );
-  const totalCost = materialCost + processMsiCost + extraCost;
+  const totalCost = productionCost + extraCost;
   const rawPricingPercent = Math.max(0, toQuoteNumber(input.pricingPercent));
   const pricingPercent = input.pricingMode === "markup"
     ? rawPricingPercent
     : Math.min(95, rawPricingPercent);
-  const sellPrice = input.pricingMode === "markup"
-    ? totalCost * (1 + pricingPercent / 100)
-    : totalCost / (1 - pricingPercent / 100);
+  const markedUpProductionSellPrice = input.pricingMode === "markup"
+    ? productionCost * (1 + pricingPercent / 100)
+    : productionCost / (1 - pricingPercent / 100);
+  const sellPrice = markedUpProductionSellPrice + extraCost;
   const profit = sellPrice - totalCost;
   const pricePerThousand = quantity > 0 ? sellPrice / (quantity / 1000) : 0;
   const pricePerLabel = quantity > 0 ? sellPrice / quantity : 0;
@@ -147,6 +179,11 @@ export function calculateQuotePricing(input) {
     widthDelta,
     widthUsagePercent,
     finishedMsi,
+    runFootage,
+    baseWastePercent: wasteRecommendation.baseWastePercent,
+    colorWastePercent: wasteRecommendation.colorWastePercent,
+    recommendedWastePercent: wasteRecommendation.recommendedWastePercent,
+    wasteRuleLabel: wasteRecommendation.ruleLabel,
     baseMaterialMsi,
     wasteMultiplier,
     wasteMsi,
@@ -155,9 +192,11 @@ export function calculateQuotePricing(input) {
     colorCost,
     coatingCost,
     processMsiCost,
+    productionCost,
     extraCost,
     totalCost,
     pricingPercent,
+    markedUpProductionSellPrice,
     sellPrice,
     profit,
     pricePerThousand,
@@ -209,4 +248,37 @@ export function buildLayoutCandidates(input, limit = 12) {
       numberAcross,
     });
   }).reverse();
+}
+
+export function calculateBestMaterialWidth(input, presets = []) {
+  const candidates = presets
+    .map((width) => {
+      const recommendationPricing = calculateQuotePricing({
+        ...input,
+        materialWidth: width,
+        acrossMode: "auto",
+        numberAcross: "",
+      });
+      const pricing = calculateQuotePricing({
+        ...input,
+        materialWidth: width,
+        acrossMode: "auto",
+        numberAcross: "",
+        wastePercent: recommendationPricing.recommendedWastePercent,
+      });
+      return { width: String(width), pricing };
+    })
+    .filter(({ pricing }) => pricing.fits && pricing.numberAcross > 0);
+
+  if (!candidates.length) return "";
+
+  candidates.sort((a, b) => {
+    const costDelta = a.pricing.productionCost - b.pricing.productionCost;
+    if (Math.abs(costDelta) > EPSILON) return costDelta;
+    const wasteDelta = a.pricing.widthDelta - b.pricing.widthDelta;
+    if (Math.abs(wasteDelta) > EPSILON) return wasteDelta;
+    return a.pricing.materialWidth - b.pricing.materialWidth;
+  });
+
+  return candidates[0].width;
 }
