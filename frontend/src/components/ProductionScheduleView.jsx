@@ -81,6 +81,10 @@ function unitsPerCartonLabel(ticket) {
   return `${unitNoun(ticket)} / Carton`;
 }
 
+function labelsPerFoldLabel(ticket) {
+  return `${unitNoun(ticket)} / Fold`;
+}
+
 function scheduleImage(row) {
   return row.job_general_image_url || row.general_image_url || "";
 }
@@ -136,10 +140,16 @@ function scheduleTicketFallback(row) {
     labels_per_carton: row.job_labels_per_carton,
     core_size_inches: row.job_core_size_inches,
     wind_direction: row.job_wind_direction,
+    fanfold_gear: row.job_fanfold_gear,
+    labels_per_fold: row.job_labels_per_fold,
     ribbon: row.job_ribbon,
     laminate: row.job_laminate,
     bagged: row.job_bagged,
+    core: row.job_core,
+    core_name: row.job_core_name,
+    core_item_number: row.job_core_item_number,
     box_item_number: row.box_item_number,
+    linked_box_item_number: row.linked_box_item_number,
     box_name: row.box_name,
   };
 }
@@ -175,6 +185,19 @@ function groupInventoryByWidth(rows) {
     acc[key].total += qty;
     return acc;
   }, {});
+}
+
+function matchingCoreInventory(ticket, rows) {
+  if (!ticket?.core) return [];
+  return (rows ?? []).filter((row) => sameId(row.core, ticket.core));
+}
+
+function inventoryLocationSummary(rows) {
+  return (rows ?? [])
+    .filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status) && numeric(row.quantity) > 0)
+    .slice(0, 4)
+    .map((row) => `${row.location_full_path || row.location_name || "No location"}: ${formatNumber(row.quantity)}`)
+    .join(" / ");
 }
 
 function sortScheduleRows(rows) {
@@ -343,6 +366,7 @@ function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlex
     .filter((item) => item.is_active !== false && !["depleted", "scrapped"].includes(item.status) && inventoryFootage(item) > 0);
   const materialFeet = materialInventory.reduce((sum, item) => sum + inventoryFootage(item), 0);
   const recipeOptions = matchingRecipeOptions(ticket, lookups?.["recipe-options"]);
+  const coreInventory = matchingCoreInventory(ticket, lookups?.["core-inventory"]);
 
   return (
     <section className="schedule-overlay" role="dialog" aria-modal="true" aria-label="Schedule order details">
@@ -397,12 +421,17 @@ function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlex
             <div className="schedule-detail-grid compact">
               <DetailItem label="Finishing" value={labelize(ticket?.finishing_type)} />
               <DetailItem label="Core / Wind" value={[formatInches(ticket?.core_size_inches), ticket?.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} />
+              {ticket?.finishing_type === "fanfold" && <DetailItem label="Fanfold Gear" value={ticket?.fanfold_gear} />}
+              {ticket?.finishing_type === "fanfold" && <DetailItem label={labelsPerFoldLabel(ticket)} value={ticket?.labels_per_fold} />}
               <DetailItem label={unitPerPackageLabel(ticket)} value={ticket?.labels_per_unit} />
               <DetailItem label={unitsPerCartonLabel(ticket)} value={ticket?.units_per_carton} />
               <DetailItem label="Ribbon" value={labelize(ticket?.ribbon || "no_ribbon")} />
               <DetailItem label="Laminate" value={labelize(ticket?.laminate || "no_laminate")} />
               <DetailItem label="Bagged" value={labelize(ticket?.bagged || "not_bagged")} />
-              <DetailItem label="Box" value={[row.box_item_number || ticket?.box_item_number, row.box_name || ticket?.box_name].filter(Boolean).join(" / ")} />
+              <DetailItem label="Box Item #" value={row.box_item_number || ticket?.box_item_number || ticket?.linked_box_item_number} />
+              <DetailItem label="Box Link" value={[row.linked_box_item_number || ticket?.linked_box_item_number, row.box_name || ticket?.box_name].filter(Boolean).join(" / ")} />
+              <DetailItem label="Core Link" value={[ticket?.core_item_number, ticket?.core_name].filter(Boolean).join(" / ")} />
+              <DetailItem label="Core On Hand" value={inventoryLocationSummary(coreInventory)} />
             </div>
           </div>
 

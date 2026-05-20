@@ -235,6 +235,15 @@ function getRelationTitle(row, field) {
     ].filter(Boolean).join(" / ");
   }
 
+  if (field.relation === "cores") {
+    return [
+      row.item_number,
+      row.name ?? getRecordTitle(row),
+      row.core_size_inches ? `${row.core_size_inches}"` : "",
+      row.supplier,
+    ].filter(Boolean).join(" / ");
+  }
+
   if (field.relation === "flex-dies") {
     return `${row.name ?? getRecordTitle(row)}${row.gear ? ` · ${row.gear}T` : ""}${row.number_across && row.number_around ? ` · ${row.number_across}×${row.number_around}` : ""}`;
   }

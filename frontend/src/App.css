@@ -7143,6 +7143,128 @@ p, .muted { color: #7a7a7a; }
   color: #101828;
 }
 
+.packaging-inventory-view {
+  display: grid;
+  gap: 12px;
+}
+
+.packaging-inventory-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.packaging-inventory-summary div,
+.packaging-location-group {
+  border: 1px solid #d9e1ea;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.packaging-inventory-summary div {
+  padding: 12px;
+}
+
+.packaging-inventory-summary span,
+.packaging-inventory-card span,
+.packaging-location-group header span {
+  color: #667085;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.packaging-inventory-summary strong {
+  display: block;
+  margin-top: 4px;
+  color: #101828;
+  font-size: 1.3rem;
+}
+
+.packaging-location-group {
+  overflow: hidden;
+}
+
+.packaging-location-group header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f7;
+  background: #f8fafc;
+}
+
+.packaging-location-group header strong {
+  color: #101828;
+}
+
+.packaging-location-group > div {
+  display: grid;
+}
+
+.packaging-inventory-card {
+  display: grid;
+  grid-template-columns: 34px minmax(180px, 1.5fr) minmax(110px, .6fr) minmax(180px, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid #eef2f7;
+}
+
+.packaging-inventory-card:first-child {
+  border-top: 0;
+}
+
+.packaging-inventory-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: #9a3412;
+  background: #ffedd5;
+}
+
+.packaging-inventory-card.core .packaging-inventory-icon {
+  color: #9f1239;
+  background: #ffe4e6;
+}
+
+.packaging-inventory-main,
+.packaging-inventory-qty,
+.packaging-inventory-location {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.packaging-inventory-main strong,
+.packaging-inventory-qty strong,
+.packaging-inventory-location strong {
+  overflow: hidden;
+  color: #101828;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.packaging-inventory-qty strong {
+  font-size: 1rem;
+}
+
+@media (max-width: 760px) {
+  .packaging-inventory-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .packaging-inventory-card {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .packaging-inventory-qty,
+  .packaging-inventory-location {
+    grid-column: 2;
+  }
+}
+
 .quote-internal-head {
   display: flex;
   align-items: flex-start;

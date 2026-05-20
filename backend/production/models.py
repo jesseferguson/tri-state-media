@@ -219,6 +219,53 @@ class BoxInventory(models.Model):
         return f"{self.box or 'Box'} / {self.lot_number or self.pk}"
 
 
+class CoreSpec(models.Model):
+    name = models.CharField(max_length=150)
+    item_number = models.CharField(max_length=80, blank=True)
+    supplier = models.CharField(max_length=150, blank=True)
+    core_size_inches = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["supplier", "core_size_inches", "name", "item_number"]
+
+    def __str__(self):
+        parts = [self.item_number, self.name, f'{self.core_size_inches}"' if self.core_size_inches else "", self.supplier]
+        return " / ".join([part for part in parts if part])
+
+
+class CoreInventory(models.Model):
+    STATUS_CHOICES = BoxInventory.STATUS_CHOICES
+
+    core = models.ForeignKey(
+        CoreSpec,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory",
+    )
+    lot_number = models.CharField(max_length=80, blank=True)
+    quantity = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="available")
+    received_date = models.DateField(null=True, blank=True)
+    location = models.ForeignKey(
+        ToolingLocation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="core_inventory",
+    )
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["core__core_size_inches", "core__name", "lot_number"]
+
+    def __str__(self):
+        return f"{self.core or 'Core'} / {self.lot_number or self.pk}"
+
+
 class JobTicket(models.Model):
     CUTTING_TYPE_CHOICES = [
         ("to_liner", "To Liner"),
@@ -277,6 +324,7 @@ class JobTicket(models.Model):
     job_name = models.CharField(max_length=150)
     product_code = models.CharField(max_length=80, blank=True)
     description = models.TextField(blank=True)
+    box_item_number = models.CharField(max_length=80, blank=True)
 
     general_image = models.ImageField(upload_to=job_ticket_image_upload_path, blank=True, null=True)
     general_image_name = models.CharField(max_length=180, blank=True)
@@ -335,8 +383,17 @@ class JobTicket(models.Model):
         blank=True,
         related_name="job_tickets",
     )
+    core = models.ForeignKey(
+        CoreSpec,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="job_tickets",
+    )
     core_size_inches = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
     wind_direction = models.CharField(max_length=5, choices=WIND_DIRECTION_CHOICES, blank=True)
+    fanfold_gear = models.PositiveIntegerField(null=True, blank=True)
+    labels_per_fold = models.PositiveIntegerField(null=True, blank=True)
     ribbon = models.CharField(max_length=40, choices=RIBBON_CHOICES, default="no_ribbon")
     laminate = models.CharField(max_length=40, choices=LAMINATE_CHOICES, default="no_laminate")
     bagged = models.CharField(max_length=30, choices=BAGGED_CHOICES, default="not_bagged")
@@ -363,6 +420,10 @@ class JobTicket(models.Model):
     def save(self, *args, **kwargs):
         if self.material_spec_id and not self.material_master_type_id:
             self.material_master_type = self.material_spec.master_type
+        if self.box_id and not self.box_item_number:
+            self.box_item_number = self.box.item_number
+        if self.core_id and not self.core_size_inches:
+            self.core_size_inches = self.core.core_size_inches
         self.labels_per_carton = self.units_per_carton
         super().save(*args, **kwargs)
 

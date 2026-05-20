@@ -7,6 +7,8 @@ from .models import (
     BoxSpec,
     CompanyRole,
     CompanyUser,
+    CoreInventory,
+    CoreSpec,
     Customer,
     CustomerOrder,
     CustomerOrderEvent,
@@ -196,13 +198,35 @@ class BoxInventorySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class CoreSpecSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CoreSpec
+        fields = "__all__"
+
+
+class CoreInventorySerializer(serializers.ModelSerializer):
+    core_name = serializers.CharField(source="core.name", read_only=True)
+    core_item_number = serializers.CharField(source="core.item_number", read_only=True)
+    core_supplier = serializers.CharField(source="core.supplier", read_only=True)
+    core_size_inches = serializers.DecimalField(source="core.core_size_inches", max_digits=6, decimal_places=3, read_only=True)
+    location_name = serializers.CharField(source="location.name", read_only=True)
+    location_full_path = serializers.ReadOnlyField(source="location.full_path")
+
+    class Meta:
+        model = CoreInventory
+        fields = "__all__"
+
+
 class JobTicketSerializer(serializers.ModelSerializer):
     customer_display = serializers.SerializerMethodField()
     job_images = serializers.SerializerMethodField()
     recipe_name = serializers.CharField(source="recipe.name", read_only=True)
     box_name = serializers.CharField(source="box.name", read_only=True)
-    box_item_number = serializers.CharField(source="box.item_number", read_only=True)
+    linked_box_item_number = serializers.CharField(source="box.item_number", read_only=True)
     box_supplier = serializers.CharField(source="box.supplier", read_only=True)
+    core_name = serializers.CharField(source="core.name", read_only=True)
+    core_item_number = serializers.CharField(source="core.item_number", read_only=True)
+    core_supplier = serializers.CharField(source="core.supplier", read_only=True)
     material_spec_name = serializers.SerializerMethodField()
     material_spec_code = serializers.SerializerMethodField()
     material_spec_family = serializers.SerializerMethodField()
@@ -307,9 +331,14 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     job_labels_per_carton = serializers.DecimalField(source="job_ticket.labels_per_carton", max_digits=12, decimal_places=3, read_only=True)
     job_core_size_inches = serializers.DecimalField(source="job_ticket.core_size_inches", max_digits=8, decimal_places=4, read_only=True)
     job_wind_direction = serializers.CharField(source="job_ticket.wind_direction", read_only=True)
+    job_fanfold_gear = serializers.IntegerField(source="job_ticket.fanfold_gear", read_only=True)
+    job_labels_per_fold = serializers.IntegerField(source="job_ticket.labels_per_fold", read_only=True)
     job_ribbon = serializers.CharField(source="job_ticket.ribbon", read_only=True)
     job_laminate = serializers.CharField(source="job_ticket.laminate", read_only=True)
     job_bagged = serializers.CharField(source="job_ticket.bagged", read_only=True)
+    job_core = serializers.IntegerField(source="job_ticket.core_id", read_only=True)
+    job_core_name = serializers.CharField(source="job_ticket.core.name", read_only=True)
+    job_core_item_number = serializers.CharField(source="job_ticket.core.item_number", read_only=True)
     job_material_spec = serializers.IntegerField(source="job_ticket.material_spec_id", read_only=True)
     job_material_master_type = serializers.IntegerField(source="job_ticket.material_master_type_id", read_only=True)
     job_material_master_type_code = serializers.SerializerMethodField()
@@ -320,7 +349,8 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     job_material_spec_code = serializers.SerializerMethodField()
     recipe_name = serializers.CharField(source="job_ticket.recipe.name", read_only=True)
     box_name = serializers.CharField(source="job_ticket.box.name", read_only=True)
-    box_item_number = serializers.CharField(source="job_ticket.box.item_number", read_only=True)
+    box_item_number = serializers.CharField(source="job_ticket.box_item_number", read_only=True)
+    linked_box_item_number = serializers.CharField(source="job_ticket.box.item_number", read_only=True)
     material_inventory_name = serializers.CharField(source="material_inventory.name", read_only=True)
     material_inventory_serial = serializers.CharField(source="material_inventory.serial_number", read_only=True)
     press_name = serializers.CharField(source="press.name", read_only=True)

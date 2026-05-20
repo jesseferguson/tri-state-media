@@ -1958,7 +1958,9 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                     <strong>{percent(pricing.recommendedWastePercent)}</strong>
                     <em>
                       {number(pricing.runFootage, " ft")} run footage / {percent(pricing.baseWastePercent)} from {pricing.wasteRuleLabel}
-                      {pricing.colorCount > 0 ? ` + ${percent(pricing.colorWastePercent)} for ${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} at 6% each` : " + 0% color waste"}
+                      {pricing.colorCount > 0
+                        ? ` + ${percent(pricing.colorWastePercent)} for ${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} at ${percent(pricing.colorWastePercentPerColor)} each from ${pricing.colorWasteRuleLabel}`
+                        : " + 0% color waste"}
                     </em>
                   </div>
                   {!wasteMatchesRecommendation && (

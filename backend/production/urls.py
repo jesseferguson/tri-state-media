@@ -7,6 +7,8 @@ from .views import (
     BoxSpecViewSet,
     CompanyRoleViewSet,
     CompanyUserViewSet,
+    CoreInventoryViewSet,
+    CoreSpecViewSet,
     CustomerOrderEventViewSet,
     CustomerOrderViewSet,
     CustomerViewSet,
@@ -35,6 +37,8 @@ router.register("customer-orders", CustomerOrderViewSet, basename="customer-orde
 router.register("customer-order-events", CustomerOrderEventViewSet, basename="customer-order-event")
 router.register("boxes", BoxSpecViewSet, basename="box")
 router.register("box-inventory", BoxInventoryViewSet, basename="box-inventory")
+router.register("cores", CoreSpecViewSet, basename="core")
+router.register("core-inventory", CoreInventoryViewSet, basename="core-inventory")
 router.register("job-tickets", JobTicketViewSet, basename="job-ticket")
 router.register("job-ticket-events", JobTicketEventViewSet, basename="job-ticket-event")
 router.register("production-schedule", ProductionScheduleViewSet, basename="production-schedule")

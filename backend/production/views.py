@@ -10,6 +10,8 @@ from .models import (
     BoxSpec,
     CompanyRole,
     CompanyUser,
+    CoreInventory,
+    CoreSpec,
     Customer,
     CustomerOrder,
     CustomerOrderEvent,
@@ -27,6 +29,8 @@ from .serializers import (
     BoxSpecSerializer,
     CompanyRoleSerializer,
     CompanyUserSerializer,
+    CoreInventorySerializer,
+    CoreSpecSerializer,
     CustomerSerializer,
     CustomerOrderEventSerializer,
     CustomerOrderSerializer,
@@ -157,6 +161,24 @@ class BoxInventoryViewSet(BaseProductionViewSet):
     ordering_fields = ["box__name", "lot_number", "quantity", "status", "received_date"]
 
 
+class CoreSpecViewSet(BaseProductionViewSet):
+    queryset = CoreSpec.objects.all().order_by("supplier", "core_size_inches", "name", "item_number")
+    serializer_class = CoreSpecSerializer
+    search_fields = ["name", "item_number", "supplier", "core_size_inches", "notes"]
+    ordering_fields = ["name", "item_number", "supplier", "core_size_inches", "is_active"]
+
+
+class CoreInventoryViewSet(BaseProductionViewSet):
+    queryset = (
+        CoreInventory.objects.select_related("core", "location")
+        .all()
+        .order_by("core__core_size_inches", "core__name", "lot_number")
+    )
+    serializer_class = CoreInventorySerializer
+    search_fields = ["core__name", "core__item_number", "core__supplier", "lot_number", "status", "location__name", "notes"]
+    ordering_fields = ["core__core_size_inches", "core__name", "lot_number", "quantity", "status", "received_date"]
+
+
 class JobTicketViewSet(BaseProductionViewSet):
     queryset = (
         JobTicket.objects.select_related(
@@ -166,6 +188,7 @@ class JobTicketViewSet(BaseProductionViewSet):
             "material_spec__master_type",
             "material_master_type",
             "box",
+            "core",
         )
         .all()
         .order_by("ticket_number")
@@ -178,6 +201,7 @@ class JobTicketViewSet(BaseProductionViewSet):
         "customer__customer_code",
         "job_name",
         "product_code",
+        "description",
         "recipe__name",
         "material_spec__code",
         "material_spec__name",
@@ -188,8 +212,13 @@ class JobTicketViewSet(BaseProductionViewSet):
         "material_master_type__code",
         "material_master_type__name",
         "box__name",
+        "box_item_number",
         "box__item_number",
         "box__supplier",
+        "core__name",
+        "core__item_number",
+        "core__supplier",
+        "fanfold_gear",
         "general_image_name",
         "general_image_description",
         "spec_image_name",
@@ -304,6 +333,7 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
             "job_ticket__material_master_type",
             "job_ticket__recipe",
             "job_ticket__box",
+            "job_ticket__core",
             "material_inventory",
             "press",
         )
@@ -318,6 +348,10 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
         "customer__customer_code",
         "job_ticket__customer__name",
         "job_ticket__job_name",
+        "job_ticket__box_item_number",
+        "job_ticket__box__item_number",
+        "job_ticket__core__name",
+        "job_ticket__core__item_number",
         "customer_po",
         "status",
         "priority",

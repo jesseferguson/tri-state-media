@@ -68,6 +68,10 @@ function unitsPerCartonLabel(ticket) {
   return `${unitNoun(ticket)} / Carton`;
 }
 
+function labelsPerFoldLabel(ticket) {
+  return `${unitNoun(ticket)} / Fold`;
+}
+
 function inventoryRollName(row) {
   return row?.name || row?.source_roll_tag_number || row?.serial_number || row?.lot_number || row?.code || "Roll";
 }
@@ -173,6 +177,18 @@ function matchingRecipeOptions(ticket, rows) {
 
 function matchingBoxInventory(ticket, rows) {
   return (rows ?? []).filter((row) => sameId(row.box, ticket.box));
+}
+
+function matchingCoreInventory(ticket, rows) {
+  return (rows ?? []).filter((row) => sameId(row.core, ticket.core));
+}
+
+function inventoryLocationSummary(rows) {
+  return (rows ?? [])
+    .filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status) && numeric(row.quantity) > 0)
+    .slice(0, 4)
+    .map((row) => `${row.location_full_path || row.location_name || "No location"}: ${formatNumber(row.quantity)}`)
+    .join(" / ");
 }
 
 function matchingSchedule(ticket, rows) {
@@ -351,6 +367,14 @@ export default function JobTicketPanel({
     () => matchingSchedule(ticket, lookups["production-schedule"]),
     [ticket, lookups]
   );
+  const boxInventoryRows = useMemo(
+    () => matchingBoxInventory(ticket, lookups["box-inventory"]),
+    [ticket, lookups]
+  );
+  const coreInventoryRows = useMemo(
+    () => matchingCoreInventory(ticket, lookups["core-inventory"]),
+    [ticket, lookups]
+  );
 
   const recentBoxAverage = useMemo(() => {
     const recent = finishedRows.filter((row) => row.status === "shipped" && dateInLastMonths(row.run_date, 3));
@@ -488,6 +512,7 @@ export default function JobTicketPanel({
                 <InfoRow label="Repeat" value={formatInches(ticket.repeat_inches)} />
                 <InfoRow label="Cutting" value={labelize(ticket.cutting_type)} />
                 <InfoRow label="Recipe" value={ticket.recipe_name} />
+                <InfoRow label="Description" value={ticket.description} />
               </div>
             </div>
 
@@ -504,6 +529,13 @@ export default function JobTicketPanel({
                 <InfoRow label="Laminate" value={labelize(ticket.laminate || "no_laminate")} />
                 <InfoRow label="Bagged" value={labelize(ticket.bagged || "not_bagged")} />
                 <InfoRow label="Core / Wind" value={[formatInches(ticket.core_size_inches), ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} />
+                {ticket.finishing_type === "fanfold" && <InfoRow label="Fanfold Gear" value={ticket.fanfold_gear} />}
+                {ticket.finishing_type === "fanfold" && <InfoRow label={labelsPerFoldLabel(ticket)} value={ticket.labels_per_fold} />}
+                <InfoRow label="Box Item #" value={ticket.box_item_number || ticket.linked_box_item_number} />
+                <InfoRow label="Box Link" value={[ticket.linked_box_item_number, ticket.box_name].filter(Boolean).join(" / ")} />
+                <InfoRow label="Core Link" value={[ticket.core_item_number, ticket.core_name].filter(Boolean).join(" / ")} />
+                <InfoRow label="Box On Hand" value={inventoryLocationSummary(boxInventoryRows)} />
+                <InfoRow label="Core On Hand" value={inventoryLocationSummary(coreInventoryRows)} />
               </div>
             </div>
           </section>

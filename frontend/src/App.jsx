@@ -16,6 +16,7 @@ import JobTicketPanel from "./components/JobTicketPanel";
 import MaterialInventoryView from "./components/MaterialInventoryView";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
 import MaterialUsageWindow from "./components/MaterialUsageWindow";
+import PackagingInventoryView from "./components/PackagingInventoryView";
 import QuotePricingTool from "./components/QuotePricingTool";
 import RecipeOptionsView from "./components/RecipeOptionsView";
 import RecipeToolStackView from "./components/RecipeToolStackView";
@@ -139,6 +140,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("finished-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 150));
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 150));
+    addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-orders", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-order-events", {}, 250));
@@ -151,6 +153,11 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("raw-materials", { material_type: "coated_stock" }, 1000));
     addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 1000));
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 250));
+    addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 250));
+  }
+
+  if (resource.key === "packaging-inventory") {
+    addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 500));
   }
 
   if (resource.key === "flex-dies" && selected?.id) {
@@ -257,10 +264,14 @@ const jobTicketChangeFields = [
   ["units_per_carton", "Units per Carton"],
   ["core_size_inches", "Core Size"],
   ["wind_direction", "Wind"],
+  ["fanfold_gear", "Fanfold Gear"],
+  ["labels_per_fold", "Labels per Fold"],
   ["ribbon", "Ribbon"],
   ["laminate", "Laminate"],
   ["bagged", "Bagged"],
-  ["box", "Box"],
+  ["box_item_number", "Legacy Box Item #"],
+  ["box", "Box Link"],
+  ["core", "Core Link"],
   ["recipe", "Recipe"],
   ["carton_label_part_number", "Carton Label Part Number"],
   ["carton_label_description_a", "Carton Label Description A"],
@@ -1824,6 +1835,12 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     rows={visibleRows}
                     selectedId={selected?.id}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
+                  />
+                ) : resource.viewMode === "packagingInventory" ? (
+                  <PackagingInventoryView
+                    boxRows={visibleRows}
+                    coreRows={lookupQuery.data?.["core-inventory"] ?? []}
+                    search={search}
                   />
                 ) : resource.viewMode === "materialInventory" ? (
                   <MaterialInventoryView

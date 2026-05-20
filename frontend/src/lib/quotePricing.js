@@ -1,11 +1,20 @@
 const EPSILON = 0.000001;
 
 export const wasteRecommendationRules = [
-  { minFootage: 150001, wastePercent: 6, label: "> 150,000 ft" },
-  { minFootage: 150000, wastePercent: 8, label: "150,000 ft" },
-  { minFootage: 10000, wastePercent: 10, label: "10,000-149,999 ft" },
+  { minFootage: 90000, wastePercent: 6, label: "90,000+ ft" },
+  { minFootage: 20000, wastePercent: 8, label: "20,000-89,999 ft" },
+  { minFootage: 10000, wastePercent: 10, label: "10,000-19,999 ft" },
   { minFootage: 5000, wastePercent: 15, label: "5,000-9,999 ft" },
   { minFootage: 0, wastePercent: 25, label: "under 5,000 ft" },
+];
+
+export const colorWasteRecommendationRules = [
+  { minFootage: 120000, wastePercentPerColor: 0.8, label: "120,000+ ft" },
+  { minFootage: 90000, wastePercentPerColor: 1, label: "90,000-119,999 ft" },
+  { minFootage: 20000, wastePercentPerColor: 2, label: "20,000-89,999 ft" },
+  { minFootage: 10000, wastePercentPerColor: 3, label: "10,000-19,999 ft" },
+  { minFootage: 5000, wastePercentPerColor: 6, label: "5,000-9,999 ft" },
+  { minFootage: 0, wastePercentPerColor: 6, label: "under 5,000 ft" },
 ];
 
 export const quoteExtraCostFields = [
@@ -93,11 +102,14 @@ export function calculateRecommendedWastePercent({ runFootage, colorCount }) {
   const footage = Math.max(0, toQuoteNumber(runFootage));
   const colors = Math.max(0, Math.floor(toQuoteNumber(colorCount)));
   const baseRule = wasteRecommendationRules.find((rule) => footage >= rule.minFootage) || wasteRecommendationRules[wasteRecommendationRules.length - 1];
+  const colorRule = colorWasteRecommendationRules.find((rule) => footage >= rule.minFootage) || colorWasteRecommendationRules[colorWasteRecommendationRules.length - 1];
   return {
     baseWastePercent: baseRule.wastePercent,
-    colorWastePercent: colors * 6,
-    recommendedWastePercent: baseRule.wastePercent + colors * 6,
+    colorWastePercent: colors * colorRule.wastePercentPerColor,
+    colorWastePercentPerColor: colorRule.wastePercentPerColor,
+    recommendedWastePercent: baseRule.wastePercent + colors * colorRule.wastePercentPerColor,
     ruleLabel: baseRule.label,
+    colorRuleLabel: colorRule.label,
   };
 }
 
@@ -182,8 +194,10 @@ export function calculateQuotePricing(input) {
     runFootage,
     baseWastePercent: wasteRecommendation.baseWastePercent,
     colorWastePercent: wasteRecommendation.colorWastePercent,
+    colorWastePercentPerColor: wasteRecommendation.colorWastePercentPerColor,
     recommendedWastePercent: wasteRecommendation.recommendedWastePercent,
     wasteRuleLabel: wasteRecommendation.ruleLabel,
+    colorWasteRuleLabel: wasteRecommendation.colorRuleLabel,
     baseMaterialMsi,
     wasteMultiplier,
     wasteMsi,

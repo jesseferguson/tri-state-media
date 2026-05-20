@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BoxInventory, BoxSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, ProductionSchedule
+from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, ProductionSchedule
 
 
 @admin.register(Customer)
@@ -25,6 +25,21 @@ class BoxInventoryAdmin(admin.ModelAdmin):
     autocomplete_fields = ("box", "location")
 
 
+@admin.register(CoreSpec)
+class CoreSpecAdmin(admin.ModelAdmin):
+    list_display = ("name", "item_number", "supplier", "core_size_inches", "is_active")
+    list_filter = ("supplier", "core_size_inches", "is_active")
+    search_fields = ("name", "item_number", "supplier", "notes")
+
+
+@admin.register(CoreInventory)
+class CoreInventoryAdmin(admin.ModelAdmin):
+    list_display = ("core", "lot_number", "quantity", "status", "location", "received_date", "is_active")
+    list_filter = ("status", "location", "received_date", "is_active")
+    search_fields = ("core__name", "core__item_number", "core__supplier", "lot_number", "notes")
+    autocomplete_fields = ("core", "location")
+
+
 @admin.register(JobTicket)
 class JobTicketAdmin(admin.ModelAdmin):
     list_display = (
@@ -40,10 +55,12 @@ class JobTicketAdmin(admin.ModelAdmin):
         "cutting_type",
         "recipe",
         "box",
+        "core",
+        "fanfold_gear",
         "finishing_type",
         "unit_type",
     )
-    list_filter = ("finishing_type", "unit_type", "ribbon", "laminate", "bagged", "cutting_type", "material_master_type", "material_spec", "box")
+    list_filter = ("finishing_type", "unit_type", "ribbon", "laminate", "bagged", "cutting_type", "material_master_type", "material_spec", "box", "core")
     search_fields = (
         "ticket_number",
         "customer__name",
@@ -57,13 +74,18 @@ class JobTicketAdmin(admin.ModelAdmin):
         "material_spec__material_family",
         "material_master_type__code",
         "material_master_type__name",
+        "box_item_number",
         "box__name",
         "box__item_number",
         "box__supplier",
+        "core__name",
+        "core__item_number",
+        "core__supplier",
+        "fanfold_gear",
         "job_notes",
         "finishing_notes",
     )
-    autocomplete_fields = ("customer", "material_master_type", "material_spec", "recipe", "box")
+    autocomplete_fields = ("customer", "material_master_type", "material_spec", "recipe", "box", "core")
 
 
 @admin.register(JobTicketEvent)

@@ -23,6 +23,7 @@ from tooling.models import FlexDie, Supplier, ToolingHistory, ToolingLocation, T
 
 from .models import (
     BoxSpec,
+    CoreSpec,
     Customer,
     CustomerOrder,
     CustomerOrderEvent,
@@ -56,8 +57,12 @@ JOB_TICKET_COLUMNS = [
     "labels_per_unit",
     "units_per_carton",
     "box_item_number",
+    "box_link",
+    "core_link",
     "core_size",
     "wind",
+    "fanfold_gear",
+    "labels_per_fold",
     "ribbon",
     "laminate",
     "bagged",
@@ -160,8 +165,12 @@ IMPORT_TEMPLATES = {
             "labels_per_unit": "3600",
             "units_per_carton": "3600",
             "box_item_number": "",
+            "box_link": "",
+            "core_link": "",
             "core_size": "3",
             "wind": "1",
+            "fanfold_gear": "",
+            "labels_per_fold": "",
             "ribbon": "no_ribbon",
             "laminate": "no_laminate",
             "bagged": "not_bagged",
@@ -467,15 +476,42 @@ def find_recipe(name):
     return ToolingRecipe.objects.filter(name__iexact=name).first()
 
 
-def find_box(item_number="", name=""):
+def find_box(item_number="", name="", pk=""):
     item_number = str(item_number or "").strip()
     name = str(name or "").strip()
+    pk = str(pk or "").strip()
+    if pk:
+        box = BoxSpec.objects.filter(pk=pk).first()
+        if box:
+            return box
     if item_number:
         box = BoxSpec.objects.filter(item_number__iexact=item_number).first()
         if box:
             return box
     if name:
         return BoxSpec.objects.filter(name__iexact=name).first()
+    return None
+
+
+def find_core(pk="", item_number="", name="", core_size=""):
+    pk = str(pk or "").strip()
+    item_number = str(item_number or "").strip()
+    name = str(name or "").strip()
+    size = decimal_or_none(core_size)
+    if pk:
+        core = CoreSpec.objects.filter(pk=pk).first()
+        if core:
+            return core
+    if item_number:
+        core = CoreSpec.objects.filter(item_number__iexact=item_number).first()
+        if core:
+            return core
+    if name:
+        core = CoreSpec.objects.filter(name__iexact=name).first()
+        if core:
+            return core
+    if size is not None:
+        return CoreSpec.objects.filter(core_size_inches=size).first()
     return None
 
 
@@ -519,7 +555,14 @@ def import_job_tickets(rows):
             master_type,
         )
         recipe = find_recipe(first(row, "recipe_name", "recipe"))
-        box = find_box(first(row, "box_item_number", "box_code"), first(row, "box_name"))
+        box_item_number = first(row, "box_item_number", "box_code")
+        box = find_box(box_item_number, first(row, "box_name"), first(row, "box_link", "box_id"))
+        core = find_core(
+            first(row, "core_link", "core_id"),
+            first(row, "core_item_number", "core_code"),
+            first(row, "core_name"),
+            first(row, "core_size", "core_size_inches"),
+        )
 
         label_length = decimal_or_none(first(row, "label_length", "label_length_inches", "length"))
         repeat = decimal_or_none(first(row, "repeat", "repeat_inches"))
@@ -545,6 +588,7 @@ def import_job_tickets(rows):
             "job_name": first(row, "job_number", "job_name", "part_number", default=ticket_number),
             "product_code": first(row, "tsm_id", "product_code", default=ticket_number),
             "description": first(row, "description", "job_description", "product_description", "desc"),
+            "box_item_number": box_item_number,
             "label_width_inches": decimal_or_none(first(row, "label_width", "label_width_inches", "width")),
             "label_length_inches": label_length,
             "repeat_inches": repeat,
@@ -561,8 +605,11 @@ def import_job_tickets(rows):
             "units_per_carton": units_per_carton,
             "labels_per_carton": units_per_carton,
             "box": box,
+            "core": core,
             "core_size_inches": decimal_or_none(first(row, "core_size", "core_size_inches")),
             "wind_direction": first(row, "wind", "wind_direction"),
+            "fanfold_gear": int_or_none(first(row, "fanfold_gear", "fold_gear")),
+            "labels_per_fold": int_or_none(first(row, "labels_per_fold", "tags_per_fold", "units_per_fold")),
             "ribbon": yes_no_choice_value(first(row, "ribbon", "ribbon_type"), JobTicket.RIBBON_CHOICES, "ribbon", "no_ribbon"),
             "laminate": yes_no_choice_value(first(row, "laminate", "laminate_type"), JobTicket.LAMINATE_CHOICES, "laminate", "no_laminate"),
             "bagged": yes_no_choice_value(first(row, "bagged", "bag", "bagging", "is_bagged"), JobTicket.BAGGED_CHOICES, "bagged", "not_bagged"),
