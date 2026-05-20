@@ -502,13 +502,20 @@ export default function JobTicketPanel({
                 <InfoRow label={unitsPerCartonLabel(ticket)} value={ticket.units_per_carton} />
                 <InfoRow label="Ribbon" value={labelize(ticket.ribbon || "no_ribbon")} />
                 <InfoRow label="Laminate" value={labelize(ticket.laminate || "no_laminate")} />
+                <InfoRow label="Bagged" value={labelize(ticket.bagged || "not_bagged")} />
                 <InfoRow label="Core / Wind" value={[formatInches(ticket.core_size_inches), ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} />
               </div>
             </div>
           </section>
 
-          {(ticket.finishing_notes || ticket.job_notes) && (
+          {(ticket.description || ticket.finishing_notes || ticket.job_notes) && (
             <section className="job-notes-grid">
+              {ticket.description && (
+                <div>
+                  <span>Description</span>
+                  <p>{ticket.description}</p>
+                </div>
+              )}
               {ticket.finishing_notes && (
                 <div>
                   <span>Finishing Notes</span>

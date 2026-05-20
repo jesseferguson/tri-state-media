@@ -31,6 +31,7 @@ class JobTicketAdmin(admin.ModelAdmin):
         "ticket_number",
         "customer",
         "job_name",
+        "bagged",
         "material_master_type",
         "material_spec",
         "label_width_inches",
@@ -42,7 +43,7 @@ class JobTicketAdmin(admin.ModelAdmin):
         "finishing_type",
         "unit_type",
     )
-    list_filter = ("finishing_type", "unit_type", "ribbon", "laminate", "cutting_type", "material_master_type", "material_spec", "box")
+    list_filter = ("finishing_type", "unit_type", "ribbon", "laminate", "bagged", "cutting_type", "material_master_type", "material_spec", "box")
     search_fields = (
         "ticket_number",
         "customer__name",
@@ -50,6 +51,7 @@ class JobTicketAdmin(admin.ModelAdmin):
         "customer_name",
         "job_name",
         "product_code",
+        "description",
         "material_spec__code",
         "material_spec__name",
         "material_spec__material_family",

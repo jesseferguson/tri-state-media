@@ -248,6 +248,11 @@ class JobTicket(models.Model):
         ("laminate", "Laminate"),
     ]
 
+    BAGGED_CHOICES = [
+        ("not_bagged", "Not Bagged"),
+        ("bagged", "Bagged"),
+    ]
+
     WIND_DIRECTION_CHOICES = [
         ("", "Not Set"),
         ("1", "Wind 1"),
@@ -271,6 +276,7 @@ class JobTicket(models.Model):
     customer_name = models.CharField(max_length=150, blank=True)
     job_name = models.CharField(max_length=150)
     product_code = models.CharField(max_length=80, blank=True)
+    description = models.TextField(blank=True)
 
     general_image = models.ImageField(upload_to=job_ticket_image_upload_path, blank=True, null=True)
     general_image_name = models.CharField(max_length=180, blank=True)
@@ -333,6 +339,7 @@ class JobTicket(models.Model):
     wind_direction = models.CharField(max_length=5, choices=WIND_DIRECTION_CHOICES, blank=True)
     ribbon = models.CharField(max_length=40, choices=RIBBON_CHOICES, default="no_ribbon")
     laminate = models.CharField(max_length=40, choices=LAMINATE_CHOICES, default="no_laminate")
+    bagged = models.CharField(max_length=30, choices=BAGGED_CHOICES, default="not_bagged")
     finishing_notes = models.TextField(blank=True)
 
     carton_label_part_number = models.CharField(max_length=120, blank=True)

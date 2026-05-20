@@ -115,6 +115,7 @@ function scheduleTicketFallback(row) {
     ticket_number: row.job_ticket_number,
     job_name: row.job_name,
     product_code: row.job_product_code,
+    description: row.job_description,
     material_spec: row.job_material_spec,
     material_spec_code: row.job_material_spec_code,
     material_spec_name: row.job_material_spec_name,
@@ -137,6 +138,7 @@ function scheduleTicketFallback(row) {
     wind_direction: row.job_wind_direction,
     ribbon: row.job_ribbon,
     laminate: row.job_laminate,
+    bagged: row.job_bagged,
     box_item_number: row.box_item_number,
     box_name: row.box_name,
   };
@@ -376,6 +378,7 @@ function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlex
               <DetailItem label="Repeat" value={formatInches(ticket?.repeat_inches || row.job_repeat_inches)} />
               <DetailItem label="Recipe" value={ticket?.recipe_name || row.recipe_name} />
               <DetailItem label="Cutting" value={labelize(ticket?.cutting_type)} />
+              <DetailItem label="Description" value={ticket?.description} />
             </div>
           </div>
 
@@ -398,6 +401,7 @@ function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlex
               <DetailItem label={unitsPerCartonLabel(ticket)} value={ticket?.units_per_carton} />
               <DetailItem label="Ribbon" value={labelize(ticket?.ribbon || "no_ribbon")} />
               <DetailItem label="Laminate" value={labelize(ticket?.laminate || "no_laminate")} />
+              <DetailItem label="Bagged" value={labelize(ticket?.bagged || "not_bagged")} />
               <DetailItem label="Box" value={[row.box_item_number || ticket?.box_item_number, row.box_name || ticket?.box_name].filter(Boolean).join(" / ")} />
             </div>
           </div>

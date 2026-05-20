@@ -110,6 +110,11 @@ export const choiceLists = {
     ["laminate", "Laminate"],
   ],
 
+  baggedType: [
+    ["not_bagged", "Not Bagged"],
+    ["bagged", "Bagged"],
+  ],
+
   coaterStatus: [
     ["scheduled", "Scheduled"],
     ["running", "Running"],
@@ -584,6 +589,7 @@ export const resources = [
       "customer_name",
       "job_name",
       "product_code",
+      "description",
       "material_master_type_code",
       "material_spec_code",
       "material_spec_name",
@@ -600,6 +606,7 @@ export const resources = [
       "units_per_carton",
       "ribbon",
       "laminate",
+      "bagged",
     ],
     fields: [
       { name: "ticket_number", label: "Ticket #", type: "text", hidden: true },
@@ -615,6 +622,7 @@ export const resources = [
       { name: "customer_name", label: "Customer Name Override", type: "text", hidden: true },
       { name: "job_name", label: "Job Number", type: "text", required: true, placeholder: "Customer job number or description" },
       { name: "product_code", label: "TSM ID", type: "text", required: true },
+      { name: "description", label: "Description", type: "textarea" },
       { name: "general_image", label: "General Image", type: "imageUpload", imageSlot: "general", requiresResourceAccess: "job-ticket-images" },
       { name: "general_image_description", label: "General Image Description", type: "textarea", hidden: true, requiresResourceAccess: "job-ticket-images" },
       { name: "spec_image", label: "Spec Image", type: "imageUpload", imageSlot: "spec", requiresResourceAccess: "job-ticket-images" },
@@ -686,6 +694,7 @@ export const resources = [
       { name: "wind_direction", label: "Wind", type: "select", choices: choiceLists.windDirection, showWhen: { finishing_type: "rolls" }, clearWhenHidden: "" },
       { name: "ribbon", label: "Ribbon", type: "select", choices: choiceLists.ribbonType, defaultValue: "no_ribbon" },
       { name: "laminate", label: "Laminate", type: "select", choices: choiceLists.laminateType, defaultValue: "no_laminate" },
+      { name: "bagged", label: "Bagged", type: "select", choices: choiceLists.baggedType, defaultValue: "not_bagged" },
       { name: "finishing_notes", label: "Finishing Notes", type: "textarea" },
       { name: "carton_label_part_number", label: "Carton Label Part Number", type: "text", tab: "Carton Label" },
       { name: "carton_label_description_a", label: "Carton Label Description A", type: "text", tab: "Carton Label" },
