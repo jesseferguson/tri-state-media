@@ -267,7 +267,7 @@ function summarizeJobTicketChanges(previous, next) {
 }
 
 const initialOpenGroups = Object.fromEntries(
-  resourceGroups.map((group) => [group.key, Boolean(group.defaultOpen)])
+  resourceGroups.map((group) => [group.key, false])
 );
 
 const topLevelGroups = resourceGroups.filter((group) => !group.parent);
@@ -291,6 +291,18 @@ const materialFormPageKeys = new Set([
   "material-supplier-options",
   "raw-materials",
 ]);
+
+const AUTO_REFRESH_INTERVALS = {
+  "production-schedule": 15_000,
+  "job-tickets": 30_000,
+  "flex-dies": 45_000,
+  "recipe-options": 45_000,
+  "recipe-tools": 45_000,
+};
+
+function refreshIntervalForResource(key) {
+  return AUTO_REFRESH_INTERVALS[key] ?? 60_000;
+}
 
 function visibleResourcesForRole(roleDefinitions, roleName) {
   return resources.filter((item) => !item.permissionOnly && roleHasResourceAccess(roleDefinitions, roleName, item.key));
@@ -955,13 +967,21 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     },
     enabled: !showingStaticView,
     keepPreviousData: true,
+    refetchInterval: showingStaticView ? false : refreshIntervalForResource(resource.key),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 
   const lookupQuery = useQuery({
     queryKey: ["lookups", resource.key, selected?.id ?? null, formMode ?? "view"],
     queryFn: () => loadScopedLookups({ resource, selected, isMaterialTypePage }),
     enabled: !showingStaticView,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchInterval: showingStaticView ? false : 120_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 
   const rows = useMemo(() => {
@@ -969,6 +989,14 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     if (resource.key !== "raw-materials") return base;
     return mergeRows(base, localInventoryRows);
   }, [listQuery.data, localInventoryRows, resource.key]);
+
+  useEffect(() => {
+    if (!selected?.id || formMode) return;
+    const fresh = rows.find((row) => String(row.id) === String(selected.id));
+    if (!fresh) return;
+    if (JSON.stringify(fresh) !== JSON.stringify(selected)) setSelected(fresh);
+  }, [rows, selected?.id, formMode]);
+
   const detailKeys = selected ? getDetailKeys(resource, selected) : [];
   const usageRows = useMemo(() => {
     const usages = [...(lookupQuery.data?.["material-usages"] ?? []), ...localUsageEvents];
@@ -1555,8 +1583,6 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     setRollOpen(false);
     setFinishedMaterialOpen(false);
     setSearch("");
-    const nextGroup = resourceMap[key]?.group;
-    if (nextGroup) setOpenGroups((prev) => ({ ...prev, [nextGroup]: true }));
   }
 
   function toggleGroup(key) {
@@ -1624,7 +1650,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           const groupResources = allowedResources.filter((item) => item.group === group.key);
           const visibleChildGroups = childGroups.filter((child) => allowedResources.some((item) => item.group === child.key));
           const activeInGroup = groupResources.some((item) => item.key === resource.key) || visibleChildGroups.some((child) => allowedResources.some((item) => item.group === child.key && item.key === resource.key));
-          const open = openGroups[group.key] || activeInGroup;
+          const open = Boolean(openGroups[group.key]);
           if (!groupResources.length && !visibleChildGroups.length) return null;
 
           return (
@@ -1650,7 +1676,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   {visibleChildGroups.map((child) => {
                     const childResources = allowedResources.filter((item) => item.group === child.key);
                     const activeInChild = childResources.some((item) => item.key === resource.key);
-                    const childOpen = openGroups[child.key] || activeInChild;
+                    const childOpen = Boolean(openGroups[child.key]);
                     if (!childResources.length) return null;
 
                     return (
@@ -1914,7 +1940,6 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   setSelected(null);
                   setFormMode(null);
                   setSearch("");
-                  setOpenGroups((prev) => ({ ...prev, production: true }));
                 }}
                 renderEditorForm={({ onCancel }) => (
                   <RecordForm
@@ -2043,7 +2068,6 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 is_active: true,
               });
               setFormMode("create");
-              setOpenGroups((prev) => ({ ...prev, "production-material": true }));
             }}
             onEditSupplierOption={(option) => {
               setMaterialTypeOpen(false);
@@ -2052,7 +2076,6 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               setSearch("");
               setCreateDefaults({});
               setFormMode("edit");
-              setOpenGroups((prev) => ({ ...prev, "production-material": true }));
             }}
           />
         )}

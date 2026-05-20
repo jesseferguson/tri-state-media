@@ -1180,8 +1180,8 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
   useEffect(() => {
     let alive = true;
 
-    async function loadSharedQuoteData() {
-      setQuoteDataState("loading");
+    async function loadSharedQuoteData({ quiet = false } = {}) {
+      if (!quiet) setQuoteDataState("loading");
       setQuoteDataError("");
       try {
         let [rawPayload, finishedPayload, quotePayload, ratePayload] = await Promise.all([
@@ -1227,8 +1227,13 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "" 
     }
 
     loadSharedQuoteData();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      loadSharedQuoteData({ quiet: true });
+    }, 60_000);
     return () => {
       alive = false;
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -1780,7 +1785,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <CircleDollarSign size={16} />
                   <strong>Quote Details</strong>
                 </div>
-                <div className="quote-top-grid">
+                <div className="quote-top-grid quote-main-input-grid">
                   <Field label="Finished Material">
                     <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>
                       <option value="manual">Manual MSI Cost</option>
@@ -1792,9 +1797,19 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <Field label="Quantity" suffix="labels">
                     <input type="number" step="1" value={form.quantity} onChange={(event) => updateField("quantity", event.target.value)} />
                   </Field>
+                  <Field label="Waste" suffix="%">
+                    <input type="number" step="0.01" value={form.wastePercent} onChange={(event) => updateField("wastePercent", event.target.value)} />
+                  </Field>
                   <Field label={form.pricingMode === "markup" ? "Markup" : "Margin"} suffix="%">
                     <input type="number" step="0.01" value={form.pricingPercent} onChange={(event) => updateField("pricingPercent", event.target.value)} />
                   </Field>
+                  <div className="quote-control-block quote-mode-compact">
+                    <span>Pricing Mode</span>
+                    <div className="quote-segmented compact">
+                      <button className={form.pricingMode === "margin" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "margin")}>Margin</button>
+                      <button className={form.pricingMode === "markup" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "markup")}>Markup</button>
+                    </div>
+                  </div>
                 </div>
 
                 {selectedMaterial && (
@@ -1805,7 +1820,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   </div>
                 )}
 
-                <div className="quote-simple-grid">
+                <div className="quote-simple-grid quote-secondary-input-grid">
                   <Field label="Label Width" suffix="in">
                     <input type="number" step="0.0001" value={form.labelWidth} onChange={(event) => updateField("labelWidth", event.target.value)} />
                   </Field>
@@ -1822,9 +1837,6 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   )}
                   <Field label="MSI Cost" suffix="/ MSI">
                     <input type="number" step="0.0001" value={form.msiCost} readOnly={form.selectedMaterialId !== "manual"} onChange={(event) => updateField("msiCost", event.target.value)} />
-                  </Field>
-                  <Field label="Waste" suffix="%">
-                    <input type="number" step="0.01" value={form.wastePercent} onChange={(event) => updateField("wastePercent", event.target.value)} />
                   </Field>
                   <Field label="Colors">
                     <input type="number" step="1" min="0" value={form.colorCount} onChange={(event) => updateField("colorCount", event.target.value)} />
@@ -1873,14 +1885,6 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                       <input type="number" step="1" min="1" value={form.numberAcross} onChange={(event) => updateField("numberAcross", event.target.value)} />
                     </Field>
                   )}
-                  <div className="quote-control-block">
-                    <span>Pricing Mode</span>
-                    <div className="quote-segmented compact">
-                      <button className={form.pricingMode === "margin" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "margin")}>Margin</button>
-                      <button className={form.pricingMode === "markup" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "markup")}>Markup</button>
-                    </div>
-                    <em className="quote-preference-note">Saved as your default.</em>
-                  </div>
                 </div>
               </details>
 

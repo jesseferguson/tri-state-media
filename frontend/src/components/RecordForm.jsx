@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { getRecordTitle } from "../lib/format";
 
@@ -358,26 +358,37 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
       </div>
 
       <form className={`record-form ${resource.key}-record-form`} onSubmit={(event) => { event.preventDefault(); onSubmit(cleanPayload()); }}>
-        {visibleFields.map((field) => {
+        {visibleFields.map((field, index) => {
           const lookupField = { ...field, lookupFilters: getFieldLookupFilters(field, form) };
           const value = form[field.name];
           const id = `${resource.key}-${field.name}`;
+          const fieldClass = `field field-${field.name}`;
+          const fieldWideClass = `${fieldClass} field-wide`;
+          const sectionHeading = field.section && field.section !== visibleFields[index - 1]?.section
+            ? <div className="form-section-heading"><strong>{field.section}</strong>{field.sectionHint && <span>{field.sectionHint}</span>}</div>
+            : null;
 
           if (field.type === "textarea") {
             return (
-              <label className="field field-wide" key={field.name} htmlFor={id}>
-                <span>{field.label}</span>
-                <textarea id={id} value={value ?? ""} placeholder={field.placeholder ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value)} />
-              </label>
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <label className={fieldWideClass} htmlFor={id}>
+                  <span>{field.label}</span>
+                  <textarea id={id} value={value ?? ""} placeholder={field.placeholder ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value)} />
+                </label>
+              </Fragment>
             );
           }
 
           if (field.type === "checkbox") {
             return (
-              <label className="check-field" key={field.name} htmlFor={id}>
-                <input id={id} type="checkbox" checked={Boolean(value)} onChange={(event) => update(field.name, event.target.checked)} />
-                <span>{field.label}{field.helpText && <small>{field.helpText}</small>}</span>
-              </label>
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <label className={`check-field field-${field.name}`} htmlFor={id}>
+                  <input id={id} type="checkbox" checked={Boolean(value)} onChange={(event) => update(field.name, event.target.checked)} />
+                  <span>{field.label}{field.helpText && <small>{field.helpText}</small>}</span>
+                </label>
+              </Fragment>
             );
           }
 
@@ -385,14 +396,17 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
             const existingUrl = record?.[`${field.imageSlot}_image_url`] || record?.[`${field.imageSlot}_image`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.url;
             const existingName = record?.[`${field.imageSlot}_image_name`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.name;
             return (
-              <label className="field image-upload-field" key={field.name} htmlFor={id}>
-                <span>{field.label}</span>
-                <div>
-                  {existingUrl ? <img src={existingUrl} alt={existingName || field.label} /> : <em>No image uploaded</em>}
-                  <input id={id} type="file" accept="image/*" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
-                  <strong>{value?.name || existingName || "Choose image"}</strong>
-                </div>
-              </label>
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <label className={`${fieldClass} image-upload-field`} htmlFor={id}>
+                  <span>{field.label}</span>
+                  <div>
+                    {existingUrl ? <img src={existingUrl} alt={existingName || field.label} /> : <em>No image uploaded</em>}
+                    <input id={id} type="file" accept="image/*" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
+                    <strong>{value?.name || existingName || "Choose image"}</strong>
+                  </div>
+                </label>
+              </Fragment>
             );
           }
 
@@ -404,38 +418,47 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
             const choices = dynamicChoices.length ? dynamicChoices : (field.choices ?? []);
             const valueExists = choices.some(([choiceValue]) => String(choiceValue) === String(value ?? ""));
             return (
-              <label className="field" key={field.name} htmlFor={id}>
-                <span>{field.label}</span>
-                <select id={id} value={value ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value)}>
-                  {!field.required && <option value="">Select...</option>}
-                  {value && !valueExists && <option value={value}>{value}</option>}
-                  {choices.map(([choiceValue, label]) => <option key={choiceValue} value={choiceValue}>{label}</option>)}
-                </select>
-                {field.helpText && <small>{field.helpText}</small>}
-              </label>
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <label className={fieldClass} htmlFor={id}>
+                  <span>{field.label}</span>
+                  <select id={id} value={value ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value)}>
+                    {!field.required && <option value="">Select...</option>}
+                    {value && !valueExists && <option value={value}>{value}</option>}
+                    {choices.map(([choiceValue, label]) => <option key={choiceValue} value={choiceValue}>{label}</option>)}
+                  </select>
+                  {field.helpText && <small>{field.helpText}</small>}
+                </label>
+              </Fragment>
             );
           }
 
           if (field.type === "searchRelation" || (field.type === "relation" && field.searchable)) {
             const rows = lookups[field.relation] ?? [];
             return (
-              <label className="field" key={field.name} htmlFor={id}>
-                <span>{field.label}</span>
-                <RelationPicker field={lookupField} rows={rows} value={value} id={id} required={field.required} onChange={(next) => update(field.name, next)} />
-              </label>
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <label className={fieldClass} htmlFor={id}>
+                  <span>{field.label}</span>
+                  <RelationPicker field={lookupField} rows={rows} value={value} id={id} required={field.required} onChange={(next) => update(field.name, next)} />
+                </label>
+              </Fragment>
             );
           }
 
           if (field.type === "relation") {
             const rows = scopeRows(lookups[field.relation] ?? [], lookupField);
             return (
-              <label className="field" key={field.name} htmlFor={id}>
-                <span>{field.label}</span>
-                <select id={id} value={value ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value ? Number(event.target.value) : "")}>
-                  <option value="">Select...</option>
-                  {rows.map((row) => <option key={row.id} value={row.id}>{getRelationTitle(row, lookupField)}</option>)}
-                </select>
-              </label>
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <label className={fieldClass} htmlFor={id}>
+                  <span>{field.label}</span>
+                  <select id={id} value={value ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value ? Number(event.target.value) : "")}>
+                    <option value="">Select...</option>
+                    {rows.map((row) => <option key={row.id} value={row.id}>{getRelationTitle(row, lookupField)}</option>)}
+                  </select>
+                </label>
+              </Fragment>
             );
           }
 
@@ -443,22 +466,28 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
             const rows = scopeRows(lookups[field.relation] ?? [], lookupField);
             const selected = Array.isArray(value) ? value.map(Number) : [];
             return (
-              <label className="field field-wide" key={field.name} htmlFor={id}>
-                <span>{field.label}</span>
-                <select id={id} multiple value={selected.map(String)} onChange={(event) => update(field.name, Array.from(event.target.selectedOptions).map((option) => Number(option.value)))}>
-                  {rows.map((row) => <option key={row.id} value={row.id}>{getRelationTitle(row, lookupField)}</option>)}
-                </select>
-                <small>Hold Ctrl to pick multiple.</small>
-              </label>
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <label className={fieldWideClass} htmlFor={id}>
+                  <span>{field.label}</span>
+                  <select id={id} multiple value={selected.map(String)} onChange={(event) => update(field.name, Array.from(event.target.selectedOptions).map((option) => Number(option.value)))}>
+                    {rows.map((row) => <option key={row.id} value={row.id}>{getRelationTitle(row, lookupField)}</option>)}
+                  </select>
+                  <small>Hold Ctrl to pick multiple.</small>
+                </label>
+              </Fragment>
             );
           }
 
           return (
-            <label className="field" key={field.name} htmlFor={id}>
-              <span>{field.label}</span>
-              <input id={id} type={field.type ?? "text"} step={field.step} required={field.required} value={value ?? ""} placeholder={field.placeholder ?? ""} onChange={(event) => update(field.name, event.target.value)} />
-              {field.helpText && <small>{field.helpText}</small>}
-            </label>
+            <Fragment key={field.name}>
+              {sectionHeading}
+              <label className={fieldClass} htmlFor={id}>
+                <span>{field.label}</span>
+                <input id={id} type={field.type ?? "text"} step={field.step} required={field.required} value={value ?? ""} placeholder={field.placeholder ?? ""} onChange={(event) => update(field.name, event.target.value)} />
+                {field.helpText && <small>{field.helpText}</small>}
+              </label>
+            </Fragment>
           );
         })}
 

@@ -1782,6 +1782,8 @@ export const resources = [
         type: "text",
         required: true,
         placeholder: "FD-13-1-1",
+        section: "Die Jacket",
+        sectionHint: "Use the jacket/tool folder number as the name.",
       },
       {
         name: "original_serial_number",
@@ -1795,13 +1797,34 @@ export const resources = [
         imageSlot: "dieline",
       },
 
-      ...dimFields,
+      {
+        name: "label_width_inches",
+        label: "Label Width",
+        type: "number",
+        step: "0.0001",
+        section: "Label Size",
+        sectionHint: "Core die dimensions. Web width is calculated later from width, gap, and across.",
+      },
+      {
+        name: "label_length_inches",
+        label: "Label Length",
+        type: "number",
+        step: "0.0001",
+      },
+      {
+        name: "repeat_inches",
+        label: "Repeat",
+        type: "number",
+        step: "0.0001",
+      },
 
       {
         name: "gap_across_inches",
         label: "Gap Across",
         type: "number",
         step: "0.0001",
+        section: "Layout",
+        sectionHint: "Gap is the space between labels. Auto web = width x across + gap x spaces between labels.",
       },
       {
         name: "gap_around_inches",
@@ -1844,6 +1867,8 @@ export const resources = [
         label: "Active Dies In Jacket",
         type: "number",
         defaultValue: 1,
+        section: "Die Count",
+        sectionHint: "This folder may hold multiple physical dies with the same specs.",
       },
       {
         name: "target_die_count",
@@ -1862,6 +1887,7 @@ export const resources = [
         label: "Shape",
         type: "select",
         choices: choiceLists.shapeType,
+        section: "Material + Cut",
       },
       {
         name: "cutting_type",
@@ -1882,6 +1908,7 @@ export const resources = [
         type: "searchRelation",
         relation: "suppliers",
         searchable: true,
+        section: "Storage",
         searchFields: ["name", "phone", "email", "city", "state"],
       },
       {
