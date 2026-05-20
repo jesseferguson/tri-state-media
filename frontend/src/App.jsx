@@ -8,6 +8,7 @@ import ResourceTable from "./components/ResourceTable";
 import FlexDieSearch from "./components/FlexDieSearch";
 import FlexDieDetailPanel from "./components/FlexDieDetailPanel";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
+import DataImportTool from "./components/DataImportTool";
 import GroupedLocationView from "./components/GroupedLocationView";
 import GroupedUsageView from "./components/GroupedUsageView";
 import JobTicketGallery from "./components/JobTicketGallery";
@@ -1746,6 +1747,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
 
         {resource.viewMode === "quoteCalculator" ? (
           <QuotePricingTool currentUser={currentUser} initialJobTicketId={quoteJobTicketId} />
+        ) : resource.viewMode === "dataImport" ? (
+          <DataImportTool currentUser={currentUser} />
         ) : (
           <>
             {resource.searchMode === "flexDie" ? (

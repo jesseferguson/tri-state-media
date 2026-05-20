@@ -12,6 +12,7 @@ import {
   Settings2,
   Shapes,
   Store,
+  UploadCloud,
   Wrench,
 } from "lucide-react";
 
@@ -473,6 +474,20 @@ export const resources = [
     permissionOnly: true,
     disableCreate: true,
     tagline: "Permanent job ticket timeline for creates, edits, schedule changes, and press assignment changes.",
+    columns: [],
+    fields: [],
+  },
+  {
+    key: "data-import",
+    label: "Data Import",
+    singular: "Data Import",
+    group: "trace",
+    icon: UploadCloud,
+    accent: "#0ea5e9",
+    staticView: true,
+    viewMode: "dataImport",
+    disableCreate: true,
+    tagline: "Import job tickets, flex dies, raw inventory, and inventory usage from CSV files.",
     columns: [],
     fields: [],
   },

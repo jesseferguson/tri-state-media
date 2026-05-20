@@ -36,7 +36,7 @@ const initialForm = {
   sideTrim: "0.325",
   acrossMode: "auto",
   numberAcross: "",
-  wastePercent: "10",
+  wastePercent: "7",
   msiCost: "0.443",
   colorCount: "0",
   coatingCount: "0",
@@ -81,7 +81,7 @@ const emptyFinishedForm = {
 };
 
 const emptyQuoteInfo = {
-  linkMode: "manual",
+  linkMode: "ticket",
   jobTicketId: "",
   customerName: "",
   jobName: "",

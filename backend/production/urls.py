@@ -20,6 +20,7 @@ from .views import (
     QuoteRecordViewSet,
     company_sign_in,
 )
+from .data_import import data_flush, data_import_csv, data_import_templates
 
 
 router = DefaultRouter()
@@ -41,5 +42,8 @@ router.register("finished-inventory", FinishedInventoryViewSet, basename="finish
 
 urlpatterns = [
     path("auth/sign-in/", company_sign_in, name="company-sign-in"),
+    path("data-import/templates/", data_import_templates, name="data-import-templates"),
+    path("data-import/flush/", data_flush, name="data-import-flush"),
+    path("data-import/<str:import_type>/", data_import_csv, name="data-import-csv"),
     *router.urls,
 ]
