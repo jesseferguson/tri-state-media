@@ -51,12 +51,20 @@ JOB_TICKET_COLUMNS = [
     "finished_material_code",
     "recipe_name",
     "finishing_type",
+    "unit_type",
     "labels_per_unit",
     "units_per_carton",
-    "labels_per_carton",
     "box_item_number",
     "core_size",
     "wind",
+    "ribbon",
+    "laminate",
+    "carton_label_part_number",
+    "carton_label_description_a",
+    "carton_label_description_b",
+    "carton_label_description_c",
+    "carton_label_finishing_1",
+    "carton_label_finishing_2",
     "job_notes",
 ]
 
@@ -145,12 +153,20 @@ IMPORT_TEMPLATES = {
             "finished_material_code": "PM",
             "recipe_name": "4x6.5 PM",
             "finishing_type": "rolls",
+            "unit_type": "label",
             "labels_per_unit": "3600",
             "units_per_carton": "3600",
-            "labels_per_carton": "",
             "box_item_number": "",
             "core_size": "3",
             "wind": "1",
+            "ribbon": "no_ribbon",
+            "laminate": "no_laminate",
+            "carton_label_part_number": "",
+            "carton_label_description_a": "",
+            "carton_label_description_b": "",
+            "carton_label_description_c": "",
+            "carton_label_finishing_1": "",
+            "carton_label_finishing_2": "",
             "job_notes": "Imported from old system",
         },
     },
@@ -311,6 +327,24 @@ def choice_value(value, choices, default):
         if normalized in {normalize_key(key), normalize_key(label)}:
             return key
     return default
+
+
+def job_unit_type_value(value):
+    normalized = normalize_key(value)
+    if normalized in {"tag", "tags"}:
+        return "tag"
+    if normalized in {"label", "labels"}:
+        return "label"
+    return choice_value(value, JobTicket.UNIT_TYPE_CHOICES, "label")
+
+
+def yes_no_choice_value(value, choices, yes_key, default):
+    normalized = normalize_key(value)
+    if normalized in {"1", "true", "yes", "y"}:
+        return yes_key
+    if normalized in {"0", "false", "no", "n", "none"}:
+        return default
+    return choice_value(value, choices, default)
 
 
 def read_csv_rows(request):
@@ -488,6 +522,16 @@ def import_job_tickets(rows):
         gap = decimal_or_none(first(row, "gap", "gap_around", "gap_around_inches"))
         if repeat is None and label_length is not None and gap is not None:
             repeat = label_length + gap
+        labels_per_unit = int_or_none(first(row, "labels_per_unit", "labels_per_roll", "tags_per_roll", "tags_per_unit"))
+        units_per_carton = int_or_none(first(
+            row,
+            "units_per_carton",
+            "units_in_carton",
+            "tags_per_carton",
+            "labels_per_carton",
+            "labels_in_box",
+            "number_of_labels_in_box",
+        ))
 
         existing = JobTicket.objects.filter(ticket_number=ticket_number).first()
         notes = append_legacy_note(first(row, "job_notes", "notes"), row_id)
@@ -507,12 +551,21 @@ def import_job_tickets(rows):
             "recipe": recipe,
             "requested_quantity": decimal_or_none(first(row, "requested_quantity", "quantity")) or Decimal("0"),
             "finishing_type": choice_value(first(row, "finishing_type", "finishing"), JobTicket.FINISHING_TYPE_CHOICES, "rolls"),
-            "labels_per_unit": int_or_none(first(row, "labels_per_unit", "labels_per_roll")),
-            "units_per_carton": int_or_none(first(row, "units_per_carton", "units_in_carton", "labels_in_box")),
-            "labels_per_carton": int_or_none(first(row, "labels_per_carton", "number_of_labels_in_box")),
+            "unit_type": job_unit_type_value(first(row, "unit_type", "unit", "product_unit")),
+            "labels_per_unit": labels_per_unit,
+            "units_per_carton": units_per_carton,
+            "labels_per_carton": units_per_carton,
             "box": box,
             "core_size_inches": decimal_or_none(first(row, "core_size", "core_size_inches")),
             "wind_direction": first(row, "wind", "wind_direction"),
+            "ribbon": yes_no_choice_value(first(row, "ribbon", "ribbon_type"), JobTicket.RIBBON_CHOICES, "ribbon", "no_ribbon"),
+            "laminate": yes_no_choice_value(first(row, "laminate", "laminate_type"), JobTicket.LAMINATE_CHOICES, "laminate", "no_laminate"),
+            "carton_label_part_number": first(row, "carton_label_part_number", "carton_label_partnumber"),
+            "carton_label_description_a": first(row, "carton_label_description_a", "carton_label_descr_a", "carton_label_descra"),
+            "carton_label_description_b": first(row, "carton_label_description_b", "carton_label_descr_b", "carton_label_descrb"),
+            "carton_label_description_c": first(row, "carton_label_description_c", "carton_label_descr_c", "carton_label_descrc"),
+            "carton_label_finishing_1": first(row, "carton_label_finishing_1", "carton_finishing_1"),
+            "carton_label_finishing_2": first(row, "carton_label_finishing_2", "carton_finishing_2"),
             "finishing_notes": first(row, "finishing_notes"),
             "job_notes": notes,
         }

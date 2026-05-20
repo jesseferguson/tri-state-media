@@ -95,6 +95,21 @@ export const choiceLists = {
     ["sheeted", "Sheeted"],
   ],
 
+  ticketUnitType: [
+    ["label", "Label"],
+    ["tag", "Tag"],
+  ],
+
+  ribbonType: [
+    ["no_ribbon", "No Ribbon"],
+    ["ribbon", "Ribbon"],
+  ],
+
+  laminateType: [
+    ["no_laminate", "No Laminate"],
+    ["laminate", "Laminate"],
+  ],
+
   coaterStatus: [
     ["scheduled", "Scheduled"],
     ["running", "Running"],
@@ -580,9 +595,11 @@ export const resources = [
       "box_item_number",
       "box_name",
       "finishing_type",
+      "unit_type",
       "labels_per_unit",
       "units_per_carton",
-      "labels_per_carton",
+      "ribbon",
+      "laminate",
     ],
     fields: [
       { name: "ticket_number", label: "Ticket #", type: "text", hidden: true },
@@ -648,12 +665,34 @@ export const resources = [
         searchFields: ["name", "item_number", "supplier", "width_inches", "length_inches", "height_inches"],
       },
       { name: "finishing_type", label: "Finishing", type: "select", choices: choiceLists.finishingType, defaultValue: "rolls" },
-      { name: "labels_per_unit", label: "Labels per Unit", type: "number" },
-      { name: "units_per_carton", label: "Units per Carton", type: "number", helpText: "Used as the quote quantity for labels per carton." },
-      { name: "labels_per_carton", label: "Number of Labels in Box", type: "number" },
+      { name: "unit_type", label: "Unit Type", type: "select", choices: choiceLists.ticketUnitType, defaultValue: "label" },
+      {
+        name: "labels_per_unit",
+        label: "Labels per Unit",
+        type: "number",
+        dynamicLabel: (form) => {
+          const noun = form.unit_type === "tag" ? "Tags" : "Labels";
+          return form.finishing_type === "rolls" ? `${noun} per Roll` : `${noun} per Unit`;
+        },
+      },
+      {
+        name: "units_per_carton",
+        label: "Units per Carton",
+        type: "number",
+        helpText: "Used as the quote quantity.",
+        dynamicLabel: (form) => `${form.unit_type === "tag" ? "Tags" : "Labels"} / Carton`,
+      },
       { name: "core_size_inches", label: "Core Size", type: "number", step: "0.0001", showWhen: { finishing_type: "rolls" }, clearWhenHidden: null },
       { name: "wind_direction", label: "Wind", type: "select", choices: choiceLists.windDirection, showWhen: { finishing_type: "rolls" }, clearWhenHidden: "" },
+      { name: "ribbon", label: "Ribbon", type: "select", choices: choiceLists.ribbonType, defaultValue: "no_ribbon" },
+      { name: "laminate", label: "Laminate", type: "select", choices: choiceLists.laminateType, defaultValue: "no_laminate" },
       { name: "finishing_notes", label: "Finishing Notes", type: "textarea" },
+      { name: "carton_label_part_number", label: "Carton Label Part Number", type: "text", tab: "Carton Label" },
+      { name: "carton_label_description_a", label: "Carton Label Description A", type: "text", tab: "Carton Label" },
+      { name: "carton_label_description_b", label: "Carton Label Description B", type: "text", tab: "Carton Label" },
+      { name: "carton_label_description_c", label: "Carton Label Description C", type: "text", tab: "Carton Label" },
+      { name: "carton_label_finishing_1", label: "Carton Label Finishing 1", type: "text", tab: "Carton Label" },
+      { name: "carton_label_finishing_2", label: "Carton Label Finishing 2", type: "text", tab: "Carton Label" },
       { name: "job_notes", label: "Job Notes", type: "textarea" },
     ],
   },

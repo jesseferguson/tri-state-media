@@ -56,6 +56,18 @@ function formatNumber(value, suffix = "") {
   return `${rounded.toLocaleString()}${suffix}`;
 }
 
+function unitNoun(ticket) {
+  return ticket?.unit_type === "tag" ? "Tags" : "Labels";
+}
+
+function unitPerPackageLabel(ticket) {
+  return ticket?.finishing_type === "rolls" ? `${unitNoun(ticket)} / Roll` : `${unitNoun(ticket)} / Unit`;
+}
+
+function unitsPerCartonLabel(ticket) {
+  return `${unitNoun(ticket)} / Carton`;
+}
+
 function inventoryRollName(row) {
   return row?.name || row?.source_roll_tag_number || row?.serial_number || row?.lot_number || row?.code || "Roll";
 }
@@ -486,9 +498,10 @@ export default function JobTicketPanel({
               </div>
               <div className="job-info-list compact">
                 <InfoRow label="Finishing" value={labelize(ticket.finishing_type)} />
-                <InfoRow label="Labels / Unit" value={ticket.labels_per_unit} />
-                <InfoRow label="Units / Carton" value={ticket.units_per_carton} />
-                <InfoRow label="Labels in Box" value={ticket.labels_per_carton || ticket.labels_per_unit} />
+                <InfoRow label={unitPerPackageLabel(ticket)} value={ticket.labels_per_unit} />
+                <InfoRow label={unitsPerCartonLabel(ticket)} value={ticket.units_per_carton} />
+                <InfoRow label="Ribbon" value={labelize(ticket.ribbon || "no_ribbon")} />
+                <InfoRow label="Laminate" value={labelize(ticket.laminate || "no_laminate")} />
                 <InfoRow label="Core / Wind" value={[formatInches(ticket.core_size_inches), ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} />
               </div>
             </div>

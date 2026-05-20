@@ -69,6 +69,18 @@ function formatNumber(value, suffix = "") {
   return `${rounded.toLocaleString()}${suffix}`;
 }
 
+function unitNoun(ticket) {
+  return ticket?.unit_type === "tag" ? "Tags" : "Labels";
+}
+
+function unitPerPackageLabel(ticket) {
+  return ticket?.finishing_type === "rolls" ? `${unitNoun(ticket)} / Roll` : `${unitNoun(ticket)} / Unit`;
+}
+
+function unitsPerCartonLabel(ticket) {
+  return `${unitNoun(ticket)} / Carton`;
+}
+
 function scheduleImage(row) {
   return row.job_general_image_url || row.general_image_url || "";
 }
@@ -117,11 +129,14 @@ function scheduleTicketFallback(row) {
     repeat_inches: row.job_repeat_inches,
     cutting_type: row.job_cutting_type,
     finishing_type: row.job_finishing_type,
+    unit_type: row.job_unit_type,
     labels_per_unit: row.job_labels_per_unit,
     units_per_carton: row.job_units_per_carton,
     labels_per_carton: row.job_labels_per_carton,
     core_size_inches: row.job_core_size_inches,
     wind_direction: row.job_wind_direction,
+    ribbon: row.job_ribbon,
+    laminate: row.job_laminate,
     box_item_number: row.box_item_number,
     box_name: row.box_name,
   };
@@ -379,8 +394,10 @@ function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlex
             <div className="schedule-detail-grid compact">
               <DetailItem label="Finishing" value={labelize(ticket?.finishing_type)} />
               <DetailItem label="Core / Wind" value={[formatInches(ticket?.core_size_inches), ticket?.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} />
-              <DetailItem label="Labels / Unit" value={ticket?.labels_per_unit} />
-              <DetailItem label="Units / Carton" value={ticket?.units_per_carton} />
+              <DetailItem label={unitPerPackageLabel(ticket)} value={ticket?.labels_per_unit} />
+              <DetailItem label={unitsPerCartonLabel(ticket)} value={ticket?.units_per_carton} />
+              <DetailItem label="Ribbon" value={labelize(ticket?.ribbon || "no_ribbon")} />
+              <DetailItem label="Laminate" value={labelize(ticket?.laminate || "no_laminate")} />
               <DetailItem label="Box" value={[row.box_item_number || ticket?.box_item_number, row.box_name || ticket?.box_name].filter(Boolean).join(" / ")} />
             </div>
           </div>

@@ -261,10 +261,8 @@ function jobTicketQuoteQuantity(ticket) {
   if (!ticket) return { quantity: "", complete: false, message: "" };
   const unitsPerCarton = toQuoteNumber(ticket.units_per_carton, NaN);
   const labelsPerCarton = toQuoteNumber(ticket.labels_per_carton, NaN);
-  const labelsPerUnit = toQuoteNumber(ticket.labels_per_unit, NaN);
   const hasUnitsPerCarton = Number.isFinite(unitsPerCarton) && unitsPerCarton > 0;
   const hasLabelsPerCarton = Number.isFinite(labelsPerCarton) && labelsPerCarton > 0;
-  const hasLabelsPerUnit = Number.isFinite(labelsPerUnit) && labelsPerUnit > 0;
 
   if (hasUnitsPerCarton) {
     return {
@@ -277,14 +275,6 @@ function jobTicketQuoteQuantity(ticket) {
   if (hasLabelsPerCarton) {
     return {
       quantity: quantityInputValue(labelsPerCarton),
-      complete: true,
-      message: "",
-    };
-  }
-
-  if (hasLabelsPerUnit) {
-    return {
-      quantity: quantityInputValue(labelsPerUnit),
       complete: true,
       message: "",
     };

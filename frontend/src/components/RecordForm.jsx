@@ -46,6 +46,15 @@ function shouldShow(field, form) {
   return Object.entries(field.showWhen).every(([key, expected]) => matchesShowWhenValue(form[key], expected));
 }
 
+function getFieldLabel(field, form) {
+  if (typeof field.dynamicLabel === "function") return field.dynamicLabel(form);
+  return field.label;
+}
+
+function getFieldTab(field) {
+  return field.tab || "Ticket";
+}
+
 function getEmptyValueForField(field) {
   if (Object.prototype.hasOwnProperty.call(field, "clearWhenHidden")) return field.clearWhenHidden;
   if (field.type === "number" || field.type === "relation" || field.type === "searchRelation" || field.type === "date") return null;
@@ -309,16 +318,29 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
 export default function RecordForm({ resource, record, defaults = {}, lookups, onSubmit, onCancel, submitting, canUseField = () => true }) {
   const fields = resource.fields ?? [];
   const [form, setForm] = useState(() => normalizeInitial(fields, record, defaults));
+  const [activeFormTab, setActiveFormTab] = useState("");
 
   useEffect(() => {
     setForm(normalizeInitial(fields, record, defaults));
   }, [resource.key, record?.id, JSON.stringify(defaults)]);
 
   const title = record ? `Edit ${resource.singular}` : `Add ${resource.singular}`;
-  const visibleFields = useMemo(
+  const allVisibleFields = useMemo(
     () => fields.filter((field) => !field.readOnly && !field.hidden && canUseField(field) && shouldShow(field, form)),
     [fields, form, canUseField]
   );
+  const formTabs = useMemo(() => Array.from(new Set(allVisibleFields.map(getFieldTab))), [allVisibleFields]);
+  const formTabsKey = formTabs.join("|");
+  const currentFormTab = activeFormTab || formTabs[0] || "";
+  const visibleFields = useMemo(
+    () => (formTabs.length > 1 ? allVisibleFields.filter((field) => getFieldTab(field) === currentFormTab) : allVisibleFields),
+    [allVisibleFields, currentFormTab, formTabs.length]
+  );
+
+  useEffect(() => {
+    if (!formTabs.length) return;
+    if (!activeFormTab || !formTabs.includes(activeFormTab)) setActiveFormTab(formTabs[0]);
+  }, [activeFormTab, formTabsKey]);
 
   function update(name, value) {
     setForm((prev) => clearHiddenFields(fields, { ...prev, [name]: value }));
@@ -358,8 +380,24 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
       </div>
 
       <form className={`record-form ${resource.key}-record-form`} onSubmit={(event) => { event.preventDefault(); onSubmit(cleanPayload()); }}>
+        {formTabs.length > 1 && (
+          <div className="record-form-tabs" role="tablist" aria-label={`${resource.singular} sections`}>
+            {formTabs.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                className={currentFormTab === tab ? "active" : ""}
+                onClick={() => setActiveFormTab(tab)}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        )}
+
         {visibleFields.map((field, index) => {
-          const lookupField = { ...field, lookupFilters: getFieldLookupFilters(field, form) };
+          const fieldLabel = getFieldLabel(field, form);
+          const lookupField = { ...field, label: fieldLabel, lookupFilters: getFieldLookupFilters(field, form) };
           const value = form[field.name];
           const id = `${resource.key}-${field.name}`;
           const fieldClass = `field field-${field.name}`;
@@ -373,7 +411,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={fieldWideClass} htmlFor={id}>
-                  <span>{field.label}</span>
+                  <span>{fieldLabel}</span>
                   <textarea id={id} value={value ?? ""} placeholder={field.placeholder ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value)} />
                 </label>
               </Fragment>
@@ -386,7 +424,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
                 {sectionHeading}
                 <label className={`check-field field-${field.name}`} htmlFor={id}>
                   <input id={id} type="checkbox" checked={Boolean(value)} onChange={(event) => update(field.name, event.target.checked)} />
-                  <span>{field.label}{field.helpText && <small>{field.helpText}</small>}</span>
+                  <span>{fieldLabel}{field.helpText && <small>{field.helpText}</small>}</span>
                 </label>
               </Fragment>
             );
@@ -399,9 +437,9 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={`${fieldClass} image-upload-field`} htmlFor={id}>
-                  <span>{field.label}</span>
+                  <span>{fieldLabel}</span>
                   <div>
-                    {existingUrl ? <img src={existingUrl} alt={existingName || field.label} /> : <em>No image uploaded</em>}
+                    {existingUrl ? <img src={existingUrl} alt={existingName || fieldLabel} /> : <em>No image uploaded</em>}
                     <input id={id} type="file" accept="image/*" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
                     <strong>{value?.name || existingName || "Choose image"}</strong>
                   </div>
@@ -421,7 +459,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={fieldClass} htmlFor={id}>
-                  <span>{field.label}</span>
+                  <span>{fieldLabel}</span>
                   <select id={id} value={value ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value)}>
                     {!field.required && <option value="">Select...</option>}
                     {value && !valueExists && <option value={value}>{value}</option>}
@@ -439,7 +477,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={fieldClass} htmlFor={id}>
-                  <span>{field.label}</span>
+                  <span>{fieldLabel}</span>
                   <RelationPicker field={lookupField} rows={rows} value={value} id={id} required={field.required} onChange={(next) => update(field.name, next)} />
                 </label>
               </Fragment>
@@ -452,7 +490,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={fieldClass} htmlFor={id}>
-                  <span>{field.label}</span>
+                  <span>{fieldLabel}</span>
                   <select id={id} value={value ?? ""} required={field.required} onChange={(event) => update(field.name, event.target.value ? Number(event.target.value) : "")}>
                     <option value="">Select...</option>
                     {rows.map((row) => <option key={row.id} value={row.id}>{getRelationTitle(row, lookupField)}</option>)}
@@ -469,7 +507,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={fieldWideClass} htmlFor={id}>
-                  <span>{field.label}</span>
+                  <span>{fieldLabel}</span>
                   <select id={id} multiple value={selected.map(String)} onChange={(event) => update(field.name, Array.from(event.target.selectedOptions).map((option) => Number(option.value)))}>
                     {rows.map((row) => <option key={row.id} value={row.id}>{getRelationTitle(row, lookupField)}</option>)}
                   </select>
@@ -483,7 +521,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
             <Fragment key={field.name}>
               {sectionHeading}
               <label className={fieldClass} htmlFor={id}>
-                <span>{field.label}</span>
+                <span>{fieldLabel}</span>
                 <input id={id} type={field.type ?? "text"} step={field.step} required={field.required} value={value ?? ""} placeholder={field.placeholder ?? ""} onChange={(event) => update(field.name, event.target.value)} />
                 {field.helpText && <small>{field.helpText}</small>}
               </label>

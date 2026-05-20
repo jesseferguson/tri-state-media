@@ -40,8 +40,9 @@ class JobTicketAdmin(admin.ModelAdmin):
         "recipe",
         "box",
         "finishing_type",
+        "unit_type",
     )
-    list_filter = ("finishing_type", "cutting_type", "material_master_type", "material_spec", "box")
+    list_filter = ("finishing_type", "unit_type", "ribbon", "laminate", "cutting_type", "material_master_type", "material_spec", "box")
     search_fields = (
         "ticket_number",
         "customer__name",

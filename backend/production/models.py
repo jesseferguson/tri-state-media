@@ -233,6 +233,21 @@ class JobTicket(models.Model):
         ("sheeted", "Sheeted"),
     ]
 
+    UNIT_TYPE_CHOICES = [
+        ("label", "Label"),
+        ("tag", "Tag"),
+    ]
+
+    RIBBON_CHOICES = [
+        ("no_ribbon", "No Ribbon"),
+        ("ribbon", "Ribbon"),
+    ]
+
+    LAMINATE_CHOICES = [
+        ("no_laminate", "No Laminate"),
+        ("laminate", "Laminate"),
+    ]
+
     WIND_DIRECTION_CHOICES = [
         ("", "Not Set"),
         ("1", "Wind 1"),
@@ -303,6 +318,7 @@ class JobTicket(models.Model):
     requested_quantity = models.DecimalField(max_digits=12, decimal_places=3, default=0)
 
     finishing_type = models.CharField(max_length=30, choices=FINISHING_TYPE_CHOICES, default="rolls")
+    unit_type = models.CharField(max_length=20, choices=UNIT_TYPE_CHOICES, default="label")
     labels_per_unit = models.PositiveIntegerField(null=True, blank=True)
     units_per_carton = models.PositiveIntegerField(null=True, blank=True)
     labels_per_carton = models.PositiveIntegerField(null=True, blank=True)
@@ -315,7 +331,16 @@ class JobTicket(models.Model):
     )
     core_size_inches = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
     wind_direction = models.CharField(max_length=5, choices=WIND_DIRECTION_CHOICES, blank=True)
+    ribbon = models.CharField(max_length=40, choices=RIBBON_CHOICES, default="no_ribbon")
+    laminate = models.CharField(max_length=40, choices=LAMINATE_CHOICES, default="no_laminate")
     finishing_notes = models.TextField(blank=True)
+
+    carton_label_part_number = models.CharField(max_length=120, blank=True)
+    carton_label_description_a = models.CharField(max_length=255, blank=True)
+    carton_label_description_b = models.CharField(max_length=255, blank=True)
+    carton_label_description_c = models.CharField(max_length=255, blank=True)
+    carton_label_finishing_1 = models.CharField(max_length=150, blank=True)
+    carton_label_finishing_2 = models.CharField(max_length=150, blank=True)
 
     job_notes = models.TextField(blank=True)
 
@@ -331,6 +356,7 @@ class JobTicket(models.Model):
     def save(self, *args, **kwargs):
         if self.material_spec_id and not self.material_master_type_id:
             self.material_master_type = self.material_spec.master_type
+        self.labels_per_carton = self.units_per_carton
         super().save(*args, **kwargs)
 
 

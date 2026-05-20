@@ -251,13 +251,21 @@ const jobTicketChangeFields = [
   ["repeat_inches", "Repeat"],
   ["cutting_type", "Cutting"],
   ["finishing_type", "Finishing"],
+  ["unit_type", "Unit Type"],
   ["labels_per_unit", "Labels per Unit"],
   ["units_per_carton", "Units per Carton"],
-  ["labels_per_carton", "Labels in Box"],
   ["core_size_inches", "Core Size"],
   ["wind_direction", "Wind"],
+  ["ribbon", "Ribbon"],
+  ["laminate", "Laminate"],
   ["box", "Box"],
   ["recipe", "Recipe"],
+  ["carton_label_part_number", "Carton Label Part Number"],
+  ["carton_label_description_a", "Carton Label Description A"],
+  ["carton_label_description_b", "Carton Label Description B"],
+  ["carton_label_description_c", "Carton Label Description C"],
+  ["carton_label_finishing_1", "Carton Label Finishing 1"],
+  ["carton_label_finishing_2", "Carton Label Finishing 2"],
 ];
 
 function summarizeJobTicketChanges(previous, next) {
