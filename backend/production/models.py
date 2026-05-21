@@ -331,6 +331,8 @@ class JobTicket(models.Model):
     general_image = models.ImageField(upload_to=job_ticket_image_upload_path, blank=True, null=True)
     general_image_name = models.CharField(max_length=180, blank=True)
     general_image_description = models.TextField(blank=True)
+    external_image_url = models.URLField(max_length=1000, blank=True)
+    external_image_source = models.CharField(max_length=80, blank=True)
     spec_image = models.ImageField(upload_to=job_ticket_image_upload_path, blank=True, null=True)
     spec_image_name = models.CharField(max_length=180, blank=True)
     spec_image_description = models.TextField(blank=True)

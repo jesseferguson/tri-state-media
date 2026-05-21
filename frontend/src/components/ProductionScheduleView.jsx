@@ -89,6 +89,11 @@ function scheduleImage(row) {
   return row.job_general_image_url || row.general_image_url || "";
 }
 
+function scheduleImageIsDocument(row) {
+  if (row.job_general_image_is_document) return true;
+  return /\.pdf(?:$|[?#])/i.test(scheduleImage(row));
+}
+
 function formatShortDate(value) {
   if (!value) return "--";
   const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
@@ -256,13 +261,17 @@ function updateOnBlur(event, value, onSave) {
 
 function ScheduleThumb({ row }) {
   const src = scheduleImage(row);
+  const source = row.job_general_image_source || "";
   return (
     <div className="schedule-thumb">
-      {src ? (
+      {src && !scheduleImageIsDocument(row) ? (
         <img src={src} alt={row.job_general_image_name || row.job_name || "Scheduled job"} />
+      ) : src ? (
+        <span className="schedule-file-thumb"><ImageIcon size={17} /> {source || "File"}</span>
       ) : (
         <ImageIcon size={17} />
       )}
+      {source && <em>{source}</em>}
     </div>
   );
 }

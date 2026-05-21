@@ -2,6 +2,10 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { getRecordTitle } from "../lib/format";
 
+function isDocumentUrl(url) {
+  return /\.pdf(?:$|[?#])/i.test(String(url || ""));
+}
+
 function normalizeInitial(fields, record, defaults = {}) {
   const out = {};
 
@@ -440,17 +444,21 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
           }
 
           if (field.type === "imageUpload") {
-            const existingUrl = record?.[`${field.imageSlot}_image_url`] || record?.[`${field.imageSlot}_image`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.url;
-            const existingName = record?.[`${field.imageSlot}_image_name`] || record?.job_images?.find((image) => image.slot === field.imageSlot)?.name;
+            const existingImage = record?.job_images?.find((image) => image.slot === field.imageSlot);
+            const existingUrl = record?.[`${field.imageSlot}_image_url`] || record?.[`${field.imageSlot}_image`] || existingImage?.url;
+            const existingName = record?.[`${field.imageSlot}_image_name`] || existingImage?.name;
+            const existingSource = existingImage?.source;
+            const existingIsDocument = existingImage?.isDocument || isDocumentUrl(existingUrl);
             return (
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={`${fieldClass} image-upload-field`} htmlFor={id}>
                   <span>{fieldLabel}</span>
                   <div>
-                    {existingUrl ? <img src={existingUrl} alt={existingName || fieldLabel} /> : <em>No image uploaded</em>}
+                    {existingUrl && !existingIsDocument ? <img src={existingUrl} alt={existingName || fieldLabel} /> : <em>{existingUrl ? "Linked file" : "No image uploaded"}</em>}
                     <input id={id} type="file" accept="image/*" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
                     <strong>{value?.name || existingName || "Choose image"}</strong>
+                    {existingSource && <small>{existingSource}</small>}
                   </div>
                 </label>
               </Fragment>

@@ -284,6 +284,9 @@ class JobTicketViewSet(BaseProductionViewSet):
             setattr(ticket, image_field, upload)
             if not request.data.get("name"):
                 setattr(ticket, name_field, upload.name)
+            if slot == "general":
+                ticket.external_image_url = ""
+                ticket.external_image_source = "New System"
 
         if "name" in request.data:
             setattr(ticket, name_field, str(request.data.get("name") or "").strip())
@@ -291,7 +294,10 @@ class JobTicketViewSet(BaseProductionViewSet):
             setattr(ticket, description_field, str(request.data.get("description") or "").strip())
 
         try:
-            ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
+            update_fields = [image_field, name_field, description_field, "updated_at"]
+            if upload and slot == "general":
+                update_fields += ["external_image_url", "external_image_source"]
+            ticket.save(update_fields=update_fields)
         except Exception as error:
             logger.exception("Could not upload job ticket image to storage.")
             return Response({"error": f"Could not upload image to storage: {error}"}, status=status.HTTP_502_BAD_GATEWAY)

@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from rest_framework import serializers
 
 from materials.models import MaterialMasterType
@@ -21,6 +23,11 @@ from .models import (
     QuoteRawMaterial,
     QuoteRecord,
 )
+
+
+def is_document_url(url):
+    path = urlparse(str(url or "")).path.lower()
+    return path.endswith(".pdf")
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -274,11 +281,18 @@ class JobTicketSerializer(serializers.ModelSerializer):
     def image_payload(self, obj, slot):
         image = getattr(obj, f"{slot}_image", None)
         url = ""
+        source = ""
+        is_external = False
         if image:
             try:
                 url = image.url
             except ValueError:
                 url = ""
+            source = "New System" if url else ""
+        elif slot == "general" and obj.external_image_url:
+            url = obj.external_image_url
+            source = obj.external_image_source or "Glide"
+            is_external = True
         return {
             "slot": slot,
             "label": {
@@ -289,9 +303,12 @@ class JobTicketSerializer(serializers.ModelSerializer):
             "url": url,
             "fileName": image.name.split("/")[-1] if image else "",
             "storageName": image.name if image else "",
-            "name": getattr(obj, f"{slot}_image_name", ""),
+            "name": getattr(obj, f"{slot}_image_name", "") or (f"{source} file" if is_external else ""),
             "description": getattr(obj, f"{slot}_image_description", ""),
-            "hasImage": bool(image),
+            "hasImage": bool(image) or bool(url),
+            "source": source,
+            "isExternal": is_external,
+            "isDocument": is_document_url(url),
         }
 
     def get_job_images(self, obj):
@@ -318,6 +335,8 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     job_product_code = serializers.CharField(source="job_ticket.product_code", read_only=True)
     job_description = serializers.CharField(source="job_ticket.description", read_only=True)
     job_general_image_url = serializers.SerializerMethodField()
+    job_general_image_source = serializers.SerializerMethodField()
+    job_general_image_is_document = serializers.SerializerMethodField()
     job_general_image_name = serializers.CharField(source="job_ticket.general_image_name", read_only=True)
     job_label_width_inches = serializers.CharField(source="job_ticket.label_width_inches", read_only=True)
     job_label_length_inches = serializers.CharField(source="job_ticket.label_length_inches", read_only=True)
@@ -381,12 +400,24 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
 
     def get_job_general_image_url(self, obj):
         image = obj.job_ticket.general_image if obj.job_ticket else None
-        if not image:
+        if image:
+            try:
+                return image.url
+            except ValueError:
+                return ""
+        return obj.job_ticket.external_image_url if obj.job_ticket else ""
+
+    def get_job_general_image_source(self, obj):
+        if not obj.job_ticket:
             return ""
-        try:
-            return image.url
-        except ValueError:
-            return ""
+        if obj.job_ticket.general_image:
+            return "New System"
+        if obj.job_ticket.external_image_url:
+            return obj.job_ticket.external_image_source or "Glide"
+        return ""
+
+    def get_job_general_image_is_document(self, obj):
+        return is_document_url(self.get_job_general_image_url(obj))
 
     class Meta:
         model = ProductionSchedule

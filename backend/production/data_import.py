@@ -42,6 +42,7 @@ JOB_TICKET_COLUMNS = [
     "customer_code",
     "job_number",
     "description",
+    "image_url",
     "label_width",
     "label_length",
     "repeat",
@@ -150,6 +151,7 @@ IMPORT_TEMPLATES = {
             "customer_code": "TRI",
             "job_number": "MAR-PMDT-225-75-R-NP",
             "description": "Product description",
+            "image_url": "https://example.com/glide-image.pdf",
             "label_width": "4",
             "label_length": "6.5",
             "repeat": "6.625",
@@ -658,6 +660,7 @@ def import_job_tickets(rows):
 
         existing = JobTicket.objects.filter(ticket_number=ticket_number).first()
         notes = append_legacy_note(first(row, "job_notes", "job_note", "notes"), row_id)
+        image_url = first(row, "image_url", "glide_image_url", "external_image_url")
         defaults = {
             "customer": customer,
             "customer_name": customer.name if customer else customer_name,
@@ -698,6 +701,9 @@ def import_job_tickets(rows):
             "finishing_notes": first(row, "finishing_notes"),
             "job_notes": notes,
         }
+        if not (existing and existing.general_image):
+            defaults["external_image_url"] = image_url
+            defaults["external_image_source"] = "Glide" if image_url else ""
         ticket = existing or JobTicket(ticket_number=ticket_number)
         save_model(ticket, defaults, result)
     return result

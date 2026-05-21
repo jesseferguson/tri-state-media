@@ -155,6 +155,10 @@ function primaryImage(ticket) {
   );
 }
 
+function imageSourceLabel(image) {
+  return image?.source || "";
+}
+
 function matchingMaterialInventory(ticket, rows) {
   return (rows ?? []).filter((row) => {
     if (sameId(row.material, ticket.material_spec)) return true;
@@ -557,14 +561,21 @@ export default function JobTicketPanel({
         <div className="job-panel-section">
           <section className="job-hero-section">
             <div className="job-hero-image">
-              {image?.url ? (
+              {image?.url && !image.isDocument ? (
                 <img src={image.url} alt={image.name || ticket.job_name || "Job image"} />
+              ) : image?.url ? (
+                <a className="job-linked-file" href={image.url} target="_blank" rel="noreferrer">
+                  <ImageIcon size={30} />
+                  <strong>Open linked file</strong>
+                  <span>{image.source || "External source"}</span>
+                </a>
               ) : (
                 <div>
                   <ImageIcon size={30} />
                   <span>No job image</span>
                 </div>
               )}
+              {imageSourceLabel(image) && <span className="job-image-source-badge">{imageSourceLabel(image)}</span>}
             </div>
             <div className="job-hero-details">
               <div>

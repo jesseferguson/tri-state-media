@@ -9,6 +9,10 @@ function primaryImage(ticket) {
   );
 }
 
+function imageSourceLabel(image) {
+  return image?.source || "";
+}
+
 function customerName(ticket) {
   return ticket.customer_display || ticket.customer_name || "No customer";
 }
@@ -32,8 +36,13 @@ export default function JobTicketGallery({ rows, selectedId, onSelect }) {
             onClick={() => onSelect(ticket)}
           >
             <div className="job-ticket-card-image">
-              {image?.url ? (
+              {image?.url && !image.isDocument ? (
                 <img src={image.url} alt={image.name || ticket.job_name} />
+              ) : image?.url ? (
+                <div>
+                  <ImageIcon size={28} />
+                  <span>{image.source || "Linked File"}</span>
+                </div>
               ) : (
                 <div>
                   <ImageIcon size={28} />
@@ -41,6 +50,7 @@ export default function JobTicketGallery({ rows, selectedId, onSelect }) {
                 </div>
               )}
               <span className="job-ticket-card-badge">{ticketMeta(ticket)}</span>
+              {imageSourceLabel(image) && <span className="job-ticket-source-badge">{imageSourceLabel(image)}</span>}
             </div>
             <div className="job-ticket-card-body">
               <strong>{ticket.job_name || "Untitled Job"}</strong>
