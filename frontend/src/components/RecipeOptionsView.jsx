@@ -632,7 +632,7 @@ function PressGroup({ pressName, options, onEdit, defaultOpen = false, onFlexDie
   );
 }
 
-export default function RecipeOptionsView({ rows, onEdit, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
+export default function RecipeOptionsView({ rows, onEdit, defaultOpenAll = false, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
   const byPress = useMemo(() => groupBy(rows ?? [], (r) => r.press_name ?? r.press_details?.name ?? "No press"), [rows]);
   const pressGroups = useMemo(
     () => Object.entries(byPress).sort(([aName], [bName]) => aName.localeCompare(bName)),
@@ -649,7 +649,7 @@ export default function RecipeOptionsView({ rows, onEdit, onFlexDieReorder, onFl
           pressName={pressName}
           options={list}
           onEdit={onEdit}
-          defaultOpen={pressGroups.length === 1}
+          defaultOpen={defaultOpenAll || pressGroups.length === 1}
           onFlexDieReorder={onFlexDieReorder}
           onFlexDieCountUpdate={onFlexDieCountUpdate}
           operatorName={operatorName}

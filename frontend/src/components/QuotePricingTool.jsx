@@ -1952,15 +1952,15 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <strong>{number(pricing.repeat, '"')}</strong>
                 </div>
                 <div className="quote-waste-recommendation">
-                  <AlertTriangle size={15} />
+                  <CheckCircle2 size={15} />
                   <div>
-                    <span>Waste recommendation</span>
+                    <span>Recommended waste</span>
                     <strong>{percent(pricing.recommendedWastePercent)}</strong>
                     <em>
-                      {number(pricing.runFootage, " ft")} run footage / {percent(pricing.baseWastePercent)} from {pricing.wasteRuleLabel}
+                      {number(pricing.runFootage, " ft")} run / {percent(pricing.baseWastePercent)} base
                       {pricing.colorCount > 0
-                        ? ` + ${percent(pricing.colorWastePercent)} for ${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} at ${percent(pricing.colorWastePercentPerColor)} each from ${pricing.colorWasteRuleLabel}`
-                        : " + 0% color waste"}
+                        ? ` + ${percent(pricing.colorWastePercent)} color add`
+                        : " + no color add"}
                     </em>
                   </div>
                   {!wasteMatchesRecommendation && (

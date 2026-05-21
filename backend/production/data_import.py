@@ -293,6 +293,13 @@ def decimal_or_none(value):
         return None
 
 
+def core_size_or_none(value):
+    number = decimal_or_none(value)
+    if number is None or number <= 0 or abs(number) >= Decimal("1000"):
+        return None
+    return number
+
+
 def int_or_none(value):
     number = decimal_or_none(value)
     if number is None:
@@ -395,6 +402,10 @@ def import_result():
 def add_error(result, line_number, message):
     result["skipped"] += 1
     result["errors"].append({"line": line_number, "message": message})
+
+
+def add_warning(result, line_number, message):
+    result["warnings"].append({"line": line_number, "message": message})
 
 
 def find_or_create_customer(name, code=""):
@@ -523,7 +534,7 @@ def find_core(link="", item_number="", name="", core_size=""):
     link = str(link or "").strip()
     item_number = str(item_number or "").strip()
     name = str(name or "").strip()
-    size = decimal_or_none(core_size)
+    size = core_size_or_none(core_size)
     pk = int_lookup_value(link)
     if pk is not None:
         core = CoreSpec.objects.filter(pk=pk).first()
@@ -597,11 +608,16 @@ def import_job_tickets(rows):
         recipe = find_recipe(first(row, "recipe_name", "recipe"))
         box_item_number = first(row, "box_item_number", "box_code")
         box = find_box(box_item_number, first(row, "box_name"), first(row, "box_link", "box_id"))
+        core_size_raw = first(row, "core_size", "core_size_inches")
+        core_size = core_size_or_none(core_size_raw)
+        parsed_core_size = decimal_or_none(core_size_raw)
+        if core_size_raw and parsed_core_size is not None and core_size is None:
+            add_warning(result, line_number, f"Ignored invalid core_size value {core_size_raw}.")
         core = find_core(
             first(row, "core_link", "core_id"),
             first(row, "core_item_number", "core_code"),
             first(row, "core_name"),
-            first(row, "core_size", "core_size_inches"),
+            core_size,
         )
 
         label_length = decimal_or_none(first(row, "label_length", "label_length_inches", "length"))
@@ -646,7 +662,7 @@ def import_job_tickets(rows):
             "labels_per_carton": units_per_carton,
             "box": box,
             "core": core,
-            "core_size_inches": decimal_or_none(first(row, "core_size", "core_size_inches")),
+            "core_size_inches": core_size,
             "wind_direction": first(row, "wind", "wind_direction"),
             "fanfold_gear": int_or_none(first(row, "fanfold_gear", "fold_gear")),
             "labels_per_fold": int_or_none(first(row, "labels_per_fold", "tags_per_fold", "units_per_fold")),

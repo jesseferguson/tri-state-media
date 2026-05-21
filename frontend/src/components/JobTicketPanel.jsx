@@ -122,11 +122,26 @@ function MiniBarChart({ bars, rangeLabel }) {
   );
 }
 
-function InfoRow({ label, value }) {
+function sameText(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  const left = String(a).trim().toLowerCase();
+  const right = String(b).trim().toLowerCase();
+  if (!left || !right) return false;
+  return left === right;
+}
+
+function sameNumber(a, b) {
+  const left = Number(a);
+  const right = Number(b);
+  return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 0.0001;
+}
+
+function InfoRow({ label, value, wide = false }) {
+  const displayValue = value === null || value === undefined || value === "" ? "--" : value;
   return (
-    <div className="job-info-row">
+    <div className={`job-info-row ${wide ? "wide" : ""}`} title={`${label}: ${displayValue}`}>
       <span>{label}</span>
-      <strong>{value || "--"}</strong>
+      <strong>{displayValue}</strong>
     </div>
   );
 }
@@ -176,19 +191,108 @@ function matchingRecipeOptions(ticket, rows) {
 }
 
 function matchingBoxInventory(ticket, rows) {
-  return (rows ?? []).filter((row) => sameId(row.box, ticket.box));
+  return (rows ?? []).filter((row) => {
+    if (sameId(row.box, ticket.box)) return true;
+    if (sameText(row.box_item_number, ticket.box_item_number || ticket.linked_box_item_number)) return true;
+    if (sameText(row.box_name, ticket.box_name)) return true;
+    return false;
+  });
 }
 
 function matchingCoreInventory(ticket, rows) {
-  return (rows ?? []).filter((row) => sameId(row.core, ticket.core));
+  return (rows ?? []).filter((row) => {
+    if (sameId(row.core, ticket.core)) return true;
+    if (sameText(row.core_item_number, ticket.core_item_number)) return true;
+    if (sameText(row.core_name, ticket.core_name)) return true;
+    if (sameNumber(row.core_size_inches, ticket.core_size_inches)) return true;
+    return false;
+  });
 }
 
-function inventoryLocationSummary(rows) {
+function activePackagingRows(rows) {
   return (rows ?? [])
     .filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status) && numeric(row.quantity) > 0)
-    .slice(0, 4)
-    .map((row) => `${row.location_full_path || row.location_name || "No location"}: ${formatNumber(row.quantity)}`)
-    .join(" / ");
+    .sort((a, b) => String(a.location_full_path || a.location_name || "").localeCompare(String(b.location_full_path || b.location_name || "")));
+}
+
+function shortDate(value) {
+  if (!value) return "--";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString();
+}
+
+function RecipePressOverview({ rows }) {
+  const groups = (rows ?? []).reduce((acc, row) => {
+    const pressName = row.press_name || row.press_details?.name || "No press";
+    if (!acc[pressName]) acc[pressName] = { total: 0, approved: 0, preferred: 0 };
+    acc[pressName].total += 1;
+    if (row.is_approved !== false && row.is_active !== false) acc[pressName].approved += 1;
+    if (row.is_preferred) acc[pressName].preferred += 1;
+    return acc;
+  }, {});
+  const entries = Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  if (!entries.length) return null;
+  return (
+    <div className="job-recipe-press-strip" aria-label="Recipe press options">
+      {entries.map(([pressName, stat]) => (
+        <div key={pressName} className={stat.approved ? "ready" : "review"}>
+          <span>Press</span>
+          <strong>{pressName}</strong>
+          <em>{stat.approved}/{stat.total} active{stat.preferred ? ` / ${stat.preferred} preferred` : ""}</em>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PackagingInventoryTable({ title, type, rows }) {
+  const visibleRows = activePackagingRows(rows);
+  const isCore = type === "core";
+  return (
+    <div className="job-packaging-inventory-card">
+      <div className="job-packaging-inventory-head">
+        <strong>{title}</strong>
+        <span>{visibleRows.length ? `${visibleRows.length} active location${visibleRows.length === 1 ? "" : "s"}` : "No active inventory"}</span>
+      </div>
+      {visibleRows.length ? (
+        <div className="job-packaging-table-wrap">
+          <table className="job-packaging-table">
+            <thead>
+              <tr>
+                <th>Item #</th>
+                <th>{isCore ? "Core" : "Box"}</th>
+                <th>Supplier</th>
+                {isCore && <th>Size</th>}
+                <th>Lot</th>
+                <th className="qty-cell">Qty</th>
+                <th>Status</th>
+                <th>Location</th>
+                <th>Received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((row) => (
+                <tr key={row.id || `${row.lot_number}-${row.location_full_path || row.location_name}`}>
+                  <td title={isCore ? row.core_item_number : row.box_item_number}>{isCore ? row.core_item_number || "--" : row.box_item_number || "--"}</td>
+                  <td title={isCore ? row.core_name : row.box_name}>{isCore ? row.core_name || "--" : row.box_name || "--"}</td>
+                  <td title={isCore ? row.core_supplier : row.box_supplier}>{isCore ? row.core_supplier || "--" : row.box_supplier || "--"}</td>
+                  {isCore && <td>{formatInches(row.core_size_inches)}</td>}
+                  <td title={row.lot_number}>{row.lot_number || "--"}</td>
+                  <td className="qty-cell">{formatNumber(row.quantity)}</td>
+                  <td>{labelize(row.status || "available")}</td>
+                  <td title={row.location_full_path || row.location_name}>{row.location_full_path || row.location_name || "--"}</td>
+                  <td>{shortDate(row.received_date)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="muted">No linked {isCore ? "core" : "box"} inventory is available yet.</p>
+      )}
+    </div>
+  );
 }
 
 function matchingSchedule(ticket, rows) {
@@ -511,8 +615,8 @@ export default function JobTicketPanel({
                 <InfoRow label="Size" value={`${formatInches(ticket.label_width_inches)} x ${formatInches(ticket.label_length_inches)}`} />
                 <InfoRow label="Repeat" value={formatInches(ticket.repeat_inches)} />
                 <InfoRow label="Cutting" value={labelize(ticket.cutting_type)} />
-                <InfoRow label="Recipe" value={ticket.recipe_name} />
-                <InfoRow label="Description" value={ticket.description} />
+                <InfoRow label="Recipe" value={ticket.recipe_name} wide />
+                <InfoRow label="Description" value={ticket.description} wide />
               </div>
             </div>
 
@@ -528,15 +632,24 @@ export default function JobTicketPanel({
                 <InfoRow label="Ribbon" value={labelize(ticket.ribbon || "no_ribbon")} />
                 <InfoRow label="Laminate" value={labelize(ticket.laminate || "no_laminate")} />
                 <InfoRow label="Bagged" value={labelize(ticket.bagged || "not_bagged")} />
-                <InfoRow label="Core / Wind" value={[formatInches(ticket.core_size_inches), ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} />
+                <InfoRow label="Core / Wind" value={[formatInches(ticket.core_size_inches), ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} wide />
                 {ticket.finishing_type === "fanfold" && <InfoRow label="Fanfold Gear" value={ticket.fanfold_gear} />}
                 {ticket.finishing_type === "fanfold" && <InfoRow label={labelsPerFoldLabel(ticket)} value={ticket.labels_per_fold} />}
                 <InfoRow label="Box Item #" value={ticket.box_item_number || ticket.linked_box_item_number} />
-                <InfoRow label="Box Link" value={[ticket.linked_box_item_number, ticket.box_name].filter(Boolean).join(" / ")} />
-                <InfoRow label="Core Link" value={[ticket.core_item_number, ticket.core_name].filter(Boolean).join(" / ")} />
-                <InfoRow label="Box On Hand" value={inventoryLocationSummary(boxInventoryRows)} />
-                <InfoRow label="Core On Hand" value={inventoryLocationSummary(coreInventoryRows)} />
+                <InfoRow label="Box" value={[ticket.linked_box_item_number, ticket.box_name].filter(Boolean).join(" / ")} wide />
+                <InfoRow label="Core" value={[ticket.core_item_number, ticket.core_name].filter(Boolean).join(" / ")} wide />
               </div>
+            </div>
+          </section>
+
+          <section className="job-subsection">
+            <div className="job-subsection-head">
+              <PackageCheck size={15} />
+              <strong>Packaging Inventory</strong>
+            </div>
+            <div className="job-packaging-inventory-grid">
+              <PackagingInventoryTable title="Box Inventory" type="box" rows={boxInventoryRows} />
+              <PackagingInventoryTable title="Core Inventory" type="core" rows={coreInventoryRows} />
             </div>
           </section>
 
@@ -569,7 +682,10 @@ export default function JobTicketPanel({
               <strong>Recipe Tooling</strong>
             </div>
             {recipeOptions.length ? (
-              <RecipeOptionsView rows={recipeOptions} />
+              <>
+                <RecipePressOverview rows={recipeOptions} />
+                <RecipeOptionsView rows={recipeOptions} defaultOpenAll />
+              </>
             ) : (
               <p className="muted">Attach a tooling recipe to show operator tooling information here.</p>
             )}
