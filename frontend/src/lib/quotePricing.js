@@ -13,8 +13,8 @@ export const colorWasteRecommendationRules = [
   { minFootage: 90000, wastePercentPerColor: 0.25, label: "90,000+ ft" },
   { minFootage: 50000, wastePercentPerColor: 0.5, label: "50,000-89,999 ft" },
   { minFootage: 20000, wastePercentPerColor: 1, label: "20,000-49,999 ft" },
-  { minFootage: 10000, wastePercentPerColor: 2, label: "10,000-19,999 ft" },
-  { minFootage: 5000, wastePercentPerColor: 4, label: "5,000-9,999 ft" },
+  { minFootage: 10000, wastePercentPerColor: 1.5, label: "10,000-19,999 ft" },
+  { minFootage: 5000, wastePercentPerColor: 3, label: "5,000-9,999 ft" },
   { minFootage: 0, wastePercentPerColor: 6, label: "under 5,000 ft" },
 ];
 

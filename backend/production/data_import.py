@@ -371,6 +371,22 @@ def job_unit_type_value(value):
     return choice_value(value, JobTicket.UNIT_TYPE_CHOICES, "label")
 
 
+def wind_direction_value(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = normalize_key(text)
+    if normalized in {"none", "not_set", "na", "n_a", "no", "0"}:
+        return ""
+    if normalized in {str(number) for number in range(1, 9)}:
+        return normalized
+    number = decimal_or_none(text)
+    if number is not None and number == number.to_integral_value() and 1 <= int(number) <= 8:
+        return str(int(number))
+    match = re.search(r"\b(?:wind|w)\s*([1-8])\b", text, flags=re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
 def yes_no_choice_value(value, choices, yes_key, default):
     normalized = normalize_key(value)
     if normalized in {"0", "false", "no", "n", "none", "not_bagged", "no_bag", "no_bags"} or normalized.startswith("no_"):
@@ -635,6 +651,10 @@ def import_job_tickets(rows):
             "labels_in_box",
             "number_of_labels_in_box",
         ))
+        wind_raw = first(row, "wind", "wind_direction")
+        wind_direction = wind_direction_value(wind_raw)
+        if wind_raw and not wind_direction and normalize_key(wind_raw) not in {"none", "not_set", "na", "n_a", "no", "0"}:
+            add_warning(result, line_number, f"Ignored invalid wind value {wind_raw}.")
 
         existing = JobTicket.objects.filter(ticket_number=ticket_number).first()
         notes = append_legacy_note(first(row, "job_notes", "job_note", "notes"), row_id)
@@ -663,7 +683,7 @@ def import_job_tickets(rows):
             "box": box,
             "core": core,
             "core_size_inches": core_size,
-            "wind_direction": first(row, "wind", "wind_direction"),
+            "wind_direction": wind_direction,
             "fanfold_gear": int_or_none(first(row, "fanfold_gear", "fold_gear")),
             "labels_per_fold": int_or_none(first(row, "labels_per_fold", "tags_per_fold", "units_per_fold")),
             "ribbon": yes_no_choice_value(first(row, "ribbon", "ribbon_type"), JobTicket.RIBBON_CHOICES, "ribbon", "no_ribbon"),

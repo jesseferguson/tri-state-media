@@ -1959,8 +1959,8 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                     <em>
                       {number(pricing.runFootage, " ft")} run / {percent(pricing.baseWastePercent)} base
                       {pricing.colorCount > 0
-                        ? ` + ${percent(pricing.colorWastePercent)} color add`
-                        : " + no color add"}
+                        ? ` + ${percent(pricing.colorWastePercentPerColor)} per color (${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} = ${percent(pricing.colorWastePercent)})`
+                        : ` + ${percent(pricing.colorWastePercentPerColor)} per color`}
                     </em>
                   </div>
                   {!wasteMatchesRecommendation && (
