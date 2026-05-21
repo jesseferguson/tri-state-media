@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BarChart3, CalendarPlus, FileText, Image as ImageIcon, PackageCheck } from "lucide-react";
+import { CalendarPlus, FileText, Image as ImageIcon, PackageCheck } from "lucide-react";
 import RecipeOptionsView from "./RecipeOptionsView";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import { formatInches, labelize } from "../lib/format";
@@ -483,67 +483,6 @@ function usageDate(row) {
   return parseDateValue(raw);
 }
 
-function usageDateKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function usageDateLabel(date) {
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function jobUsageData(rows) {
-  const grouped = new Map();
-  (rows ?? []).forEach((row) => {
-    const date = usageDate(row);
-    const quantity = numeric(row.quantity);
-    if (!date || quantity <= 0) return;
-    const key = usageDateKey(date);
-    if (!grouped.has(key)) grouped.set(key, { key, date, quantity: 0 });
-    grouped.get(key).quantity += quantity;
-  });
-  const allPoints = Array.from(grouped.values()).sort((a, b) => a.date - b.date);
-  const latest = allPoints.at(-1)?.date;
-  if (!latest) return [];
-  const cutoff = new Date(latest);
-  cutoff.setDate(cutoff.getDate() - 90);
-  return allPoints.filter((point) => point.date >= cutoff);
-}
-
-function JobTicketUsageChart({ rows }) {
-  const points = jobUsageData(rows);
-  const max = Math.max(...points.map((point) => point.quantity), 1);
-  const total = points.reduce((sum, point) => sum + point.quantity, 0);
-  const sources = Array.from(new Set((rows ?? []).map((row) => row.source || "Glide").filter(Boolean)));
-  return (
-    <section className="job-subsection job-usage-simple-card">
-      <div className="job-subsection-head">
-        <BarChart3 size={15} />
-        <strong>Imported Usage History</strong>
-        {sources.length > 0 && <span className="job-source-pill">{sources.join(" + ")}</span>}
-        {points.length > 0 && <em>{formatNumber(total)} total</em>}
-      </div>
-      {points.length ? (
-        <div className="job-usage-simple-chart">
-          {points.map((point) => (
-            <button
-              type="button"
-              key={point.key}
-              title={`${usageDateLabel(point.date)}: ${formatNumber(point.quantity)}`}
-              style={{ "--bar-height": `${Math.max(6, (point.quantity / max) * 100)}%` }}
-            >
-              <span />
-              <strong>{formatNumber(point.quantity)}</strong>
-              <em>{usageDateLabel(point.date)}</em>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="muted">No usage history has been imported for this job yet.</p>
-      )}
-    </section>
-  );
-}
-
 export default function JobTicketPanel({
   ticket,
   lookups,
@@ -714,9 +653,6 @@ export default function JobTicketPanel({
             <Stat label="Avg Scheduled" value={averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} />
             <Stat label="Avg Shipped / Month" value={shippedMonthlyAverage ? formatNumber(shippedMonthlyAverage) : "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} />
           </div>
-
-          <JobTicketUsageChart rows={usageRows} />
-
           <section className="job-spec-layout">
             <div className="job-subsection job-spec-card">
               <div className="job-subsection-head">

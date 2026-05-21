@@ -79,7 +79,7 @@ function mergeRows(existing = [], next = []) {
   return Array.from(byId.values());
 }
 
-function relationLookupSpec(relation, filters = {}, pageSize = 250) {
+function relationLookupSpec(relation, filters = {}, pageSize = 250, fetchAll = false) {
   const relationResource = resourceMap[relation];
   if (!relationResource) return null;
   return {
@@ -88,6 +88,7 @@ function relationLookupSpec(relation, filters = {}, pageSize = 250) {
     ordering: relationResource.defaultOrdering,
     filters: { ...(relationResource.filters ?? {}), ...(filters ?? {}) },
     pageSize,
+    fetchAll,
   };
 }
 
@@ -145,7 +146,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("customer-orders", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-order-events", {}, 250));
     addLookupSpec(specs, relationLookupSpec("job-ticket-events", { job_ticket: selected.id }, 250));
-    addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { job_ticket: selected.id }, 500));
+    addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { job_ticket: selected.id }, 1000, true));
     addLookupSpec(specs, relationLookupSpec("presses", {}, 150));
   }
 
@@ -171,6 +172,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
         ordering: spec.ordering,
         pageSize: spec.pageSize,
         filters: spec.filters,
+        fetchAll: spec.fetchAll,
       })
         .then((payload) => [spec.key, payload.results])
         .catch(() => [spec.key, []])
