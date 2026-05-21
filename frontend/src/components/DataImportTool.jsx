@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, DatabaseZap, Download, FileSpreadsheet, Re
 import { useEffect, useMemo, useState } from "react";
 import { requestApi } from "../api";
 
-const importOrder = ["job_tickets", "flex_dies", "inventory", "inventory_usage"];
+const importOrder = ["job_tickets", "job_ticket_usage", "flex_dies", "inventory", "inventory_usage"];
 
 const flushScopes = [
   ["setup_data", "Setup data: job tickets, schedule, flex dies, inventory, usage, quotes"],
@@ -10,6 +10,7 @@ const flushScopes = [
   ["flex_dies", "Flex dies"],
   ["inventory", "Raw inventory + usage"],
   ["inventory_usage", "Inventory usage only"],
+  ["job_ticket_usage", "Job ticket usage only"],
   ["quotes", "Saved quotes"],
 ];
 
@@ -32,6 +33,7 @@ function downloadCsv(type, csv) {
 function ResultPanel({ result }) {
   if (!result) return null;
   const errorCount = result.errors?.length ?? 0;
+  const warningCount = result.warnings?.length ?? 0;
   return (
     <section className={`data-import-result ${errorCount ? "has-errors" : "ok"}`}>
       <header>
@@ -52,6 +54,14 @@ function ResultPanel({ result }) {
             <p key={`${error.line}-${index}`}>Line {error.line}: {error.message}</p>
           ))}
           {errorCount > 12 && <p>{errorCount - 12} more errors not shown.</p>}
+        </div>
+      )}
+      {warningCount > 0 && (
+        <div className="data-import-warnings">
+          {result.warnings.slice(0, 8).map((warning, index) => (
+            <p key={`${warning.line}-${index}`}>Line {warning.line}: {warning.message}</p>
+          ))}
+          {warningCount > 8 && <p>{warningCount - 8} more warnings not shown.</p>}
         </div>
       )}
     </section>

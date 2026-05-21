@@ -229,6 +229,76 @@
   font-weight: 850;
 }
 
+.pdf-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 230px;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #ffffff;
+}
+
+.pdf-preview object,
+.pdf-preview iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  border: 0;
+  background: #ffffff;
+}
+
+.pdf-preview object > span {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  color: #667085;
+  font-size: .74rem;
+  font-weight: 850;
+}
+
+.pdf-preview.compact {
+  min-height: 0;
+}
+
+.pdf-preview.compact object,
+.pdf-preview.compact iframe {
+  pointer-events: none;
+}
+
+.pdf-preview > a {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 6px 9px;
+  border: 1px solid rgba(15, 23, 42, .08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .94);
+  color: #1f3b57;
+  font-size: .68rem;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .12);
+}
+
+.job-hero-image .pdf-preview {
+  display: block;
+  min-height: 230px;
+}
+
+.job-hero-image .pdf-preview,
+.job-ticket-card-image .pdf-preview,
+.schedule-thumb .pdf-preview,
+.image-upload-field .pdf-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .job-overlay .job-tickets-record-form {
   padding: 4px;
 }
@@ -3307,7 +3377,8 @@ p, .muted { color: #7a7a7a; }
 }
 
 .image-upload-field img,
-.image-upload-field em {
+.image-upload-field em,
+.image-upload-field .pdf-preview {
   width: 84px;
   height: 64px;
   border: 1px solid #e5e7eb;
@@ -5282,17 +5353,27 @@ p, .muted { color: #7a7a7a; }
   font-weight: 800;
 }
 
-.data-import-errors {
+.data-import-errors,
+.data-import-warnings {
   display: grid;
   gap: 4px;
   max-height: 220px;
   overflow: auto;
 }
 
-.data-import-errors p {
+.data-import-errors p,
+.data-import-warnings p {
   margin: 0;
   font-size: .78rem;
   line-height: 1.35;
+}
+
+.data-import-warnings {
+  padding: 8px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
 }
 
 .data-import-side pre {
@@ -8189,6 +8270,16 @@ p, .muted { color: #7a7a7a; }
   border-radius: 7px;
 }
 
+.schedule-thumb .pdf-preview,
+.job-ticket-card-image .pdf-preview {
+  border-radius: 7px;
+}
+
+.schedule-thumb .pdf-preview object,
+.job-ticket-card-image .pdf-preview object {
+  border-radius: 7px;
+}
+
 .schedule-thumb > em {
   position: absolute;
   right: 7px;
@@ -8684,6 +8775,89 @@ p, .muted { color: #7a7a7a; }
 .job-recipe-press-strip em {
   color: #667085;
   font-size: .66rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.job-usage-simple-card {
+  padding: 12px;
+  border: 1px solid #dfe7f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.job-usage-simple-card .job-subsection-head {
+  justify-content: space-between;
+}
+
+.job-usage-simple-card .job-subsection-head strong {
+  margin-right: auto;
+}
+
+.job-usage-simple-card .job-subsection-head em {
+  color: #667085;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.job-usage-simple-chart {
+  min-height: 154px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(34px, 1fr);
+  align-items: end;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 2px 2px;
+  border-top: 1px solid #edf2f7;
+}
+
+.job-usage-simple-chart button {
+  min-width: 34px;
+  height: 132px;
+  display: grid;
+  grid-template-rows: minmax(72px, 1fr) auto auto;
+  align-items: end;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.job-usage-simple-chart button > span {
+  width: 100%;
+  height: var(--bar-height);
+  min-height: 5px;
+  align-self: end;
+  border-radius: 5px 5px 2px 2px;
+  background: #1f3b57;
+}
+
+.job-usage-simple-chart button:hover > span {
+  background: #0ea5e9;
+}
+
+.job-usage-simple-chart strong,
+.job-usage-simple-chart em {
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-usage-simple-chart strong {
+  color: #101828;
+  font-size: .62rem;
+  font-weight: 900;
+}
+
+.job-usage-simple-chart em {
+  color: #667085;
+  font-size: .58rem;
   font-style: normal;
   font-weight: 800;
 }

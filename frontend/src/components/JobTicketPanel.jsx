@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { CalendarPlus, FileText, Image as ImageIcon, PackageCheck } from "lucide-react";
+import { BarChart3, CalendarPlus, FileText, Image as ImageIcon, PackageCheck } from "lucide-react";
 import RecipeOptionsView from "./RecipeOptionsView";
+import { PdfPreview, isPdfUrl } from "./FilePreview";
 import { formatInches, labelize } from "../lib/format";
 
 const tabs = [
@@ -443,6 +444,72 @@ function WidthFootageChart({ rows }) {
   );
 }
 
+function usageDate(row) {
+  const raw = row?.used_at || row?.date || row?.used_date;
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function usageDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function usageDateLabel(date) {
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function jobUsageData(rows) {
+  const grouped = new Map();
+  (rows ?? []).forEach((row) => {
+    const date = usageDate(row);
+    const quantity = numeric(row.quantity);
+    if (!date || quantity <= 0) return;
+    const key = usageDateKey(date);
+    if (!grouped.has(key)) grouped.set(key, { key, date, quantity: 0 });
+    grouped.get(key).quantity += quantity;
+  });
+  const allPoints = Array.from(grouped.values()).sort((a, b) => a.date - b.date);
+  const latest = allPoints.at(-1)?.date;
+  if (!latest) return [];
+  const cutoff = new Date(latest);
+  cutoff.setDate(cutoff.getDate() - 90);
+  return allPoints.filter((point) => point.date >= cutoff);
+}
+
+function JobTicketUsageChart({ rows }) {
+  const points = jobUsageData(rows);
+  const max = Math.max(...points.map((point) => point.quantity), 1);
+  const total = points.reduce((sum, point) => sum + point.quantity, 0);
+  return (
+    <section className="job-subsection job-usage-simple-card">
+      <div className="job-subsection-head">
+        <BarChart3 size={15} />
+        <strong>Usage Last 3 Months</strong>
+        {points.length > 0 && <em>{formatNumber(total)} total</em>}
+      </div>
+      {points.length ? (
+        <div className="job-usage-simple-chart">
+          {points.map((point) => (
+            <button
+              type="button"
+              key={point.key}
+              title={`${usageDateLabel(point.date)}: ${formatNumber(point.quantity)}`}
+              style={{ "--bar-height": `${Math.max(6, (point.quantity / max) * 100)}%` }}
+            >
+              <span />
+              <strong>{formatNumber(point.quantity)}</strong>
+              <em>{usageDateLabel(point.date)}</em>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">No usage history has been imported for this job yet.</p>
+      )}
+    </section>
+  );
+}
+
 export default function JobTicketPanel({
   ticket,
   lookups,
@@ -483,6 +550,10 @@ export default function JobTicketPanel({
     () => matchingCoreInventory(ticket, lookups["core-inventory"]),
     [ticket, lookups]
   );
+  const usageRows = useMemo(
+    () => lookups["job-ticket-usages"] ?? [],
+    [lookups]
+  );
 
   const recentBoxAverage = useMemo(() => {
     const recent = finishedRows.filter((row) => row.status === "shipped" && dateInLastMonths(row.run_date, 3));
@@ -516,6 +587,7 @@ export default function JobTicketPanel({
     .sort((a, b) => String(dateValue(b)).localeCompare(String(dateValue(a))))
     .slice(0, 6);
   const image = primaryImage(ticket);
+  const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
   const visibleTabs = tabs.filter((tab) => {
     if (tab.key === "schedule") return canSchedule;
     if (tab.key === "editor") return canEdit;
@@ -561,14 +633,10 @@ export default function JobTicketPanel({
         <div className="job-panel-section">
           <section className="job-hero-section">
             <div className="job-hero-image">
-              {image?.url && !image.isDocument ? (
+              {image?.url && !imageIsDocument ? (
                 <img src={image.url} alt={image.name || ticket.job_name || "Job image"} />
               ) : image?.url ? (
-                <a className="job-linked-file" href={image.url} target="_blank" rel="noreferrer">
-                  <ImageIcon size={30} />
-                  <strong>Open linked file</strong>
-                  <span>{image.source || "External source"}</span>
-                </a>
+                <PdfPreview url={image.url} title={image.name || ticket.job_name || "Job PDF"} />
               ) : (
                 <div>
                   <ImageIcon size={30} />
@@ -615,6 +683,8 @@ export default function JobTicketPanel({
             <Stat label="Avg Scheduled" value={averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} />
             <Stat label="Avg Shipped / Month" value={recentBoxAverage ?? "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} />
           </div>
+
+          <JobTicketUsageChart rows={usageRows} />
 
           <section className="job-spec-layout">
             <div className="job-subsection job-spec-card">

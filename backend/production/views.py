@@ -18,6 +18,7 @@ from .models import (
     FinishedInventory,
     JobTicketEvent,
     JobTicket,
+    JobTicketUsage,
     ProductionSchedule,
     QuoteCostRate,
     QuoteFinishedMaterial,
@@ -37,6 +38,7 @@ from .serializers import (
     FinishedInventorySerializer,
     JobTicketEventSerializer,
     JobTicketSerializer,
+    JobTicketUsageSerializer,
     ProductionScheduleSerializer,
     QuoteCostRateSerializer,
     QuoteFinishedMaterialSerializer,
@@ -325,6 +327,33 @@ class JobTicketEventViewSet(BaseProductionViewSet):
         job_ticket = self.request.query_params.get("job_ticket")
         if job_ticket:
             qs = qs.filter(job_ticket_id=job_ticket)
+        return qs
+
+
+class JobTicketUsageViewSet(BaseProductionViewSet):
+    serializer_class = JobTicketUsageSerializer
+    search_fields = [
+        "job_ticket__ticket_number",
+        "job_ticket__job_name",
+        "job_ticket__product_code",
+        "legacy_job_ticket_id",
+        "source",
+        "notes",
+    ]
+    ordering_fields = ["used_at", "quantity", "source", "created_at"]
+
+    def get_queryset(self):
+        qs = (
+            JobTicketUsage.objects.select_related("job_ticket")
+            .all()
+            .order_by("-used_at", "-id")
+        )
+        job_ticket = self.request.query_params.get("job_ticket")
+        legacy_job_ticket_id = self.request.query_params.get("legacy_job_ticket_id")
+        if job_ticket:
+            qs = qs.filter(job_ticket_id=job_ticket)
+        if legacy_job_ticket_id:
+            qs = qs.filter(legacy_job_ticket_id__iexact=legacy_job_ticket_id)
         return qs
 
 

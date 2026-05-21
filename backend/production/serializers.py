@@ -1,4 +1,4 @@
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from rest_framework import serializers
 
@@ -17,6 +17,7 @@ from .models import (
     FinishedInventory,
     JobTicketEvent,
     JobTicket,
+    JobTicketUsage,
     ProductionSchedule,
     QuoteCostRate,
     QuoteFinishedMaterial,
@@ -26,8 +27,10 @@ from .models import (
 
 
 def is_document_url(url):
-    path = urlparse(str(url or "")).path.lower()
-    return path.endswith(".pdf")
+    parsed = urlparse(str(url or ""))
+    path = unquote(parsed.path or "").lower()
+    query = unquote(parsed.query or "").lower()
+    return ".pdf" in path or ".pdf" in query
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -326,6 +329,16 @@ class JobTicketEventSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = JobTicketEvent
+        fields = "__all__"
+
+
+class JobTicketUsageSerializer(serializers.ModelSerializer):
+    job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
+    job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
+    product_code = serializers.CharField(source="job_ticket.product_code", read_only=True)
+
+    class Meta:
+        model = JobTicketUsage
         fields = "__all__"
 
 

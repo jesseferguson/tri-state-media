@@ -1,10 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { getRecordTitle } from "../lib/format";
-
-function isDocumentUrl(url) {
-  return /\.pdf(?:$|[?#])/i.test(String(url || ""));
-}
+import { PdfPreview, isPdfUrl } from "./FilePreview";
 
 function normalizeInitial(fields, record, defaults = {}) {
   const out = {};
@@ -448,15 +445,21 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
             const existingUrl = record?.[`${field.imageSlot}_image_url`] || record?.[`${field.imageSlot}_image`] || existingImage?.url;
             const existingName = record?.[`${field.imageSlot}_image_name`] || existingImage?.name;
             const existingSource = existingImage?.source;
-            const existingIsDocument = existingImage?.isDocument || isDocumentUrl(existingUrl);
+            const existingIsDocument = existingImage?.isDocument || isPdfUrl(existingUrl);
             return (
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={`${fieldClass} image-upload-field`} htmlFor={id}>
                   <span>{fieldLabel}</span>
                   <div>
-                    {existingUrl && !existingIsDocument ? <img src={existingUrl} alt={existingName || fieldLabel} /> : <em>{existingUrl ? "Linked file" : "No image uploaded"}</em>}
-                    <input id={id} type="file" accept="image/*" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
+                    {existingUrl && !existingIsDocument ? (
+                      <img src={existingUrl} alt={existingName || fieldLabel} />
+                    ) : existingUrl ? (
+                      <PdfPreview url={existingUrl} title={existingName || fieldLabel} compact />
+                    ) : (
+                      <em>No image uploaded</em>
+                    )}
+                    <input id={id} type="file" accept="image/*,application/pdf,.pdf" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
                     <strong>{value?.name || existingName || "Choose image"}</strong>
                     {existingSource && <small>{existingSource}</small>}
                   </div>

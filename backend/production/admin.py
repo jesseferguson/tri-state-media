@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, ProductionSchedule
+from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, JobTicketUsage, ProductionSchedule
 
 
 @admin.register(Customer)
@@ -93,6 +93,15 @@ class JobTicketEventAdmin(admin.ModelAdmin):
     list_display = ("job_ticket", "event_type", "summary", "performed_by", "created_at")
     list_filter = ("event_type", "performed_by", "created_at")
     search_fields = ("summary", "performed_by", "job_ticket__ticket_number", "job_ticket__job_name", "job_ticket__product_code")
+    autocomplete_fields = ("job_ticket",)
+    readonly_fields = ("created_at",)
+
+
+@admin.register(JobTicketUsage)
+class JobTicketUsageAdmin(admin.ModelAdmin):
+    list_display = ("job_ticket", "legacy_job_ticket_id", "used_at", "quantity", "source")
+    list_filter = ("source", "used_at")
+    search_fields = ("job_ticket__ticket_number", "job_ticket__job_name", "legacy_job_ticket_id", "notes")
     autocomplete_fields = ("job_ticket",)
     readonly_fields = ("created_at",)
 

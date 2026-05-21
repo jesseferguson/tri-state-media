@@ -145,6 +145,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("customer-orders", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-order-events", {}, 250));
     addLookupSpec(specs, relationLookupSpec("job-ticket-events", { job_ticket: selected.id }, 250));
+    addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { job_ticket: selected.id }, 500));
     addLookupSpec(specs, relationLookupSpec("presses", {}, 150));
   }
 

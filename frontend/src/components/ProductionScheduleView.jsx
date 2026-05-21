@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Image as ImageIcon, PackageCheck, Trash2 } from "lucide-react";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
+import { PdfPreview, isPdfUrl } from "./FilePreview";
 import RecipeOptionsView from "./RecipeOptionsView";
 
 function sameId(a, b) {
@@ -91,7 +92,7 @@ function scheduleImage(row) {
 
 function scheduleImageIsDocument(row) {
   if (row.job_general_image_is_document) return true;
-  return /\.pdf(?:$|[?#])/i.test(scheduleImage(row));
+  return isPdfUrl(scheduleImage(row));
 }
 
 function formatShortDate(value) {
@@ -267,7 +268,7 @@ function ScheduleThumb({ row }) {
       {src && !scheduleImageIsDocument(row) ? (
         <img src={src} alt={row.job_general_image_name || row.job_name || "Scheduled job"} />
       ) : src ? (
-        <span className="schedule-file-thumb"><ImageIcon size={17} /> {source || "File"}</span>
+        <PdfPreview url={src} title={row.job_general_image_name || row.job_name || "Scheduled PDF"} compact />
       ) : (
         <ImageIcon size={17} />
       )}

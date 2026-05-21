@@ -1,4 +1,5 @@
 import { Image as ImageIcon } from "lucide-react";
+import { PdfPreview, isPdfUrl } from "./FilePreview";
 
 function primaryImage(ticket) {
   const images = Array.isArray(ticket.job_images) ? ticket.job_images : [];
@@ -28,6 +29,7 @@ export default function JobTicketGallery({ rows, selectedId, onSelect }) {
     <div className="job-ticket-gallery">
       {rows.map((ticket) => {
         const image = primaryImage(ticket);
+        const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
         return (
           <button
             className={`job-ticket-card ${String(selectedId) === String(ticket.id) ? "active" : ""}`}
@@ -36,13 +38,10 @@ export default function JobTicketGallery({ rows, selectedId, onSelect }) {
             onClick={() => onSelect(ticket)}
           >
             <div className="job-ticket-card-image">
-              {image?.url && !image.isDocument ? (
+              {image?.url && !imageIsDocument ? (
                 <img src={image.url} alt={image.name || ticket.job_name} />
               ) : image?.url ? (
-                <div>
-                  <ImageIcon size={28} />
-                  <span>{image.source || "Linked File"}</span>
-                </div>
+                <PdfPreview url={image.url} title={image.name || ticket.job_name || "Job PDF"} compact />
               ) : (
                 <div>
                   <ImageIcon size={28} />

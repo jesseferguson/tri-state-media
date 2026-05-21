@@ -315,6 +315,7 @@ class JobTicket(models.Model):
     ]
 
     ticket_number = models.CharField(max_length=80, unique=True)
+    legacy_row_id = models.CharField(max_length=120, blank=True, db_index=True)
     customer = models.ForeignKey(
         Customer,
         on_delete=models.SET_NULL,
@@ -449,6 +450,28 @@ class JobTicketEvent(models.Model):
 
     def __str__(self):
         return f"{self.job_ticket_id} / {self.event_type}"
+
+
+class JobTicketUsage(models.Model):
+    job_ticket = models.ForeignKey(
+        JobTicket,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="usage_records",
+    )
+    legacy_job_ticket_id = models.CharField(max_length=120, blank=True, db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    quantity = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+    source = models.CharField(max_length=80, blank=True, default="Glide")
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-used_at", "-id"]
+
+    def __str__(self):
+        return f"{self.job_ticket or self.legacy_job_ticket_id or 'Usage'} / {self.quantity}"
 
 
 class ProductionSchedule(models.Model):

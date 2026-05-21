@@ -1,12 +1,13 @@
 import csv
 import io
 import re
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.text import slugify
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes
@@ -29,6 +30,7 @@ from .models import (
     CustomerOrderEvent,
     JobTicket,
     JobTicketEvent,
+    JobTicketUsage,
     ProductionSchedule,
     QuoteRecord,
 )
@@ -135,6 +137,14 @@ USAGE_COLUMNS = [
     "used_date",
     "used_by",
     "reference",
+    "notes",
+]
+
+JOB_TICKET_USAGE_COLUMNS = [
+    "date",
+    "job_ticket_id",
+    "quantity",
+    "source",
     "notes",
 ]
 
@@ -259,6 +269,18 @@ IMPORT_TEMPLATES = {
             "notes": "Imported usage",
         },
     },
+    "job_ticket_usage": {
+        "label": "Job Ticket Usage",
+        "description": "Imports the simple old-system usage chart format: date, job_ticket_id, and quantity.",
+        "columns": JOB_TICKET_USAGE_COLUMNS,
+        "sample": {
+            "date": "7/18/2024, 9:13:29 AM",
+            "job_ticket_id": "lhg-ZBBjRoaq0h6T41yWpQ",
+            "quantity": "1",
+            "source": "Glide",
+            "notes": "Imported usage",
+        },
+    },
 }
 
 
@@ -319,6 +341,29 @@ def date_value(value):
     if not value:
         return None
     parsed = parse_date(str(value).strip())
+    return parsed
+
+
+def datetime_value(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parsed = parse_datetime(text)
+    if parsed is None:
+        for fmt in ("%m/%d/%Y, %I:%M:%S %p", "%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        parsed_date = parse_date(text)
+        if parsed_date:
+            parsed = datetime.combine(parsed_date, datetime.min.time())
+    if parsed is None:
+        return None
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed
 
 
@@ -584,6 +629,18 @@ def find_core(link="", item_number="", name="", core_size=""):
     return None
 
 
+def find_job_ticket_by_legacy_id(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return JobTicket.objects.filter(
+        Q(legacy_row_id__iexact=text) |
+        Q(ticket_number__iexact=text) |
+        Q(product_code__iexact=text) |
+        Q(job_notes__icontains=f"Legacy Row ID: {text}")
+    ).first()
+
+
 def serial_number_text(value):
     values = [
         part.strip()
@@ -663,6 +720,7 @@ def import_job_tickets(rows):
         image_url = first(row, "image_url", "glide_image_url", "external_image_url")
         defaults = {
             "customer": customer,
+            "legacy_row_id": row_id,
             "customer_name": customer.name if customer else customer_name,
             "job_name": first(row, "job_number", "job_name", "part_number", default=ticket_number),
             "product_code": first(row, "tsm_id", "product_code", default=ticket_number),
@@ -863,11 +921,54 @@ def import_inventory_usage(rows):
     return result
 
 
+def import_job_ticket_usage(rows):
+    result = import_result()
+    for line_number, row in rows:
+        legacy_job_ticket_id = first(row, "job_ticket_id", "legacy_job_ticket_id", "ticket_id", "row_id")
+        used_at = datetime_value(first(row, "date", "used_at", "used_date"))
+        quantity = decimal_or_none(first(row, "quantity", "qty")) or Decimal("0")
+
+        if not legacy_job_ticket_id:
+            result["skipped"] += 1
+            add_warning(result, line_number, "Skipped usage row with no job_ticket_id.")
+            continue
+        if used_at is None:
+            result["skipped"] += 1
+            add_warning(result, line_number, "Skipped usage row with missing or invalid date.")
+            continue
+        if quantity <= 0:
+            result["skipped"] += 1
+            add_warning(result, line_number, "Skipped usage row with zero quantity.")
+            continue
+
+        ticket = find_job_ticket_by_legacy_id(legacy_job_ticket_id)
+        if not ticket:
+            add_warning(result, line_number, f"Could not match job_ticket_id {legacy_job_ticket_id}; usage was kept unlinked.")
+
+        existing = JobTicketUsage.objects.filter(
+            legacy_job_ticket_id__iexact=legacy_job_ticket_id,
+            used_at=used_at,
+            quantity=quantity,
+        ).first()
+        defaults = {
+            "job_ticket": ticket,
+            "legacy_job_ticket_id": legacy_job_ticket_id,
+            "used_at": used_at,
+            "quantity": quantity,
+            "source": first(row, "source", default="Glide") or "Glide",
+            "notes": append_legacy_note(first(row, "notes"), first(row, "row_id")),
+        }
+        usage = existing or JobTicketUsage()
+        save_model(usage, defaults, result)
+    return result
+
+
 IMPORTERS = {
     "job_tickets": import_job_tickets,
     "flex_dies": import_flex_dies,
     "inventory": import_inventory,
     "inventory_usage": import_inventory_usage,
+    "job_ticket_usage": import_job_ticket_usage,
 }
 
 
@@ -920,6 +1021,8 @@ def delete_usage_records():
 
 def flush_job_ticket_data():
     counts = {}
+    counts["job_ticket_usage"] = JobTicketUsage.objects.count()
+    JobTicketUsage.objects.all().delete()
     counts["customer_order_events"] = CustomerOrderEvent.objects.count()
     CustomerOrderEvent.objects.all().delete()
     counts["customer_orders"] = CustomerOrder.objects.count()
@@ -961,7 +1064,7 @@ def data_flush(request):
         return Response({"error": "Type DELETE DATA to confirm."}, status=status.HTTP_400_BAD_REQUEST)
 
     scope = normalize_key(request.data.get("scope", "setup_data"))
-    valid_scopes = {"setup_data", "job_tickets", "flex_dies", "inventory", "inventory_usage", "quotes"}
+    valid_scopes = {"setup_data", "job_tickets", "flex_dies", "inventory", "inventory_usage", "job_ticket_usage", "quotes"}
     if scope not in valid_scopes:
         return Response({"error": "Unknown flush scope."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -975,6 +1078,9 @@ def data_flush(request):
             counts.update(flush_inventory_data(include_inventory=True))
         if scope == "inventory_usage":
             counts.update(flush_inventory_data(include_inventory=False))
+        if scope == "job_ticket_usage":
+            counts["job_ticket_usage"] = JobTicketUsage.objects.count()
+            JobTicketUsage.objects.all().delete()
         if scope in {"setup_data", "quotes"}:
             counts["quotes"] = QuoteRecord.objects.count()
             QuoteRecord.objects.all().delete()
