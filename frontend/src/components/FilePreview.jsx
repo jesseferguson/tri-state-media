@@ -18,26 +18,13 @@ function pdfEmbedUrl(url) {
 export function PdfPreview({ url, title = "PDF preview", compact = false, showOpenLink = !compact }) {
   if (!url) return null;
 
-  if (compact) {
-    return (
-      <div className="pdf-preview compact">
-        <span className="pdf-compact-page">
-          <FileText size={18} />
-          <strong>PDF</strong>
-        </span>
-      </div>
-    );
-  }
-
   return (
-    <div className="pdf-preview">
-      <object data={pdfEmbedUrl(url)} type="application/pdf" aria-label={title}>
-        <iframe src={pdfEmbedUrl(url)} title={title} />
-        <span>
-          <FileText size={18} />
-          PDF preview
-        </span>
-      </object>
+    <div className={`pdf-preview ${compact ? "compact" : ""}`}>
+      <iframe src={pdfEmbedUrl(url)} title={title} loading="lazy" />
+      <span className="pdf-preview-badge">
+        <FileText size={13} />
+        PDF
+      </span>
       {showOpenLink && (
         <a href={url} target="_blank" rel="noreferrer">
           Open PDF
