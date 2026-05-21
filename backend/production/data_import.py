@@ -320,6 +320,11 @@ def clean_code(value):
     return text
 
 
+def int_lookup_value(value):
+    text = str(value or "").strip()
+    return int(text) if text.isdigit() else None
+
+
 def append_legacy_note(existing_note, row_id):
     note = str(existing_note or "").strip()
     row_id = str(row_id or "").strip()
@@ -337,7 +342,15 @@ def choice_value(value, choices, default):
         return default
     normalized = normalize_key(text)
     for key, label in choices:
-        if normalized in {normalize_key(key), normalize_key(label)}:
+        key_normalized = normalize_key(key)
+        label_normalized = normalize_key(label)
+        matches = {
+            key_normalized,
+            label_normalized,
+            key_normalized.rstrip("s"),
+            label_normalized.rstrip("s"),
+        }
+        if normalized in matches:
             return key
     return default
 
@@ -353,10 +366,12 @@ def job_unit_type_value(value):
 
 def yes_no_choice_value(value, choices, yes_key, default):
     normalized = normalize_key(value)
+    if normalized in {"0", "false", "no", "n", "none", "not_bagged", "no_bag", "no_bags"} or normalized.startswith("no_"):
+        return default
+    if yes_key == "bagged" and "bagged" in normalized:
+        return yes_key
     if normalized in {"1", "true", "yes", "y"}:
         return yes_key
-    if normalized in {"0", "false", "no", "n", "none"}:
-        return default
     return choice_value(value, choices, default)
 
 
@@ -476,12 +491,17 @@ def find_recipe(name):
     return ToolingRecipe.objects.filter(name__iexact=name).first()
 
 
-def find_box(item_number="", name="", pk=""):
+def find_box(item_number="", name="", link=""):
     item_number = str(item_number or "").strip()
     name = str(name or "").strip()
-    pk = str(pk or "").strip()
-    if pk:
+    link = str(link or "").strip()
+    pk = int_lookup_value(link)
+    if pk is not None:
         box = BoxSpec.objects.filter(pk=pk).first()
+        if box:
+            return box
+    if link:
+        box = BoxSpec.objects.filter(Q(external_id__iexact=link) | Q(item_number__iexact=link) | Q(name__iexact=link)).first()
         if box:
             return box
     if item_number:
@@ -490,16 +510,27 @@ def find_box(item_number="", name="", pk=""):
             return box
     if name:
         return BoxSpec.objects.filter(name__iexact=name).first()
+    if link or item_number:
+        return BoxSpec.objects.create(
+            external_id=link,
+            item_number=item_number,
+            name=name or item_number or link,
+        )
     return None
 
 
-def find_core(pk="", item_number="", name="", core_size=""):
-    pk = str(pk or "").strip()
+def find_core(link="", item_number="", name="", core_size=""):
+    link = str(link or "").strip()
     item_number = str(item_number or "").strip()
     name = str(name or "").strip()
     size = decimal_or_none(core_size)
-    if pk:
+    pk = int_lookup_value(link)
+    if pk is not None:
         core = CoreSpec.objects.filter(pk=pk).first()
+        if core:
+            return core
+    if link:
+        core = CoreSpec.objects.filter(Q(external_id__iexact=link) | Q(item_number__iexact=link) | Q(name__iexact=link)).first()
         if core:
             return core
     if item_number:
@@ -511,7 +542,16 @@ def find_core(pk="", item_number="", name="", core_size=""):
         if core:
             return core
     if size is not None:
-        return CoreSpec.objects.filter(core_size_inches=size).first()
+        core = CoreSpec.objects.filter(core_size_inches=size).first()
+        if core:
+            return core
+    if link or item_number or name or size is not None:
+        return CoreSpec.objects.create(
+            external_id=link,
+            item_number=item_number,
+            name=name or item_number or (f'{size}" Core' if size is not None else link),
+            core_size_inches=size,
+        )
     return None
 
 
@@ -581,7 +621,7 @@ def import_job_tickets(rows):
         ))
 
         existing = JobTicket.objects.filter(ticket_number=ticket_number).first()
-        notes = append_legacy_note(first(row, "job_notes", "notes"), row_id)
+        notes = append_legacy_note(first(row, "job_notes", "job_note", "notes"), row_id)
         defaults = {
             "customer": customer,
             "customer_name": customer.name if customer else customer_name,
@@ -814,10 +854,13 @@ def data_import_csv(request, import_type):
     except ValueError as error:
         return Response({"error": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
-    with transaction.atomic():
-        result = importer(rows)
-        if dry_run:
-            transaction.set_rollback(True)
+    try:
+        with transaction.atomic():
+            result = importer(rows)
+            if dry_run:
+                transaction.set_rollback(True)
+    except Exception as error:
+        return Response({"error": f"Import failed: {error}"}, status=status.HTTP_400_BAD_REQUEST)
 
     result["dry_run"] = dry_run
     result["rows"] = len(rows)

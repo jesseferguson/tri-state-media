@@ -164,6 +164,7 @@ class QuoteRecord(models.Model):
 
 
 class BoxSpec(models.Model):
+    external_id = models.CharField(max_length=120, blank=True, db_index=True)
     name = models.CharField(max_length=150)
     item_number = models.CharField(max_length=80, blank=True)
     supplier = models.CharField(max_length=150, blank=True)
@@ -220,6 +221,7 @@ class BoxInventory(models.Model):
 
 
 class CoreSpec(models.Model):
+    external_id = models.CharField(max_length=120, blank=True, db_index=True)
     name = models.CharField(max_length=150)
     item_number = models.CharField(max_length=80, blank=True)
     supplier = models.CharField(max_length=150, blank=True)
