@@ -32,8 +32,10 @@ function downloadCsv(type, csv) {
 
 function ResultPanel({ result }) {
   if (!result) return null;
-  const errorCount = result.errors?.length ?? 0;
-  const warningCount = result.warnings?.length ?? 0;
+  const shownErrors = result.errors ?? [];
+  const shownWarnings = result.warnings ?? [];
+  const errorCount = result.error_count ?? shownErrors.length;
+  const warningCount = result.warning_count ?? shownWarnings.length;
   return (
     <section className={`data-import-result ${errorCount ? "has-errors" : "ok"}`}>
       <header>
@@ -50,7 +52,7 @@ function ResultPanel({ result }) {
       </div>
       {errorCount > 0 && (
         <div className="data-import-errors">
-          {result.errors.slice(0, 12).map((error, index) => (
+          {shownErrors.slice(0, 12).map((error, index) => (
             <p key={`${error.line}-${index}`}>Line {error.line}: {error.message}</p>
           ))}
           {errorCount > 12 && <p>{errorCount - 12} more errors not shown.</p>}
@@ -58,7 +60,7 @@ function ResultPanel({ result }) {
       )}
       {warningCount > 0 && (
         <div className="data-import-warnings">
-          {result.warnings.slice(0, 8).map((warning, index) => (
+          {shownWarnings.slice(0, 8).map((warning, index) => (
             <p key={`${warning.line}-${index}`}>Line {warning.line}: {warning.message}</p>
           ))}
           {warningCount > 8 && <p>{warningCount - 8} more warnings not shown.</p>}

@@ -35,6 +35,8 @@ from .models import (
     QuoteRecord,
 )
 
+MAX_IMPORT_MESSAGES = 250
+
 
 JOB_TICKET_COLUMNS = [
     "row_id",
@@ -459,16 +461,28 @@ def read_csv_rows(request):
 
 
 def import_result():
-    return {"created": 0, "updated": 0, "skipped": 0, "errors": [], "warnings": []}
+    return {
+        "created": 0,
+        "updated": 0,
+        "skipped": 0,
+        "errors": [],
+        "warnings": [],
+        "error_count": 0,
+        "warning_count": 0,
+    }
 
 
 def add_error(result, line_number, message):
     result["skipped"] += 1
-    result["errors"].append({"line": line_number, "message": message})
+    result["error_count"] += 1
+    if len(result["errors"]) < MAX_IMPORT_MESSAGES:
+        result["errors"].append({"line": line_number, "message": message})
 
 
 def add_warning(result, line_number, message):
-    result["warnings"].append({"line": line_number, "message": message})
+    result["warning_count"] += 1
+    if len(result["warnings"]) < MAX_IMPORT_MESSAGES:
+        result["warnings"].append({"line": line_number, "message": message})
 
 
 def find_or_create_customer(name, code=""):
@@ -639,6 +653,42 @@ def find_job_ticket_by_legacy_id(value):
         Q(product_code__iexact=text) |
         Q(job_notes__icontains=f"Legacy Row ID: {text}")
     ).first()
+
+
+def ticket_lookup_key(value):
+    return str(value or "").strip().lower()
+
+
+def job_ticket_lookup_map(values):
+    keys = {ticket_lookup_key(value) for value in values if ticket_lookup_key(value)}
+    if not keys:
+        return {}
+
+    tickets = JobTicket.objects.filter(
+        Q(legacy_row_id__in=values) |
+        Q(ticket_number__in=values) |
+        Q(product_code__in=values)
+    )
+    lookup = {}
+    for ticket in tickets:
+        for value in [ticket.legacy_row_id, ticket.ticket_number, ticket.product_code]:
+            key = ticket_lookup_key(value)
+            if key and key in keys and key not in lookup:
+                lookup[key] = ticket
+
+    missing = keys.difference(lookup)
+    if missing:
+        note_query = Q()
+        for value in list(missing)[:500]:
+            note_query |= Q(job_notes__icontains=f"Legacy Row ID: {value}")
+        if note_query:
+            for ticket in JobTicket.objects.filter(note_query):
+                note_text = str(ticket.job_notes or "").lower()
+                for value in list(missing):
+                    if f"legacy row id: {value}" in note_text:
+                        lookup[value] = ticket
+                        missing.discard(value)
+    return lookup
 
 
 def serial_number_text(value):
@@ -923,8 +973,11 @@ def import_inventory_usage(rows):
 
 def import_job_ticket_usage(rows):
     result = import_result()
+    parsed_rows = []
+    legacy_values = set()
+
     for line_number, row in rows:
-        legacy_job_ticket_id = first(row, "job_ticket_id", "legacy_job_ticket_id", "ticket_id", "row_id")
+        legacy_job_ticket_id = first(row, "job_ticket_id", "legacy_job_ticket_id", "ticket_id", "row_id")[:120]
         used_at = datetime_value(first(row, "date", "used_at", "used_date"))
         quantity = decimal_or_none(first(row, "quantity", "qty")) or Decimal("0")
 
@@ -941,25 +994,51 @@ def import_job_ticket_usage(rows):
             add_warning(result, line_number, "Skipped usage row with zero quantity.")
             continue
 
-        ticket = find_job_ticket_by_legacy_id(legacy_job_ticket_id)
+        parsed_rows.append((line_number, row, legacy_job_ticket_id, used_at, quantity))
+        legacy_values.add(legacy_job_ticket_id)
+
+    ticket_map = job_ticket_lookup_map(legacy_values)
+    existing_map = {}
+    if legacy_values:
+        for usage in JobTicketUsage.objects.filter(legacy_job_ticket_id__in=legacy_values):
+            key = (ticket_lookup_key(usage.legacy_job_ticket_id), usage.used_at, usage.quantity)
+            if key not in existing_map:
+                existing_map[key] = usage
+
+    to_create = {}
+    to_update = {}
+    update_fields = ["job_ticket", "legacy_job_ticket_id", "used_at", "quantity", "source", "notes"]
+
+    for line_number, row, legacy_job_ticket_id, used_at, quantity in parsed_rows:
+        ticket = ticket_map.get(ticket_lookup_key(legacy_job_ticket_id))
         if not ticket:
             add_warning(result, line_number, f"Could not match job_ticket_id {legacy_job_ticket_id}; usage was kept unlinked.")
 
-        existing = JobTicketUsage.objects.filter(
-            legacy_job_ticket_id__iexact=legacy_job_ticket_id,
-            used_at=used_at,
-            quantity=quantity,
-        ).first()
+        existing_key = (ticket_lookup_key(legacy_job_ticket_id), used_at, quantity)
+        existing = existing_map.get(existing_key)
         defaults = {
             "job_ticket": ticket,
             "legacy_job_ticket_id": legacy_job_ticket_id,
             "used_at": used_at,
             "quantity": quantity,
-            "source": first(row, "source", default="Glide") or "Glide",
+            "source": (first(row, "source", default="Glide") or "Glide")[:80],
             "notes": append_legacy_note(first(row, "notes"), first(row, "row_id")),
         }
         usage = existing or JobTicketUsage()
-        save_model(usage, defaults, result)
+        for field, value in defaults.items():
+            setattr(usage, field, value)
+        if existing and existing.pk:
+            to_update[existing_key] = usage
+        else:
+            to_create[existing_key] = usage
+            existing_map[existing_key] = usage
+
+    if to_create:
+        JobTicketUsage.objects.bulk_create(list(to_create.values()), batch_size=1000)
+        result["created"] += len(to_create)
+    if to_update:
+        JobTicketUsage.objects.bulk_update(list(to_update.values()), update_fields, batch_size=1000)
+        result["updated"] += len(to_update)
     return result
 
 

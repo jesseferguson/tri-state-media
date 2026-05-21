@@ -1,6 +1,7 @@
-import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Layers3, Pencil, Plus, Printer, Ruler, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Image as ImageIcon, Layers3, Pencil, Plus, Printer, Ruler, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createRecord, deleteRecord, fetchCollection, updateRecord } from "../api";
+import { PdfPreview, isPdfUrl } from "./FilePreview";
 import {
   buildLayoutCandidates,
   calculateBestMaterialWidth,
@@ -177,11 +178,72 @@ function quoteDateLabel(value) {
 
 function jobTicketLabel(ticket) {
   if (!ticket) return "";
+  return jobTicketPartNumber(ticket);
+}
+
+function jobTicketPartNumber(ticket) {
+  if (!ticket) return "";
+  return ticket.job_name || ticket.product_name || ticket.product_code || ticket.ticket_number || "Untitled job";
+}
+
+function jobTicketCustomer(ticket) {
+  return ticket?.customer_display || ticket?.customer_name || "No customer";
+}
+
+function jobTicketMetaLine(ticket) {
+  const parts = [
+    ticket?.product_code ? `TSM ${ticket.product_code}` : "",
+    ticket?.ticket_number ? `Ticket ${ticket.ticket_number}` : "",
+  ].filter(Boolean);
+  return parts.join(" / ");
+}
+
+function jobTicketSizeLine(ticket) {
+  const width = dimensionInputValue(ticket?.label_width_inches);
+  const length = dimensionInputValue(ticket?.label_length_inches);
+  const quantity = quantityInputValue(ticket?.units_per_carton || ticket?.labels_per_carton);
   return [
-    ticket.product_code ? `TSM ${ticket.product_code}` : "",
-    ticket.customer_display || ticket.customer_name,
-    ticket.job_name || ticket.product_name,
+    width && length ? `${width}" x ${length}"` : "",
+    quantity ? `${Number(quantity).toLocaleString()} / carton` : "",
   ].filter(Boolean).join(" / ");
+}
+
+function jobTicketSearchText(ticket) {
+  return [
+    jobTicketPartNumber(ticket),
+    jobTicketCustomer(ticket),
+    ticket?.ticket_number,
+    ticket?.product_code,
+    ticket?.description,
+    ticket?.material_master_type_code,
+    ticket?.material_spec_master_type_code,
+    ticket?.recipe_name,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function jobTicketPrimaryImage(ticket) {
+  const images = Array.isArray(ticket?.job_images) ? ticket.job_images : [];
+  return (
+    images.find((image) => image.slot === "general" && image.url) ||
+    images.find((image) => image.url) ||
+    null
+  );
+}
+
+function JobTicketThumb({ ticket }) {
+  const image = jobTicketPrimaryImage(ticket);
+  const isDocument = image?.isDocument || isPdfUrl(image?.url);
+  return (
+    <span className="quote-ticket-thumb">
+      {image?.url && !isDocument ? (
+        <img src={image.url} alt={jobTicketPartNumber(ticket)} />
+      ) : image?.url ? (
+        <PdfPreview url={image.url} title={jobTicketPartNumber(ticket)} compact />
+      ) : (
+        <ImageIcon size={18} />
+      )}
+    </span>
+  );
 }
 
 function dimensionInputValue(value) {
@@ -1075,6 +1137,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const [savedQuotes, setSavedQuotes] = useState(storedQuotes);
   const [selectedQuoteId, setSelectedQuoteId] = useState(storedQuotes[0]?.id ?? null);
   const [jobTickets, setJobTickets] = useState([]);
+  const [jobTicketSearch, setJobTicketSearch] = useState("");
   const [jobTicketLoadState, setJobTicketLoadState] = useState("idle");
   const [quoteDataState, setQuoteDataState] = useState("loading");
   const [quoteDataError, setQuoteDataError] = useState("");
@@ -1095,6 +1158,17 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   const selectedMaterial = materialOptions.find((material) => String(material.id) === String(form.selectedMaterialId));
   const selectedJobTicket = jobTickets.find((ticket) => String(ticket.id) === String(quoteInfo.jobTicketId));
+  const matchingJobTickets = useMemo(() => {
+    const search = jobTicketSearch.trim().toLowerCase();
+    const sorted = [...jobTickets].sort((a, b) => jobTicketPartNumber(a).localeCompare(jobTicketPartNumber(b), undefined, { numeric: true }));
+    if (!search) return sorted;
+    const tokens = search.split(/\s+/).filter(Boolean);
+    return sorted.filter((ticket) => {
+      const haystack = jobTicketSearchText(ticket);
+      return tokens.every((token) => haystack.includes(token));
+    });
+  }, [jobTickets, jobTicketSearch]);
+  const visibleJobTickets = useMemo(() => matchingJobTickets.slice(0, jobTicketSearch.trim() ? 36 : 18), [matchingJobTickets, jobTicketSearch]);
   const selectedJobTicketDimensions = useMemo(() => jobTicketQuoteDimensions(selectedJobTicket), [selectedJobTicket]);
   const selectedJobTicketQuantity = useMemo(() => jobTicketQuoteQuantity(selectedJobTicket), [selectedJobTicket]);
   const selectedJobTicketMasterTypeId = jobTicketMasterTypeId(selectedJobTicket);
@@ -1312,7 +1386,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   useEffect(() => {
     let alive = true;
     setJobTicketLoadState("loading");
-    fetchCollection("job-tickets", { pageSize: 500 })
+    fetchCollection("job-tickets", { ordering: "job_name,ticket_number", pageSize: 1000, fetchAll: true })
       .then((payload) => {
         if (!alive) return;
         setJobTickets(payload.results ?? []);
@@ -1839,13 +1913,61 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <button className={quoteInfo.linkMode === "manual" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "manual")}>Manual Entry</button>
                 </div>
                 {quoteInfo.linkMode === "ticket" ? (
-                  <div className="quote-simple-grid quote-info-grid quote-ticket-grid">
-                    <Field label="Job Ticket">
-                      <select value={quoteInfo.jobTicketId} onChange={(event) => updateQuoteInfo("jobTicketId", event.target.value)}>
-                        <option value="">{jobTicketLoadState === "loading" ? "Loading job tickets..." : "Select job ticket..."}</option>
-                        {jobTickets.map((ticket) => <option value={ticket.id} key={ticket.id}>{jobTicketLabel(ticket)}</option>)}
-                      </select>
-                    </Field>
+                  <div className="quote-ticket-grid">
+                    <div className="quote-ticket-picker">
+                      <label className="quote-ticket-search">
+                        <span>Search part number</span>
+                        <div>
+                          <Search size={16} />
+                          <input
+                            value={jobTicketSearch}
+                            onChange={(event) => setJobTicketSearch(event.target.value)}
+                            placeholder={jobTicketLoadState === "loading" ? "Loading job tickets..." : "Type a part number, TSM ID, or customer"}
+                          />
+                        </div>
+                      </label>
+
+                      {selectedJobTicket && (
+                        <div className="quote-selected-ticket">
+                          <JobTicketThumb ticket={selectedJobTicket} />
+                          <div>
+                            <span>Selected Part Number</span>
+                            <strong>{jobTicketLabel(selectedJobTicket)}</strong>
+                            <em>{jobTicketCustomer(selectedJobTicket)}</em>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="quote-ticket-results-head">
+                        <span>{jobTicketLoadState === "loading" ? "Loading tickets" : `${matchingJobTickets.length.toLocaleString()} match${matchingJobTickets.length === 1 ? "" : "es"}`}</span>
+                        {matchingJobTickets.length > visibleJobTickets.length && <em>Showing first {visibleJobTickets.length}</em>}
+                      </div>
+
+                      <div className="quote-ticket-results">
+                        {visibleJobTickets.map((ticket) => {
+                          const active = String(ticket.id) === String(quoteInfo.jobTicketId);
+                          return (
+                            <button
+                              className={`quote-ticket-option ${active ? "active" : ""}`}
+                              type="button"
+                              key={ticket.id}
+                              onClick={() => updateQuoteInfo("jobTicketId", String(ticket.id))}
+                              title={jobTicketSearchText(ticket)}
+                            >
+                              <JobTicketThumb ticket={ticket} />
+                              <span>
+                                <strong>{jobTicketPartNumber(ticket)}</strong>
+                                <em>{jobTicketCustomer(ticket)}</em>
+                                <small>{jobTicketSizeLine(ticket) || jobTicketMetaLine(ticket) || "Open ticket to review details"}</small>
+                              </span>
+                            </button>
+                          );
+                        })}
+                        {jobTicketLoadState === "ready" && !matchingJobTickets.length && (
+                          <p className="quote-ticket-empty">No job tickets matched that search.</p>
+                        )}
+                      </div>
+                    </div>
                     {selectedJobTicket && selectedJobTicketDimensions.message && (
                       <p className="quote-ticket-warning">{selectedJobTicketDimensions.message}</p>
                     )}

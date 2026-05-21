@@ -5597,6 +5597,206 @@ p, .muted { color: #7a7a7a; }
   grid-column: span 2;
 }
 
+.quote-ticket-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.quote-ticket-picker {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe6f2;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.quote-ticket-search {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.quote-ticket-search > span,
+.quote-ticket-results-head span,
+.quote-selected-ticket span {
+  color: #475467;
+  font-size: .68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.quote-ticket-search > div {
+  position: relative;
+}
+
+.quote-ticket-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  color: #667085;
+  transform: translateY(-50%);
+}
+
+.quote-ticket-search input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 10px 9px 34px;
+  border: 1px solid #cbd8e7;
+  border-radius: 10px;
+  outline: 0;
+  background: #ffffff;
+  color: #101828;
+  font-size: .88rem;
+  font-weight: 800;
+}
+
+.quote-ticket-search input:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, .12);
+}
+
+.quote-selected-ticket,
+.quote-ticket-option {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.quote-selected-ticket {
+  padding: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 11px;
+  background: #eff6ff;
+}
+
+.quote-selected-ticket div,
+.quote-ticket-option > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.quote-selected-ticket strong,
+.quote-selected-ticket em,
+.quote-ticket-option strong,
+.quote-ticket-option em,
+.quote-ticket-option small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-selected-ticket strong,
+.quote-ticket-option strong {
+  color: #101828;
+  font-size: .9rem;
+  font-weight: 950;
+}
+
+.quote-selected-ticket em,
+.quote-ticket-option em {
+  color: #475467;
+  font-size: .72rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.quote-ticket-option small {
+  color: #667085;
+  font-size: .66rem;
+  font-weight: 800;
+}
+
+.quote-ticket-thumb {
+  width: 64px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d8e2ee;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #98a2b3;
+}
+
+.quote-ticket-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.quote-ticket-thumb .pdf-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 8px;
+}
+
+.quote-ticket-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.quote-ticket-results-head em {
+  color: #667085;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.quote-ticket-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.quote-ticket-option {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #dbe6f2;
+  border-radius: 11px;
+  background: #ffffff;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.quote-ticket-option:hover,
+.quote-ticket-option.active {
+  border-color: #38bdf8;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .1);
+}
+
+.quote-ticket-option.active {
+  background: linear-gradient(180deg, #ffffff, #eef8ff);
+}
+
+.quote-ticket-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed #cbd8e7;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #667085;
+  font-size: .78rem;
+  font-weight: 850;
+  text-align: center;
+}
+
 .quote-ticket-warning {
   grid-column: 1 / -1;
   margin: 0;
@@ -7714,6 +7914,24 @@ p, .muted { color: #7a7a7a; }
   .quote-advanced-panel summary {
     grid-column: auto;
     grid-template-columns: 1fr;
+  }
+
+  .quote-ticket-picker {
+    padding: 8px;
+  }
+
+  .quote-ticket-results {
+    grid-template-columns: 1fr;
+    max-height: 420px;
+  }
+
+  .quote-selected-ticket,
+  .quote-ticket-option {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .quote-ticket-thumb {
+    width: 72px;
   }
 
   .quote-panel {
