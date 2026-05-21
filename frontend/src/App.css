@@ -9064,6 +9064,17 @@ p, .muted { color: #7a7a7a; }
   white-space: nowrap;
 }
 
+.job-source-pill {
+  padding: 2px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .62rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .job-usage-simple-chart {
   min-height: 154px;
   display: grid;

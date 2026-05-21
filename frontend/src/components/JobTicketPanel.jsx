@@ -25,15 +25,6 @@ function sameId(a, b) {
   return String(a) === String(b);
 }
 
-function dateInLastMonths(value, months = 3) {
-  if (!value) return false;
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return false;
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - months);
-  return date >= cutoff;
-}
-
 function getBoxCount(row, ticket) {
   const unit = String(row.unit ?? "").toLowerCase();
   const qty = Number(row.quantity ?? 0);
@@ -312,6 +303,14 @@ function dateValue(row) {
   return row.scheduled_date || row.order_date || row.due_date || row.run_date || "";
 }
 
+function parseDateValue(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const text = String(value);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00`) : new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function subtractBusinessDays(days) {
   const now = new Date();
   const date = new Date(now);
@@ -366,7 +365,7 @@ function monthlyBars(rows, dateGetter, quantityGetter, rangeKey) {
   rows
     .map((row) => {
       const rawDate = dateGetter(row);
-      const date = rawDate ? new Date(`${rawDate}T00:00:00`) : null;
+      const date = parseDateValue(rawDate);
       const quantity = quantityGetter(row);
       return date && !Number.isNaN(date.getTime()) && (!start || date >= start) && date <= end && quantity > 0
         ? { date, quantity }
@@ -387,6 +386,41 @@ function monthlyBars(rows, dateGetter, quantityGetter, rangeKey) {
     });
 
   return Array.from(grouped.values()).sort((a, b) => a.sort - b.sort);
+}
+
+function shipmentPoints(finishedRows, usageRows, ticket) {
+  const finishedPoints = (finishedRows ?? [])
+    .filter((row) => row.status === "shipped")
+    .map((row) => ({
+      date: parseDateValue(row.run_date || row.shipped_date || row.updated_at),
+      quantity: getBoxCount(row, ticket) || numeric(row.quantity),
+      source: "New System",
+    }));
+
+  const usagePoints = (usageRows ?? []).map((row) => ({
+    date: usageDate(row),
+    quantity: numeric(row.quantity),
+    source: row.source || "Glide",
+  }));
+
+  return [...finishedPoints, ...usagePoints].filter((point) => point.date && point.quantity > 0);
+}
+
+function monthsInRange(rangeKey, bars) {
+  const now = new Date();
+  if (rangeKey === "30bd") return 1;
+  if (rangeKey === "60bd") return 2;
+  if (rangeKey === "90bd") return 3;
+  if (rangeKey === "last-quarter") return 3;
+  if (rangeKey === "last-year") return 12;
+  if (rangeKey === "ytd") return now.getMonth() + 1;
+  return Math.max(1, bars?.length || 0);
+}
+
+function monthlyAverageFromBars(bars, rangeKey) {
+  if (!bars?.length) return null;
+  const total = bars.reduce((sum, bar) => sum + numeric(bar.value), 0);
+  return total > 0 ? Math.round((total / monthsInRange(rangeKey, bars)) * 10) / 10 : null;
 }
 
 function WidthFootageChart({ rows }) {
@@ -446,9 +480,7 @@ function WidthFootageChart({ rows }) {
 
 function usageDate(row) {
   const raw = row?.used_at || row?.date || row?.used_date;
-  if (!raw) return null;
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseDateValue(raw);
 }
 
 function usageDateKey(date) {
@@ -481,11 +513,13 @@ function JobTicketUsageChart({ rows }) {
   const points = jobUsageData(rows);
   const max = Math.max(...points.map((point) => point.quantity), 1);
   const total = points.reduce((sum, point) => sum + point.quantity, 0);
+  const sources = Array.from(new Set((rows ?? []).map((row) => row.source || "Glide").filter(Boolean)));
   return (
     <section className="job-subsection job-usage-simple-card">
       <div className="job-subsection-head">
         <BarChart3 size={15} />
-        <strong>Usage Last 3 Months</strong>
+        <strong>Imported Usage History</strong>
+        {sources.length > 0 && <span className="job-source-pill">{sources.join(" + ")}</span>}
         {points.length > 0 && <em>{formatNumber(total)} total</em>}
       </div>
       {points.length ? (
@@ -554,12 +588,10 @@ export default function JobTicketPanel({
     () => lookups["job-ticket-usages"] ?? [],
     [lookups]
   );
-
-  const recentBoxAverage = useMemo(() => {
-    const recent = finishedRows.filter((row) => row.status === "shipped" && dateInLastMonths(row.run_date, 3));
-    const boxes = recent.reduce((sum, row) => sum + getBoxCount(row, ticket), 0);
-    return boxes > 0 ? Math.round((boxes / 3) * 10) / 10 : null;
-  }, [finishedRows, ticket]);
+  const shippedPoints = useMemo(
+    () => shipmentPoints(finishedRows, usageRows, ticket),
+    [finishedRows, usageRows, ticket]
+  );
 
   const availableInventory = materialInventory.filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status));
   const availableInventoryWithFeet = availableInventory.filter((row) => inventoryFootage(row) > 0);
@@ -575,13 +607,12 @@ export default function JobTicketPanel({
     [chartRange, scheduleRows]
   );
   const shippedBars = useMemo(
-    () => monthlyBars(
-      finishedRows.filter((row) => row.status === "shipped"),
-      (row) => row.run_date,
-      (row) => getBoxCount(row, ticket) || numeric(row.quantity),
-      chartRange
-    ),
-    [chartRange, finishedRows, ticket]
+    () => monthlyBars(shippedPoints, (row) => row.date, (row) => row.quantity, chartRange),
+    [chartRange, shippedPoints]
+  );
+  const shippedMonthlyAverage = useMemo(
+    () => monthlyAverageFromBars(shippedBars, chartRange),
+    [shippedBars, chartRange]
   );
   const recentSchedules = [...scheduleRows]
     .sort((a, b) => String(dateValue(b)).localeCompare(String(dateValue(a))))
@@ -681,7 +712,7 @@ export default function JobTicketPanel({
           <div className="job-stat-grid focus">
             <Stat label="Finished Stock" value={`${formatNumber(finishedQuantity)} units / ${availableFinished.length} lots`} />
             <Stat label="Avg Scheduled" value={averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} />
-            <Stat label="Avg Shipped / Month" value={recentBoxAverage ?? "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} />
+            <Stat label="Avg Shipped / Month" value={shippedMonthlyAverage ? formatNumber(shippedMonthlyAverage) : "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} />
           </div>
 
           <JobTicketUsageChart rows={usageRows} />

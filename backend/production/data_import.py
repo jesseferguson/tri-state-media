@@ -392,6 +392,14 @@ def append_legacy_note(existing_note, row_id):
     return "\n".join([part for part in [note, legacy] if part])
 
 
+def mark_imported_note(existing_note, row_id="", source="Glide"):
+    note = append_legacy_note(existing_note, row_id)
+    marker = f"Source: {source}"
+    if marker.lower() in note.lower():
+        return note
+    return "\n".join([part for part in [note, marker] if part])
+
+
 def choice_value(value, choices, default):
     text = str(value or "").strip()
     if not text:
@@ -766,7 +774,7 @@ def import_job_tickets(rows):
             add_warning(result, line_number, f"Ignored invalid wind value {wind_raw}.")
 
         existing = JobTicket.objects.filter(ticket_number=ticket_number).first()
-        notes = append_legacy_note(first(row, "job_notes", "job_note", "notes"), row_id)
+        notes = mark_imported_note(first(row, "job_notes", "job_note", "notes"), row_id)
         image_url = first(row, "image_url", "glide_image_url", "external_image_url")
         defaults = {
             "customer": customer,
@@ -866,6 +874,7 @@ def import_flex_dies(rows):
             "serial_numbers": serials,
             "active_die_count": active_count,
             "target_die_count": int_or_none(first(row, "target_die_count")) or active_count or 1,
+            "notes": mark_imported_note(first(row, "notes"), first(row, "row_id")),
         }
         die = existing or FlexDie(name=name)
         save_model(die, defaults, result)
@@ -915,7 +924,7 @@ def import_inventory(rows):
             "unit": choice_value(first(row, "unit"), MaterialInventory.UNIT_CHOICES, "lf"),
             "status": choice_value(first(row, "status"), MaterialInventory.STATUS_CHOICES, "available"),
             "received_date": date_value(first(row, "received_date", "date_received")),
-            "notes": append_legacy_note(first(row, "notes"), first(row, "row_id")),
+            "notes": mark_imported_note(first(row, "notes"), first(row, "row_id")),
             "is_active": True,
         }
         inventory = existing or MaterialInventory()
@@ -964,7 +973,7 @@ def import_inventory_usage(rows):
             "used_date": used_date,
             "used_by": first(row, "used_by", "operator", "employee"),
             "reference": reference,
-            "notes": append_legacy_note(first(row, "notes"), first(row, "row_id")),
+            "notes": mark_imported_note(first(row, "notes"), first(row, "row_id")),
         }
         usage = existing or MaterialUsage()
         save_model(usage, defaults, result)
@@ -1016,13 +1025,14 @@ def import_job_ticket_usage(rows):
 
         existing_key = (ticket_lookup_key(legacy_job_ticket_id), used_at, quantity)
         existing = existing_map.get(existing_key)
+        source = (first(row, "source", default="Glide") or "Glide")[:80]
         defaults = {
             "job_ticket": ticket,
             "legacy_job_ticket_id": legacy_job_ticket_id,
             "used_at": used_at,
             "quantity": quantity,
-            "source": (first(row, "source", default="Glide") or "Glide")[:80],
-            "notes": append_legacy_note(first(row, "notes"), first(row, "row_id")),
+            "source": source,
+            "notes": mark_imported_note(first(row, "notes"), first(row, "row_id"), source),
         }
         usage = existing or JobTicketUsage()
         for field, value in defaults.items():
