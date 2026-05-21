@@ -12,14 +12,25 @@ export function isPdfUrl(url) {
 
 function pdfEmbedUrl(url) {
   const separator = String(url || "").includes("#") ? "&" : "#";
-  return `${url}${separator}toolbar=0&navpanes=0&scrollbar=0`;
+  return `${url}${separator}toolbar=0&navpanes=0&scrollbar=0&view=Fit&zoom=page-fit`;
 }
 
 export function PdfPreview({ url, title = "PDF preview", compact = false, showOpenLink = !compact }) {
   if (!url) return null;
 
+  if (compact) {
+    return (
+      <div className="pdf-preview compact">
+        <span className="pdf-compact-page">
+          <FileText size={18} />
+          <strong>PDF</strong>
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className={`pdf-preview ${compact ? "compact" : ""}`}>
+    <div className="pdf-preview">
       <object data={pdfEmbedUrl(url)} type="application/pdf" aria-label={title}>
         <iframe src={pdfEmbedUrl(url)} title={title} />
         <span>
