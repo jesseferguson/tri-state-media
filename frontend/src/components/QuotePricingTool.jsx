@@ -49,7 +49,7 @@ const initialForm = {
   finishingCost: "0",
   packagingCost: "0",
   outsideCost: "0",
-  pricingMode: "margin",
+  pricingMode: "markup",
   pricingPercent: "35",
 };
 
@@ -568,6 +568,16 @@ function pricingActualMarkup(pricing) {
 function markupToMargin(markupPercent) {
   const markup = Math.max(0, toQuoteNumber(markupPercent));
   return markup > 0 ? (markup / (100 + markup)) * 100 : 0;
+}
+
+function marginToMarkup(marginPercent) {
+  const margin = Math.min(95, Math.max(0, toQuoteNumber(marginPercent)));
+  return margin > 0 ? (margin / (100 - margin)) * 100 : 0;
+}
+
+function convertPricingPercent(value, fromMode, toMode) {
+  if (fromMode === toMode) return percentInputValue(value);
+  return percentInputValue(toMode === "margin" ? markupToMargin(value) : marginToMarkup(value));
 }
 
 function materialTargetMarkup(material) {
@@ -1286,7 +1296,14 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     setQuoteInfo((prev) => ({ ...prev, preparedBy: currentUser.name }));
     const preference = loadQuotePreference(currentUser);
     if (preference.pricingMode === "markup" || preference.pricingMode === "margin") {
-      setForm((prev) => ({ ...prev, pricingMode: preference.pricingMode }));
+      setForm((prev) => {
+        if (prev.pricingMode === preference.pricingMode) return prev;
+        return {
+          ...prev,
+          pricingMode: preference.pricingMode,
+          pricingPercent: convertPricingPercent(prev.pricingPercent, prev.pricingMode, preference.pricingMode),
+        };
+      });
     }
   }, [currentUser?.id, currentUser?.name]);
 
@@ -1458,9 +1475,8 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     }
     setForm((prev) => {
       const next = { ...prev, [name]: value };
-      if (name === "pricingMode" && selectedMaterial) {
-        const targetPercent = materialTargetPricingPercent(selectedMaterial, value);
-        if (targetPercent) next.pricingPercent = targetPercent;
+      if (name === "pricingMode") {
+        next.pricingPercent = convertPricingPercent(prev.pricingPercent, prev.pricingMode, value);
       }
       return next;
     });
