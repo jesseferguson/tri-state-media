@@ -531,9 +531,8 @@ function percent(value) {
 }
 
 function quotePricingModeLabel(quote) {
-  const mode = quote.form?.pricingMode === "markup" ? "Sell at" : "Margin";
-  const suffix = quote.form?.pricingMode === "markup" ? "% of cost" : "%";
-  return `${mode} ${percentFormatter.format(Number(quote.form?.pricingPercent || quote.pricing?.pricingPercent || 0))}${suffix}`;
+  const mode = quote.form?.pricingMode === "markup" ? "Markup" : "Margin";
+  return `${mode} ${percentFormatter.format(Number(quote.form?.pricingPercent || quote.pricing?.pricingPercent || 0))}%`;
 }
 
 function quoteActualMargin(quote) {
@@ -546,7 +545,8 @@ function quoteActualMargin(quote) {
 
 function costPriceMarkupPercent(cost, sell) {
   if (cost <= 0) return 0;
-  return (sell / cost) * 100;
+  const profit = sell - cost;
+  return Math.abs(profit) < 0.005 ? 0 : (profit / cost) * 100;
 }
 
 function quoteActualMarkup(quote) {
@@ -571,14 +571,12 @@ function pricingActualMarkup(pricing) {
 
 function markupToMargin(markupPercent) {
   const markup = Math.max(0, toQuoteNumber(markupPercent));
-  if (markup <= 0) return 0;
-  const multiplier = markup / 100;
-  return Math.max(0, ((multiplier - 1) / multiplier) * 100);
+  return markup > 0 ? (markup / (100 + markup)) * 100 : 0;
 }
 
 function marginToMarkup(marginPercent) {
   const margin = Math.min(95, Math.max(0, toQuoteNumber(marginPercent)));
-  return margin > 0 ? 100 / (1 - margin / 100) : 0;
+  return margin > 0 ? (margin / (1 - margin / 100)) : 0;
 }
 
 function convertPricingPercent(value, fromMode, toMode) {
@@ -610,10 +608,10 @@ function profitHealth(pricing, material, displayMode = "margin") {
   const displayCurrent = displayIsMarkup ? currentMarkup : currentMargin;
   const displayTarget = displayIsMarkup ? targetMarkup : targetMargin;
   const displayBase = displayIsMarkup ? baseMarkup : baseMargin;
-  const displayLabel = displayIsMarkup ? "Sell at" : "Margin";
+  const displayLabel = displayIsMarkup ? "Markup" : "Margin";
   const secondaryLabel = displayIsMarkup
     ? `Current margin ${percent(currentMargin)}`
-    : `Equivalent sell at ${percent(currentMarkup)} of cost`;
+    : `Equivalent markup ${percent(currentMarkup)}`;
   if (!material || targetMarkup <= 0) {
     return { className: "neutral", currentMarkup, currentMargin, baseMarkup, targetMarkup, displayCurrent, displayTarget, displayBase, displayLabel, secondaryLabel, progress: 0 };
   }
@@ -725,7 +723,7 @@ function quoteInternalSections(quote) {
         ["Price / Label", unitMoney(Number(quote.pricing?.pricePerLabel || 0))],
         ["Profit Dollars", money(Number(quote.pricing?.profit || 0))],
         ["Actual Margin", percent(quoteActualMargin(quote))],
-        ["Actual Sell At", `${percent(quoteActualMarkup(quote))} of cost`],
+        ["Actual Markup", percent(quoteActualMarkup(quote))],
       ],
     },
     {
@@ -908,10 +906,10 @@ function FinishedMaterialForm({ form, rawMaterials, update, submit, editing = fa
           <option value="purchased">Purchased Finished</option>
         </select>
       </Field>
-      <Field label="Minimum Sell At" suffix="% cost">
+      <Field label="Minimum Markup" suffix="%">
         <input type="number" step="0.01" value={form.baseMarkupPercent} onChange={(event) => update("baseMarkupPercent", event.target.value)} />
       </Field>
-      <Field label="Target Sell At" suffix="% cost">
+      <Field label="Target Markup" suffix="%">
         <input type="number" step="0.01" value={form.targetMarkupPercent} onChange={(event) => update("targetMarkupPercent", event.target.value)} />
       </Field>
 
@@ -2077,14 +2075,14 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <Field label="Waste" suffix="%">
                     <input type="number" step="0.01" value={form.wastePercent} onChange={(event) => updateField("wastePercent", event.target.value)} />
                   </Field>
-                  <Field label={form.pricingMode === "markup" ? "Sell At" : "Margin"} suffix={form.pricingMode === "markup" ? "% of cost" : "%"}>
+                  <Field label={form.pricingMode === "markup" ? "Markup" : "Margin"} suffix="%">
                     <input type="number" step="0.01" value={form.pricingPercent} onChange={(event) => updateField("pricingPercent", event.target.value)} />
                   </Field>
                   <div className="quote-control-block quote-mode-compact">
                     <span>Pricing Mode</span>
                     <div className="quote-segmented compact">
                       <button className={form.pricingMode === "margin" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "margin")}>Margin</button>
-                      <button className={form.pricingMode === "markup" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "markup")}>Sell %</button>
+                      <button className={form.pricingMode === "markup" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "markup")}>Markup</button>
                     </div>
                   </div>
                 </div>
@@ -2092,8 +2090,8 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                 {selectedMaterial && (
                   <div className="quote-material-targets">
                     <Metric label="Material MSI" value={`${unitMoney(selectedMaterial.calculatedMsiCost)} / MSI`} />
-                    <Metric label="Minimum Sell At" value={`${percentFormatter.format(Number(selectedMaterial.baseMarkupPercent || 0))}% cost`} />
-                    <Metric label="Target Sell At" value={`${percentFormatter.format(Number((selectedMaterial.targetMarkupPercent ?? selectedMaterial.targetMarginPercent) || 0))}% cost`} />
+                    <Metric label="Minimum Markup" value={`${percentFormatter.format(Number(selectedMaterial.baseMarkupPercent || 0))}%`} />
+                    <Metric label="Target Markup" value={`${percentFormatter.format(Number((selectedMaterial.targetMarkupPercent ?? selectedMaterial.targetMarginPercent) || 0))}%`} />
                   </div>
                 )}
 
@@ -2192,7 +2190,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                       <input type="number" step="0.01" value={form[field.name]} onChange={(event) => updateField(field.name, event.target.value)} />
                     </Field>
                   ))}
-                  <p className="quote-pass-through-note">Added costs are included in the cost base before pricing.</p>
+                  <p className="quote-pass-through-note">Added costs are included in the cost base before markup or margin.</p>
                   <label className="quote-field quote-field-wide">
                     <span>Quote Notes</span>
                     <textarea value={quoteInfo.notes} onChange={(event) => updateQuoteInfo("notes", event.target.value)} />
@@ -2435,7 +2433,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                       <span>{material.masterTypeLabel ? `${material.masterTypeLabel} / ` : ""}{material.sourceType === "purchased" ? "Purchased" : "Made in-house"} / {material.componentLabel}</span>
                     </div>
                     <em>{unitMoney(material.calculatedMsiCost)}/MSI</em>
-                    <span>{percentFormatter.format(Number(material.baseMarkupPercent || 0))}% minimum / {percentFormatter.format(Number((material.targetMarkupPercent ?? material.targetMarginPercent) || 0))}% target sell at</span>
+                    <span>{percentFormatter.format(Number(material.baseMarkupPercent || 0))}% minimum / {percentFormatter.format(Number((material.targetMarkupPercent ?? material.targetMarginPercent) || 0))}% target markup</span>
                     <button className="ghost-btn xs" type="button" onClick={() => useFinishedMaterial(material)}>Use</button>
                     <button className="ghost-btn xs" type="button" onClick={() => editFinishedMaterial(material)}><Pencil size={13} /></button>
                     <button className="ghost-btn xs" type="button" onClick={() => deleteFinished(material.id)}><Trash2 size={13} /></button>

@@ -124,9 +124,7 @@ export function calculateSellPrice(totalCost, pricingMode, pricingPercent) {
   }
 
   if (pricingMode === "markup") {
-    if (percent <= 0) return cost;
-    const multiplier = percent / 100;
-    return multiplier < 1 ? cost : cost * multiplier;
+    return cost * (1 + percent / 100);
   }
 
   return cost;
