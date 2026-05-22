@@ -639,7 +639,7 @@ export default function RecipeOptionsView({ rows, onEdit, defaultOpenAll = false
     [byPress]
   );
 
-  if (!rows?.length) return <div className="empty-recipe-options">No recipe options match this view.</div>;
+  if (!rows?.length) return <div className="empty-recipe-options">No press setup options match this view.</div>;
 
   return (
     <div className="recipe-options-view">
@@ -649,7 +649,7 @@ export default function RecipeOptionsView({ rows, onEdit, defaultOpenAll = false
           pressName={pressName}
           options={list}
           onEdit={onEdit}
-          defaultOpen={defaultOpenAll || pressGroups.length === 1}
+          defaultOpen={defaultOpenAll}
           onFlexDieReorder={onFlexDieReorder}
           onFlexDieCountUpdate={onFlexDieCountUpdate}
           operatorName={operatorName}

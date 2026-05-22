@@ -1,6 +1,13 @@
 import { formatCell } from "../lib/format";
 
 function columnLabel(resource, column) {
+  const friendlyLabels = {
+    recipe: "Label Layout",
+    recipe_name: "Label Layout",
+    recipe_option: "Press Setup Option",
+    recipe_option_name: "Press Setup Option",
+  };
+  if (friendlyLabels[column]) return friendlyLabels[column];
   if (column === "inventory_total_feet") return "Inventory Feet";
   const field = (resource.fields ?? []).find((item) => item.name === column);
   return field?.label ?? column.replace(/_/g, " ");

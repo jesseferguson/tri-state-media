@@ -677,7 +677,7 @@ export const resources = [
       { ...linerDataTypeField, label: "Liner Type" },
       {
         name: "recipe",
-        label: "Tooling Recipe",
+        label: "Label Layout",
         type: "searchRelation",
         relation: "recipes",
         searchable: true,
@@ -1477,7 +1477,7 @@ export const resources = [
       },
       {
         name: "recipe",
-        label: "Tooling Recipe",
+        label: "Label Layout",
         type: "searchRelation",
         relation: "recipes",
         searchable: true,
@@ -1518,13 +1518,13 @@ export const resources = [
   {
     key: "recipe-options",
     endpoint: "recipe-options",
-    label: "Recipe Options",
-    singular: "Recipe Option",
+    label: "Press Setup Options",
+    singular: "Press Setup Option",
     group: "tooling",
     icon: PackageCheck,
     accent: "#7dd3fc",
     defaultOrdering: "recipe__name,press__name,-is_preferred,name",
-    tagline: "Approved setup options grouped by recipe and press.",
+    tagline: "Approved ways to run a label layout on each press.",
     columns: [
       "name",
       "recipe_name",
@@ -1539,7 +1539,7 @@ export const resources = [
     fields: [
       {
         name: "recipe",
-        label: "Recipe",
+        label: "Label Layout",
         type: "searchRelation",
         relation: "recipes",
         required: true,
@@ -1576,7 +1576,7 @@ export const resources = [
       },
       {
         name: "name",
-        label: "Option Name",
+        label: "Setup Name",
         type: "text",
         required: true,
         placeholder: "(13)2-1-POLY-NP",
@@ -1636,13 +1636,13 @@ export const resources = [
   {
     key: "recipes",
     endpoint: "recipes",
-    label: "Tooling Recipes",
-    singular: "Recipe",
+    label: "Label Layouts",
+    singular: "Label Layout",
     group: "tooling",
     icon: Shapes,
     accent: "#c084fc",
     defaultOrdering: "name",
-    tagline: "The label shape setup you want the system to recommend from later.",
+    tagline: "Reusable face, liner, cut, size, and perf layout definitions.",
     columns: [
       "name",
       "label_width_inches",
@@ -1757,13 +1757,13 @@ export const resources = [
   {
     key: "recipe-tools",
     endpoint: "recipe-tools",
-    label: "Recipe Tool Stack",
-    singular: "Recipe Tool",
+    label: "Tool Assignments",
+    singular: "Tool Assignment",
     group: "tooling",
     icon: Wrench,
     accent: "#fbbf24",
     defaultOrdering: "recipe_option__recipe__name,recipe_option__press__name,recipe_option__name,tool_role,station_number,tool_type",
-    tagline: "Assign the exact die, mag, perf tooling, or manual tooling needed for each recipe option.",
+    tagline: "Assign exact dies, mags, perf tooling, and manual tools to each press setup option.",
     columns: [
       "recipe_name",
       "press_name",
@@ -1777,7 +1777,7 @@ export const resources = [
     fields: [
       {
         name: "recipe_option",
-        label: "Recipe Option",
+        label: "Press Setup Option",
         type: "searchRelation",
         relation: "recipe-options",
         required: true,

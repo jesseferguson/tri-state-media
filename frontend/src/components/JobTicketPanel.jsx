@@ -727,7 +727,7 @@ export default function JobTicketPanel({
           <section className="job-subsection">
             <div className="job-subsection-head">
               <PackageCheck size={15} />
-              <strong>Recipe Tooling</strong>
+              <strong>Tooling Setup</strong>
             </div>
             {recipeOptions.length ? (
               <>

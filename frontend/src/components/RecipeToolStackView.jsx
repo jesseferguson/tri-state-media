@@ -152,7 +152,7 @@ function StackRow({ row, selected, onSelect, onEdit }) {
 }
 
 function PressGroup({ name, rows, selectedId, onSelect, onEdit }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const required = rows.filter((row) => row.is_required !== false).length;
 
   return (
@@ -181,7 +181,7 @@ function PressGroup({ name, rows, selectedId, onSelect, onEdit }) {
 }
 
 function RecipeGroup({ name, rows, selectedId, onSelect, onEdit }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const byPress = useMemo(() => groupBy(rows, (row) => row.press_name ?? "No press"), [rows]);
 
   return (

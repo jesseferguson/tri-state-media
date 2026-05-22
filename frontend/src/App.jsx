@@ -13,6 +13,7 @@ import GroupedLocationView from "./components/GroupedLocationView";
 import GroupedUsageView from "./components/GroupedUsageView";
 import JobTicketGallery from "./components/JobTicketGallery";
 import JobTicketPanel from "./components/JobTicketPanel";
+import LabelLayoutsView from "./components/LabelLayoutsView";
 import MaterialInventoryView from "./components/MaterialInventoryView";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
 import MaterialUsageWindow from "./components/MaterialUsageWindow";
@@ -44,6 +45,13 @@ import { emptyFlexDieFilters, filterFlexDies, filterRows } from "./lib/filtering
 import { formatCell, getRecordTitle } from "./lib/format";
 
 function labelForField(resource, key) {
+  const friendlyLabels = {
+    recipe: "Label Layout",
+    recipe_name: "Label Layout",
+    recipe_option: "Press Setup Option",
+    recipe_option_name: "Press Setup Option",
+  };
+  if (friendlyLabels[key]) return friendlyLabels[key];
   const field = (resource.fields ?? []).find((item) => item.name === key);
   return field?.label ?? key.replace(/_/g, " ");
 }
@@ -315,6 +323,12 @@ const materialFormPageKeys = new Set([
   "material-coatings",
   "material-supplier-options",
   "raw-materials",
+]);
+
+const toolingConfigFormPageKeys = new Set([
+  "recipes",
+  "recipe-options",
+  "recipe-tools",
 ]);
 
 const AUTO_REFRESH_INTERVALS = {
@@ -966,6 +980,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const isMaterialFormPage = materialFormPageKeys.has(resource.key);
   const showingMaterialFormOverlay = Boolean(formMode && isMaterialFormPage);
   const showingScheduleFormOverlay = Boolean(formMode && resource.key === "production-schedule");
+  const showingToolingConfigFormOverlay = Boolean(formMode && toolingConfigFormPageKeys.has(resource.key));
   const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
 
   useEffect(() => {
@@ -1790,7 +1805,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               </section>
             )}
 
-            {formMode && !showingMaterialFormOverlay && !showingScheduleFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
+            {formMode && !showingMaterialFormOverlay && !showingScheduleFormOverlay && !showingToolingConfigFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
               <RecordForm
                 resource={resource}
                 record={formMode === "edit" ? selected : null}
@@ -1866,6 +1881,13 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onSelect={(row) => setSelected(row)}
                     onEdit={editRecord}
                     onDelete={confirmDeleteRecord}
+                  />
+                ) : resource.key === "recipes" ? (
+                  <LabelLayoutsView
+                    rows={visibleRows}
+                    selectedId={selected?.id}
+                    onSelect={(row) => { setSelected(row); setFormMode(null); }}
+                    onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
                   />
                 ) : resource.key === "recipe-options" ? (
                   <RecipeOptionsView rows={visibleRows} onEdit={(row) => { setSelected(row); setFormMode("edit"); }} />
@@ -2009,6 +2031,23 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {showingMaterialFormOverlay && (
           <section className="material-form-overlay" role="dialog" aria-modal="true" aria-label={`${formMode === "edit" ? "Edit" : "Add"} ${resource.singular}`}>
             <div className="material-form-window">
+              <RecordForm
+                resource={resource}
+                record={formMode === "edit" ? selected : null}
+                defaults={formMode === "create" ? createDefaults : {}}
+                lookups={lookupQuery.data ?? {}}
+                submitting={saveMutation.isPending}
+                onSubmit={(payload) => saveMutation.mutate(payload)}
+                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                canUseField={canUseRecordField}
+              />
+            </div>
+          </section>
+        )}
+
+        {showingToolingConfigFormOverlay && (
+          <section className="tooling-form-overlay" role="dialog" aria-modal="true" aria-label={`${formMode === "edit" ? "Edit" : "Add"} ${resource.singular}`}>
+            <div className="tooling-form-window">
               <RecordForm
                 resource={resource}
                 record={formMode === "edit" ? selected : null}
