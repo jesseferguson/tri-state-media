@@ -595,7 +595,7 @@ export const resources = [
     group: "production",
     icon: Factory,
     accent: "#38bdf8",
-    defaultOrdering: "ticket_number",
+    defaultOrdering: "-recent_usage_90d,ticket_number",
     viewMode: "jobTicketGallery",
     tagline: "Visual job packet gallery with the job image, job name, and key customer identifiers.",
     columns: [

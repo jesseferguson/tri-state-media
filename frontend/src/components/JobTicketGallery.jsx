@@ -85,6 +85,25 @@ function quantityLabel(value) {
 }
 
 function ticketUsageStats(ticket, usageRows = [], finishedRows = [], now = new Date()) {
+  const hasSummary = ticket.recent_usage_90d !== undefined || ticket.finished_on_hand_quantity !== undefined;
+  if (hasSummary) {
+    const recentUsage = numeric(ticket.recent_usage_90d);
+    const monthlyUsage = numeric(ticket.recent_monthly_usage) || recentUsage / 3;
+    const onHand = numeric(ticket.finished_on_hand_quantity);
+    const monthsOnHand = ticket.stock_months_on_hand === null || ticket.stock_months_on_hand === undefined
+      ? (monthlyUsage > 0 ? onHand / monthlyUsage : null)
+      : numeric(ticket.stock_months_on_hand);
+    const isLowStock = recentUsage > 0 && onHand <= monthlyUsage * LOW_STOCK_MONTHS;
+    const lowStockLevel = ticket.low_stock_level || (isLowStock && onHand <= 0 ? "critical" : isLowStock ? "low" : "");
+    return {
+      recentUsage,
+      monthlyUsage,
+      onHand,
+      monthsOnHand,
+      lowStockLevel,
+    };
+  }
+
   const cutoff = new Date(now);
   cutoff.setDate(cutoff.getDate() - RECENT_USAGE_DAYS);
 

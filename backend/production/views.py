@@ -1,5 +1,9 @@
 import logging
+from datetime import timedelta
 
+from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
+from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -182,19 +186,6 @@ class CoreInventoryViewSet(BaseProductionViewSet):
 
 
 class JobTicketViewSet(BaseProductionViewSet):
-    queryset = (
-        JobTicket.objects.select_related(
-            "customer",
-            "recipe",
-            "material_spec",
-            "material_spec__master_type",
-            "material_master_type",
-            "box",
-            "core",
-        )
-        .all()
-        .order_by("ticket_number")
-    )
     serializer_class = JobTicketSerializer
     search_fields = [
         "ticket_number",
@@ -250,9 +241,60 @@ class JobTicketViewSet(BaseProductionViewSet):
         "label_length_inches",
         "repeat_inches",
         "requested_quantity",
+        "recent_usage_90d",
+        "finished_on_hand_quantity",
     ]
 
     image_slots = {"general", "spec", "finishing"}
+
+    def get_queryset(self):
+        recent_usage_start = timezone.now() - timedelta(days=90)
+        recent_run_start = timezone.localdate() - timedelta(days=90)
+        decimal_zero = Value(0, output_field=DecimalField(max_digits=14, decimal_places=3))
+        usage_total = (
+            JobTicketUsage.objects
+            .filter(job_ticket=OuterRef("pk"), used_at__gte=recent_usage_start)
+            .values("job_ticket")
+            .annotate(total=Sum("quantity"))
+            .values("total")
+        )
+        shipped_total = (
+            FinishedInventory.objects
+            .filter(job_ticket=OuterRef("pk"), status="shipped", run_date__gte=recent_run_start)
+            .values("job_ticket")
+            .annotate(total=Sum("quantity"))
+            .values("total")
+        )
+        on_hand_total = (
+            FinishedInventory.objects
+            .filter(job_ticket=OuterRef("pk"), status__in=["available", "allocated", "on_hold"])
+            .values("job_ticket")
+            .annotate(total=Sum("quantity"))
+            .values("total")
+        )
+        return (
+            JobTicket.objects.select_related(
+                "customer",
+                "recipe",
+                "material_spec",
+                "material_spec__master_type",
+                "material_master_type",
+                "box",
+                "core",
+            )
+            .annotate(
+                imported_usage_90d=Coalesce(Subquery(usage_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
+                shipped_usage_90d=Coalesce(Subquery(shipped_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
+                finished_on_hand_quantity=Coalesce(Subquery(on_hand_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
+            )
+            .annotate(
+                recent_usage_90d=ExpressionWrapper(
+                    F("imported_usage_90d") + F("shipped_usage_90d"),
+                    output_field=DecimalField(max_digits=14, decimal_places=3),
+                )
+            )
+            .order_by("-recent_usage_90d", "ticket_number")
+        )
 
     @action(detail=True, methods=["post", "delete"], url_path=r"images/(?P<slot>general|spec|finishing)")
     def images(self, request, pk=None, slot=None):
@@ -476,17 +518,6 @@ class CustomerOrderEventViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class FinishedInventoryViewSet(BaseProductionViewSet):
-    queryset = (
-        FinishedInventory.objects.select_related(
-            "job_ticket",
-            "material_inventory",
-            "recipe",
-            "recipe_option",
-            "location",
-        )
-        .all()
-        .order_by("-run_date", "name")
-    )
     serializer_class = FinishedInventorySerializer
     search_fields = [
         "name",
@@ -516,3 +547,23 @@ class FinishedInventoryViewSet(BaseProductionViewSet):
         "run_date",
         "operator",
     ]
+
+    def get_queryset(self):
+        qs = (
+            FinishedInventory.objects.select_related(
+                "job_ticket",
+                "material_inventory",
+                "recipe",
+                "recipe_option",
+                "location",
+            )
+            .all()
+            .order_by("-run_date", "name")
+        )
+        job_ticket = self.request.query_params.get("job_ticket")
+        status_value = self.request.query_params.get("status")
+        if job_ticket:
+            qs = qs.filter(job_ticket_id=job_ticket)
+        if status_value:
+            qs = qs.filter(status=status_value)
+        return qs

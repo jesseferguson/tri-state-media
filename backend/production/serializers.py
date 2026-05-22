@@ -230,6 +230,11 @@ class CoreInventorySerializer(serializers.ModelSerializer):
 class JobTicketSerializer(serializers.ModelSerializer):
     customer_display = serializers.SerializerMethodField()
     job_images = serializers.SerializerMethodField()
+    recent_usage_90d = serializers.SerializerMethodField()
+    finished_on_hand_quantity = serializers.SerializerMethodField()
+    recent_monthly_usage = serializers.SerializerMethodField()
+    stock_months_on_hand = serializers.SerializerMethodField()
+    low_stock_level = serializers.SerializerMethodField()
     recipe_name = serializers.CharField(source="recipe.name", read_only=True)
     box_name = serializers.CharField(source="box.name", read_only=True)
     linked_box_item_number = serializers.CharField(source="box.item_number", read_only=True)
@@ -280,6 +285,30 @@ class JobTicketSerializer(serializers.ModelSerializer):
 
     def get_material_spec_master_type_name(self, obj):
         return obj.material_spec.master_type.name if obj.material_spec and obj.material_spec.master_type else None
+
+    def get_recent_usage_90d(self, obj):
+        return getattr(obj, "recent_usage_90d", 0) or 0
+
+    def get_finished_on_hand_quantity(self, obj):
+        return getattr(obj, "finished_on_hand_quantity", 0) or 0
+
+    def get_recent_monthly_usage(self, obj):
+        usage = float(getattr(obj, "recent_usage_90d", 0) or 0)
+        return round(usage / 3, 3) if usage > 0 else 0
+
+    def get_stock_months_on_hand(self, obj):
+        usage = float(getattr(obj, "recent_usage_90d", 0) or 0)
+        on_hand = float(getattr(obj, "finished_on_hand_quantity", 0) or 0)
+        monthly = usage / 3 if usage > 0 else 0
+        return round(on_hand / monthly, 3) if monthly > 0 else None
+
+    def get_low_stock_level(self, obj):
+        usage = float(getattr(obj, "recent_usage_90d", 0) or 0)
+        on_hand = float(getattr(obj, "finished_on_hand_quantity", 0) or 0)
+        monthly = usage / 3 if usage > 0 else 0
+        if monthly <= 0 or on_hand > monthly:
+            return ""
+        return "critical" if on_hand <= 0 else "low"
 
     def image_payload(self, obj, slot):
         image = getattr(obj, f"{slot}_image", None)

@@ -143,16 +143,15 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { inventory: selected.material_inventory }, 150));
   }
 
-  if (resource.key === "job-tickets") {
-    addLookupSpec(specs, relationLookupSpec("finished-inventory", {}, 1000, true));
-    addLookupSpec(specs, relationLookupSpec("job-ticket-usages", {}, 1000, true));
-  }
-
   if (resource.key === "job-tickets" && selected) {
     if (selected.material_spec) addLookupSpec(specs, relationLookupSpec("raw-materials", { material: selected.material_spec }, 250));
     if (selected.material_master_type || selected.material_spec_master_type) {
       addLookupSpec(specs, relationLookupSpec("raw-materials", { master_type: selected.material_master_type || selected.material_spec_master_type }, 250));
     }
+    addLookupSpec(specs, relationLookupSpec("finished-inventory", { job_ticket: selected.id }, 250, true));
+    addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { job_ticket: selected.id }, 1000, true));
+    if (selected.ticket_number) addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { legacy_job_ticket_id: selected.ticket_number }, 250, true));
+    if (selected.product_code) addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { legacy_job_ticket_id: selected.product_code }, 250, true));
     addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 150));
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 150));
@@ -1001,10 +1000,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       try {
         return await fetchCollection(resource.endpoint, {
           ordering: resource.defaultOrdering,
-          pageSize: resource.key === "job-tickets" ? 1000 : resource.searchMode === "flexDie" ? 500 : 250,
+          pageSize: resource.searchMode === "flexDie" ? 500 : 250,
           filters: resource.filters ?? {},
           search: resource.searchMode === "flexDie" ? "" : search,
-          fetchAll: resource.key === "job-tickets",
         });
       } catch (error) {
         if (resource.key === "material-usages" && String(error.message).includes("404")) {
@@ -2009,7 +2007,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               <JobTicketPanel
                 ticket={selected}
                 lookups={lookupQuery.data ?? {}}
-                chartsLoading={lookupQuery.isLoading || (lookupQuery.isFetching && !lookupQuery.data)}
+                chartsLoading={lookupQuery.isLoading && !lookupQuery.data}
                 canEdit={canEditJobTicket}
                 canSchedule={canScheduleFromJobTicket}
                 canQuote={canQuoteJobTicket}
