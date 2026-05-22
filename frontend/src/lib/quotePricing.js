@@ -163,10 +163,11 @@ export function calculateQuotePricing(input) {
   const pricingPercent = input.pricingMode === "markup"
     ? rawPricingPercent
     : Math.min(95, rawPricingPercent);
+  const markupMultiplier = pricingPercent > 0 ? pricingPercent / 100 : 1;
   const markedUpProductionSellPrice = input.pricingMode === "markup"
-    ? productionCost * (1 + pricingPercent / 100)
-    : productionCost / (1 - pricingPercent / 100);
-  const sellPrice = markedUpProductionSellPrice + extraCost;
+    ? totalCost * markupMultiplier
+    : totalCost / (1 - pricingPercent / 100);
+  const sellPrice = markedUpProductionSellPrice;
   const profit = sellPrice - totalCost;
   const pricePerThousand = quantity > 0 ? sellPrice / (quantity / 1000) : 0;
   const pricePerLabel = quantity > 0 ? sellPrice / quantity : 0;

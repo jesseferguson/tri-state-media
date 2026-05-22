@@ -50,7 +50,7 @@ const initialForm = {
   packagingCost: "0",
   outsideCost: "0",
   pricingMode: "markup",
-  pricingPercent: "35",
+  pricingPercent: "0",
 };
 
 const emptyRawForm = {
@@ -537,42 +537,48 @@ function quotePricingModeLabel(quote) {
 
 function quoteActualMargin(quote) {
   const totals = quoteTotals(quote);
-  const sell = Number(totals.markedUpProductionSellPrice || totals.sellPrice || 0);
-  const cost = Number(totals.productionCost || totals.totalCost || 0);
+  const sell = Number(totals.sellPrice || totals.markedUpProductionSellPrice || 0);
+  const cost = Number(totals.totalCost || totals.productionCost || 0);
   const profit = sell - cost;
   return sell > 0 ? (profit / sell) * 100 : 0;
 }
 
+function costPriceMarkupPercent(cost, sell) {
+  if (cost <= 0) return 0;
+  if (Math.abs(sell - cost) < 0.005) return 0;
+  return (sell / cost) * 100;
+}
+
 function quoteActualMarkup(quote) {
   const totals = quoteTotals(quote);
-  const cost = Number(totals.productionCost || totals.totalCost || 0);
-  const sell = Number(totals.markedUpProductionSellPrice || totals.sellPrice || 0);
-  const profit = sell - cost;
-  return cost > 0 ? (profit / cost) * 100 : 0;
+  const cost = Number(totals.totalCost || totals.productionCost || 0);
+  const sell = Number(totals.sellPrice || totals.markedUpProductionSellPrice || 0);
+  return costPriceMarkupPercent(cost, sell);
 }
 
 function pricingActualMargin(pricing) {
-  const sell = Number(pricing?.markedUpProductionSellPrice || pricing?.sellPrice || 0);
-  const cost = Number(pricing?.productionCost || pricing?.totalCost || 0);
+  const sell = Number(pricing?.sellPrice || pricing?.markedUpProductionSellPrice || 0);
+  const cost = Number(pricing?.totalCost || pricing?.productionCost || 0);
   const profit = sell - cost;
   return sell > 0 ? (profit / sell) * 100 : 0;
 }
 
 function pricingActualMarkup(pricing) {
-  const cost = Number(pricing?.productionCost || pricing?.totalCost || 0);
-  const sell = Number(pricing?.markedUpProductionSellPrice || pricing?.sellPrice || 0);
-  const profit = sell - cost;
-  return cost > 0 ? (profit / cost) * 100 : 0;
+  const cost = Number(pricing?.totalCost || pricing?.productionCost || 0);
+  const sell = Number(pricing?.sellPrice || pricing?.markedUpProductionSellPrice || 0);
+  return costPriceMarkupPercent(cost, sell);
 }
 
 function markupToMargin(markupPercent) {
   const markup = Math.max(0, toQuoteNumber(markupPercent));
-  return markup > 0 ? (markup / (100 + markup)) * 100 : 0;
+  if (markup <= 0) return 0;
+  const multiplier = markup / 100;
+  return Math.max(0, ((multiplier - 1) / multiplier) * 100);
 }
 
 function marginToMarkup(marginPercent) {
   const margin = Math.min(95, Math.max(0, toQuoteNumber(marginPercent)));
-  return margin > 0 ? (margin / (100 - margin)) * 100 : 0;
+  return margin > 0 ? 100 / (1 - margin / 100) : 0;
 }
 
 function convertPricingPercent(value, fromMode, toMode) {
@@ -704,9 +710,9 @@ function quoteInternalSections(quote) {
         ["Color Count", Number(quote.form?.colorCount || 0)],
         ["Coating Count", Number(quote.form?.coatingCount || 0)],
         ["Color / Coating Cost", money(Number(quote.pricing?.processMsiCost || 0))],
-        ["Markup Base Cost", money(Number(quote.pricing?.productionCost || 0))],
+        ["Production Cost", money(Number(quote.pricing?.productionCost || 0))],
         ...quoteAddedCostRows(quote),
-        ["Added Costs Total", `${money(Number(quote.pricing?.extraCost || 0))} pass-through`],
+        ["Added Costs Total", `${money(Number(quote.pricing?.extraCost || 0))} included in cost base`],
         ["Total Internal Cost", money(Number(quote.pricing?.totalCost || 0))],
       ],
     },
@@ -2186,7 +2192,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                       <input type="number" step="0.01" value={form[field.name]} onChange={(event) => updateField(field.name, event.target.value)} />
                     </Field>
                   ))}
-                  <p className="quote-pass-through-note">Added costs are added after markup. Example: $178 quote + $100 added cost = $278 total.</p>
+                  <p className="quote-pass-through-note">Added costs are included in the cost base before markup.</p>
                   <label className="quote-field quote-field-wide">
                     <span>Quote Notes</span>
                     <textarea value={quoteInfo.notes} onChange={(event) => updateQuoteInfo("notes", event.target.value)} />
@@ -2231,7 +2237,7 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                 <BreakdownRow label="Waste MSI" value={number(pricing.wasteMsi)} />
                 <BreakdownRow label="MSI With Waste" value={number(pricing.materialMsiWithWaste)} />
                 <BreakdownRow label="Colors / Coatings" value={money(pricing.processMsiCost)} />
-                <BreakdownRow label="Added Costs" value={`${money(pricing.extraCost)} pass-through`} />
+                <BreakdownRow label="Added Costs" value={`${money(pricing.extraCost)} in cost base`} />
               </div>
 
               {quoteItemsDraft.length > 0 && (
