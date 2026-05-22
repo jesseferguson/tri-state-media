@@ -178,6 +178,17 @@ function matchingFinishedRows(ticket, rows) {
   return (rows ?? []).filter((row) => sameId(row.job_ticket, ticket.id) || row.job_ticket_number === ticket.ticket_number);
 }
 
+function matchingUsageRows(ticket, rows) {
+  return (rows ?? []).filter((row) => {
+    if (sameId(row.job_ticket, ticket.id)) return true;
+    if (sameText(row.job_ticket_number, ticket.ticket_number)) return true;
+    if (sameText(row.product_code, ticket.product_code)) return true;
+    if (sameText(row.legacy_job_ticket_id, ticket.ticket_number)) return true;
+    if (sameText(row.legacy_job_ticket_id, ticket.product_code)) return true;
+    return false;
+  });
+}
+
 function matchingRecipeOptions(ticket, rows) {
   return (rows ?? []).filter((row) => {
     if (ticket.recipe && sameId(row.recipe, ticket.recipe)) return true;
@@ -524,8 +535,8 @@ export default function JobTicketPanel({
     [ticket, lookups]
   );
   const usageRows = useMemo(
-    () => lookups["job-ticket-usages"] ?? [],
-    [lookups]
+    () => matchingUsageRows(ticket, lookups["job-ticket-usages"]),
+    [ticket, lookups]
   );
   const shippedPoints = useMemo(
     () => shipmentPoints(finishedRows, usageRows, ticket),

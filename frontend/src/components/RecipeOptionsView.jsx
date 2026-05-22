@@ -521,7 +521,7 @@ function Combo({ option, combo, muted = false, onFlexDieReorder, onFlexDieCountU
   );
 }
 
-function OptionCard({ option, onEdit, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
+function OptionCard({ option, onSelect, onEdit, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
   const result = useMemo(() => evaluateOption(option), [option]);
 
   const visibleCombos = result.readyCombos.length
@@ -542,7 +542,7 @@ function OptionCard({ option, onEdit, onFlexDieReorder, onFlexDieCountUpdate, op
 
   return (
     <article className={`recipe-option-card ${result.severity}`}>
-      <div className="option-card-head">
+      <div className="option-card-head" onClick={() => onSelect?.(option)}>
         <div className="option-title">
           <strong>{option.name || "Option"}</strong>
           <span>{meta.join(" - ")}</span>
@@ -551,7 +551,7 @@ function OptionCard({ option, onEdit, onFlexDieReorder, onFlexDieCountUpdate, op
         <Status severity={result.severity} label={result.label} />
 
         {onEdit && (
-          <button type="button" className="ghost-btn xs" onClick={() => onEdit(option)}>
+          <button type="button" className="ghost-btn xs" onClick={(event) => { event.stopPropagation(); onEdit(option); }}>
             <Edit3 size={13} /> Edit
           </button>
         )}
@@ -581,7 +581,7 @@ function OptionCard({ option, onEdit, onFlexDieReorder, onFlexDieCountUpdate, op
   );
 }
 
-function PressGroup({ pressName, options, onEdit, defaultOpen = false, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
+function PressGroup({ pressName, options, onSelect, onEdit, defaultOpen = false, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
   const [open, setOpen] = useState(defaultOpen);
   const stat = useMemo(() => aggregate(options), [options]);
   const orderedOptions = useMemo(
@@ -620,6 +620,7 @@ function PressGroup({ pressName, options, onEdit, defaultOpen = false, onFlexDie
             <OptionCard
               key={option.id}
               option={option}
+              onSelect={onSelect}
               onEdit={onEdit}
               onFlexDieReorder={onFlexDieReorder}
               onFlexDieCountUpdate={onFlexDieCountUpdate}
@@ -632,7 +633,7 @@ function PressGroup({ pressName, options, onEdit, defaultOpen = false, onFlexDie
   );
 }
 
-export default function RecipeOptionsView({ rows, onEdit, defaultOpenAll = false, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
+export default function RecipeOptionsView({ rows, onSelect, onEdit, defaultOpenAll = false, onFlexDieReorder, onFlexDieCountUpdate, operatorName }) {
   const byPress = useMemo(() => groupBy(rows ?? [], (r) => r.press_name ?? r.press_details?.name ?? "No press"), [rows]);
   const pressGroups = useMemo(
     () => Object.entries(byPress).sort(([aName], [bName]) => aName.localeCompare(bName)),
@@ -648,6 +649,7 @@ export default function RecipeOptionsView({ rows, onEdit, defaultOpenAll = false
           key={pressName}
           pressName={pressName}
           options={list}
+          onSelect={onSelect}
           onEdit={onEdit}
           defaultOpen={defaultOpenAll}
           onFlexDieReorder={onFlexDieReorder}

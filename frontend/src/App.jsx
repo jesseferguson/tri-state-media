@@ -77,7 +77,9 @@ function detailValue(record, key) {
   if (relationText && (record?.[key] === null || record?.[key] === undefined || typeof record?.[key] === "number")) return String(relationText);
 
   const value = record?.[key];
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "--";
+  if (Array.isArray(value)) {
+    return value.length ? value.map((item) => typeof item === "object" ? getRecordTitle(item) : item).join(", ") : "--";
+  }
   return formatCell(record, key);
 }
 
@@ -141,12 +143,16 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { inventory: selected.material_inventory }, 150));
   }
 
+  if (resource.key === "job-tickets") {
+    addLookupSpec(specs, relationLookupSpec("finished-inventory", {}, 1000, true));
+    addLookupSpec(specs, relationLookupSpec("job-ticket-usages", {}, 1000, true));
+  }
+
   if (resource.key === "job-tickets" && selected) {
     if (selected.material_spec) addLookupSpec(specs, relationLookupSpec("raw-materials", { material: selected.material_spec }, 250));
     if (selected.material_master_type || selected.material_spec_master_type) {
       addLookupSpec(specs, relationLookupSpec("raw-materials", { master_type: selected.material_master_type || selected.material_spec_master_type }, 250));
     }
-    addLookupSpec(specs, relationLookupSpec("finished-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 150));
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 150));
@@ -154,7 +160,6 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("customer-orders", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-order-events", {}, 250));
     addLookupSpec(specs, relationLookupSpec("job-ticket-events", { job_ticket: selected.id }, 250));
-    addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { job_ticket: selected.id }, 1000, true));
     addLookupSpec(specs, relationLookupSpec("presses", {}, 150));
   }
 
@@ -978,9 +983,11 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const showingJobTicketOverlay = resource.key === "job-tickets" && selected;
   const isMaterialTypePage = materialTypePageKeys.has(resource.key);
   const isMaterialFormPage = materialFormPageKeys.has(resource.key);
+  const isToolingConfigPage = toolingConfigFormPageKeys.has(resource.key);
   const showingMaterialFormOverlay = Boolean(formMode && isMaterialFormPage);
   const showingScheduleFormOverlay = Boolean(formMode && resource.key === "production-schedule");
-  const showingToolingConfigFormOverlay = Boolean(formMode && toolingConfigFormPageKeys.has(resource.key));
+  const showingToolingConfigFormOverlay = Boolean(formMode && isToolingConfigPage);
+  const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage);
   const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
 
   useEffect(() => {
@@ -994,9 +1001,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       try {
         return await fetchCollection(resource.endpoint, {
           ordering: resource.defaultOrdering,
-          pageSize: resource.searchMode === "flexDie" ? 500 : 250,
+          pageSize: resource.key === "job-tickets" ? 1000 : resource.searchMode === "flexDie" ? 500 : 250,
           filters: resource.filters ?? {},
           search: resource.searchMode === "flexDie" ? "" : search,
+          fetchAll: resource.key === "job-tickets",
         });
       } catch (error) {
         if (resource.key === "material-usages" && String(error.message).includes("404")) {
@@ -1818,7 +1826,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               />
             )}
 
-            <section className={`content-grid ${["job-tickets", "production-schedule"].includes(resource.key) ? "wide-list" : ""}`}>
+            <section className={`content-grid ${["job-tickets", "production-schedule"].includes(resource.key) || isToolingConfigPage ? "wide-list" : ""}`}>
               <div className="list-panel compact-card">
                 <div className="panel-head thin">
                   <div>
@@ -1852,6 +1860,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   <JobTicketGallery
                     rows={visibleRows}
                     selectedId={selected?.id}
+                    usageRows={lookupQuery.data?.["job-ticket-usages"] ?? []}
+                    finishedRows={lookupQuery.data?.["finished-inventory"] ?? []}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                   />
                 ) : resource.viewMode === "packagingInventory" ? (
@@ -1890,7 +1900,11 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
                   />
                 ) : resource.key === "recipe-options" ? (
-                  <RecipeOptionsView rows={visibleRows} onEdit={(row) => { setSelected(row); setFormMode("edit"); }} />
+                  <RecipeOptionsView
+                    rows={visibleRows}
+                    onSelect={(row) => { setSelected(row); setFormMode(null); }}
+                    onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
+                  />
                 ) : resource.key === "recipe-tools" ? (
                   <RecipeToolStackView
                     rows={tableRows}
@@ -1913,7 +1927,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 )}
               </div>
 
-              {resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && !isMaterialTypePage && (
+              {resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && !isMaterialTypePage && !isToolingConfigPage && (
                 <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : "detail-panel compact-card"}>
                   {selected ? (
                   resource.key === "flex-dies" ? (
@@ -2058,6 +2072,39 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
                 canUseField={canUseRecordField}
               />
+            </div>
+          </section>
+        )}
+
+        {showingToolingConfigDetailOverlay && (
+          <section className="tooling-detail-overlay" role="dialog" aria-modal="true" aria-label={`${resource.singular} details`}>
+            <div className="tooling-detail-window">
+              <header className="tooling-detail-head">
+                <div>
+                  <p className="eyebrow">{resource.singular} Details</p>
+                  <h2>{getRecordTitle(selected)}</h2>
+                  <span>{resource.label}</span>
+                </div>
+                <button className="ghost-btn" type="button" onClick={() => setSelected(null)}>
+                  <X size={16} /> Close
+                </button>
+              </header>
+
+              <div className="tooling-detail-grid">
+                {detailKeys.map((key) => (
+                  <div key={key}>
+                    <span>{labelForField(resource, key)}</span>
+                    <strong>{detailValue(selected, key)}</strong>
+                  </div>
+                ))}
+              </div>
+
+              {!resource.disableMutate && (
+                <div className="tooling-detail-actions">
+                  <button className="primary-btn" type="button" onClick={() => setFormMode("edit")}>Edit</button>
+                  <button className="danger-btn" type="button" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>Delete</button>
+                </div>
+              )}
             </div>
           </section>
         )}
