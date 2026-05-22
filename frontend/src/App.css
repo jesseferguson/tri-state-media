@@ -9750,3 +9750,150 @@ p, .muted { color: #7a7a7a; }
     padding: 12px;
   }
 }
+
+/* Compact Tool Assignments */
+.tool-stack-view {
+  gap: 6px;
+}
+
+.tool-stack-recipe,
+.tool-stack-press {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .05);
+}
+
+.tool-stack-recipe-head,
+.tool-stack-press-head {
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 7px;
+}
+
+.tool-stack-recipe-head strong {
+  font-size: .84rem;
+  line-height: 1.15;
+}
+
+.tool-stack-press-head strong {
+  font-size: .78rem;
+  line-height: 1.15;
+}
+
+.tool-stack-recipe-head span,
+.tool-stack-recipe-head small,
+.tool-stack-press-head span {
+  font-size: .62rem;
+  line-height: 1.1;
+}
+
+.tool-stack-toggle svg {
+  width: 13px;
+  height: 13px;
+}
+
+.tool-stack-press-list,
+.tool-stack-row-list {
+  gap: 5px;
+  padding: 5px;
+}
+
+.tool-stack-row {
+  gap: 4px;
+  padding: 5px 6px;
+  border-left-width: 3px;
+  border-radius: 7px;
+}
+
+.tool-stack-row-main {
+  grid-template-columns: minmax(160px, 1.6fr) 70px 82px 50px 84px auto;
+  gap: 5px;
+}
+
+.tool-stack-main-cell span,
+.tool-stack-role-cell span,
+.tool-stack-station-cell span,
+.tool-stack-status-cell span {
+  margin-bottom: 0;
+  font-size: .52rem;
+  letter-spacing: .04em;
+}
+
+.tool-stack-main-cell strong,
+.tool-stack-role-cell strong,
+.tool-stack-station-cell strong {
+  font-size: .7rem;
+  line-height: 1.12;
+}
+
+.tool-stack-status {
+  min-height: 20px;
+  align-items: center;
+  padding: 2px 6px;
+  font-size: .58rem;
+}
+
+.tool-stack-edit {
+  min-height: 24px;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: .62rem;
+}
+
+.tool-stack-edit svg {
+  width: 12px;
+  height: 12px;
+}
+
+.tool-stack-flex-specs {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.tool-stack-stat {
+  padding: 4px 5px;
+  border-radius: 6px;
+}
+
+.tool-stack-stat em {
+  font-size: .52rem;
+  line-height: 1;
+}
+
+.tool-stack-stat strong {
+  font-size: .66rem;
+  line-height: 1.1;
+}
+
+.tool-stack-location {
+  margin: -3px 0 0;
+  font-size: .6rem;
+  line-height: 1.1;
+}
+
+@media (max-width: 920px) {
+  .tool-stack-row-main {
+    grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(58px, auto));
+  }
+
+  .tool-stack-edit {
+    grid-column: 1 / -1;
+    width: fit-content;
+  }
+}
+
+@media (max-width: 760px) {
+  .tool-stack-recipe-head,
+  .tool-stack-press-head,
+  .tool-stack-row-main {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-stack-edit {
+    width: 100%;
+  }
+
+  .tool-stack-flex-specs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
