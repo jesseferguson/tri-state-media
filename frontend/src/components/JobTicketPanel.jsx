@@ -72,14 +72,23 @@ function inventoryLocation(row) {
   return row?.location_full_path || row?.location_name || "No location";
 }
 
-function Stat({ label, value, bars, rangeLabel }) {
+function ChartLoadingState({ label = "Loading chart data" }) {
+  return (
+    <div className="job-chart-loading" role="status" aria-live="polite">
+      <span aria-hidden="true" />
+      <strong>{label}</strong>
+    </div>
+  );
+}
+
+function Stat({ label, value, bars, rangeLabel, loading = false }) {
   return (
     <div className="job-stat">
       <div>
         <span>{label}</span>
         <strong>{value ?? "--"}</strong>
       </div>
-      {bars && <MiniBarChart bars={bars} rangeLabel={rangeLabel} />}
+      {loading ? <ChartLoadingState /> : bars && <MiniBarChart bars={bars} rangeLabel={rangeLabel} />}
     </div>
   );
 }
@@ -434,8 +443,9 @@ function monthlyAverageFromBars(bars, rangeKey) {
   return total > 0 ? Math.round((total / monthsInRange(rangeKey, bars)) * 10) / 10 : null;
 }
 
-function WidthFootageChart({ rows }) {
+function WidthFootageChart({ rows, loading = false }) {
   const [selectedLabel, setSelectedLabel] = useState("");
+  if (loading) return <ChartLoadingState label="Loading inventory chart" />;
   const groups = Object.entries(groupInventoryByWidth(rows ?? []))
     .map(([label, group]) => ({
       label,
@@ -497,6 +507,7 @@ function usageDate(row) {
 export default function JobTicketPanel({
   ticket,
   lookups,
+  chartsLoading = false,
   canEdit = false,
   canSchedule = false,
   canQuote = false,
@@ -641,8 +652,8 @@ export default function JobTicketPanel({
               </div>
               <div className="job-material-on-hand">
                 <span>Material On Hand</span>
-                <strong>{`${availableInventoryWithFeet.length} rolls / ${formatNumber(materialFeet, " ft")}`}</strong>
-                <WidthFootageChart rows={availableInventoryWithFeet} />
+                <strong>{chartsLoading ? "Loading..." : `${availableInventoryWithFeet.length} rolls / ${formatNumber(materialFeet, " ft")}`}</strong>
+                <WidthFootageChart rows={availableInventoryWithFeet} loading={chartsLoading} />
               </div>
             </div>
           </section>
@@ -660,9 +671,9 @@ export default function JobTicketPanel({
             ))}
           </div>
           <div className="job-stat-grid focus">
-            <Stat label="Finished Stock" value={`${formatNumber(finishedQuantity)} units / ${availableFinished.length} lots`} />
-            <Stat label="Avg Scheduled" value={averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} />
-            <Stat label="Avg Shipped / Month" value={shippedMonthlyAverage ? formatNumber(shippedMonthlyAverage) : "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} />
+            <Stat label="Finished Stock" value={chartsLoading ? "Loading..." : `${formatNumber(finishedQuantity)} units / ${availableFinished.length} lots`} loading={chartsLoading} />
+            <Stat label="Avg Scheduled" value={chartsLoading ? "Loading..." : averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} loading={chartsLoading} />
+            <Stat label="Avg Shipped / Month" value={chartsLoading ? "Loading..." : shippedMonthlyAverage ? formatNumber(shippedMonthlyAverage) : "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} loading={chartsLoading} />
           </div>
           <section className="job-spec-layout">
             <div className="job-subsection job-spec-card">

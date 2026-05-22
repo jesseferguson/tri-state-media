@@ -3359,6 +3359,41 @@ p, .muted { color: #7a7a7a; }
   font-weight: 850;
 }
 
+.job-chart-loading {
+  display: grid;
+  min-height: 46px;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #475467;
+}
+
+.job-chart-loading span {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #dbeafe;
+  border-top-color: #0ea5e9;
+  border-radius: 999px;
+  animation: jobChartSpin .72s linear infinite;
+}
+
+.job-chart-loading strong {
+  color: #475467;
+  font-size: .68rem;
+  font-weight: 900;
+}
+
+@keyframes jobChartSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .job-chart-range {
   display: flex;
   flex-wrap: wrap;
@@ -3487,6 +3522,84 @@ p, .muted { color: #7a7a7a; }
 .job-tickets-record-form .lookup-selected {
   border-radius: 8px;
   background: #f8fafc;
+}
+
+.job-tickets-record-form .tsm-id-input.conflict {
+  border-color: #fca5a5;
+  background: #fff1f2;
+  color: #991b1b;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .1);
+}
+
+.job-tickets-record-form .tsm-id-input.available {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.tsm-id-helper {
+  display: block;
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.tsm-id-recommendations {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 8px;
+  border: 1px solid #e6ecf2;
+  border-radius: 9px;
+  background: #fbfcfe;
+}
+
+.tsm-id-recommendation-group {
+  display: grid;
+  gap: 5px;
+}
+
+.tsm-id-recommendation-group > span {
+  color: #667085;
+  font-size: .62rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.tsm-id-recommendation-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tsm-id-recommendation-group strong,
+.tsm-id-recommendation-group button {
+  width: fit-content;
+  min-height: 26px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.tsm-id-recommendation-group strong.bad {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.tsm-id-recommendation-group button.good {
+  border-color: #bbf7d0;
+  background: #ecfdf3;
+  color: #15803d;
+  cursor: pointer;
+}
+
+.tsm-id-recommendation-group button.good:hover {
+  border-color: #86efac;
+  background: #dcfce7;
 }
 
 .job-tickets-record-form .field-wide,

@@ -90,6 +90,161 @@ function generatedMaterialCode(materialType) {
   return `${prefix}-${Date.now().toString(36).toUpperCase()}`;
 }
 
+const tsmMaterialPrefixRules = [
+  { prefix: "1", labels: ["PMDTD/PET", "PMDT/PET", "PMDTD", "PMDT"] },
+  { prefix: "2", labels: ["PMPR", "PMD", "PM"] },
+  { prefix: "3", labels: ["DTP"] },
+  { prefix: "4", labels: ["TTP"] },
+  { prefix: "5", labels: ["TTT"] },
+  { prefix: "6", labels: ["DTT"] },
+  { prefix: "8", labels: ["PGT"] },
+  { prefix: "10", labels: ["LPO"] },
+  { prefix: "11", labels: ["LV"] },
+  { prefix: "12", labels: ["GIJPA"] },
+  { prefix: "13", labels: ["PET"] },
+  { prefix: "14", labels: ["LPA"] },
+];
+
+const tsmMaterialAliases = tsmMaterialPrefixRules
+  .flatMap((rule) => rule.labels.map((label) => ({ label, prefix: rule.prefix })))
+  .sort((a, b) => b.label.length - a.label.length);
+
+function compactMaterialText(value) {
+  return String(value ?? "").toUpperCase().replace(/\s+/g, "");
+}
+
+function normalizeTsmCode(value) {
+  return String(value ?? "").trim().toUpperCase().replace(/^TSM\s+/, "").replace(/\s+/g, "");
+}
+
+function parseTsmCode(value) {
+  const normalized = normalizeTsmCode(value);
+  const match = /^([A-Z0-9]+)-(\d{3})-(\d{3})$/.exec(normalized);
+  if (!match) return null;
+  return {
+    normalized,
+    prefix: match[1],
+    group: match[2],
+    sequence: Number(match[3]),
+  };
+}
+
+function formatTsmCode(prefix, sequence, group = "000") {
+  return `${prefix}-${group}-${String(Math.max(1, Number(sequence) || 1)).padStart(3, "0")}`;
+}
+
+function selectedLookupRow(rows, id) {
+  if (id === null || id === undefined || id === "") return null;
+  return (rows ?? []).find((row) => String(row.id) === String(id)) ?? null;
+}
+
+function customerPrefixForForm(form, lookups) {
+  const customer = selectedLookupRow(lookups?.customers, form.customer);
+  const source = form.customer_name || customer?.name || customer?.customer_name || "";
+  const compact = String(source).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return compact.length >= 3 ? compact.slice(0, 3) : "";
+}
+
+function materialPrefixForForm(form, lookups) {
+  const masterType = selectedLookupRow(lookups?.["material-master-types"], form.material_master_type);
+  const material = selectedLookupRow(lookups?.materials, form.material_spec);
+  const texts = [
+    masterType?.code,
+    masterType?.name,
+    masterType?.description,
+    material?.master_type_code,
+    material?.material_master_type_code,
+    material?.material_family,
+    material?.code,
+    material?.name,
+  ].filter(Boolean);
+
+  for (const text of texts) {
+    const compact = compactMaterialText(text);
+    const match = tsmMaterialAliases.find((alias) => compact.includes(compactMaterialText(alias.label)));
+    if (match) return match.prefix;
+  }
+  return "";
+}
+
+function prefixFromPartialInput(value) {
+  const normalized = normalizeTsmCode(value);
+  const match = /^([A-Z0-9]+)-/.exec(normalized);
+  return match?.[1] ?? "";
+}
+
+function buildTsmIdRecommendation(form, lookups, record) {
+  const existingRows = (lookups?.["job-tickets"] ?? [])
+    .filter((row) => !record?.id || String(row.id) !== String(record.id));
+  const usedCodes = new Set(existingRows.map((row) => normalizeTsmCode(row.product_code)).filter(Boolean));
+  const inputCode = normalizeTsmCode(form.product_code);
+  const inputParts = parseTsmCode(inputCode);
+  const prefix = inputParts?.prefix || prefixFromPartialInput(inputCode) || customerPrefixForForm(form, lookups) || materialPrefixForForm(form, lookups);
+  const group = inputParts?.group || "000";
+
+  if (!prefix) {
+    return {
+      status: "missing-context",
+      message: "Select a customer for a customer-specific item, or a material type for a stock item.",
+      inputTone: "",
+    };
+  }
+
+  const parsedExisting = existingRows
+    .map((row) => parseTsmCode(row.product_code))
+    .filter((parts) => parts && parts.prefix === prefix && parts.group === group);
+  const usedSequences = new Set(parsedExisting.map((parts) => parts.sequence));
+  const targetSequence = inputParts?.sequence || Math.max(0, ...parsedExisting.map((parts) => parts.sequence)) + 1;
+  let availableSequence = Math.max(1, targetSequence);
+  while (usedSequences.has(availableSequence)) availableSequence += 1;
+
+  const usedNearby = parsedExisting
+    .sort((a, b) => Math.abs(a.sequence - targetSequence) - Math.abs(b.sequence - targetSequence) || a.sequence - b.sequence)
+    .slice(0, 3)
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((parts) => formatTsmCode(parts.prefix, parts.sequence, parts.group));
+
+  const exactConflict = Boolean(inputCode && usedCodes.has(inputCode));
+  return {
+    status: "ready",
+    prefix,
+    group,
+    usedNearby,
+    availableCode: formatTsmCode(prefix, availableSequence, group),
+    exactConflict,
+    inputTone: exactConflict ? "conflict" : inputParts ? "available" : "",
+  };
+}
+
+function TsmIdRecommendationPanel({ recommendation, onPick }) {
+  if (!recommendation) return null;
+
+  if (recommendation.status === "missing-context") {
+    return <small className="tsm-id-helper">{recommendation.message}</small>;
+  }
+
+  return (
+    <div className="tsm-id-recommendations" aria-live="polite">
+      {recommendation.usedNearby.length > 0 && (
+        <div className="tsm-id-recommendation-group">
+          <span>Used nearby</span>
+          <div>
+            {recommendation.usedNearby.map((code) => (
+              <strong className="bad" key={code}>{code}</strong>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="tsm-id-recommendation-group">
+        <span>Recommended available</span>
+        <button type="button" className="good" onClick={() => onPick(recommendation.availableCode)}>
+          {recommendation.availableCode}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function makeSearchText(row, field) {
   const parts = [getRecordTitle(row)];
   (field.searchFields ?? []).forEach((key) => parts.push(row?.[key], row?.[`${key}_name`], row?.[`${key}_label`]));
@@ -325,7 +480,7 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
   );
 }
 
-export default function RecordForm({ resource, record, defaults = {}, lookups, onSubmit, onCancel, submitting, canUseField = () => true }) {
+export default function RecordForm({ resource, record, defaults = {}, lookups = {}, onSubmit, onCancel, submitting, canUseField = () => true }) {
   const fields = resource.fields ?? [];
   const [form, setForm] = useState(() => normalizeInitial(fields, record, defaults));
   const [activeFormTab, setActiveFormTab] = useState("");
@@ -345,6 +500,10 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
   const visibleFields = useMemo(
     () => (formTabs.length > 1 ? allVisibleFields.filter((field) => getFieldTab(field) === currentFormTab) : allVisibleFields),
     [allVisibleFields, currentFormTab, formTabs.length]
+  );
+  const tsmIdRecommendation = useMemo(
+    () => (resource.key === "job-tickets" && !record ? buildTsmIdRecommendation(form, lookups, record) : null),
+    [form, lookups, record, resource.key]
   );
 
   useEffect(() => {
@@ -410,7 +569,9 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
           const lookupField = { ...field, label: fieldLabel, lookupFilters: getFieldLookupFilters(field, form) };
           const value = form[field.name];
           const id = `${resource.key}-${field.name}`;
-          const fieldClass = `field field-${field.name}`;
+          const isTsmIdField = resource.key === "job-tickets" && field.name === "product_code";
+          const tsmToneClass = isTsmIdField && tsmIdRecommendation?.inputTone ? ` tsm-id-field ${tsmIdRecommendation.inputTone}` : "";
+          const fieldClass = `field field-${field.name}${tsmToneClass}`;
           const fieldWideClass = `${fieldClass} field-wide`;
           const sectionHeading = field.section && field.section !== visibleFields[index - 1]?.section
             ? <div className="form-section-heading"><strong>{field.section}</strong>{field.sectionHint && <span>{field.sectionHint}</span>}</div>
@@ -542,8 +703,11 @@ export default function RecordForm({ resource, record, defaults = {}, lookups, o
               {sectionHeading}
               <label className={fieldClass} htmlFor={id}>
                 <span>{fieldLabel}</span>
-                <input id={id} type={field.type ?? "text"} step={field.step} required={field.required} value={value ?? ""} placeholder={field.placeholder ?? ""} onChange={(event) => update(field.name, event.target.value)} />
+                <input id={id} className={isTsmIdField && tsmIdRecommendation?.inputTone ? `tsm-id-input ${tsmIdRecommendation.inputTone}` : undefined} type={field.type ?? "text"} step={field.step} required={field.required} value={value ?? ""} placeholder={field.placeholder ?? ""} onChange={(event) => update(field.name, event.target.value)} />
                 {field.helpText && <small>{field.helpText}</small>}
+                {isTsmIdField && tsmIdRecommendation && (
+                  <TsmIdRecommendationPanel recommendation={tsmIdRecommendation} onPick={(next) => update(field.name, next)} />
+                )}
               </label>
             </Fragment>
           );

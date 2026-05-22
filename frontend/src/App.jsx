@@ -1104,6 +1104,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       };
     });
   }, [lookupQuery.data, resource.key, visibleRows]);
+  const recordFormLookups = useMemo(() => {
+    if (resource.key !== "job-tickets") return lookupQuery.data ?? {};
+    return { ...(lookupQuery.data ?? {}), "job-tickets": rows };
+  }, [lookupQuery.data, resource.key, rows]);
 
   function prepareSavePayload(payload) {
     const { __imageUploads, ...dataPayload } = payload ?? {};
@@ -1818,7 +1822,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 resource={resource}
                 record={formMode === "edit" ? selected : null}
                 defaults={formMode === "create" ? createDefaults : {}}
-                lookups={lookupQuery.data ?? {}}
+                lookups={recordFormLookups}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
@@ -2005,6 +2009,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               <JobTicketPanel
                 ticket={selected}
                 lookups={lookupQuery.data ?? {}}
+                chartsLoading={lookupQuery.isLoading || (lookupQuery.isFetching && !lookupQuery.data)}
                 canEdit={canEditJobTicket}
                 canSchedule={canScheduleFromJobTicket}
                 canQuote={canQuoteJobTicket}
@@ -2019,7 +2024,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   <RecordForm
                     resource={resource}
                     record={selected}
-                    lookups={lookupQuery.data ?? {}}
+                    lookups={recordFormLookups}
                     submitting={jobTicketEditMutation.isPending}
                     onSubmit={(payload) => jobTicketEditMutation.mutate(payload)}
                     onCancel={onCancel}
