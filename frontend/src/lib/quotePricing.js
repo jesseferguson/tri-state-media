@@ -114,6 +114,24 @@ export function calculateRecommendedWastePercent({ runFootage, colorCount }) {
   };
 }
 
+export function calculateSellPrice(totalCost, pricingMode, pricingPercent) {
+  const cost = Math.max(0, toQuoteNumber(totalCost));
+  const percent = Math.max(0, toQuoteNumber(pricingPercent));
+
+  if (pricingMode === "margin") {
+    const safeMargin = Math.min(percent, 95);
+    return cost / (1 - safeMargin / 100);
+  }
+
+  if (pricingMode === "markup") {
+    if (percent <= 0) return cost;
+    const multiplier = percent / 100;
+    return multiplier < 1 ? cost : cost * multiplier;
+  }
+
+  return cost;
+}
+
 export function calculateQuotePricing(input) {
   const labelWidth = toQuoteNumber(input.labelWidth);
   const labelLength = toQuoteNumber(input.labelLength);
@@ -163,10 +181,7 @@ export function calculateQuotePricing(input) {
   const pricingPercent = input.pricingMode === "markup"
     ? rawPricingPercent
     : Math.min(95, rawPricingPercent);
-  const markupMultiplier = pricingPercent > 0 ? pricingPercent / 100 : 1;
-  const markedUpProductionSellPrice = input.pricingMode === "markup"
-    ? totalCost * markupMultiplier
-    : totalCost / (1 - pricingPercent / 100);
+  const markedUpProductionSellPrice = calculateSellPrice(totalCost, input.pricingMode, pricingPercent);
   const sellPrice = markedUpProductionSellPrice;
   const profit = sellPrice - totalCost;
   const pricePerThousand = quantity > 0 ? sellPrice / (quantity / 1000) : 0;
