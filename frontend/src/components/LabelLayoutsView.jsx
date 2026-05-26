@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Edit3, Plus, Trash2, Wrench } from "lucide-react";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
@@ -95,6 +95,16 @@ function toolTypeKey(tool) {
   return normalized(toolType(tool)).replaceAll(" ", "_").replaceAll("-", "_");
 }
 
+function toolRoleKey(tool) {
+  return normalized(tool?.tool_role ?? tool?.role ?? "top").replaceAll(" ", "_").replaceAll("-", "_");
+}
+
+function toothText(tool) {
+  const details = toolDetails(tool);
+  const value = details.tooth_count ?? details.gear ?? details.gear_tooth_count ?? tool?.tooth_count ?? tool?.gear;
+  return value || value === 0 ? `${value}T` : "";
+}
+
 function toolName(tool) {
   const details = toolDetails(tool);
   return (
@@ -113,8 +123,15 @@ function toolName(tool) {
 function toolMeta(tool) {
   const details = toolDetails(tool);
   const type = toolTypeKey(tool);
-  if (type.includes("mag")) return [details.tooth_count ? `${details.tooth_count}T` : "", details.repeat ? `Repeat ${formatInches(details.repeat)}` : ""].filter(Boolean).join(" / ");
-  if (type.includes("flex_die")) return [details.gear ? `${details.gear}T` : "", details.across && details.around ? `${details.across} x ${details.around}` : ""].filter(Boolean).join(" / ");
+  if (type.includes("mag")) return [toothText(tool), details.repeat ? `Repeat ${formatInches(details.repeat)}` : ""].filter(Boolean).join(" / ");
+  if (type.includes("flex_die")) {
+    const across = details.across ?? details.number_across;
+    return [
+      choiceLabel("faceType", details.face_type, ""),
+      across ? `${across} across` : "",
+      toothText(tool),
+    ].filter(Boolean).join(" / ");
+  }
   if (type.includes("perf_cylinder")) return [details.gear ? `${details.gear}T` : "", details.max_blades ? `${details.max_blades} blades` : ""].filter(Boolean).join(" / ");
   if (type.includes("perf_blade_setup")) return [details.perf_cylinder, details.blade_count ? `${details.blade_count} blades` : ""].filter(Boolean).join(" / ");
   return tool?.manual_description || "";
@@ -135,13 +152,96 @@ function optionTools(option, toolRows, nestedTools) {
   return nestedTools ?? option.tools ?? option.recipe_tools ?? [];
 }
 
-function toolsByRows(tools) {
-  return [
-    ["MAG", tools.filter((tool) => toolTypeKey(tool).includes("mag") && !toolTypeKey(tool).includes("perf"))],
-    ["DIE", tools.filter((tool) => toolTypeKey(tool).includes("flex_die"))],
-    ["PERF", tools.filter((tool) => toolTypeKey(tool).includes("perf"))],
-    ["OTHER", tools.filter((tool) => ["manual_tooling", "other"].includes(toolTypeKey(tool)) || (!toolTypeKey(tool).includes("mag") && !toolTypeKey(tool).includes("flex_die") && !toolTypeKey(tool).includes("perf")))],
+function isMagTool(tool) {
+  const type = toolTypeKey(tool);
+  const detailType = normalized(toolDetails(tool).type);
+  return (type.includes("mag") || detailType === "mag") && !type.includes("perf");
+}
+
+function isFlexDieTool(tool) {
+  const type = toolTypeKey(tool);
+  const detailType = normalized(toolDetails(tool).type);
+  return type.includes("flex_die") || detailType === "flex die";
+}
+
+function isPerfTool(tool) {
+  const type = toolTypeKey(tool);
+  const detailType = normalized(toolDetails(tool).type);
+  return type.includes("perf") || detailType.includes("perf");
+}
+
+function isMainTool(tool) {
+  const role = toolRoleKey(tool);
+  return role !== "undercut" && role !== "perf" && role !== "other";
+}
+
+function isUndercutTool(tool) {
+  return toolRoleKey(tool) === "undercut";
+}
+
+function isPerfRoleTool(tool) {
+  return toolRoleKey(tool) === "perf" || isPerfTool(tool);
+}
+
+function sortedTools(tools) {
+  return [...(tools ?? [])].sort((a, b) => {
+    const aStation = Number(a.station_number ?? 9999);
+    const bStation = Number(b.station_number ?? 9999);
+    return aStation - bStation || Number(a.id ?? 0) - Number(b.id ?? 0);
+  });
+}
+
+function recipeNeedsPerf(recipe, option) {
+  const source = recipe ?? option?.recipe_details ?? {};
+  return (
+    source.requires_perf === true ||
+    source.requires_external_perf === true ||
+    source.requires_internal_perf === true ||
+    normalized(source.perf_option ?? option?.perf_option) === "perf" ||
+    normalized(source.internal_perf_option ?? option?.internal_perf_option) === "perf"
+  );
+}
+
+function optionNeedsUndercut(option, tools) {
+  return option?.requires_undercut === true || normalized(option?.setup_type) === "undercut" || (tools ?? []).some(isUndercutTool);
+}
+
+function buildToolSlots(recipe, option, tools) {
+  const assigned = sortedTools(tools);
+  const mags = assigned.filter(isMagTool);
+  const dies = assigned.filter(isFlexDieTool);
+  const perfTools = assigned.filter(isPerfRoleTool);
+
+  const needsUndercut = optionNeedsUndercut(option, assigned);
+  const needsPerf = recipeNeedsPerf(recipe, option) || perfTools.length > 0;
+  const mainMags = mags.filter(isMainTool);
+  const mainDies = dies.filter(isMainTool);
+  const undercutMags = mags.filter(isUndercutTool);
+  const undercutDies = dies.filter(isUndercutTool);
+
+  const mag1 = mainMags[0] ?? (!needsUndercut ? mags[0] : mags.find((tool) => !isUndercutTool(tool))) ?? null;
+  const die1 = mainDies[0] ?? (!needsUndercut ? dies[0] : dies.find((tool) => !isUndercutTool(tool))) ?? null;
+  const mag2 = needsUndercut ? (undercutMags[0] ?? mags.find((tool) => tool !== mag1) ?? null) : null;
+  const die2 = needsUndercut ? (undercutDies[0] ?? dies.find((tool) => tool !== die1) ?? null) : null;
+  const perf = needsPerf ? (perfTools[0] ?? null) : null;
+
+  const slots = [
+    { key: "mag1", label: "MAG1", missing: "Mag missing", requestGroup: "MAG1", tool: mag1 },
+    { key: "die1", label: "Die1", missing: "Flex die missing", requestGroup: "DIE1", tool: die1 },
   ];
+
+  if (needsUndercut) {
+    slots.push(
+      { key: "mag2", label: "MAG2", missing: "Undercut mag missing", requestGroup: "MAG2", tool: mag2 },
+      { key: "die2", label: "Die2", missing: "Undercut die missing", requestGroup: "DIE2", tool: die2 }
+    );
+  }
+
+  if (needsPerf) {
+    slots.push({ key: "perf", label: "Perf", missing: "Perf tooling missing", requestGroup: "PERF", tool: perf });
+  }
+
+  return { slots, needsUndercut, needsPerf };
 }
 
 function optionReadiness(recipe, option, tools) {
@@ -151,33 +251,46 @@ function optionReadiness(recipe, option, tools) {
   if (option.can_run === false) problems.push("Press cannot run this setup");
   if (!tools.length) problems.push("No tooling assigned");
 
-  const typeKeys = tools.map(toolTypeKey);
-  const hasMag = typeKeys.some((type) => type.includes("mag") && !type.includes("perf"));
-  const hasDie = typeKeys.some((type) => type.includes("flex_die"));
-  const hasPerf = typeKeys.some((type) => type.includes("perf"));
+  const toolPlan = buildToolSlots(recipe, option, tools);
+  const hasMag = Boolean(toolPlan.slots.find((slot) => slot.key === "mag1")?.tool);
+  const hasDie = Boolean(toolPlan.slots.find((slot) => slot.key === "die1")?.tool);
+  const hasMag2 = Boolean(toolPlan.slots.find((slot) => slot.key === "mag2")?.tool);
+  const hasDie2 = Boolean(toolPlan.slots.find((slot) => slot.key === "die2")?.tool);
+  const hasPerf = Boolean(toolPlan.slots.find((slot) => slot.key === "perf")?.tool);
 
-  if (!hasMag) problems.push("Mag missing");
-  if (!hasDie) problems.push("Flex die missing");
-  if (recipe?.requires_external_perf && !hasPerf) problems.push("External perf tooling missing");
+  if (!hasMag) problems.push("MAG1 missing");
+  if (!hasDie) problems.push("Die1 missing");
+  if (toolPlan.needsUndercut && !hasMag2) problems.push("MAG2 missing");
+  if (toolPlan.needsUndercut && !hasDie2) problems.push("Die2 missing");
+  if (toolPlan.needsPerf && !hasPerf) problems.push("Perf tooling missing");
 
   if (problems.length) return { tone: option.can_run === false ? "bad" : "warn", label: problems[0], problems };
   return { tone: "ready", label: "Ready", problems };
 }
 
-function ToolChip({ tool, onEdit, onDelete }) {
-  const status = toolStatus(tool);
-  const type = choiceLabel("toolType", tool?.tool_type ?? toolTypeKey(tool), "Tool");
+function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete }) {
+  if (!slot.tool) {
+    return (
+      <button type="button" className="layout-chain-card missing" onClick={() => onAddTooling(option, slot.requestGroup)}>
+        <span>{slot.label}</span>
+        <strong>{slot.missing}</strong>
+        <em><Plus size={11} /> Add</em>
+      </button>
+    );
+  }
+
+  const status = toolStatus(slot.tool);
 
   return (
-    <div className={`layout-tool-chip ${status}`}>
+    <div className={`layout-chain-card ${status}`}>
       <div>
-        <span>{type}</span>
-        <strong>{toolName(tool)}</strong>
-        <em>{toolMeta(tool) || "Assigned"}</em>
+        <span>{slot.label}</span>
+        <strong>{toolName(slot.tool)}</strong>
+        <em>{toolMeta(slot.tool) || "Assigned"}</em>
       </div>
       <div className="layout-tool-actions">
-        <button type="button" onClick={() => onEdit(tool)}><Edit3 size={12} /> Edit</button>
-        <button type="button" className="danger-text" onClick={() => onDelete(tool)}><Trash2 size={12} /> Delete</button>
+        <button type="button" onClick={() => onEdit(slot.tool)}><Edit3 size={12} /> Edit</button>
+        <button type="button" className="danger-text" onClick={() => onDelete(slot.tool)}><Trash2 size={12} /> Delete</button>
       </div>
     </div>
   );
@@ -186,7 +299,7 @@ function ToolChip({ tool, onEdit, onDelete }) {
 function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDeletePressOption, onAddTooling, onEditTooling, onDeleteTooling }) {
   const tools = optionTools(option, toolRows, option.tools);
   const readiness = optionReadiness(recipe, option, tools);
-  const toolRowsByType = toolsByRows(tools);
+  const { slots } = buildToolSlots(recipe, option, tools);
 
   return (
     <article className={`layout-press-card ${readiness.tone}`}>
@@ -212,27 +325,18 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
         </div>
       )}
 
-      <div className="layout-tool-table">
-        {toolRowsByType.map(([label, list]) => (
-          <div className="layout-tool-table-row" key={label}>
-            <strong>{label}</strong>
-            <div>
-              {list.length ? (
-                list.map((tool) => (
-                  <ToolChip
-                    key={`${label}-${tool.id}-${tool.tool_type}`}
-                    tool={tool}
-                    onEdit={onEditTooling}
-                    onDelete={onDeleteTooling}
-                  />
-                ))
-              ) : (
-                <button type="button" className="layout-empty-tool" onClick={() => onAddTooling(option, label)}>
-                  <Plus size={12} /> Add {label.toLowerCase()}
-                </button>
-              )}
-            </div>
-          </div>
+      <div className="layout-tool-chain">
+        {slots.map((slot, index) => (
+          <Fragment key={slot.key}>
+            {index > 0 && <span className="layout-chain-arrow">-&gt;</span>}
+            <ChainToolCard
+              slot={slot}
+              option={option}
+              onAddTooling={onAddTooling}
+              onEdit={onEditTooling}
+              onDelete={onDeleteTooling}
+            />
+          </Fragment>
         ))}
       </div>
     </article>
@@ -254,6 +358,13 @@ function LayoutCard({
   onEditTooling,
   onDeleteTooling,
 }) {
+  const [pressOpen, setPressOpen] = useState(false);
+  const pressResults = options.map((option) => {
+    const tools = optionTools(option, toolRows, option.tools);
+    return { option, readiness: optionReadiness(row, option, tools) };
+  });
+  const readyCount = pressResults.filter(({ readiness }) => readiness.tone === "ready").length;
+
   return (
     <article className={`layout-design-card ${selected ? "selected" : ""} ${row.is_active === false ? "inactive" : ""}`} onClick={() => onSelect(row)}>
       <header className="layout-design-head">
@@ -273,21 +384,38 @@ function LayoutCard({
         </div>
       </header>
 
-      <div className="layout-press-list" onClick={(event) => event.stopPropagation()}>
+      <div className="layout-press-section" onClick={(event) => event.stopPropagation()}>
         {options.length ? (
-          options.map((option) => (
-            <PressOptionCard
-              key={option.id}
-              recipe={row}
-              option={option}
-              toolRows={toolRows}
-              onEditPressOption={onEditPressOption}
-              onDeletePressOption={onDeletePressOption}
-              onAddTooling={onAddTooling}
-              onEditTooling={onEditTooling}
-              onDeleteTooling={onDeleteTooling}
-            />
-          ))
+          <>
+            <button type="button" className="layout-press-toggle" onClick={() => setPressOpen((open) => !open)}>
+              <span className="layout-group-toggle">{pressOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
+              <strong>Press Types</strong>
+              <span className="layout-press-count">{readyCount}/{options.length} runnable</span>
+              <span className="layout-press-summary">
+                {pressResults.map(({ option, readiness }) => (
+                  <em className={`layout-press-badge ${readiness.tone}`} key={option.id}>{option.press_name || "No press"}</em>
+                ))}
+              </span>
+            </button>
+
+            {pressOpen && (
+              <div className="layout-press-list">
+                {pressResults.map(({ option }) => (
+                  <PressOptionCard
+                    key={option.id}
+                    recipe={row}
+                    option={option}
+                    toolRows={toolRows}
+                    onEditPressOption={onEditPressOption}
+                    onDeletePressOption={onDeletePressOption}
+                    onAddTooling={onAddTooling}
+                    onEditTooling={onEditTooling}
+                    onDeleteTooling={onDeleteTooling}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         ) : (
           <div className="layout-no-options">
             <span>No press setup options yet.</span>

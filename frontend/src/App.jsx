@@ -1774,10 +1774,11 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
 
   function toolingDefaultsFor(option, requestedGroup = "") {
     const group = String(requestedGroup || "").toUpperCase();
-    if (group === "MAG") return { tool_type: "mag", tool_role: "top" };
-    if (group === "DIE") return { tool_type: "flex_die", tool_role: "top" };
+    if (["MAG", "MAG1", "MAIN_MAG"].includes(group)) return { tool_type: "mag", tool_role: "top" };
+    if (["DIE", "DIE1", "MAIN_DIE"].includes(group)) return { tool_type: "flex_die", tool_role: "top" };
+    if (["MAG2", "UNDERCUT_MAG"].includes(group)) return { tool_type: "mag", tool_role: "undercut" };
+    if (["DIE2", "UNDERCUT_DIE"].includes(group)) return { tool_type: "flex_die", tool_role: "undercut" };
     if (group === "PERF") return { tool_type: "perf_cylinder", tool_role: "perf" };
-    if (group === "OTHER") return { tool_type: "manual_tooling", tool_role: "other" };
     return { tool_type: "flex_die", tool_role: "top" };
   }
 
