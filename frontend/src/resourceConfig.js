@@ -186,6 +186,13 @@ export const choiceLists = {
     ["custom", "Custom"],
   ],
 
+  layoutShapeType: [
+    ["rcr", "RCR"],
+    ["circle", "Circle"],
+    ["rectangle", "Rectangle"],
+    ["special", "Special"],
+  ],
+
   toolRole: [
     ["top", "Top / Main"],
     ["undercut", "Undercut"],
@@ -198,6 +205,12 @@ export const choiceLists = {
     ["metal_to_metal", "Metal to Metal"],
     ["score", "Score"],
     ["special", "Special"],
+  ],
+
+  labelCutType: [
+    ["to_liner", "To Liner"],
+    ["metal_to_metal", "Metal to Metal"],
+    ["multilevel", "Multilevel"],
   ],
 
   perfOption: [
@@ -289,8 +302,7 @@ const linerDataTypeField = {
   label: "Liner",
   type: "select",
   choices: choiceLists.linerType,
-  lookupRelation: "materials",
-  lookupFilters: { material_type: "liner" },
+  lookupRelation: "material-liners",
   lookupValueField: "name",
   lookupLabelFields: ["name", "code", "liner_pounds", "material_family"],
 };
@@ -1578,8 +1590,8 @@ export const resources = [
         name: "name",
         label: "Setup Name",
         type: "text",
-        required: true,
-        placeholder: "(13)2-1-POLY-NP",
+        placeholder: "Auto: Label Layout - Press Name",
+        helpText: "Leave blank and the system will build this from the label layout and selected press.",
       },
       {
         name: "setup_type",
@@ -1659,35 +1671,40 @@ export const resources = [
     fields: [
       {
         name: "name",
-        label: "Name",
+        label: "Name of Design",
         type: "text",
         required: true,
         placeholder: "2 x 1 Poly NP",
       },
 
-      ...dimFields,
+      { name: "label_width_inches", label: "Label Width", type: "number", step: "0.0001" },
+      { name: "label_length_inches", label: "Label Length", type: "number", step: "0.0001" },
+      { name: "repeat_inches", label: "Label Repeat", type: "number", step: "0.0001" },
 
       {
         name: "shape_type",
-        label: "Shape",
+        label: "Label Shape",
         type: "select",
-        choices: choiceLists.shapeType,
+        choices: choiceLists.layoutShapeType,
         defaultValue: "rcr",
       },
       {
         name: "cutting_type",
         label: "Label Cut",
         type: "select",
-        choices: choiceLists.cuttingType,
+        choices: choiceLists.labelCutType,
         defaultValue: "to_liner",
       },
       {
         name: "face_type",
-        label: "Face",
+        label: "Face Type",
         type: "select",
         choices: choiceLists.faceType,
+        lookupRelation: "material-faces",
+        lookupValueField: "name",
+        lookupLabelFields: ["name", "code", "material_family"],
       },
-      { ...linerDataTypeField },
+      { ...linerDataTypeField, label: "Liner Type" },
       {
         name: "perf_option",
         label: "External Perf",

@@ -2,11 +2,12 @@ import { AlertTriangle, CheckCircle2, DatabaseZap, Download, FileSpreadsheet, Re
 import { useEffect, useMemo, useState } from "react";
 import { requestApi } from "../api";
 
-const importOrder = ["job_tickets", "job_ticket_usage", "flex_dies", "inventory", "inventory_usage"];
+const importOrder = ["job_tickets", "job_ticket_usage", "finished_inventory", "flex_dies", "inventory", "inventory_usage"];
 
 const flushScopes = [
-  ["setup_data", "Setup data: job tickets, schedule, flex dies, inventory, usage, quotes"],
+  ["setup_data", "Setup data: job tickets, finished inventory, schedule, flex dies, inventory, usage, quotes"],
   ["job_tickets", "Job tickets + schedule/orders"],
+  ["finished_inventory", "Finished inventory"],
   ["flex_dies", "Flex dies"],
   ["inventory", "Raw inventory + usage"],
   ["inventory_usage", "Inventory usage only"],
@@ -166,7 +167,7 @@ export default function DataImportTool({ currentUser }) {
         <div>
           <p className="eyebrow">Data Setup</p>
           <h2>CSV Import Center</h2>
-          <p>Bring over old-system job tickets, flex die jackets, inventory rolls, and inventory usage in controlled batches.</p>
+          <p>Bring over old-system job tickets, finished stock, flex die jackets, inventory rolls, and usage in controlled batches.</p>
         </div>
         <div className="data-import-hero-actions">
           <span><FileSpreadsheet size={16} /> CSV only</span>

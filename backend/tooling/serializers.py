@@ -219,6 +219,22 @@ class ToolingRecipeOptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ToolingRecipeOption
         fields = "__all__"
+        extra_kwargs = {
+            "name": {"required": False, "allow_blank": True},
+        }
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        name = str(attrs.get("name", getattr(self.instance, "name", "")) or "").strip()
+        if name:
+            attrs["name"] = name
+            return attrs
+
+        recipe = attrs.get("recipe") or getattr(self.instance, "recipe", None)
+        press = attrs.get("press") or getattr(self.instance, "press", None)
+        if recipe and press:
+            attrs["name"] = f"{recipe.name} - {press.name}"[:150]
+        return attrs
 
     def get_press_location(self, obj):
         if obj.press and obj.press.location:

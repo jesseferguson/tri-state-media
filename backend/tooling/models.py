@@ -214,6 +214,7 @@ class FlexDie(models.Model):
     CUTTING_TYPE_CHOICES = [
         ("to_liner", "To Liner"),
         ("metal_to_metal", "Metal to Metal"),
+        ("multilevel", "Multilevel"),
         ("score", "Score"),
         ("special", "Special"),
     ]

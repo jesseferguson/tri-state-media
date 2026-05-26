@@ -28,6 +28,7 @@ from .models import (
     Customer,
     CustomerOrder,
     CustomerOrderEvent,
+    FinishedInventory,
     JobTicket,
     JobTicketEvent,
     JobTicketUsage,
@@ -147,6 +148,18 @@ JOB_TICKET_USAGE_COLUMNS = [
     "job_ticket_id",
     "quantity",
     "source",
+    "notes",
+]
+
+FINISHED_INVENTORY_COLUMNS = [
+    "row_id",
+    "tsm_id",
+    "part_number",
+    "location",
+    "quantity",
+    "unit",
+    "status",
+    "run_date",
     "notes",
 ]
 
@@ -281,6 +294,22 @@ IMPORT_TEMPLATES = {
             "quantity": "1",
             "source": "Glide",
             "notes": "Imported usage",
+        },
+    },
+    "finished_inventory": {
+        "label": "Finished Inventory",
+        "description": "Imports old-system carton/finished stock into Finished Inventory. TSM ID is matched to job tickets when possible.",
+        "columns": FINISHED_INVENTORY_COLUMNS,
+        "sample": {
+            "row_id": "ZI79BWYOQkiqaVGINz1rfQ",
+            "tsm_id": "ABE-000-023",
+            "part_number": "ABE-LKD-10042",
+            "location": "A-1-9",
+            "quantity": "23",
+            "unit": "carton",
+            "status": "available",
+            "run_date": "",
+            "notes": "Imported carton stock",
         },
     },
 }
@@ -1052,12 +1081,87 @@ def import_job_ticket_usage(rows):
     return result
 
 
+def find_finished_inventory_by_legacy_id(row_id):
+    row_id = str(row_id or "").strip()
+    if not row_id:
+        return None
+    return FinishedInventory.objects.filter(notes__icontains=f"Legacy Row ID: {row_id}").first()
+
+
+def import_finished_inventory(rows):
+    result = import_result()
+    unmatched_ticket_count = 0
+    for line_number, row in rows:
+        row_id = first(row, "row_id", "legacy_row_id")
+        tsm_id = first(row, "tsm_id", "product_code", "job_ticket", "ticket_number")
+        part_number = first(row, "part_number", "sku", "item_number", "item")
+        quantity = decimal_or_none(first(row, "quantity", "actual_quantity", "actual_qty", "qty"))
+
+        if not any([row_id, tsm_id, part_number]):
+            add_error(result, line_number, "Finished inventory rows need row_id, tsm_id, or part_number.")
+            continue
+        if quantity is None:
+            result["skipped"] += 1
+            add_warning(result, line_number, "Skipped finished inventory row with no quantity.")
+            continue
+        if quantity <= 0:
+            result["skipped"] += 1
+            add_warning(result, line_number, "Skipped finished inventory row with zero or negative quantity.")
+            continue
+
+        job_ticket = find_job_ticket_by_legacy_id(tsm_id)
+        if tsm_id and not job_ticket:
+            unmatched_ticket_count += 1
+
+        location_value = first(row, "location", "location_code", "location_name")
+        location = find_or_create_location(location_value, first(row, "location_name", default=location_value))
+        existing = find_finished_inventory_by_legacy_id(row_id)
+        note_parts = [
+            first(row, "notes", "note"),
+            f"Imported TSM ID: {tsm_id}" if tsm_id else "",
+        ]
+        notes = mark_imported_note("\n".join([part for part in note_parts if part]), row_id, "Glide Finished Inventory")
+        item_name = first(row, "name", "item_name")
+        if not item_name:
+            if job_ticket:
+                item_name = job_ticket.job_name or part_number or tsm_id or row_id
+            elif tsm_id and part_number:
+                item_name = f"{tsm_id} / {part_number}"
+            else:
+                item_name = part_number or tsm_id or row_id
+
+        defaults = {
+            "name": item_name[:150],
+            "sku": part_number[:80],
+            "job_ticket": job_ticket,
+            "recipe": job_ticket.recipe if job_ticket else None,
+            "location": location,
+            "quantity": quantity,
+            "unit": choice_value(first(row, "unit"), FinishedInventory.UNIT_CHOICES, "carton"),
+            "status": choice_value(first(row, "status"), FinishedInventory.STATUS_CHOICES, "available"),
+            "run_date": date_value(first(row, "run_date", "date", "last_run_date")),
+            "face_type": first(row, "face_type", default=(job_ticket.face_type if job_ticket else "")),
+            "liner_type": first(row, "liner_type", default=(job_ticket.liner_type if job_ticket else "")),
+            "notes": notes,
+        }
+        inventory = existing or FinishedInventory()
+        save_model(inventory, defaults, result)
+    if unmatched_ticket_count:
+        add_warning(
+            result,
+            "multiple",
+            f"{unmatched_ticket_count} rows could not match TSM ID to an existing job ticket; they were imported as unlinked finished inventory.",
+        )
+    return result
+
+
 IMPORTERS = {
     "job_tickets": import_job_tickets,
     "flex_dies": import_flex_dies,
     "inventory": import_inventory,
     "inventory_usage": import_inventory_usage,
     "job_ticket_usage": import_job_ticket_usage,
+    "finished_inventory": import_finished_inventory,
 }
 
 
@@ -1145,6 +1249,17 @@ def flush_inventory_data(include_inventory=True):
     return counts
 
 
+def flush_finished_inventory_data():
+    counts = {}
+    linked_usage = MaterialUsage.objects.exclude(finished_inventory__isnull=True)
+    counts["finished_inventory_usage"] = linked_usage.count()
+    for usage in linked_usage:
+        usage.delete()
+    counts["finished_inventory"] = FinishedInventory.objects.count()
+    FinishedInventory.objects.all().delete()
+    return counts
+
+
 @api_view(["POST"])
 @parser_classes([JSONParser])
 def data_flush(request):
@@ -1153,7 +1268,16 @@ def data_flush(request):
         return Response({"error": "Type DELETE DATA to confirm."}, status=status.HTTP_400_BAD_REQUEST)
 
     scope = normalize_key(request.data.get("scope", "setup_data"))
-    valid_scopes = {"setup_data", "job_tickets", "flex_dies", "inventory", "inventory_usage", "job_ticket_usage", "quotes"}
+    valid_scopes = {
+        "setup_data",
+        "job_tickets",
+        "finished_inventory",
+        "flex_dies",
+        "inventory",
+        "inventory_usage",
+        "job_ticket_usage",
+        "quotes",
+    }
     if scope not in valid_scopes:
         return Response({"error": "Unknown flush scope."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1161,6 +1285,8 @@ def data_flush(request):
         counts = {}
         if scope in {"setup_data", "job_tickets"}:
             counts.update(flush_job_ticket_data())
+        if scope in {"setup_data", "finished_inventory"}:
+            counts.update(flush_finished_inventory_data())
         if scope in {"setup_data", "flex_dies"}:
             counts.update(flush_flex_die_data())
         if scope in {"setup_data", "inventory"}:

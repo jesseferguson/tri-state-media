@@ -178,6 +178,13 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("history", { flex_die: selected.id }, 250));
   }
 
+  if (resource.key === "recipes") {
+    addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 1000, true));
+    addLookupSpec(specs, relationLookupSpec("recipe-tools", {}, 2000, true));
+    addFieldLookups(specs, resourceMap["recipe-options"]?.fields ?? []);
+    addFieldLookups(specs, resourceMap["recipe-tools"]?.fields ?? []);
+  }
+
   const entries = await Promise.all(
     specs.map((spec) =>
       fetchCollection(spec.endpoint, {
@@ -968,6 +975,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const [localInventoryRows, setLocalInventoryRows] = useState([]);
   const [localUsageEvents, setLocalUsageEvents] = useState([]);
   const [quoteJobTicketId, setQuoteJobTicketId] = useState("");
+  const [toolingWorkspaceForm, setToolingWorkspaceForm] = useState(null);
 
   const allowedResources = useMemo(
     () => visibleResourcesForRole(roleDefinitions, currentUser?.role),
@@ -986,7 +994,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const showingMaterialFormOverlay = Boolean(formMode && isMaterialFormPage);
   const showingScheduleFormOverlay = Boolean(formMode && resource.key === "production-schedule");
   const showingToolingConfigFormOverlay = Boolean(formMode && isToolingConfigPage);
-  const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage);
+  const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage && resource.key !== "recipes");
   const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
 
   useEffect(() => {
@@ -1106,6 +1114,38 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     if (resource.key !== "job-tickets") return lookupQuery.data ?? {};
     return { ...(lookupQuery.data ?? {}), "job-tickets": rows };
   }, [lookupQuery.data, resource.key, rows]);
+
+  const toolingWorkspaceResource = useMemo(() => {
+    if (!toolingWorkspaceForm) return null;
+    const base = resourceMap[toolingWorkspaceForm.resourceKey];
+    if (!base) return null;
+    const hiddenWhenDefaulted = new Set();
+    if (toolingWorkspaceForm.mode === "create" && toolingWorkspaceForm.resourceKey === "recipe-options" && toolingWorkspaceForm.defaults?.recipe) {
+      hiddenWhenDefaulted.add("recipe");
+    }
+    if (toolingWorkspaceForm.mode === "create" && toolingWorkspaceForm.resourceKey === "recipe-tools" && toolingWorkspaceForm.defaults?.recipe_option) {
+      hiddenWhenDefaulted.add("recipe_option");
+    }
+    return {
+      ...base,
+      fields: (base.fields ?? []).map((field) => hiddenWhenDefaulted.has(field.name) ? { ...field, hidden: true } : field),
+    };
+  }, [toolingWorkspaceForm]);
+
+  const toolingWorkspaceLookups = useMemo(() => {
+    const lookupData = lookupQuery.data ?? {};
+    return {
+      ...lookupData,
+      recipes: mergeRows(lookupData.recipes ?? [], resource.key === "recipes" ? rows : []),
+      "recipe-options": lookupData["recipe-options"] ?? [],
+      "recipe-tools": lookupData["recipe-tools"] ?? [],
+    };
+  }, [lookupQuery.data, resource.key, rows]);
+
+  function lookupRow(relation, id) {
+    if (id === null || id === undefined || id === "") return null;
+    return (toolingWorkspaceLookups[relation] ?? []).find((row) => String(row.id) === String(id)) ?? null;
+  }
 
   function prepareSavePayload(payload) {
     const { __imageUploads, ...dataPayload } = payload ?? {};
@@ -1243,6 +1283,40 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       setSelected(saved ?? null);
       setFormMode(null);
       setCreateDefaults({});
+    },
+  });
+
+  function prepareToolingWorkspacePayload(payload) {
+    const next = { ...(payload ?? {}) };
+    if (toolingWorkspaceForm?.resourceKey === "recipe-options") {
+      const name = String(next.name || "").trim();
+      if (!name) {
+        const recipe = lookupRow("recipes", next.recipe);
+        const press = lookupRow("presses", next.press);
+        if (recipe && press) next.name = `${recipe.name || getRecordTitle(recipe)} - ${press.name || getRecordTitle(press)}`.slice(0, 150);
+      }
+    }
+    return next;
+  }
+
+  const toolingWorkspaceMutation = useMutation({
+    mutationFn: async (payload) => {
+      const formState = toolingWorkspaceForm;
+      const formResource = formState ? resourceMap[formState.resourceKey] : null;
+      if (!formState || !formResource) throw new Error("No tooling form is open.");
+      const cleanPayload = prepareToolingWorkspacePayload(payload);
+      if (formState.mode === "edit" && formState.record?.id) {
+        return updateRecord(formResource.endpoint, formState.record.id, cleanPayload);
+      }
+      return createRecord(formResource.endpoint, cleanPayload);
+    },
+    onSuccess: (saved) => {
+      const formResourceKey = toolingWorkspaceForm?.resourceKey;
+      queryClient.invalidateQueries({ queryKey: ["collection", resource.key] });
+      if (formResourceKey) queryClient.invalidateQueries({ queryKey: ["collection", formResourceKey] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      if (formResourceKey === resource.key) setSelected(saved ?? null);
+      setToolingWorkspaceForm(null);
     },
   });
 
@@ -1633,6 +1707,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     setUsageOpen(false);
     setRollOpen(false);
     setFinishedMaterialOpen(false);
+    setToolingWorkspaceForm(null);
     setSearch("");
   }
 
@@ -1659,6 +1734,87 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       .catch((error) => {
         window.alert(`Could not delete ${title}: ${error.message}`);
       });
+  }
+
+  function openPressOptionForm(recipe) {
+    setSelected(recipe);
+    setFormMode(null);
+    setToolingWorkspaceForm({
+      resourceKey: "recipe-options",
+      mode: "create",
+      record: null,
+      defaults: {
+        recipe: recipe.id,
+        name: "",
+        setup_type: "standard",
+        is_preferred: false,
+        is_approved: true,
+        is_active: true,
+        requires_undercut: false,
+        requires_manual_review: false,
+      },
+    });
+  }
+
+  function editPressOption(option) {
+    setFormMode(null);
+    setToolingWorkspaceForm({
+      resourceKey: "recipe-options",
+      mode: "edit",
+      record: option,
+      defaults: {},
+    });
+  }
+
+  function toolingDefaultsFor(option, requestedGroup = "") {
+    const group = String(requestedGroup || "").toUpperCase();
+    if (group === "MAG") return { tool_type: "mag", tool_role: "top" };
+    if (group === "DIE") return { tool_type: "flex_die", tool_role: "top" };
+    if (group === "PERF") return { tool_type: "perf_cylinder", tool_role: "perf" };
+    if (group === "OTHER") return { tool_type: "manual_tooling", tool_role: "other" };
+    return { tool_type: "flex_die", tool_role: "top" };
+  }
+
+  function openToolAssignmentForm(option, requestedGroup = "") {
+    const defaults = toolingDefaultsFor(option, requestedGroup);
+    setFormMode(null);
+    setToolingWorkspaceForm({
+      resourceKey: "recipe-tools",
+      mode: "create",
+      record: null,
+      defaults: {
+        recipe_option: option.id,
+        station_number: "",
+        is_required: true,
+        notes: "",
+        ...defaults,
+      },
+    });
+  }
+
+  function editToolAssignment(tool) {
+    setFormMode(null);
+    setToolingWorkspaceForm({
+      resourceKey: "recipe-tools",
+      mode: "edit",
+      record: tool,
+      defaults: {},
+    });
+  }
+
+  async function deleteToolingWorkspaceRecord(resourceKey, row) {
+    const targetResource = resourceMap[resourceKey];
+    if (!targetResource || !row?.id) return;
+    const title = getRecordTitle(row);
+    if (!window.confirm(`Delete ${title}? This cannot be undone.`)) return;
+    try {
+      await deleteRecord(targetResource.endpoint, row.id);
+      queryClient.invalidateQueries({ queryKey: ["collection", resource.key] });
+      queryClient.invalidateQueries({ queryKey: ["collection", resourceKey] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    } catch (error) {
+      window.alert(`Could not delete ${title}: ${error.message}`);
+    }
   }
 
   return (
@@ -1787,6 +1943,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {scheduleRemoveMutation.error && <div className="error-box">{scheduleRemoveMutation.error.message}</div>}
         {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
+        {toolingWorkspaceMutation.error && <div className="error-box">{toolingWorkspaceMutation.error.message}</div>}
         {deleteMutation.error && <div className="error-box">{deleteMutation.error.message}</div>}
         {rollActionMutation.error && <div className="error-box">{rollActionMutation.error.message}</div>}
         {listQuery.error && <div className="error-box">Could not load {resource.label}: {listQuery.error.message}</div>}
@@ -1897,9 +2054,18 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 ) : resource.key === "recipes" ? (
                   <LabelLayoutsView
                     rows={visibleRows}
+                    recipeOptions={lookupQuery.data?.["recipe-options"] ?? []}
+                    recipeTools={lookupQuery.data?.["recipe-tools"] ?? []}
                     selectedId={selected?.id}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
+                    onDelete={confirmDeleteRecord}
+                    onAddPressOption={openPressOptionForm}
+                    onEditPressOption={editPressOption}
+                    onDeletePressOption={(option) => deleteToolingWorkspaceRecord("recipe-options", option)}
+                    onAddTooling={openToolAssignmentForm}
+                    onEditTooling={editToolAssignment}
+                    onDeleteTooling={(tool) => deleteToolingWorkspaceRecord("recipe-tools", tool)}
                   />
                 ) : resource.key === "recipe-options" ? (
                   <RecipeOptionsView
@@ -2073,6 +2239,23 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                canUseField={canUseRecordField}
+              />
+            </div>
+          </section>
+        )}
+
+        {toolingWorkspaceForm && toolingWorkspaceResource && (
+          <section className="tooling-form-overlay" role="dialog" aria-modal="true" aria-label={`${toolingWorkspaceForm.mode === "edit" ? "Edit" : "Add"} ${toolingWorkspaceResource.singular}`}>
+            <div className="tooling-form-window">
+              <RecordForm
+                resource={toolingWorkspaceResource}
+                record={toolingWorkspaceForm.mode === "edit" ? toolingWorkspaceForm.record : null}
+                defaults={toolingWorkspaceForm.mode === "create" ? toolingWorkspaceForm.defaults : {}}
+                lookups={toolingWorkspaceLookups}
+                submitting={toolingWorkspaceMutation.isPending}
+                onSubmit={(payload) => toolingWorkspaceMutation.mutate(payload)}
+                onCancel={() => setToolingWorkspaceForm(null)}
                 canUseField={canUseRecordField}
               />
             </div>
