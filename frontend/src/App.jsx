@@ -176,6 +176,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
 
   if (resource.key === "flex-dies" && selected?.id) {
     addLookupSpec(specs, relationLookupSpec("history", { flex_die: selected.id }, 250));
+    addLookupSpec(specs, relationLookupSpec("recipe-tools", { flex_die: selected.id }, 500, true));
   }
 
   if (resource.key === "recipes") {
@@ -993,6 +994,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const isToolingConfigPage = toolingConfigFormPageKeys.has(resource.key);
   const showingMaterialFormOverlay = Boolean(formMode && isMaterialFormPage);
   const showingScheduleFormOverlay = Boolean(formMode && resource.key === "production-schedule");
+  const showingFlexDieFormOverlay = Boolean(formMode && resource.key === "flex-dies");
   const showingToolingConfigFormOverlay = Boolean(formMode && isToolingConfigPage);
   const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage && resource.key !== "recipes");
   const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
@@ -1084,6 +1086,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const selectedFlexDieHistory = useMemo(() => {
     if (!selected || resource.key !== "flex-dies") return [];
     return (lookupQuery.data?.history ?? []).filter((row) => String(row.flex_die) === String(selected.id));
+  }, [lookupQuery.data, resource.key, selected]);
+  const selectedFlexDieUsageRows = useMemo(() => {
+    if (!selected || resource.key !== "flex-dies") return [];
+    return (lookupQuery.data?.["recipe-tools"] ?? []).filter((row) => String(row.flex_die) === String(selected.id));
   }, [lookupQuery.data, resource.key, selected]);
 
   const canShowUsage = Boolean(selected) && (
@@ -1972,7 +1978,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               </section>
             )}
 
-            {formMode && !showingMaterialFormOverlay && !showingScheduleFormOverlay && !showingToolingConfigFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
+            {formMode && !showingMaterialFormOverlay && !showingScheduleFormOverlay && !showingFlexDieFormOverlay && !showingToolingConfigFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
               <RecordForm
                 resource={resource}
                 record={formMode === "edit" ? selected : null}
@@ -2102,6 +2108,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     <FlexDieDetailPanel
                       die={selected}
                       historyRows={selectedFlexDieHistory}
+                      usageRows={selectedFlexDieUsageRows}
                       onEdit={() => setFormMode("edit")}
                       onDelete={() => deleteMutation.mutate()}
                       onRequestReorder={(note) => requestFlexDieReorder(selected, note)}
@@ -2236,6 +2243,23 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 record={formMode === "edit" ? selected : null}
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={lookupQuery.data ?? {}}
+                submitting={saveMutation.isPending}
+                onSubmit={(payload) => saveMutation.mutate(payload)}
+                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                canUseField={canUseRecordField}
+              />
+            </div>
+          </section>
+        )}
+
+        {showingFlexDieFormOverlay && (
+          <section className="flex-die-form-overlay" role="dialog" aria-modal="true" aria-label={`${formMode === "edit" ? "Edit" : "Add"} ${resource.singular}`}>
+            <div className="flex-die-form-window">
+              <RecordForm
+                resource={resource}
+                record={formMode === "edit" ? selected : null}
+                defaults={formMode === "create" ? createDefaults : {}}
+                lookups={recordFormLookups}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={() => { setFormMode(null); setCreateDefaults({}); }}

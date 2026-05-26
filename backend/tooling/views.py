@@ -362,19 +362,6 @@ class ToolingRecipeOptionViewSet(BaseToolingViewSet):
     ]
 
 class ToolingRecipeToolViewSet(BaseToolingViewSet):
-    queryset = (
-        ToolingRecipeTool.objects.select_related(
-            "recipe_option",
-            "recipe_option__recipe",
-            "recipe_option__press",
-            "mag",
-            "flex_die",
-            "perf_cylinder",
-            "perf_blade_setup",
-        )
-        .all()
-        .order_by("recipe_option__recipe__name", "recipe_option__name", "station_number", "tool_type")
-    )
     serializer_class = ToolingRecipeToolSerializer
     search_fields = [
         "recipe_option__name",
@@ -388,6 +375,38 @@ class ToolingRecipeToolViewSet(BaseToolingViewSet):
         "perf_blade_setup__name",
     ]
     ordering_fields = ["station_number", "tool_type", "is_required"]
+
+    def get_queryset(self):
+        qs = (
+            ToolingRecipeTool.objects.select_related(
+                "recipe_option",
+                "recipe_option__recipe",
+                "recipe_option__press",
+                "mag",
+                "flex_die",
+                "perf_cylinder",
+                "perf_blade_setup",
+            )
+            .all()
+            .order_by("recipe_option__recipe__name", "recipe_option__name", "station_number", "tool_type")
+        )
+        params = self.request.query_params
+        recipe_option = params.get("recipe_option")
+        flex_die = params.get("flex_die")
+        mag = params.get("mag")
+        perf_cylinder = params.get("perf_cylinder")
+        perf_blade_setup = params.get("perf_blade_setup")
+        if recipe_option:
+            qs = qs.filter(recipe_option_id=recipe_option)
+        if flex_die:
+            qs = qs.filter(flex_die_id=flex_die)
+        if mag:
+            qs = qs.filter(mag_id=mag)
+        if perf_cylinder:
+            qs = qs.filter(perf_cylinder_id=perf_cylinder)
+        if perf_blade_setup:
+            qs = qs.filter(perf_blade_setup_id=perf_blade_setup)
+        return qs
 
 
 class ToolingHistoryViewSet(BaseToolingViewSet):

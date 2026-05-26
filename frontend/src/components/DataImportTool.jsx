@@ -37,20 +37,26 @@ function ResultPanel({ result }) {
   const shownWarnings = result.warnings ?? [];
   const errorCount = result.error_count ?? shownErrors.length;
   const warningCount = result.warning_count ?? shownWarnings.length;
+  const countLabel = result.dry_run
+    ? { created: "would create", updated: "would update", skipped: "would skip" }
+    : { created: "created", updated: "updated", skipped: "skipped" };
   return (
     <section className={`data-import-result ${errorCount ? "has-errors" : "ok"}`}>
       <header>
         {errorCount ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
         <div>
           <strong>{result.dry_run ? "Dry run finished" : "Import finished"}</strong>
-          <span>{result.rows ?? 0} rows checked</span>
+          <span>{result.dry_run ? "No records were saved." : "Records were saved."} {result.rows ?? 0} rows checked</span>
         </div>
       </header>
       <div className="data-import-counts">
-        <span><strong>{result.created ?? 0}</strong> created</span>
-        <span><strong>{result.updated ?? 0}</strong> updated</span>
-        <span><strong>{result.skipped ?? 0}</strong> skipped</span>
+        <span><strong>{result.created ?? 0}</strong> {countLabel.created}</span>
+        <span><strong>{result.updated ?? 0}</strong> {countLabel.updated}</span>
+        <span><strong>{result.skipped ?? 0}</strong> {countLabel.skipped}</span>
       </div>
+      {result.dry_run && !errorCount && (
+        <p className="data-import-save-note">Dry run only validates the file. Turn off Dry run and click Import Data to save these rows.</p>
+      )}
       {errorCount > 0 && (
         <div className="data-import-errors">
           {shownErrors.slice(0, 12).map((error, index) => (

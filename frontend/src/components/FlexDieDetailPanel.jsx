@@ -47,9 +47,59 @@ function HistoryList({ rows }) {
   );
 }
 
+function eventDate(row) {
+  return row?.event_date ? new Date(row.event_date).toLocaleString() : "";
+}
+
+function eventNote(row) {
+  return [row.notes, eventDate(row)].filter(Boolean).join(" / ");
+}
+
+function ManagementStat({ label, value, tone = "" }) {
+  return (
+    <div className={`flex-die-management-stat ${tone}`}>
+      <span>{label}</span>
+      <strong>{value === 0 ? 0 : value || "--"}</strong>
+    </div>
+  );
+}
+
+function OrderTimeline({ rows }) {
+  if (!rows?.length) return <p className="muted">No order events have been recorded yet.</p>;
+  return (
+    <div className="flex-die-order-list">
+      {rows.map((row) => (
+        <article key={row.id}>
+          <strong>{labelize(row.event_type)}</strong>
+          <span>{row.summary}</span>
+          <em>{eventNote(row)}</em>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function UsageList({ rows }) {
+  if (!rows?.length) return <p className="muted">This die is not assigned to any press setup options yet.</p>;
+  return (
+    <div className="flex-die-usage-list">
+      {rows.map((row) => (
+        <article key={row.id}>
+          <div>
+            <strong>{row.recipe_name || "No label layout"}</strong>
+            <span>{[row.press_name, row.recipe_option_name].filter(Boolean).join(" / ") || "No press option"}</span>
+          </div>
+          <em>{[labelize(row.tool_role), row.station_number ? `Station ${row.station_number}` : "", row.is_required === false ? "Optional" : "Required"].filter(Boolean).join(" / ")}</em>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export default function FlexDieDetailPanel({
   die,
   historyRows = [],
+  usageRows = [],
   onEdit,
   onDelete,
   onRequestReorder,
@@ -71,6 +121,8 @@ export default function FlexDieDetailPanel({
   const serials = serialsForDie(die);
   const tone = countTone(die);
   const imageUrl = die?.dieline_image_url || die?.dieline_image;
+  const orderRows = historyRows.filter((row) => ["die_reorder_requested", "die_ordered", "die_received"].includes(row.event_type));
+  const orderedRows = historyRows.filter((row) => row.event_type === "die_ordered");
 
   useEffect(() => {
     setCountValue(die?.active_die_count ?? 0);
@@ -144,6 +196,21 @@ export default function FlexDieDetailPanel({
         <Detail label="Location" value={die.current_location_full_path || die.current_location_name} />
       </section>
 
+      <section className="flex-die-section management">
+        <div className="type-section-head">
+          <strong>Management Summary</strong>
+          <span>Ordering, usage, and serial control</span>
+        </div>
+        <div className="flex-die-management-grid">
+          <ManagementStat label="Status" value={labelize(die.status)} tone={tone} />
+          <ManagementStat label="Order Events" value={orderRows.length} />
+          <ManagementStat label="Times Ordered" value={orderedRows.length} />
+          <ManagementStat label="Press Setups Using Die" value={usageRows.length} />
+          <ManagementStat label="Recorded Serials" value={serials.length} />
+          <ManagementStat label="Current Location" value={die.current_location_full_path || die.current_location_name} />
+        </div>
+      </section>
+
       <section className="flex-die-section">
         <div className="type-section-head">
           <strong>Serial History</strong>
@@ -156,6 +223,14 @@ export default function FlexDieDetailPanel({
         ) : (
           <p className="muted">No serial numbers have been recorded yet.</p>
         )}
+      </section>
+
+      <section className="flex-die-section">
+        <div className="type-section-head">
+          <strong>Usage</strong>
+          <span>{usageRows.length} press setup assignment{usageRows.length === 1 ? "" : "s"}</span>
+        </div>
+        <UsageList rows={usageRows} />
       </section>
 
       <section className="flex-die-control-grid">
@@ -188,6 +263,14 @@ export default function FlexDieDetailPanel({
       </section>
 
       {error && <p className="flex-die-error">{error}</p>}
+
+      <section className="flex-die-section">
+        <div className="type-section-head">
+          <strong>Ordering Timeline</strong>
+          <span>{orderRows.length} order event{orderRows.length === 1 ? "" : "s"}</span>
+        </div>
+        <OrderTimeline rows={orderRows} />
+      </section>
 
       <section className="flex-die-section">
         <div className="type-section-head">
