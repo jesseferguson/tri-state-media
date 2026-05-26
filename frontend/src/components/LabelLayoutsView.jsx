@@ -4,10 +4,10 @@ import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
 const GOOD_STATUSES = new Set(["active", "available", "in_stock", "in_use"]);
-const BAD_STATUSES = new Set(["inactive", "missing", "needs_repair", "ordered", "out_for_repair", "out_for_retool", "retired"]);
+const BAD_STATUSES = new Set(["inactive", "missing", "needs_ordered", "needs_repair", "ordered", "out_for_repair", "out_for_retool", "out_of_stock", "retired"]);
 
 const choiceLookup = Object.fromEntries(
-  ["faceType", "linerType", "shapeType", "layoutShapeType", "cuttingType", "labelCutType", "toolRole", "toolType"].flatMap((listKey) =>
+  ["faceType", "linerType", "shapeType", "layoutShapeType", "cuttingType", "labelCutType", "toolRole", "toolType", "toolStatus"].flatMap((listKey) =>
     (choiceLists[listKey] ?? []).map(([value, label]) => [`${listKey}:${value}`, label])
   )
 );
@@ -123,12 +123,10 @@ function toolName(tool) {
 function toolMeta(tool) {
   const details = toolDetails(tool);
   const type = toolTypeKey(tool);
-  if (type.includes("mag")) return [toothText(tool), details.repeat ? `Repeat ${formatInches(details.repeat)}` : ""].filter(Boolean).join(" / ");
+  if (type.includes("mag")) return "";
   if (type.includes("flex_die")) {
-    const across = details.across ?? details.number_across;
     return [
       choiceLabel("faceType", details.face_type, ""),
-      across ? `${across} across` : "",
       toothText(tool),
     ].filter(Boolean).join(" / ");
   }
@@ -137,9 +135,23 @@ function toolMeta(tool) {
   return tool?.manual_description || "";
 }
 
+function toolStatusValue(tool) {
+  const details = toolDetails(tool);
+  return normalized(details.status ?? tool?.status);
+}
+
+function toolStateText(tool) {
+  const status = toolStatusValue(tool);
+  if (status) return choiceLabel("toolStatus", status, labelize(status));
+  const details = toolDetails(tool);
+  if (details.is_active === false || tool?.is_active === false) return "Inactive";
+  if (details.is_active === true || tool?.is_active === true) return "Active";
+  return "Selected";
+}
+
 function toolStatus(tool) {
   const details = toolDetails(tool);
-  const status = normalized(details.status ?? tool?.status);
+  const status = toolStatusValue(tool);
   if (BAD_STATUSES.has(status)) return "bad";
   if (GOOD_STATUSES.has(status) || details.is_active === true || tool?.is_active === true) return "ready";
   if (tool?.is_required === false) return "neutral";
@@ -246,33 +258,61 @@ function buildToolSlots(recipe, option, tools) {
 
 function optionReadiness(recipe, option, tools) {
   const problems = [];
+  let blocking = false;
   if (option.is_active === false) problems.push("Setup inactive");
   if (option.is_approved === false) problems.push("Setup not approved");
   if (option.can_run === false) problems.push("Press cannot run this setup");
-  if (!tools.length) problems.push("No tooling assigned");
+  if (!tools.length) {
+    problems.push("No tooling assigned");
+    blocking = true;
+  }
+  if (option.is_active === false || option.is_approved === false || option.can_run === false) blocking = true;
 
   const toolPlan = buildToolSlots(recipe, option, tools);
-  const hasMag = Boolean(toolPlan.slots.find((slot) => slot.key === "mag1")?.tool);
-  const hasDie = Boolean(toolPlan.slots.find((slot) => slot.key === "die1")?.tool);
-  const hasMag2 = Boolean(toolPlan.slots.find((slot) => slot.key === "mag2")?.tool);
-  const hasDie2 = Boolean(toolPlan.slots.find((slot) => slot.key === "die2")?.tool);
-  const hasPerf = Boolean(toolPlan.slots.find((slot) => slot.key === "perf")?.tool);
+  const mainMag = toolPlan.slots.find((slot) => slot.key === "mag1");
+  const mainDie = toolPlan.slots.find((slot) => slot.key === "die1");
+  const undercutMag = toolPlan.slots.find((slot) => slot.key === "mag2");
+  const undercutDie = toolPlan.slots.find((slot) => slot.key === "die2");
+  const perf = toolPlan.slots.find((slot) => slot.key === "perf");
 
-  if (!hasMag) problems.push("MAG1 missing");
-  if (!hasDie) problems.push("Die1 missing");
-  if (toolPlan.needsUndercut && !hasMag2) problems.push("MAG2 missing");
-  if (toolPlan.needsUndercut && !hasDie2) problems.push("Die2 missing");
-  if (toolPlan.needsPerf && !hasPerf) problems.push("Perf tooling missing");
+  const requiredSlots = [
+    mainMag,
+    mainDie,
+    toolPlan.needsUndercut ? undercutMag : null,
+    toolPlan.needsUndercut ? undercutDie : null,
+    toolPlan.needsPerf ? perf : null,
+  ].filter(Boolean);
 
-  if (problems.length) return { tone: option.can_run === false ? "bad" : "warn", label: problems[0], problems };
+  requiredSlots.forEach((slot) => {
+    if (!slot.tool) {
+      problems.push(slot.missing);
+      blocking = true;
+      return;
+    }
+
+    const status = toolStatus(slot.tool);
+    if (status === "bad") {
+      problems.push(`${toolName(slot.tool)} is ${toolStateText(slot.tool)}`);
+      blocking = true;
+    } else if (status === "neutral") {
+      problems.push(`${toolName(slot.tool)} status is ${toolStateText(slot.tool)}`);
+    }
+  });
+
+  if (problems.length) return { tone: blocking ? "bad" : "warn", label: blocking ? "Not Ready" : problems[0], problems };
   return { tone: "ready", label: "Ready", problems };
+}
+
+function dieAcrossText(tool) {
+  const details = toolDetails(tool);
+  const across = details.across ?? details.number_across;
+  return across || across === 0 ? `${across} across` : "";
 }
 
 function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete }) {
   if (!slot.tool) {
     return (
       <button type="button" className="layout-chain-card missing" onClick={() => onAddTooling(option, slot.requestGroup)}>
-        <span>{slot.label}</span>
         <strong>{slot.missing}</strong>
         <em><Plus size={11} /> Add</em>
       </button>
@@ -280,13 +320,16 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete }) {
   }
 
   const status = toolStatus(slot.tool);
+  const meta = toolMeta(slot.tool);
+  const dieAcross = isFlexDieTool(slot.tool) ? dieAcrossText(slot.tool) : "";
 
   return (
     <div className={`layout-chain-card ${status}`}>
       <div>
-        <span>{slot.label}</span>
         <strong>{toolName(slot.tool)}</strong>
-        <em>{toolMeta(slot.tool) || "Assigned"}</em>
+        {dieAcross && <em className="layout-die-across">{dieAcross}</em>}
+        {meta && <small className="layout-chain-meta">{meta}</small>}
+        <small className={`layout-chain-state ${status}`}>{toolStateText(slot.tool)}</small>
       </div>
       <div className="layout-tool-actions">
         <button type="button" onClick={() => onEdit(slot.tool)}><Edit3 size={12} /> Edit</button>
@@ -296,18 +339,29 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete }) {
   );
 }
 
+function perfSummary(recipe, option, plan) {
+  return plan.needsPerf || recipeNeedsPerf(recipe, option) ? "Perf" : "No Perf";
+}
+
 function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDeletePressOption, onAddTooling, onEditTooling, onDeleteTooling }) {
+  const [open, setOpen] = useState(false);
   const tools = optionTools(option, toolRows, option.tools);
   const readiness = optionReadiness(recipe, option, tools);
-  const { slots } = buildToolSlots(recipe, option, tools);
+  const plan = buildToolSlots(recipe, option, tools);
+  const { slots } = plan;
+  const perfLabel = perfSummary(recipe, option, plan);
 
   return (
-    <article className={`layout-press-card ${readiness.tone}`}>
+    <article className={`layout-press-card ${readiness.tone} ${open ? "open" : ""}`}>
       <header className="layout-press-head">
-        <div>
-          <span>{option.press_name || "No press"}</span>
-          <strong>{option.name || "Auto setup name"}</strong>
-        </div>
+        <button type="button" className="layout-press-title-button" onClick={() => setOpen((value) => !value)}>
+          {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          <div>
+            <strong>{option.press_name || "No press"}</strong>
+            <span>{option.name || "Auto setup name"}</span>
+          </div>
+        </button>
+        <span className={`layout-perf-pill ${perfLabel === "Perf" ? "perf" : "none"}`}>{perfLabel}</span>
         <span className={`layout-ready-pill ${readiness.tone}`}>
           {readiness.tone === "ready" ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
           {readiness.label}
@@ -319,26 +373,28 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
         </div>
       </header>
 
-      {readiness.problems.length > 0 && (
+      {open && readiness.problems.length > 0 && (
         <div className="layout-helper-line">
           {readiness.problems.slice(0, 4).map((problem) => <span key={problem}>{problem}</span>)}
         </div>
       )}
 
-      <div className="layout-tool-chain">
-        {slots.map((slot, index) => (
-          <Fragment key={slot.key}>
-            {index > 0 && <span className="layout-chain-arrow">-&gt;</span>}
-            <ChainToolCard
-              slot={slot}
-              option={option}
-              onAddTooling={onAddTooling}
-              onEdit={onEditTooling}
-              onDelete={onDeleteTooling}
-            />
-          </Fragment>
-        ))}
-      </div>
+      {open && (
+        <div className="layout-tool-chain">
+          {slots.map((slot, index) => (
+            <Fragment key={slot.key}>
+              {index > 0 && <span className="layout-chain-arrow">-&gt;</span>}
+              <ChainToolCard
+                slot={slot}
+                option={option}
+                onAddTooling={onAddTooling}
+                onEdit={onEditTooling}
+                onDelete={onDeleteTooling}
+              />
+            </Fragment>
+          ))}
+        </div>
+      )}
     </article>
   );
 }
@@ -358,13 +414,6 @@ function LayoutCard({
   onEditTooling,
   onDeleteTooling,
 }) {
-  const [pressOpen, setPressOpen] = useState(false);
-  const pressResults = options.map((option) => {
-    const tools = optionTools(option, toolRows, option.tools);
-    return { option, readiness: optionReadiness(row, option, tools) };
-  });
-  const readyCount = pressResults.filter(({ readiness }) => readiness.tone === "ready").length;
-
   return (
     <article className={`layout-design-card ${selected ? "selected" : ""} ${row.is_active === false ? "inactive" : ""}`} onClick={() => onSelect(row)}>
       <header className="layout-design-head">
@@ -386,36 +435,21 @@ function LayoutCard({
 
       <div className="layout-press-section" onClick={(event) => event.stopPropagation()}>
         {options.length ? (
-          <>
-            <button type="button" className="layout-press-toggle" onClick={() => setPressOpen((open) => !open)}>
-              <span className="layout-group-toggle">{pressOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
-              <strong>Press Types</strong>
-              <span className="layout-press-count">{readyCount}/{options.length} runnable</span>
-              <span className="layout-press-summary">
-                {pressResults.map(({ option, readiness }) => (
-                  <em className={`layout-press-badge ${readiness.tone}`} key={option.id}>{option.press_name || "No press"}</em>
-                ))}
-              </span>
-            </button>
-
-            {pressOpen && (
-              <div className="layout-press-list">
-                {pressResults.map(({ option }) => (
-                  <PressOptionCard
-                    key={option.id}
-                    recipe={row}
-                    option={option}
-                    toolRows={toolRows}
-                    onEditPressOption={onEditPressOption}
-                    onDeletePressOption={onDeletePressOption}
-                    onAddTooling={onAddTooling}
-                    onEditTooling={onEditTooling}
-                    onDeleteTooling={onDeleteTooling}
-                  />
-                ))}
-              </div>
-            )}
-          </>
+          <div className="layout-press-list">
+            {options.map((option) => (
+              <PressOptionCard
+                key={option.id}
+                recipe={row}
+                option={option}
+                toolRows={toolRows}
+                onEditPressOption={onEditPressOption}
+                onDeletePressOption={onDeletePressOption}
+                onAddTooling={onAddTooling}
+                onEditTooling={onEditTooling}
+                onDeleteTooling={onDeleteTooling}
+              />
+            ))}
+          </div>
         ) : (
           <div className="layout-no-options">
             <span>No press setup options yet.</span>
