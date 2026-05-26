@@ -291,6 +291,7 @@ class MaterialUsage(models.Model):
         ("qc_issue", "QC Issue"),
         ("coater", "Coater"),
         ("finished", "Finished Production"),
+        ("shipped", "Shipped Finished Stock"),
         ("manual", "Manual Consumption"),
         ("scrap", "Scrap"),
         ("adjustment", "Adjustment"),
@@ -366,7 +367,7 @@ class MaterialUsage(models.Model):
 
     @property
     def consumes_inventory(self):
-        return self.usage_type in ["checkout", "manual", "coater", "finished", "scrap"]
+        return self.usage_type in ["checkout", "manual", "coater", "finished", "shipped", "scrap"]
 
     def _adjust_inventory(self, inventory, delta):
         if not inventory:

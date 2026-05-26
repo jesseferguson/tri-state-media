@@ -184,7 +184,26 @@ function groupInventoryByWidth(rows) {
 }
 
 function matchingFinishedRows(ticket, rows) {
-  return (rows ?? []).filter((row) => sameId(row.job_ticket, ticket.id) || row.job_ticket_number === ticket.ticket_number);
+  return (rows ?? []).filter((row) => {
+    if (sameId(row.job_ticket, ticket.id)) return true;
+    if (sameText(row.job_ticket_number, ticket.ticket_number)) return true;
+    if (sameText(row.job_ticket_product_code, ticket.product_code)) return true;
+    if (sameText(row.imported_tsm_id, ticket.product_code)) return true;
+    if (sameText(row.imported_tsm_id, ticket.ticket_number)) return true;
+    if (sameText(row.sku, ticket.product_code)) return true;
+    return false;
+  });
+}
+
+function matchingFinishedUsageRows(ticket, rows) {
+  return (rows ?? []).filter((row) => {
+    if (sameId(row.finished_inventory_job_ticket, ticket.id)) return true;
+    if (sameText(row.finished_inventory_job_ticket_number, ticket.ticket_number)) return true;
+    if (sameText(row.finished_inventory_job_product_code, ticket.product_code)) return true;
+    if (sameText(row.finished_inventory_imported_tsm_id, ticket.product_code)) return true;
+    if (sameText(row.finished_inventory_imported_tsm_id, ticket.ticket_number)) return true;
+    return false;
+  });
 }
 
 function matchingUsageRows(ticket, rows) {
@@ -408,7 +427,7 @@ function monthlyBars(rows, dateGetter, quantityGetter, rangeKey) {
   return Array.from(grouped.values()).sort((a, b) => a.sort - b.sort);
 }
 
-function shipmentPoints(finishedRows, usageRows, ticket) {
+function shipmentPoints(finishedRows, usageRows, finishedUsageRows, ticket) {
   const finishedPoints = (finishedRows ?? [])
     .filter((row) => row.status === "shipped")
     .map((row) => ({
@@ -420,10 +439,30 @@ function shipmentPoints(finishedRows, usageRows, ticket) {
   const usagePoints = (usageRows ?? []).map((row) => ({
     date: usageDate(row),
     quantity: numeric(row.quantity),
-    source: row.source || "Glide",
-  }));
+      source: row.source || "Glide",
+    }));
 
-  return [...finishedPoints, ...usagePoints].filter((point) => point.date && point.quantity > 0);
+  const finishedUsagePoints = (finishedUsageRows ?? [])
+    .filter((row) => ["shipped", "manual", "checkout"].includes(String(row.usage_type || "").toLowerCase()))
+    .map((row) => ({
+      date: usageDate(row),
+      quantity: numeric(row.quantity),
+      source: "Finished Inventory",
+    }));
+
+  return [...finishedPoints, ...usagePoints, ...finishedUsagePoints].filter((point) => point.date && point.quantity > 0);
+}
+
+function finishedLocationGroups(rows) {
+  const groups = new Map();
+  (rows ?? []).forEach((row) => {
+    const location = row.location_full_path || row.location_name || "No location";
+    if (!groups.has(location)) groups.set(location, { location, rows: [], total: 0 });
+    const group = groups.get(location);
+    group.rows.push(row);
+    group.total += numeric(row.quantity);
+  });
+  return Array.from(groups.values()).sort((a, b) => a.location.localeCompare(b.location));
 }
 
 function monthsInRange(rangeKey, bars) {
@@ -549,15 +588,20 @@ export default function JobTicketPanel({
     () => matchingUsageRows(ticket, lookups["job-ticket-usages"]),
     [ticket, lookups]
   );
+  const finishedUsageRows = useMemo(
+    () => matchingFinishedUsageRows(ticket, lookups["material-usages"]),
+    [ticket, lookups]
+  );
   const shippedPoints = useMemo(
-    () => shipmentPoints(finishedRows, usageRows, ticket),
-    [finishedRows, usageRows, ticket]
+    () => shipmentPoints(finishedRows, usageRows, finishedUsageRows, ticket),
+    [finishedRows, usageRows, finishedUsageRows, ticket]
   );
 
   const availableInventory = materialInventory.filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status));
   const availableInventoryWithFeet = availableInventory.filter((row) => inventoryFootage(row) > 0);
   const inventoryByWidth = useMemo(() => groupInventoryByWidth(availableInventoryWithFeet), [availableInventoryWithFeet]);
   const availableFinished = finishedRows.filter((row) => row.is_active !== false && !["depleted", "scrapped", "shipped"].includes(row.status));
+  const finishedByLocation = useMemo(() => finishedLocationGroups(availableFinished), [availableFinished]);
   const materialFeet = availableInventoryWithFeet.reduce((sum, row) => sum + inventoryFootage(row), 0);
   const finishedQuantity = availableFinished.reduce((sum, row) => sum + numeric(row.quantity), 0);
   const scheduleTotal = scheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
@@ -785,19 +829,51 @@ export default function JobTicketPanel({
             <div className="job-subsection-head">
               <PackageCheck size={15} />
               <strong>Finished Stock Inventory</strong>
+              <span>{formatNumber(finishedQuantity)} on hand</span>
             </div>
-            {availableFinished.length ? (
-              <div className="job-inventory-list">
-                {availableFinished.slice(0, 8).map((row) => (
-                  <div key={row.id} className="job-inventory-row">
-                    <strong>{row.name || row.sku || row.job_ticket_number}</strong>
-                    <span>{[row.quantity ? `${row.quantity} ${row.unit || "units"}` : "", row.run_date, labelize(row.status)].filter(Boolean).join(" / ")}</span>
-                    <em>{row.location_full_path || row.location_name || row.notes || "No location"}</em>
+            {finishedByLocation.length ? (
+              <div className="job-finished-location-list">
+                {finishedByLocation.map((group) => (
+                  <div key={group.location} className="job-finished-location-group">
+                    <div className="job-finished-location-head">
+                      <strong>{group.location}</strong>
+                      <span>{formatNumber(group.total)} total / {group.rows.length} lot{group.rows.length === 1 ? "" : "s"}</span>
+                    </div>
+                    {group.rows.map((row) => (
+                      <article key={row.id} className="job-finished-stock-row">
+                        <div>
+                          <strong>{row.name || row.sku || row.job_ticket_number}</strong>
+                          <span>{[row.imported_tsm_id || row.job_ticket_product_code || row.job_ticket_number, row.sku].filter(Boolean).join(" / ")}</span>
+                        </div>
+                        <em>{[row.quantity ? `${formatNumber(row.quantity)} ${row.unit || "units"}` : "", row.run_date, labelize(row.status)].filter(Boolean).join(" / ")}</em>
+                      </article>
+                    ))}
                   </div>
                 ))}
               </div>
             ) : (
               <p className="muted">No finished stock is linked to this job yet.</p>
+            )}
+          </section>
+
+          <section className="job-subsection">
+            <div className="job-subsection-head">
+              <PackageCheck size={15} />
+              <strong>Finished Stock Usage</strong>
+              <span>{finishedUsageRows.length} event{finishedUsageRows.length === 1 ? "" : "s"}</span>
+            </div>
+            {finishedUsageRows.length ? (
+              <div className="job-inventory-list">
+                {finishedUsageRows.slice(0, 8).map((row) => (
+                  <div key={row.id} className="job-inventory-row">
+                    <strong>{row.reference || row.finished_inventory_name || labelize(row.usage_type)}</strong>
+                    <span>{[row.used_date, labelize(row.usage_type), row.quantity ? `${formatNumber(row.quantity)} ${row.unit || row.finished_inventory_unit || "units"}` : ""].filter(Boolean).join(" / ")}</span>
+                    <em>{row.finished_inventory_location_full_path || row.finished_inventory_location_name || row.notes || "No location"}</em>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No finished stock has been sent out from this job yet.</p>
             )}
           </section>
 

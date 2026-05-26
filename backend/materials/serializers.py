@@ -1,8 +1,15 @@
+import re
+
 from django.db.models import DecimalField, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import serializers
 
 from .models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+
+
+def note_value(note, label):
+    match = re.search(rf"^{re.escape(label)}:\s*(.+?)\s*$", str(note or ""), flags=re.IGNORECASE | re.MULTILINE)
+    return match.group(1).strip() if match else ""
 
 
 class MaterialMasterTypeSerializer(serializers.ModelSerializer):
@@ -101,6 +108,16 @@ class MaterialUsageSerializer(serializers.ModelSerializer):
     coater_roll_tag_number = serializers.CharField(source="coater_roll_tag.tag_number", read_only=True)
     finished_inventory_name = serializers.CharField(source="finished_inventory.name", read_only=True)
     finished_inventory_sku = serializers.CharField(source="finished_inventory.sku", read_only=True)
+    finished_inventory_unit = serializers.CharField(source="finished_inventory.unit", read_only=True)
+    finished_inventory_location_name = serializers.CharField(source="finished_inventory.location.name", read_only=True)
+    finished_inventory_location_full_path = serializers.ReadOnlyField(source="finished_inventory.location.full_path")
+    finished_inventory_job_ticket = serializers.IntegerField(source="finished_inventory.job_ticket_id", read_only=True)
+    finished_inventory_job_ticket_number = serializers.CharField(source="finished_inventory.job_ticket.ticket_number", read_only=True)
+    finished_inventory_job_product_code = serializers.CharField(source="finished_inventory.job_ticket.product_code", read_only=True)
+    finished_inventory_imported_tsm_id = serializers.SerializerMethodField()
+
+    def get_finished_inventory_imported_tsm_id(self, obj):
+        return note_value(obj.finished_inventory.notes if obj.finished_inventory else "", "Imported TSM ID")
 
     class Meta:
         model = MaterialUsage

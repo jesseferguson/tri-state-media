@@ -68,7 +68,7 @@ function widthLabel(value) {
 }
 
 function usageConsumes(row) {
-  return ["checkout", "manual", "coater", "finished", "scrap"].includes(row.usage_type);
+  return ["checkout", "manual", "coater", "finished", "shipped", "scrap"].includes(row.usage_type);
 }
 
 function inventoryStatusTone(status) {

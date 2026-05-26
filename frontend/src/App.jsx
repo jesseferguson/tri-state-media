@@ -7,6 +7,7 @@ import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
 import FlexDieSearch from "./components/FlexDieSearch";
 import FlexDieDetailPanel from "./components/FlexDieDetailPanel";
+import FinishedInventoryView, { FinishedInventoryWindow } from "./components/FinishedInventoryView";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
 import DataImportTool from "./components/DataImportTool";
 import GroupedLocationView from "./components/GroupedLocationView";
@@ -158,6 +159,10 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { material: selected.id }, 150));
   }
 
+  if (resource.key === "finished-inventory" && selected?.id) {
+    addLookupSpec(specs, relationLookupSpec("material-usages", { finished_inventory: selected.id }, 150));
+  }
+
   if (resource.key === "finished-inventory" && selected?.material_inventory) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { inventory: selected.material_inventory }, 150));
   }
@@ -168,6 +173,11 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
       addLookupSpec(specs, relationLookupSpec("raw-materials", { master_type: selected.material_master_type || selected.material_spec_master_type }, 250));
     }
     addLookupSpec(specs, relationLookupSpec("finished-inventory", { job_ticket: selected.id }, 250, true));
+    if (selected.product_code) addLookupSpec(specs, relationLookupSpec("finished-inventory", { tsm_id: selected.product_code }, 250, true));
+    if (selected.ticket_number) addLookupSpec(specs, relationLookupSpec("finished-inventory", { tsm_id: selected.ticket_number }, 250, true));
+    addLookupSpec(specs, relationLookupSpec("material-usages", { finished_inventory_job_ticket: selected.id }, 250, true));
+    if (selected.product_code) addLookupSpec(specs, relationLookupSpec("material-usages", { finished_inventory_tsm_id: selected.product_code }, 250, true));
+    if (selected.ticket_number) addLookupSpec(specs, relationLookupSpec("material-usages", { finished_inventory_tsm_id: selected.ticket_number }, 250, true));
     addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { job_ticket: selected.id }, 1000, true));
     if (selected.ticket_number) addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { legacy_job_ticket_id: selected.ticket_number }, 250, true));
     if (selected.product_code) addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { legacy_job_ticket_id: selected.product_code }, 250, true));
@@ -253,11 +263,13 @@ function inventoryTotalFeetForMaterial(row, inventoryRows) {
   return activeInventoryFeet(inventoryRows.filter((inventory) => String(inventory.material) === String(row.id)));
 }
 
-function generatedJobTicketNumber(payload = {}) {
-  const tsmId = String(payload.product_code || "").trim();
-  if (tsmId) return tsmId;
+function generatedJobTicketNumber(payload = {}, currentTicket = null) {
   const existing = String(payload.ticket_number || "").trim();
   if (existing) return existing;
+  const current = String(currentTicket?.ticket_number || "").trim();
+  if (current) return current;
+  const tsmId = String(payload.product_code || "").trim();
+  if (tsmId) return tsmId;
   return `JT-${Date.now().toString(36).toUpperCase()}`;
 }
 
@@ -997,6 +1009,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const [openGroups, setOpenGroups] = useState(initialOpenGroups);
   const [usageOpen, setUsageOpen] = useState(false);
   const [rollOpen, setRollOpen] = useState(false);
+  const [finishedInventoryOpen, setFinishedInventoryOpen] = useState(false);
   const [finishedMaterialOpen, setFinishedMaterialOpen] = useState(false);
   const [materialTypeOpen, setMaterialTypeOpen] = useState(false);
   const [localInventoryRows, setLocalInventoryRows] = useState([]);
@@ -1038,9 +1051,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       try {
         return await fetchCollection(resource.endpoint, {
           ordering: resource.defaultOrdering,
-          pageSize: resource.searchMode === "flexDie" ? 500 : 250,
+          pageSize: resource.pageSize ?? (resource.searchMode === "flexDie" ? 500 : 250),
           filters: resource.filters ?? {},
           search: resource.searchMode === "flexDie" ? "" : search,
+          fetchAll: resource.fetchAll ?? false,
         });
       } catch (error) {
         if (resource.key === "material-usages" && String(error.message).includes("404")) {
@@ -1223,7 +1237,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     if (resource.key === "job-tickets") {
       return {
         ...dataPayload,
-        ticket_number: generatedJobTicketNumber(dataPayload),
+        ticket_number: generatedJobTicketNumber(dataPayload, formMode === "edit" ? selected : null),
       };
     }
     if (resource.key !== "raw-materials") return payload;
@@ -1616,6 +1630,17 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     },
   });
 
+  const finishedInventorySendMutation = useMutation({
+    mutationFn: ({ id, payload }) => postRecordAction("finished-inventory", id, "send-out", payload),
+    onSuccess: (saved) => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "finished-inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      setSelected(saved ?? selected);
+    },
+  });
+
   const finishedScheduleMutation = useMutation({
     mutationFn: async ({ material, schedule }) => {
       const required = [
@@ -1694,7 +1719,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       const imageUploads = Array.isArray(payload?.__imageUploads) ? payload.__imageUploads : [];
       const cleanPayload = {
         ...payload,
-        ticket_number: generatedJobTicketNumber(payload),
+        ticket_number: generatedJobTicketNumber(payload, selected),
       };
       delete cleanPayload.__imageUploads;
       let saved = await updateRecord("job-tickets", selected.id, cleanPayload);
@@ -2082,6 +2107,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {toolingItemFormMutation.error && <div className="error-box">{toolingItemFormMutation.error.message}</div>}
         {deleteMutation.error && <div className="error-box">{deleteMutation.error.message}</div>}
         {rollActionMutation.error && <div className="error-box">{rollActionMutation.error.message}</div>}
+        {finishedInventorySendMutation.error && <div className="error-box">{finishedInventorySendMutation.error.message}</div>}
         {listQuery.error && <div className="error-box">Could not load {resource.label}: {listQuery.error.message}</div>}
         {resource.key === "material-usages" && listQuery.data?.raw?.missingEndpoint && (
           <div className="error-box">Material Usage needs the latest backend migration/restart before it can load saved usage records.</div>
@@ -2171,6 +2197,17 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     selectedId={selected?.id}
                     onSelect={(row) => { setSelected(row); setFormMode(null); setUsageOpen(false); setRollOpen(true); }}
                   />
+                ) : resource.viewMode === "finishedInventory" ? (
+                  <FinishedInventoryView
+                    rows={visibleRows}
+                    selectedId={selected?.id}
+                    onSelect={(row) => {
+                      setSelected(row);
+                      setFormMode(null);
+                      setUsageOpen(false);
+                      setFinishedInventoryOpen(true);
+                    }}
+                  />
                 ) : resource.viewMode === "locations" ? (
                   <GroupedLocationView
                     rows={visibleRows}
@@ -2232,7 +2269,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 )}
               </div>
 
-              {resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && !isMaterialTypePage && !isToolingConfigPage && (
+              {resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && !isMaterialTypePage && !isToolingConfigPage && (
                 <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : toolingItemPageKeys.has(resource.key) && selected ? "tooling-item-detail-shell" : "detail-panel compact-card"}>
                   {selected ? (
                   resource.key === "flex-dies" ? (
@@ -2506,6 +2543,20 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             title={getRecordTitle(selected)}
             rows={usageRows}
             onClose={() => setUsageOpen(false)}
+          />
+        )}
+
+        {finishedInventoryOpen && selected && resource.key === "finished-inventory" && (
+          <FinishedInventoryWindow
+            item={selected}
+            usageRows={usageRows}
+            sending={finishedInventorySendMutation.isPending}
+            onClose={() => setFinishedInventoryOpen(false)}
+            onEdit={() => {
+              setFinishedInventoryOpen(false);
+              setFormMode("edit");
+            }}
+            onSendOut={(payload) => finishedInventorySendMutation.mutateAsync({ id: selected.id, payload })}
           />
         )}
 

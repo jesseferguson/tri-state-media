@@ -1,3 +1,4 @@
+import re
 from urllib.parse import unquote, urlparse
 
 from rest_framework import serializers
@@ -31,6 +32,11 @@ def is_document_url(url):
     path = unquote(parsed.path or "").lower()
     query = unquote(parsed.query or "").lower()
     return ".pdf" in path or ".pdf" in query
+
+
+def note_value(note, label):
+    match = re.search(rf"^{re.escape(label)}:\s*(.+?)\s*$", str(note or ""), flags=re.IGNORECASE | re.MULTILINE)
+    return match.group(1).strip() if match else ""
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -487,11 +493,20 @@ class CustomerOrderEventSerializer(serializers.ModelSerializer):
 
 class FinishedInventorySerializer(serializers.ModelSerializer):
     job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
+    job_ticket_product_code = serializers.CharField(source="job_ticket.product_code", read_only=True)
     recipe_name = serializers.CharField(source="recipe.name", read_only=True)
     recipe_option_name = serializers.CharField(source="recipe_option.name", read_only=True)
     material_inventory_serial = serializers.CharField(source="material_inventory.serial_number", read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
     location_full_path = serializers.ReadOnlyField(source="location.full_path")
+    imported_tsm_id = serializers.SerializerMethodField()
+    legacy_row_id = serializers.SerializerMethodField()
+
+    def get_imported_tsm_id(self, obj):
+        return note_value(obj.notes, "Imported TSM ID")
+
+    def get_legacy_row_id(self, obj):
+        return note_value(obj.notes, "Legacy Row ID")
 
     class Meta:
         model = FinishedInventory

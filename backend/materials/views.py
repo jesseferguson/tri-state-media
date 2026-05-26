@@ -346,16 +346,33 @@ class MaterialUsageViewSet(BaseMaterialsViewSet):
                 "material",
                 "coater_roll_tag",
                 "finished_inventory",
+                "finished_inventory__job_ticket",
+                "finished_inventory__location",
             )
             .all()
             .order_by("-used_date", "-created_at")
         )
         material = self.request.query_params.get("material")
         inventory = self.request.query_params.get("inventory")
+        finished_inventory = self.request.query_params.get("finished_inventory")
+        finished_inventory_job_ticket = self.request.query_params.get("finished_inventory_job_ticket")
+        finished_inventory_tsm_id = self.request.query_params.get("finished_inventory_tsm_id")
         if material:
             qs = qs.filter(material_id=material)
         if inventory:
             qs = qs.filter(inventory_id=inventory)
+        if finished_inventory:
+            qs = qs.filter(finished_inventory_id=finished_inventory)
+        if finished_inventory_job_ticket:
+            qs = qs.filter(finished_inventory__job_ticket_id=finished_inventory_job_ticket)
+        if finished_inventory_tsm_id:
+            tsm_id = str(finished_inventory_tsm_id).strip()
+            qs = qs.filter(
+                Q(finished_inventory__job_ticket__ticket_number__iexact=tsm_id) |
+                Q(finished_inventory__job_ticket__product_code__iexact=tsm_id) |
+                Q(finished_inventory__notes__icontains=f"Imported TSM ID: {tsm_id}") |
+                Q(finished_inventory__sku__iexact=tsm_id)
+            )
         return qs
 
 

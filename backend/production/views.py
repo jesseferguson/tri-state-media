@@ -1,13 +1,18 @@
 import logging
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
-from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum, Value
+from django.db import transaction
+from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
+
+from materials.models import MaterialUsage
 
 from .models import (
     BoxInventory,
@@ -265,6 +270,17 @@ class JobTicketViewSet(BaseProductionViewSet):
             .annotate(total=Sum("quantity"))
             .values("total")
         )
+        sent_finished_total = (
+            MaterialUsage.objects
+            .filter(
+                finished_inventory__job_ticket=OuterRef("pk"),
+                usage_type__in=["shipped", "manual", "checkout"],
+                used_date__gte=recent_run_start,
+            )
+            .values("finished_inventory__job_ticket")
+            .annotate(total=Sum("quantity"))
+            .values("total")
+        )
         on_hand_total = (
             FinishedInventory.objects
             .filter(job_ticket=OuterRef("pk"), status__in=["available", "allocated", "on_hold"])
@@ -284,8 +300,15 @@ class JobTicketViewSet(BaseProductionViewSet):
             )
             .annotate(
                 imported_usage_90d=Coalesce(Subquery(usage_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
-                shipped_usage_90d=Coalesce(Subquery(shipped_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
+                shipped_status_usage_90d=Coalesce(Subquery(shipped_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
+                sent_finished_usage_90d=Coalesce(Subquery(sent_finished_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
                 finished_on_hand_quantity=Coalesce(Subquery(on_hand_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
+            )
+            .annotate(
+                shipped_usage_90d=ExpressionWrapper(
+                    F("shipped_status_usage_90d") + F("sent_finished_usage_90d"),
+                    output_field=DecimalField(max_digits=14, decimal_places=3),
+                )
             )
             .annotate(
                 recent_usage_90d=ExpressionWrapper(
@@ -562,8 +585,76 @@ class FinishedInventoryViewSet(BaseProductionViewSet):
         )
         job_ticket = self.request.query_params.get("job_ticket")
         status_value = self.request.query_params.get("status")
+        tsm_id = self.request.query_params.get("tsm_id") or self.request.query_params.get("product_code") or self.request.query_params.get("ticket_number")
         if job_ticket:
             qs = qs.filter(job_ticket_id=job_ticket)
+        if tsm_id:
+            tsm_id = str(tsm_id).strip()
+            qs = qs.filter(
+                Q(job_ticket__ticket_number__iexact=tsm_id) |
+                Q(job_ticket__product_code__iexact=tsm_id) |
+                Q(notes__icontains=f"Imported TSM ID: {tsm_id}") |
+                Q(sku__iexact=tsm_id) |
+                Q(name__icontains=tsm_id)
+            )
         if status_value:
             qs = qs.filter(status=status_value)
         return qs
+
+    @action(detail=True, methods=["post"], url_path="send-out")
+    def send_out(self, request, pk=None):
+        inventory = self.get_object()
+        raw_quantity = request.data.get("quantity")
+
+        if raw_quantity in ["", None]:
+            return Response({"quantity": ["Enter the quantity to send out."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            quantity = Decimal(str(raw_quantity))
+        except (InvalidOperation, ValueError):
+            return Response({"quantity": ["Enter a valid quantity."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        if quantity <= 0:
+            return Response({"quantity": ["Quantity must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        available = Decimal(inventory.quantity or 0)
+        if quantity > available:
+            return Response(
+                {"quantity": [f"Only {available} {inventory.unit or 'units'} are available."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        used_date = parse_date(str(request.data.get("used_date") or "")) or timezone.localdate()
+        used_by = str(request.data.get("used_by") or "").strip()
+        reference = str(request.data.get("reference") or "").strip()
+        notes = str(request.data.get("notes") or "").strip()
+
+        if not reference:
+            reference = " / ".join(
+                part for part in [
+                    inventory.job_ticket.ticket_number if inventory.job_ticket else "",
+                    inventory.sku or inventory.name,
+                    "Finished stock sent out",
+                ] if part
+            )
+
+        with transaction.atomic():
+            MaterialUsage.objects.create(
+                finished_inventory=inventory,
+                usage_type="shipped",
+                quantity=quantity,
+                unit=inventory.unit or "each",
+                used_date=used_date,
+                used_by=used_by,
+                reference=reference,
+                notes=notes or f"Sent out {quantity} {inventory.unit or 'units'} from finished inventory.",
+            )
+
+            inventory.quantity = max(Decimal("0"), available - quantity)
+            if inventory.quantity <= 0:
+                inventory.status = "shipped"
+            elif inventory.status == "shipped":
+                inventory.status = "available"
+            inventory.save(update_fields=["quantity", "status", "updated_at"])
+
+        return Response(self.get_serializer(inventory).data)

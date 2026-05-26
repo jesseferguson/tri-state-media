@@ -30,7 +30,7 @@ function UsagePanel({ rows }) {
   const total = rows.reduce((sum, row) => {
     const qty = Number(row.quantity ?? 0);
     if (!Number.isFinite(qty)) return sum;
-    if (!["checkout", "manual", "coater", "finished", "scrap"].includes(row.usage_type)) return sum;
+    if (!["checkout", "manual", "coater", "finished", "shipped", "scrap"].includes(row.usage_type)) return sum;
     return sum + qty;
   }, 0);
   const largest = Math.max(...rows.map((row) => Number(row.quantity ?? 0)).filter(Number.isFinite), 1);
