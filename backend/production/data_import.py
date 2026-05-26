@@ -429,6 +429,11 @@ def mark_imported_note(existing_note, row_id="", source="Glide"):
     return "\n".join([part for part in [note, marker] if part])
 
 
+def legacy_row_id_from_note(note):
+    match = re.search(r"^Legacy Row ID:\s*(.+?)\s*$", str(note or ""), flags=re.IGNORECASE | re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
 def choice_value(value, choices, default):
     text = str(value or "").strip()
     if not text:
@@ -1088,9 +1093,26 @@ def find_finished_inventory_by_legacy_id(row_id):
     return FinishedInventory.objects.filter(notes__icontains=f"Legacy Row ID: {row_id}").first()
 
 
+def finished_inventory_lookup_map(row_ids):
+    keys = {ticket_lookup_key(row_id) for row_id in row_ids if ticket_lookup_key(row_id)}
+    if not keys:
+        return {}
+
+    lookup = {}
+    for item in FinishedInventory.objects.filter(notes__icontains="Legacy Row ID:").only("id", "notes"):
+        key = ticket_lookup_key(legacy_row_id_from_note(item.notes))
+        if key and key in keys and key not in lookup:
+            lookup[key] = item
+    return lookup
+
+
 def import_finished_inventory(rows):
     result = import_result()
     unmatched_ticket_count = 0
+    parsed_rows = []
+    row_ids = set()
+    tsm_ids = set()
+
     for line_number, row in rows:
         row_id = first(row, "row_id", "legacy_row_id")
         tsm_id = first(row, "tsm_id", "product_code", "job_ticket", "ticket_number")
@@ -1109,13 +1131,45 @@ def import_finished_inventory(rows):
             add_warning(result, line_number, "Skipped finished inventory row with zero or negative quantity.")
             continue
 
-        job_ticket = find_job_ticket_by_legacy_id(tsm_id)
+        parsed_rows.append((line_number, row, row_id, tsm_id, part_number, quantity))
+        if row_id:
+            row_ids.add(row_id)
+        if tsm_id:
+            tsm_ids.add(tsm_id)
+
+    ticket_map = job_ticket_lookup_map(tsm_ids)
+    existing_map = finished_inventory_lookup_map(row_ids)
+    location_cache = {}
+    create_records = []
+    update_records = []
+
+    update_fields = [
+        "name",
+        "sku",
+        "job_ticket",
+        "recipe",
+        "location",
+        "quantity",
+        "unit",
+        "status",
+        "run_date",
+        "face_type",
+        "liner_type",
+        "notes",
+        "updated_at",
+    ]
+
+    for _line_number, row, row_id, tsm_id, part_number, quantity in parsed_rows:
+        job_ticket = ticket_map.get(ticket_lookup_key(tsm_id))
         if tsm_id and not job_ticket:
             unmatched_ticket_count += 1
 
         location_value = first(row, "location", "location_code", "location_name")
-        location = find_or_create_location(location_value, first(row, "location_name", default=location_value))
-        existing = find_finished_inventory_by_legacy_id(row_id)
+        location_key = ticket_lookup_key(location_value)
+        if location_key not in location_cache:
+            location_cache[location_key] = find_or_create_location(location_value, first(row, "location_name", default=location_value))
+        location = location_cache[location_key]
+        existing = existing_map.get(ticket_lookup_key(row_id))
         note_parts = [
             first(row, "notes", "note"),
             f"Imported TSM ID: {tsm_id}" if tsm_id else "",
@@ -1143,9 +1197,23 @@ def import_finished_inventory(rows):
             "face_type": first(row, "face_type", default=(job_ticket.face_type if job_ticket else "")),
             "liner_type": first(row, "liner_type", default=(job_ticket.liner_type if job_ticket else "")),
             "notes": notes,
+            "updated_at": timezone.now(),
         }
         inventory = existing or FinishedInventory()
-        save_model(inventory, defaults, result)
+        for field, value in defaults.items():
+            setattr(inventory, field, value)
+        if inventory.pk:
+            update_records.append(inventory)
+        else:
+            create_records.append(inventory)
+
+    if create_records:
+        FinishedInventory.objects.bulk_create(create_records, batch_size=250)
+        result["created"] += len(create_records)
+    if update_records:
+        FinishedInventory.objects.bulk_update(update_records, update_fields, batch_size=250)
+        result["updated"] += len(update_records)
+
     if unmatched_ticket_count:
         add_warning(
             result,
