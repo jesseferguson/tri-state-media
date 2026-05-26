@@ -23,6 +23,7 @@ import RecipeOptionsView from "./components/RecipeOptionsView";
 import RecipeToolStackView from "./components/RecipeToolStackView";
 import RollWorkflowWindow from "./components/RollWorkflowWindow";
 import ProductionScheduleView from "./components/ProductionScheduleView";
+import ToolingItemDetailPanel from "./components/ToolingItemDetailPanel";
 import {
   clearSession,
   deleteRoleFromApi,
@@ -87,6 +88,24 @@ function mergeRows(existing = [], next = []) {
   const byId = new Map(existing.map((row) => [String(row.id), row]));
   next.forEach((row) => byId.set(String(row.id), { ...(byId.get(String(row.id)) ?? {}), ...row }));
   return Array.from(byId.values());
+}
+
+function normalizeToolKey(value) {
+  return String(value ?? "").trim().toLowerCase().replaceAll(" ", "_").replaceAll("-", "_");
+}
+
+function assignmentToolDetails(tool) {
+  return tool?.tool_details ?? tool?.flex_die_details ?? tool?.mag_details ?? tool?.perf_cylinder_details ?? tool?.perf_blade_setup_details ?? {};
+}
+
+function assignmentToolTarget(tool) {
+  const details = assignmentToolDetails(tool);
+  const type = normalizeToolKey(tool?.tool_type ?? details.type);
+  if (type.includes("flex_die")) return { resourceKey: "flex-dies", id: tool.flex_die ?? details.id };
+  if (type.includes("mag") && !type.includes("perf")) return { resourceKey: "mags", id: tool.mag ?? details.id };
+  if (type.includes("perf_blade_setup")) return { resourceKey: "perf-blade-setups", id: tool.perf_blade_setup ?? details.id };
+  if (type.includes("perf_cylinder") || type.includes("perf")) return { resourceKey: "perf-cylinders", id: tool.perf_cylinder ?? details.id };
+  return { resourceKey: "", id: null };
 }
 
 function relationLookupSpec(relation, filters = {}, pageSize = 250, fetchAll = false) {
@@ -341,6 +360,13 @@ const toolingConfigFormPageKeys = new Set([
   "recipes",
   "recipe-options",
   "recipe-tools",
+]);
+
+const toolingItemPageKeys = new Set([
+  "flex-dies",
+  "mags",
+  "perf-cylinders",
+  "perf-blade-setups",
 ]);
 
 const AUTO_REFRESH_INTERVALS = {
@@ -977,6 +1003,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const [localUsageEvents, setLocalUsageEvents] = useState([]);
   const [quoteJobTicketId, setQuoteJobTicketId] = useState("");
   const [toolingWorkspaceForm, setToolingWorkspaceForm] = useState(null);
+  const [toolingItemForm, setToolingItemForm] = useState(null);
+  const [toolingItemOverrides, setToolingItemOverrides] = useState({});
 
   const allowedResources = useMemo(
     () => visibleResourcesForRole(roleDefinitions, currentUser?.role),
@@ -1148,9 +1176,46 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     };
   }, [lookupQuery.data, resource.key, rows]);
 
+  const toolingItemFormResource = useMemo(() => {
+    if (!toolingItemForm?.resourceKey) return null;
+    return resourceMap[toolingItemForm.resourceKey] ?? null;
+  }, [toolingItemForm]);
+
+  const toolingItemLookups = useMemo(() => ({
+    ...(lookupQuery.data ?? {}),
+    ...toolingWorkspaceLookups,
+  }), [lookupQuery.data, toolingWorkspaceLookups]);
+
   function lookupRow(relation, id) {
     if (id === null || id === undefined || id === "") return null;
     return (toolingWorkspaceLookups[relation] ?? []).find((row) => String(row.id) === String(id)) ?? null;
+  }
+
+  function cacheToolingItem(resourceKey, saved) {
+    if (!resourceKey || !saved?.id) return;
+    setToolingItemOverrides((current) => ({
+      ...current,
+      [`${resourceKey}:${saved.id}`]: saved,
+    }));
+    if (resource.key === resourceKey && String(selected?.id) === String(saved.id)) {
+      setSelected(saved);
+    }
+  }
+
+  function resolveToolingItemFromAssignment(tool) {
+    const target = assignmentToolTarget(tool);
+    if (!target.resourceKey) return null;
+    const override = target.id ? toolingItemOverrides[`${target.resourceKey}:${target.id}`] : null;
+    const lookupRecord = target.id
+      ? (toolingItemLookups[target.resourceKey] ?? []).find((row) => String(row.id) === String(target.id))
+      : null;
+    const details = assignmentToolDetails(tool);
+    const fallback = target.id ? { ...details, id: target.id } : details;
+    return {
+      resourceKey: target.resourceKey,
+      record: override ?? lookupRecord ?? fallback,
+      assignment: tool,
+    };
   }
 
   function prepareSavePayload(payload) {
@@ -1323,6 +1388,38 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
       if (formResourceKey === resource.key) setSelected(saved ?? null);
       setToolingWorkspaceForm(null);
+    },
+  });
+
+  const toolingItemStatusMutation = useMutation({
+    mutationFn: async ({ resourceKey, record, payload }) => {
+      const targetResource = resourceMap[resourceKey];
+      if (!targetResource || !record?.id) throw new Error("Could not find this tooling record.");
+      return updateRecord(targetResource.endpoint, record.id, payload);
+    },
+    onSuccess: (saved, variables) => {
+      cacheToolingItem(variables.resourceKey, saved);
+      queryClient.invalidateQueries({ queryKey: ["collection", variables.resourceKey] });
+      queryClient.invalidateQueries({ queryKey: ["collection", resource.key] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
+  const toolingItemFormMutation = useMutation({
+    mutationFn: async (payload) => {
+      const formState = toolingItemForm;
+      const targetResource = formState ? resourceMap[formState.resourceKey] : null;
+      if (!formState || !targetResource || !formState.record?.id) throw new Error("No tooling item is open.");
+      const { __imageUploads, ...cleanPayload } = payload ?? {};
+      return updateRecord(targetResource.endpoint, formState.record.id, cleanPayload);
+    },
+    onSuccess: (saved) => {
+      const formResourceKey = toolingItemForm?.resourceKey;
+      cacheToolingItem(formResourceKey, saved);
+      if (formResourceKey) queryClient.invalidateQueries({ queryKey: ["collection", formResourceKey] });
+      queryClient.invalidateQueries({ queryKey: ["collection", resource.key] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      setToolingItemForm(null);
     },
   });
 
@@ -1824,6 +1921,36 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     }
   }
 
+  function openToolingItemEditor(resourceKey, record) {
+    if (!resourceKey || !record?.id) return;
+    setToolingItemForm({ resourceKey, record });
+  }
+
+  function renderToolingItemDetail(tool, onClose) {
+    const target = resolveToolingItemFromAssignment(tool);
+    if (!target?.record) return null;
+    return (
+      <ToolingItemDetailPanel
+        item={target.record}
+        resourceKey={target.resourceKey}
+        assignment={target.assignment}
+        onClose={onClose}
+        onEdit={(record) => openToolingItemEditor(target.resourceKey, record)}
+        onEditAssignment={editToolAssignment}
+        onUpdateStatus={(payload) => toolingItemStatusMutation.mutateAsync({
+          resourceKey: target.resourceKey,
+          record: target.record,
+          payload,
+        })}
+        updating={toolingItemStatusMutation.isPending}
+      />
+    );
+  }
+
+  const selectedToolingItem = selected && toolingItemPageKeys.has(resource.key)
+    ? (toolingItemOverrides[`${resource.key}:${selected.id}`] ?? selected)
+    : selected;
+
   return (
     <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""}`}>
       <section className="mobile-shell-bar compact-card">
@@ -1951,6 +2078,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {toolingWorkspaceMutation.error && <div className="error-box">{toolingWorkspaceMutation.error.message}</div>}
+        {toolingItemStatusMutation.error && <div className="error-box">{toolingItemStatusMutation.error.message}</div>}
+        {toolingItemFormMutation.error && <div className="error-box">{toolingItemFormMutation.error.message}</div>}
         {deleteMutation.error && <div className="error-box">{deleteMutation.error.message}</div>}
         {rollActionMutation.error && <div className="error-box">{rollActionMutation.error.message}</div>}
         {listQuery.error && <div className="error-box">Could not load {resource.label}: {listQuery.error.message}</div>}
@@ -2073,6 +2202,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onAddTooling={openToolAssignmentForm}
                     onEditTooling={editToolAssignment}
                     onDeleteTooling={(tool) => deleteToolingWorkspaceRecord("recipe-tools", tool)}
+                    renderToolDetail={renderToolingItemDetail}
                   />
                 ) : resource.key === "recipe-options" ? (
                   <RecipeOptionsView
@@ -2103,11 +2233,11 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               </div>
 
               {resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "material-coated-stock" && !isMaterialTypePage && !isToolingConfigPage && (
-                <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : "detail-panel compact-card"}>
+                <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : toolingItemPageKeys.has(resource.key) && selected ? "tooling-item-detail-shell" : "detail-panel compact-card"}>
                   {selected ? (
                   resource.key === "flex-dies" ? (
                     <FlexDieDetailPanel
-                      die={selected}
+                      die={selectedToolingItem}
                       historyRows={selectedFlexDieHistory}
                       usageRows={selectedFlexDieUsageRows}
                       onEdit={() => setFormMode("edit")}
@@ -2117,6 +2247,23 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                       onReceiveDie={(payload) => receiveFlexDie(selected, payload)}
                       onAdjustCount={(payload) => adjustFlexDieCount(selected, payload)}
                       onDeleteDieline={() => deleteFlexDieDieline(selected)}
+                      onUpdateStatus={(payload) => toolingItemStatusMutation.mutateAsync({
+                        resourceKey: "flex-dies",
+                        record: selectedToolingItem,
+                        payload,
+                      })}
+                    />
+                  ) : toolingItemPageKeys.has(resource.key) ? (
+                    <ToolingItemDetailPanel
+                      item={selectedToolingItem}
+                      resourceKey={resource.key}
+                      onEdit={(record) => openToolingItemEditor(resource.key, record)}
+                      onUpdateStatus={(payload) => toolingItemStatusMutation.mutateAsync({
+                        resourceKey: resource.key,
+                        record: selectedToolingItem,
+                        payload,
+                      })}
+                      updating={toolingItemStatusMutation.isPending}
                     />
                   ) : (
                   <>
@@ -2281,6 +2428,23 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 submitting={toolingWorkspaceMutation.isPending}
                 onSubmit={(payload) => toolingWorkspaceMutation.mutate(payload)}
                 onCancel={() => setToolingWorkspaceForm(null)}
+                canUseField={canUseRecordField}
+              />
+            </div>
+          </section>
+        )}
+
+        {toolingItemForm && toolingItemFormResource && (
+          <section className="tooling-form-overlay" role="dialog" aria-modal="true" aria-label={`Edit ${toolingItemFormResource.singular}`}>
+            <div className="tooling-form-window">
+              <RecordForm
+                resource={toolingItemFormResource}
+                record={toolingItemForm.record}
+                defaults={{}}
+                lookups={toolingItemLookups}
+                submitting={toolingItemFormMutation.isPending}
+                onSubmit={(payload) => toolingItemFormMutation.mutate(payload)}
+                onCancel={() => setToolingItemForm(null)}
                 canUseField={canUseRecordField}
               />
             </div>

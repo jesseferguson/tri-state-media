@@ -135,6 +135,22 @@ function toolMeta(tool) {
   return tool?.manual_description || "";
 }
 
+function toolLocation(tool) {
+  const details = toolDetails(tool);
+  return (
+    details.location ??
+    details.current_location_full_path ??
+    details.current_location_name ??
+    details.location_full_path ??
+    details.location_name ??
+    tool?.current_location_full_path ??
+    tool?.current_location_name ??
+    tool?.location_full_path ??
+    tool?.location_name ??
+    ""
+  );
+}
+
 function toolStatusValue(tool) {
   const details = toolDetails(tool);
   return normalized(details.status ?? tool?.status);
@@ -309,7 +325,7 @@ function dieAcrossText(tool) {
   return across || across === 0 ? `${across} across` : "";
 }
 
-function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete }) {
+function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen }) {
   if (!slot.tool) {
     return (
       <button type="button" className="layout-chain-card missing" onClick={() => onAddTooling(option, slot.requestGroup)}>
@@ -322,18 +338,28 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete }) {
   const status = toolStatus(slot.tool);
   const meta = toolMeta(slot.tool);
   const dieAcross = isFlexDieTool(slot.tool) ? dieAcrossText(slot.tool) : "";
+  const location = !isFlexDieTool(slot.tool) ? toolLocation(slot.tool) : "";
 
   return (
-    <div className={`layout-chain-card ${status}`}>
+    <div
+      className={`layout-chain-card ${status} interactive`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen?.(slot.tool)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") onOpen?.(slot.tool);
+      }}
+    >
       <div>
         <strong>{toolName(slot.tool)}</strong>
         {dieAcross && <em className="layout-die-across">{dieAcross}</em>}
         {meta && <small className="layout-chain-meta">{meta}</small>}
+        {location && <small className="layout-chain-location">{location}</small>}
         <small className={`layout-chain-state ${status}`}>{toolStateText(slot.tool)}</small>
       </div>
       <div className="layout-tool-actions">
-        <button type="button" onClick={() => onEdit(slot.tool)}><Edit3 size={12} /> Edit</button>
-        <button type="button" className="danger-text" onClick={() => onDelete(slot.tool)}><Trash2 size={12} /> Delete</button>
+        <button type="button" onClick={(event) => { event.stopPropagation(); onEdit(slot.tool); }}><Edit3 size={12} /> Edit</button>
+        <button type="button" className="danger-text" onClick={(event) => { event.stopPropagation(); onDelete(slot.tool); }}><Trash2 size={12} /> Delete</button>
       </div>
     </div>
   );
@@ -343,8 +369,9 @@ function perfSummary(recipe, option, plan) {
   return plan.needsPerf || recipeNeedsPerf(recipe, option) ? "Perf" : "No Perf";
 }
 
-function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDeletePressOption, onAddTooling, onEditTooling, onDeleteTooling }) {
+function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDeletePressOption, onAddTooling, onEditTooling, onDeleteTooling, renderToolDetail }) {
   const [open, setOpen] = useState(false);
+  const [detailTool, setDetailTool] = useState(null);
   const tools = optionTools(option, toolRows, option.tools);
   const readiness = optionReadiness(recipe, option, tools);
   const plan = buildToolSlots(recipe, option, tools);
@@ -390,9 +417,16 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
                 onAddTooling={onAddTooling}
                 onEdit={onEditTooling}
                 onDelete={onDeleteTooling}
+                onOpen={(tool) => setDetailTool((current) => current?.id === tool?.id ? null : tool)}
               />
             </Fragment>
           ))}
+        </div>
+      )}
+
+      {open && detailTool && renderToolDetail && (
+        <div className="layout-inline-tool-detail">
+          {renderToolDetail(detailTool, () => setDetailTool(null))}
         </div>
       )}
     </article>
@@ -413,6 +447,7 @@ function LayoutCard({
   onAddTooling,
   onEditTooling,
   onDeleteTooling,
+  renderToolDetail,
 }) {
   return (
     <article className={`layout-design-card ${selected ? "selected" : ""} ${row.is_active === false ? "inactive" : ""}`} onClick={() => onSelect(row)}>
@@ -447,6 +482,7 @@ function LayoutCard({
                 onAddTooling={onAddTooling}
                 onEditTooling={onEditTooling}
                 onDeleteTooling={onDeleteTooling}
+                renderToolDetail={renderToolDetail}
               />
             ))}
           </div>
@@ -515,6 +551,7 @@ export default function LabelLayoutsView({
   onAddTooling,
   onEditTooling,
   onDeleteTooling,
+  renderToolDetail,
 }) {
   const [openKeys, setOpenKeys] = useState(() => new Set());
 
@@ -564,6 +601,7 @@ export default function LabelLayoutsView({
             onAddTooling,
             onEditTooling,
             onDeleteTooling,
+            renderToolDetail,
           }}
         />
       ))}

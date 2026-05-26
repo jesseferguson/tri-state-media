@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Trash2 } from "lucide-react";
+import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Save, Trash2 } from "lucide-react";
+import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
 function numberValue(value) {
@@ -107,6 +108,7 @@ export default function FlexDieDetailPanel({
   onReceiveDie,
   onAdjustCount,
   onDeleteDieline,
+  onUpdateStatus,
 }) {
   const [requestNote, setRequestNote] = useState("");
   const [orderNote, setOrderNote] = useState("");
@@ -115,6 +117,7 @@ export default function FlexDieDetailPanel({
   const [receiveNote, setReceiveNote] = useState("");
   const [countValue, setCountValue] = useState(die?.active_die_count ?? 0);
   const [countNote, setCountNote] = useState("");
+  const [statusValue, setStatusValue] = useState(die?.status ?? "in_stock");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
@@ -126,9 +129,10 @@ export default function FlexDieDetailPanel({
 
   useEffect(() => {
     setCountValue(die?.active_die_count ?? 0);
+    setStatusValue(die?.status ?? "in_stock");
     setCountNote("");
     setError("");
-  }, [die?.id, die?.active_die_count]);
+  }, [die?.id, die?.active_die_count, die?.status]);
 
   async function run(actionName, action) {
     setBusy(actionName);
@@ -156,9 +160,12 @@ export default function FlexDieDetailPanel({
         <div>
           <p className="eyebrow">Flex Die Folder</p>
           <h2>{getRecordTitle(die)}</h2>
-          <span className={`flex-die-count-pill ${tone}`}>
-            {numberValue(die.active_die_count)} active / {numberValue(die.target_die_count)} target
-          </span>
+          <div className="flex-die-head-pills">
+            <span className={`flex-die-count-pill ${tone}`}>
+              {numberValue(die.active_die_count)} active / {numberValue(die.target_die_count)} target
+            </span>
+            <span className={`flex-die-status-pill ${die.status || "in_stock"}`}>{labelize(die.status)}</span>
+          </div>
         </div>
         <div className="flex-die-actions">
           <button className="primary-btn" type="button" onClick={onEdit}><Edit3 size={15} /> Edit</button>
@@ -172,6 +179,38 @@ export default function FlexDieDetailPanel({
           <strong>{tone === "bad" ? "Needs ordered" : "Below target"}</strong>
           <span>This jacket is below the count production wants on hand.</span>
         </div>
+      )}
+
+      <section className="flex-die-at-a-glance">
+        <div className="flex-die-across-hero">
+          <span>Across</span>
+          <strong>{die.number_across || "--"}</strong>
+          <em>operator check point</em>
+        </div>
+        <div>
+          <span>Gear</span>
+          <strong>{die.gear ? `${die.gear}T` : "--"}</strong>
+        </div>
+        <div>
+          <span>Repeat</span>
+          <strong>{formatInches(die.repeat_inches)}</strong>
+        </div>
+        <div>
+          <span>Size</span>
+          <strong>{formatInches(die.label_width_inches)} x {formatInches(die.label_length_inches)}</strong>
+        </div>
+      </section>
+
+      {onUpdateStatus && (
+        <form className="flex-die-status-form" onSubmit={(event) => { event.preventDefault(); run("status", () => onUpdateStatus({ status: statusValue })); }}>
+          <label>
+            <span>Status</span>
+            <select value={statusValue} onChange={(event) => setStatusValue(event.target.value)}>
+              {(choiceLists.toolStatus ?? []).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <button className="primary-btn xs" type="submit" disabled={busy === "status"}><Save size={13} /> {busy === "status" ? "Saving..." : "Save Status"}</button>
+        </form>
       )}
 
       <section className="flex-die-image-card">

@@ -17,13 +17,19 @@ function absoluteUrl(url) {
 
 async function request(url, options = {}) {
   const bodyIsFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-  const response = await fetch(url, {
-    headers: {
-      ...(bodyIsFormData ? {} : { "Content-Type": "application/json" }),
-      ...(options.headers ?? {}),
-    },
-    ...options,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        ...(bodyIsFormData ? {} : { "Content-Type": "application/json" }),
+        ...(options.headers ?? {}),
+      },
+      ...options,
+    });
+  } catch (error) {
+    const target = typeof url === "string" ? url : url?.toString?.();
+    throw new Error(`Could not reach the API at ${target || "the requested endpoint"}. Make sure the backend server is running, then refresh and try again. (${error.message || "Network request failed"})`);
+  }
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
