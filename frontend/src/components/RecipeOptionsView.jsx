@@ -252,10 +252,10 @@ function chooseUndercutChain(main, undercutChains) {
 }
 
 function buildCombos(option) {
-  const requiredTools = tools(option).filter(isRequired);
-  const topTools = requiredTools.filter((t) => isTopTool(t) && !isPerfTool(t));
-  const undercutTools = requiredTools.filter(isUndercutTool);
-  const perfTools = requiredTools.filter(isPerfRoleTool);
+  const assignedTools = tools(option);
+  const topTools = assignedTools.filter((t) => isTopTool(t) && !isPerfTool(t));
+  const undercutTools = assignedTools.filter(isUndercutTool);
+  const perfTools = assignedTools.filter(isPerfRoleTool);
 
   const mainChains = buildChains(topTools.filter(isFlexDie), topTools.filter(isMag), "Main");
   const undercutChains = buildChains(undercutTools.filter(isFlexDie), undercutTools.filter(isMag), "Undercut");
@@ -266,11 +266,12 @@ function buildCombos(option) {
     const externalPerf = needsExternalPerf(option);
     const undercutRequired = needsUndercut(option);
 
+    const displayPerf = externalPerf ? usablePerfTools[0] ?? perfTools[0] ?? null : null;
     const runnablePerf = externalPerf && main.die && main.runnableMag
-      ? usablePerfTools.find((perf) => sameParent(main.die, main.runnableMag, perf)) ?? null
-      : null;
+      ? usablePerfTools.find((perf) => sameParent(main.die, main.runnableMag, perf)) ?? displayPerf
+      : displayPerf;
 
-    if (externalPerf && !runnablePerf) problems.push("External perf required");
+    if (externalPerf && !runnablePerf) problems.push(perfTools.length ? "External perf not usable" : "External perf required");
 
     let undercutChain = null;
     let undercutLinked = false;
@@ -305,7 +306,7 @@ function buildCombos(option) {
   });
 }
 
-function evaluateOption(option) {
+export function evaluateOption(option) {
   const combos = buildCombos(option);
   const readyCombos = combos.filter((c) => c.severity === "ready");
   const problemCombos = combos.filter((c) => c.severity !== "ready");

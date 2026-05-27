@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Edit3, Plus, Printer, Trash2, Wrench } from "lucide-react";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
+import { evaluateOption } from "./RecipeOptionsView";
 
 const GOOD_STATUSES = new Set(["active", "available", "in_stock", "in_use"]);
 const BAD_STATUSES = new Set(["inactive", "missing", "needs_ordered", "needs_repair", "ordered", "out_for_repair", "out_for_retool", "out_of_stock", "retired"]);
@@ -236,6 +237,15 @@ function recipeNeedsPerf(recipe, option) {
   );
 }
 
+function recipeNeedsExternalPerf(recipe, option) {
+  const source = recipe ?? option?.recipe_details ?? {};
+  return (
+    source.requires_perf === true ||
+    source.requires_external_perf === true ||
+    normalized(source.perf_option ?? option?.perf_option) === "perf"
+  );
+}
+
 function optionNeedsUndercut(option, tools) {
   return option?.requires_undercut === true || normalized(option?.setup_type) === "undercut" || (tools ?? []).some(isUndercutTool);
 }
@@ -247,7 +257,7 @@ function buildToolSlots(recipe, option, tools) {
   const perfTools = assigned.filter(isPerfRoleTool);
 
   const needsUndercut = optionNeedsUndercut(option, assigned);
-  const needsPerf = recipeNeedsPerf(recipe, option) || perfTools.length > 0;
+  const needsPerf = recipeNeedsExternalPerf(recipe, option) || perfTools.length > 0;
   const mainMags = mags.filter(isMainTool);
   const mainDies = dies.filter(isMainTool);
   const undercutMags = mags.filter(isUndercutTool);
@@ -379,7 +389,12 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
   const [open, setOpen] = useState(false);
   const [detailTool, setDetailTool] = useState(null);
   const tools = optionTools(option, toolRows, option.tools);
-  const readiness = optionReadiness(recipe, option, tools);
+  const sharedReadiness = evaluateOption({ ...option, recipe_details: option.recipe_details ?? recipe, tools });
+  const readiness = {
+    tone: sharedReadiness.severity,
+    label: sharedReadiness.label === "Can Run" ? "Ready" : sharedReadiness.label,
+    problems: sharedReadiness.problems ?? [],
+  };
   const plan = buildToolSlots(recipe, option, tools);
   const { slots } = plan;
   const perfLabel = perfSummary(recipe, option, plan);
