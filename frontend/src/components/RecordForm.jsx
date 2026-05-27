@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
-import { getRecordTitle } from "../lib/format";
+import { formatInches, getRecordTitle } from "../lib/format";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 
 function normalizeInitial(fields, record, defaults = {}) {
@@ -138,6 +138,44 @@ function selectedLookupRow(rows, id) {
   return (rows ?? []).find((row) => String(row.id) === String(id)) ?? null;
 }
 
+function normalizeMatchText(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function numberMatches(left, right) {
+  const a = Number(left);
+  const b = Number(right);
+  return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 0.001;
+}
+
+function recipeMatchParts(recipe, form) {
+  const parts = [];
+  if (numberMatches(recipe.label_width_inches, form.label_width_inches)) parts.push("Width");
+  if (numberMatches(recipe.label_length_inches, form.label_length_inches)) parts.push("Length");
+  if (numberMatches(recipe.repeat_inches, form.repeat_inches)) parts.push("Repeat");
+  if (normalizeMatchText(recipe.face_type) && normalizeMatchText(recipe.face_type) === normalizeMatchText(form.face_type)) parts.push("Face");
+  if (normalizeMatchText(recipe.liner_type) && normalizeMatchText(recipe.liner_type) === normalizeMatchText(form.liner_type)) parts.push("Liner");
+  return parts;
+}
+
+function recipeMatchScore(recipe, form) {
+  let score = 0;
+  if (numberMatches(recipe.label_width_inches, form.label_width_inches)) score += 4;
+  if (numberMatches(recipe.label_length_inches, form.label_length_inches)) score += 4;
+  if (numberMatches(recipe.repeat_inches, form.repeat_inches)) score += 5;
+  if (normalizeMatchText(recipe.face_type) && normalizeMatchText(recipe.face_type) === normalizeMatchText(form.face_type)) score += 3;
+  if (normalizeMatchText(recipe.liner_type) && normalizeMatchText(recipe.liner_type) === normalizeMatchText(form.liner_type)) score += 3;
+  return score;
+}
+
+function recipeLayoutLine(recipe) {
+  return [
+    recipe.label_width_inches && recipe.label_length_inches ? `${formatInches(recipe.label_width_inches)} x ${formatInches(recipe.label_length_inches)}` : "",
+    recipe.repeat_inches ? `Repeat ${formatInches(recipe.repeat_inches)}` : "",
+    [recipe.face_type, recipe.liner_type].filter(Boolean).join(" / "),
+  ].filter(Boolean).join(" - ");
+}
+
 function customerPrefixForForm(form, lookups) {
   const customer = selectedLookupRow(lookups?.customers, form.customer);
   const source = form.customer_name || customer?.name || customer?.customer_name || "";
@@ -240,6 +278,49 @@ function TsmIdRecommendationPanel({ recommendation, onPick }) {
         <button type="button" className="good" onClick={() => onPick(recommendation.availableCode)}>
           {recommendation.availableCode}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function RecipeRecommendationPanel({ recipes, form, value, onPick }) {
+  const candidates = useMemo(() => {
+    return (recipes ?? [])
+      .map((recipe) => ({
+        recipe,
+        score: recipeMatchScore(recipe, form),
+        matches: recipeMatchParts(recipe, form),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || String(a.recipe.name ?? "").localeCompare(String(b.recipe.name ?? ""), undefined, { numeric: true }))
+      .slice(0, 5);
+  }, [recipes, form]);
+
+  if (!candidates.length) {
+    return (
+      <div className="recipe-recommendations empty">
+        <span>Recommended Label Layouts</span>
+        <p>Enter width, length, repeat, face, or liner to find close layout matches.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="recipe-recommendations" aria-live="polite">
+      <span>Recommended Label Layouts</span>
+      <div>
+        {candidates.map(({ recipe, matches }) => (
+          <button
+            key={recipe.id}
+            type="button"
+            className={String(recipe.id) === String(value) ? "active" : ""}
+            onClick={() => onPick(recipe.id)}
+          >
+            <strong>{recipe.name || getRecordTitle(recipe)}</strong>
+            <em>{recipeLayoutLine(recipe) || "Layout details missing"}</em>
+            <small>{matches.join(", ")} match{matches.length === 1 ? "" : "es"}</small>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -383,6 +464,13 @@ function getRelationTitle(row, field) {
     ].filter(Boolean).join(" / ");
   }
 
+  if (field.relation === "recipes") {
+    return [
+      row.name ?? getRecordTitle(row),
+      recipeLayoutLine(row),
+    ].filter(Boolean).join(" / ");
+  }
+
   if (field.relation === "boxes") {
     return [
       row.item_number,
@@ -419,6 +507,18 @@ function getRelationTitle(row, field) {
   return getRecordTitle(row);
 }
 
+function getRelationSubtitle(row, field) {
+  if (field.relation === "recipes") {
+    return [
+      row.shape_type,
+      row.cutting_type,
+      row.perf_option === "perf" ? "Perf" : row.perf_option === "none" ? "No Perf" : "",
+    ].filter(Boolean).join(" / ");
+  }
+
+  return [row.status, row.current_location_name, row.press_name, row.recipe_name].filter(Boolean).join(" · ");
+}
+
 function lookupChoiceValue(row, field) {
   if (!row) return "";
   const valueField = field.lookupValueField ?? "name";
@@ -446,7 +546,10 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = q ? optionRows.filter((row) => makeSearchText(row, field).includes(q) || getRelationTitle(row, field).toLowerCase().includes(q)) : optionRows;
-    return base.slice(0, field.maxResults ?? 80);
+    const sorted = field.recommendFromJobLayout
+      ? [...base].sort((a, b) => recipeMatchScore(b, field.recommendationContext ?? {}) - recipeMatchScore(a, field.recommendationContext ?? {}) || String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { numeric: true }))
+      : base;
+    return sorted.slice(0, field.maxResults ?? 80);
   }, [optionRows, query, field]);
 
   return (
@@ -566,7 +669,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
 
         {visibleFields.map((field, index) => {
           const fieldLabel = getFieldLabel(field, form);
-          const lookupField = { ...field, label: fieldLabel, lookupFilters: getFieldLookupFilters(field, form) };
+          const lookupField = { ...field, label: fieldLabel, lookupFilters: getFieldLookupFilters(field, form), recommendationContext: form };
           const value = form[field.name];
           const id = `${resource.key}-${field.name}`;
           const isTsmIdField = resource.key === "job-tickets" && field.name === "product_code";
@@ -660,6 +763,9 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
                 <label className={fieldClass} htmlFor={id}>
                   <span>{fieldLabel}</span>
                   <RelationPicker field={lookupField} rows={rows} value={value} id={id} required={field.required} onChange={(next) => update(field.name, next)} />
+                  {resource.key === "job-tickets" && field.name === "recipe" && (
+                    <RecipeRecommendationPanel recipes={rows} form={form} value={value} onPick={(next) => update(field.name, next)} />
+                  )}
                 </label>
               </Fragment>
             );

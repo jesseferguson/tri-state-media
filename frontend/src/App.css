@@ -3995,6 +3995,22 @@ p, .muted { color: #7a7a7a; }
   background: #ffffff;
 }
 
+.job-tickets-record-form .form-section-heading {
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 1px solid #dbe6f2;
+  border-radius: 10px;
+  background: #f1f7ff;
+}
+
+.job-tickets-record-form .form-section-heading strong {
+  color: #0f172a;
+}
+
+.job-tickets-record-form .form-section-heading span {
+  color: #475467;
+}
+
 .job-tickets-record-form .field > span,
 .job-tickets-record-form .check-field span {
   color: #475467;
@@ -4091,6 +4107,85 @@ p, .muted { color: #7a7a7a; }
 .job-tickets-record-form .field-wide,
 .job-tickets-record-form .image-upload-field {
   grid-column: span 2;
+}
+
+.job-tickets-record-form .field-recipe {
+  grid-column: 1 / -1;
+}
+
+.recipe-recommendations {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid #dbeafe;
+  border-radius: 9px;
+  background: #f8fbff;
+}
+
+.recipe-recommendations > span {
+  color: #1d4ed8;
+  font-size: .64rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.recipe-recommendations > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 6px;
+}
+
+.recipe-recommendations button {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid #d9e4f2;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #101828;
+  text-align: left;
+}
+
+.recipe-recommendations button:hover,
+.recipe-recommendations button.active {
+  border-color: #60a5fa;
+  background: #eff6ff;
+}
+
+.recipe-recommendations strong,
+.recipe-recommendations em,
+.recipe-recommendations small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipe-recommendations strong {
+  font-size: .76rem;
+  font-weight: 950;
+}
+
+.recipe-recommendations em {
+  color: #475467;
+  font-size: .66rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.recipe-recommendations small {
+  color: #15803d;
+  font-size: .62rem;
+  font-weight: 950;
+}
+
+.recipe-recommendations.empty p {
+  margin: 0;
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 800;
 }
 
 .image-upload-field > div {
