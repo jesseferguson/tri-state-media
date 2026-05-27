@@ -198,21 +198,23 @@ export default function FinishedInventoryView({ rows, selectedId, onSelect }) {
     return sum + numeric(row.quantity);
   }, 0);
   const activeLots = (rows ?? []).filter((row) => numeric(row.quantity) > 0 && !["shipped", "scrapped"].includes(String(row.status || "").toLowerCase())).length;
+  const linkedLots = (rows ?? []).filter((row) => row.job_ticket || row.job_ticket_number || row.job_ticket_product_code).length;
+  const unlinkedLots = Math.max(0, activeLots - linkedLots);
 
   return (
     <div className="finished-inventory-view">
       <div className="finished-inventory-summary">
         <div>
-          <span>Total on hand</span>
+          <span>On hand qty</span>
           <strong>{total.toLocaleString()}</strong>
         </div>
         <div>
-          <span>Active lots</span>
-          <strong>{activeLots.toLocaleString()}</strong>
+          <span>Linked lots</span>
+          <strong>{linkedLots.toLocaleString()}</strong>
         </div>
         <div>
-          <span>Locations</span>
-          <strong>{groups.length.toLocaleString()}</strong>
+          <span>Unlinked legacy</span>
+          <strong>{unlinkedLots.toLocaleString()}</strong>
         </div>
       </div>
 

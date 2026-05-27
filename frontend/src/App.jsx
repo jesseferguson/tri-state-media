@@ -186,7 +186,9 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-orders", {}, 150));
+    addLookupSpec(specs, relationLookupSpec("customer-orders", { job_ticket: selected.id }, 250, true));
     addLookupSpec(specs, relationLookupSpec("customer-order-events", {}, 250));
+    addLookupSpec(specs, relationLookupSpec("customer-order-events", { job_ticket: selected.id }, 250, true));
     addLookupSpec(specs, relationLookupSpec("job-ticket-events", { job_ticket: selected.id }, 250));
     addLookupSpec(specs, relationLookupSpec("presses", {}, 150));
   }
@@ -1653,6 +1655,17 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     },
   });
 
+  const finishedInventoryReceiveMutation = useMutation({
+    mutationFn: (payload) => createRecord("finished-inventory/receive-order", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "finished-inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-order-events"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   const finishedScheduleMutation = useMutation({
     mutationFn: async ({ material, schedule }) => {
       const required = [
@@ -2443,6 +2456,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 ticket={selected}
                 lookups={lookupQuery.data ?? {}}
                 chartsLoading={lookupQuery.isLoading && !lookupQuery.data}
+                inventoryReceiving={finishedInventoryReceiveMutation.isPending}
+                inventoryReceiveError={finishedInventoryReceiveMutation.error?.message}
                 canEdit={canEditJobTicket}
                 canSchedule={canScheduleFromJobTicket}
                 canQuote={canQuoteJobTicket}
@@ -2453,6 +2468,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   setFormMode(null);
                   setSearch("");
                 }}
+                onReceiveFinishedInventory={(payload) => finishedInventoryReceiveMutation.mutateAsync(payload)}
                 renderEditorForm={({ onCancel }) => (
                   <RecordForm
                     resource={resource}

@@ -659,11 +659,24 @@ class ProductionSchedule(models.Model):
 
 
 class CustomerOrderManager(models.Manager):
+    def next_order_number(self, for_date=None):
+        order_date = for_date or timezone.localdate()
+        prefix = f"ORD{order_date:%y%m%d}"
+        existing = self.filter(order_number__startswith=f"{prefix}-").values_list("order_number", flat=True)
+        used = set(existing)
+        sequence = len(used) + 1
+        while True:
+            candidate = f"{prefix}-{sequence:04d}"
+            if candidate not in used:
+                return candidate
+            sequence += 1
+
     def sync_from_schedule(self, schedule, created=False):
         customer = schedule.customer or schedule.job_ticket.customer
         order, order_created = self.get_or_create(
             schedule_entry=schedule,
             defaults={
+                "order_number": self.next_order_number(schedule.order_date),
                 "job_ticket": schedule.job_ticket,
                 "customer": customer,
                 "customer_name": customer.name if customer else schedule.job_ticket.customer_name,
@@ -689,6 +702,8 @@ class CustomerOrderManager(models.Manager):
         )
 
         if not order_created:
+            if not order.order_number:
+                order.order_number = self.next_order_number(schedule.order_date)
             order.job_ticket = schedule.job_ticket
             order.customer = customer
             order.customer_name = customer.name if customer else schedule.job_ticket.customer_name
@@ -749,6 +764,7 @@ class CustomerOrder(models.Model):
         blank=True,
         related_name="customer_orders",
     )
+    order_number = models.CharField(max_length=20, unique=True, db_index=True, blank=True, null=True)
     job_ticket = models.ForeignKey(
         JobTicket,
         on_delete=models.PROTECT,
@@ -786,7 +802,7 @@ class CustomerOrder(models.Model):
         ordering = ["-order_date", "-scheduled_date", "customer_name", "job_name"]
 
     def __str__(self):
-        return f"{self.customer_name or self.customer or 'Customer'} / {self.job_name}"
+        return f"{self.order_number or 'Order'} / {self.customer_name or self.customer or 'Customer'} / {self.job_name}"
 
 
 class CustomerOrderEvent(models.Model):
@@ -835,6 +851,14 @@ class FinishedInventory(models.Model):
         blank=True,
         related_name="finished_inventory",
     )
+    customer_order = models.ForeignKey(
+        CustomerOrder,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="finished_inventory",
+    )
+    order_number = models.CharField(max_length=20, blank=True, db_index=True)
 
     material_inventory = models.ForeignKey(
         RawMaterialInventory,
@@ -894,6 +918,10 @@ class FinishedInventory(models.Model):
         return self.name
 
     def save(self, *args, **kwargs):
+        if self.customer_order_id and not self.order_number:
+            self.order_number = self.customer_order.order_number
+        if self.customer_order_id and not self.job_ticket_id:
+            self.job_ticket = self.customer_order.job_ticket
         super().save(*args, **kwargs)
         if not self.material_inventory_id or not self.material_length_feet:
             return

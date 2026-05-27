@@ -13,6 +13,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from materials.models import MaterialUsage
+from tooling.models import ToolingLocation
 
 from .models import (
     BoxInventory,
@@ -501,6 +502,7 @@ class CustomerOrderViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CustomerOrderSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
+        "order_number",
         "customer_name",
         "customer__name",
         "customer_po",
@@ -511,6 +513,7 @@ class CustomerOrderViewSet(viewsets.ReadOnlyModelViewSet):
         "operator_note",
     ]
     ordering_fields = [
+        "order_number",
         "order_date",
         "scheduled_date",
         "due_date",
@@ -519,6 +522,26 @@ class CustomerOrderViewSet(viewsets.ReadOnlyModelViewSet):
         "customer_name",
         "job_name",
     ]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        job_ticket = self.request.query_params.get("job_ticket")
+        order_number = self.request.query_params.get("order_number")
+        if job_ticket:
+            qs = qs.filter(job_ticket_id=job_ticket)
+        if order_number:
+            qs = qs.filter(order_number__iexact=str(order_number).strip())
+        return qs
+
+    @action(detail=False, methods=["get"], url_path="lookup")
+    def lookup(self, request):
+        order_number = str(request.query_params.get("order_number") or request.query_params.get("q") or "").strip()
+        if not order_number:
+            return Response({"order_number": ["Scan or enter an order number."]}, status=status.HTTP_400_BAD_REQUEST)
+        order = self.get_queryset().filter(order_number__iexact=order_number).first()
+        if not order:
+            return Response({"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(self.get_serializer(order).data)
 
 
 class CustomerOrderEventViewSet(viewsets.ReadOnlyModelViewSet):
@@ -530,6 +553,7 @@ class CustomerOrderEventViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CustomerOrderEventSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
+        "order__order_number",
         "event_type",
         "summary",
         "performed_by",
@@ -539,12 +563,27 @@ class CustomerOrderEventViewSet(viewsets.ReadOnlyModelViewSet):
     ]
     ordering_fields = ["created_at", "event_type", "performed_by"]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        order = self.request.query_params.get("order")
+        job_ticket = self.request.query_params.get("job_ticket")
+        order_number = self.request.query_params.get("order_number")
+        if order:
+            qs = qs.filter(order_id=order)
+        if job_ticket:
+            qs = qs.filter(order__job_ticket_id=job_ticket)
+        if order_number:
+            qs = qs.filter(order__order_number__iexact=str(order_number).strip())
+        return qs
+
 
 class FinishedInventoryViewSet(BaseProductionViewSet):
     serializer_class = FinishedInventorySerializer
     search_fields = [
         "name",
         "sku",
+        "order_number",
+        "customer_order__order_number",
         "status",
         "job_ticket__ticket_number",
         "material_inventory__name",
@@ -575,6 +614,7 @@ class FinishedInventoryViewSet(BaseProductionViewSet):
         qs = (
             FinishedInventory.objects.select_related(
                 "job_ticket",
+                "customer_order",
                 "material_inventory",
                 "recipe",
                 "recipe_option",
@@ -584,22 +624,105 @@ class FinishedInventoryViewSet(BaseProductionViewSet):
             .order_by("-run_date", "name")
         )
         job_ticket = self.request.query_params.get("job_ticket")
+        customer_order = self.request.query_params.get("customer_order")
+        order_number = self.request.query_params.get("order_number")
         status_value = self.request.query_params.get("status")
         tsm_id = self.request.query_params.get("tsm_id") or self.request.query_params.get("product_code") or self.request.query_params.get("ticket_number")
         if job_ticket:
             qs = qs.filter(job_ticket_id=job_ticket)
+        if customer_order:
+            qs = qs.filter(customer_order_id=customer_order)
+        if order_number:
+            qs = qs.filter(Q(order_number__iexact=str(order_number).strip()) | Q(customer_order__order_number__iexact=str(order_number).strip()))
         if tsm_id:
             tsm_id = str(tsm_id).strip()
             qs = qs.filter(
                 Q(job_ticket__ticket_number__iexact=tsm_id) |
                 Q(job_ticket__product_code__iexact=tsm_id) |
                 Q(notes__icontains=f"Imported TSM ID: {tsm_id}") |
+                Q(notes__icontains=f"Legacy TSM ID: {tsm_id}") |
                 Q(sku__iexact=tsm_id) |
                 Q(name__icontains=tsm_id)
             )
         if status_value:
             qs = qs.filter(status=status_value)
         return qs
+
+    @action(detail=False, methods=["post"], url_path="receive-order")
+    def receive_order(self, request):
+        order_number = str(request.data.get("order_number") or "").strip()
+        job_ticket_id = request.data.get("job_ticket")
+        ticket_lookup = str(request.data.get("ticket_lookup") or request.data.get("product_code") or "").strip()
+        raw_quantity = request.data.get("quantity")
+        location_value = str(request.data.get("location") or request.data.get("location_name") or "").strip()
+
+        if raw_quantity in ["", None]:
+            return Response({"quantity": ["Enter the finished inventory quantity."]}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            quantity = Decimal(str(raw_quantity))
+        except (InvalidOperation, ValueError):
+            return Response({"quantity": ["Enter a valid quantity."]}, status=status.HTTP_400_BAD_REQUEST)
+        if quantity <= 0:
+            return Response({"quantity": ["Quantity must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        order = None
+        job_ticket = None
+        if order_number:
+            order = CustomerOrder.objects.select_related("job_ticket", "job_ticket__recipe").filter(order_number__iexact=order_number).first()
+            if not order:
+                return Response({"order_number": ["Order number was not found."]}, status=status.HTTP_404_NOT_FOUND)
+            job_ticket = order.job_ticket
+        elif job_ticket_id:
+            job_ticket = JobTicket.objects.select_related("recipe").filter(pk=job_ticket_id).first()
+        elif ticket_lookup:
+            job_ticket = JobTicket.objects.select_related("recipe").filter(
+                Q(ticket_number__iexact=ticket_lookup) | Q(product_code__iexact=ticket_lookup)
+            ).first()
+
+        if not job_ticket:
+            return Response({"job_ticket": ["Scan an order number or select a job ticket."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        location = None
+        if location_value:
+            location_code = f"FIN-{location_value[:46]}".upper().replace(" ", "-")
+            location, _ = ToolingLocation.objects.get_or_create(
+                code=location_code,
+                parent=None,
+                defaults={"name": location_value[:100], "location_type": "unknown"},
+            )
+
+        used_date = parse_date(str(request.data.get("run_date") or request.data.get("received_date") or "")) or timezone.localdate()
+        received_by = str(request.data.get("received_by") or request.data.get("operator") or "").strip()
+        unit = str(request.data.get("unit") or "carton").strip() or "carton"
+        if unit not in dict(FinishedInventory.UNIT_CHOICES):
+            unit = "carton"
+
+        inventory = FinishedInventory.objects.create(
+            name=(request.data.get("name") or job_ticket.job_name or job_ticket.product_code or job_ticket.ticket_number)[:150],
+            sku=(request.data.get("sku") or job_ticket.product_code or job_ticket.ticket_number or "")[:80],
+            job_ticket=job_ticket,
+            customer_order=order,
+            order_number=order.order_number if order else order_number,
+            recipe=job_ticket.recipe,
+            location=location,
+            quantity=quantity,
+            unit=unit,
+            status="available",
+            operator=received_by,
+            run_date=used_date,
+            face_type=job_ticket.face_type,
+            liner_type=job_ticket.liner_type,
+            notes=str(request.data.get("notes") or "").strip(),
+        )
+
+        CustomerOrderEvent.objects.create(
+            order=order,
+            event_type="finished_inventory_received",
+            summary=f"Received {quantity} {unit} into finished inventory at {location_value or 'No location'}.",
+            performed_by=received_by or "system",
+        ) if order else None
+
+        return Response(self.get_serializer(inventory).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="send-out")
     def send_out(self, request, pk=None):

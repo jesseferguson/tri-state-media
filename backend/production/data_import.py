@@ -1177,7 +1177,8 @@ def import_finished_inventory(rows):
 
     for line_number, row in rows:
         row_id = first(row, "row_id", "legacy_row_id")
-        tsm_id = first(row, "tsm_id", "product_code", "job_ticket", "ticket_number")
+        tsm_id = first(row, "tsm_id", "product_code", "job_ticket", "ticket_number", "job_number", "part_id")
+        order_number = first(row, "order_number", "order_id", "schedule_order_number")
         part_number = first(row, "part_number", "sku", "item_number", "item")
         quantity = decimal_or_none(first(row, "quantity", "actual_quantity", "actual_qty", "qty"))
 
@@ -1193,11 +1194,13 @@ def import_finished_inventory(rows):
             add_warning(result, line_number, "Skipped finished inventory row with zero or negative quantity.")
             continue
 
-        parsed_rows.append((line_number, row, row_id, tsm_id, part_number, quantity))
+        parsed_rows.append((line_number, row, row_id, tsm_id, order_number, part_number, quantity))
         if row_id:
             row_ids.add(row_id)
         if tsm_id:
             tsm_ids.add(tsm_id)
+        if part_number:
+            tsm_ids.add(part_number)
 
     ticket_map = job_ticket_lookup_map(tsm_ids)
     existing_map = finished_inventory_lookup_map(row_ids)
@@ -1209,6 +1212,8 @@ def import_finished_inventory(rows):
         "name",
         "sku",
         "job_ticket",
+        "customer_order",
+        "order_number",
         "recipe",
         "location",
         "quantity",
@@ -1221,9 +1226,10 @@ def import_finished_inventory(rows):
         "updated_at",
     ]
 
-    for _line_number, row, row_id, tsm_id, part_number, quantity in parsed_rows:
-        job_ticket = ticket_map.get(ticket_lookup_key(tsm_id))
-        if tsm_id and not job_ticket:
+    for _line_number, row, row_id, tsm_id, order_number, part_number, quantity in parsed_rows:
+        customer_order = CustomerOrder.objects.select_related("job_ticket", "job_ticket__recipe").filter(order_number__iexact=order_number).first() if order_number else None
+        job_ticket = customer_order.job_ticket if customer_order else ticket_map.get(ticket_lookup_key(tsm_id)) or ticket_map.get(ticket_lookup_key(part_number))
+        if (tsm_id or part_number) and not job_ticket:
             unmatched_ticket_count += 1
 
         location_value = first(row, "location", "location_code", "location_name")
@@ -1235,6 +1241,7 @@ def import_finished_inventory(rows):
         note_parts = [
             first(row, "notes", "note"),
             f"Imported TSM ID: {tsm_id}" if tsm_id else "",
+            f"Imported Order Number: {order_number}" if order_number else "",
         ]
         notes = mark_imported_note("\n".join([part for part in note_parts if part]), row_id, "Glide Finished Inventory")
         item_name = first(row, "name", "item_name")
@@ -1250,6 +1257,8 @@ def import_finished_inventory(rows):
             "name": item_name[:150],
             "sku": part_number[:80],
             "job_ticket": job_ticket,
+            "customer_order": customer_order,
+            "order_number": order_number[:20],
             "recipe": job_ticket.recipe if job_ticket else None,
             "location": location,
             "quantity": quantity,

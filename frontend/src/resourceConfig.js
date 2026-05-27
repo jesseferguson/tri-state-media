@@ -793,6 +793,7 @@ export const resources = [
     defaultOrdering: "status,press__name,press_sequence,due_date,job_ticket__ticket_number",
     tagline: "Manage scheduled jobs by status, press assignment, ship date, and operator progress.",
     columns: [
+      "order_number",
       "order_date",
       "due_date",
       "job_ticket_number",

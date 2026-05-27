@@ -484,6 +484,7 @@ class CustomerOrderSerializer(serializers.ModelSerializer):
 class CustomerOrderEventSerializer(serializers.ModelSerializer):
     order_customer_name = serializers.CharField(source="order.customer_name", read_only=True)
     order_job_name = serializers.CharField(source="order.job_name", read_only=True)
+    order_number = serializers.CharField(source="order.order_number", read_only=True)
     job_ticket_number = serializers.CharField(source="order.job_ticket.ticket_number", read_only=True)
 
     class Meta:
@@ -494,6 +495,7 @@ class CustomerOrderEventSerializer(serializers.ModelSerializer):
 class FinishedInventorySerializer(serializers.ModelSerializer):
     job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
     job_ticket_product_code = serializers.CharField(source="job_ticket.product_code", read_only=True)
+    customer_order_number = serializers.CharField(source="customer_order.order_number", read_only=True)
     recipe_name = serializers.CharField(source="recipe.name", read_only=True)
     recipe_option_name = serializers.CharField(source="recipe_option.name", read_only=True)
     material_inventory_serial = serializers.CharField(source="material_inventory.serial_number", read_only=True)

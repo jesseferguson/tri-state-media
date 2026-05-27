@@ -268,10 +268,10 @@ function buildCombos(option) {
 
     const displayPerf = externalPerf ? usablePerfTools[0] ?? perfTools[0] ?? null : null;
     const runnablePerf = externalPerf && main.die && main.runnableMag
-      ? usablePerfTools.find((perf) => sameParent(main.die, main.runnableMag, perf)) ?? displayPerf
-      : displayPerf;
+      ? usablePerfTools.find((perf) => sameParent(main.die, main.runnableMag, perf)) ?? null
+      : null;
 
-    if (externalPerf && !runnablePerf) problems.push(perfTools.length ? "External perf not usable" : "External perf required");
+    if (externalPerf && !runnablePerf) problems.push(perfTools.length ? "External perf not usable or wrong location" : "External perf required");
 
     let undercutChain = null;
     let undercutLinked = false;
@@ -298,6 +298,7 @@ function buildCombos(option) {
       undercutChain,
       undercutRequired,
       runnablePerf,
+      displayPerf,
       spec: main.spec,
       severity: canRun ? "ready" : "bad",
       label: canRun ? "Can Run" : "No Run",
@@ -425,7 +426,7 @@ function ToolChip({ label, tool, missing, onOpen, active }) {
 function PerfChip({ option, combo, open, active }) {
   const r = recipe(option);
   if (needsExternalPerf(option)) {
-    return <ToolChip label="PERF" tool={combo.runnablePerf} missing="External perf missing" onOpen={() => open("perf", combo.runnablePerf, "Perf")} active={active === "perf"} />;
+    return <ToolChip label="PERF" tool={combo.runnablePerf ?? combo.displayPerf} missing="External perf missing" onOpen={() => open("perf", combo.runnablePerf ?? combo.displayPerf, "Perf")} active={active === "perf"} />;
   }
   if (needsInternalPerf(option)) {
     const cut = title(r.internal_perf_cutting_type ?? option.internal_perf_cutting_type);
