@@ -20,6 +20,9 @@ db.sqlite3
 .env.*
 !.env.example
 
+# Local ESP32 sketches / device credentials
+local-esp32/
+
 # Django collected/static/media files
 staticfiles/
 media/
