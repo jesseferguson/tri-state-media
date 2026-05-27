@@ -1,4 +1,5 @@
 import {
+  Activity,
   CalendarPlus,
   Factory,
   Gauge,
@@ -579,6 +580,21 @@ export const resources = [
       { name: "press_sequence", label: "Press Order #", type: "number", hidden: true },
       { name: "scheduled_by", label: "Scheduled By", type: "text", hidden: true },
     ],
+  },
+
+  {
+    key: "live-footage",
+    label: "Live Footage",
+    singular: "Live Footage",
+    group: "production",
+    icon: Activity,
+    accent: "#16a34a",
+    staticView: true,
+    viewMode: "liveFootage",
+    disableCreate: true,
+    tagline: "Realtime Firebase footage dashboard for press speed, shift totals, and the companywide footage goal.",
+    columns: [],
+    fields: [],
   },
 
   {

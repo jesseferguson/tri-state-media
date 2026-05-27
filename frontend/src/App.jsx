@@ -15,6 +15,7 @@ import GroupedUsageView from "./components/GroupedUsageView";
 import JobTicketGallery from "./components/JobTicketGallery";
 import JobTicketPanel from "./components/JobTicketPanel";
 import LabelLayoutsView from "./components/LabelLayoutsView";
+import LiveFootageView from "./components/LiveFootageView";
 import MaterialInventoryView from "./components/MaterialInventoryView";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
 import MaterialUsageWindow from "./components/MaterialUsageWindow";
@@ -2202,6 +2203,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             initialJobTicketId={quoteJobTicketId}
             canManageQuoteMaterials={canManageQuoteMaterials}
           />
+        ) : resource.viewMode === "liveFootage" ? (
+          <LiveFootageView />
         ) : resource.viewMode === "dataImport" ? (
           <DataImportTool currentUser={currentUser} />
         ) : (
