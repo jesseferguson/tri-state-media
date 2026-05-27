@@ -6651,6 +6651,27 @@ p, .muted { color: #7a7a7a; }
   font-weight: 800;
 }
 
+.quote-print-summary {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.quote-print-summary.muted {
+  border-color: #dbe6f2;
+  background: #f8fafc;
+  color: #475467;
+}
+
 .quote-sync-note {
   margin: 0;
   padding: 9px 10px;
@@ -10241,9 +10262,179 @@ p, .muted { color: #7a7a7a; }
   background: #fbfcfe;
 }
 
+.layout-card-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.layout-card-tabs button {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid #d9e1ea;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #475467;
+  font-size: .66rem;
+  font-weight: 950;
+}
+
+.layout-card-tabs button:hover,
+.layout-card-tabs button.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.layout-card-tabs span {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #344054;
+  font-size: .58rem;
+}
+
 .layout-press-list {
   display: grid;
   gap: 7px;
+}
+
+.layout-print-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.layout-print-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid #dfe5ec;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.layout-print-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.layout-print-head strong {
+  color: #101828;
+  font-size: .8rem;
+}
+
+.layout-print-head span {
+  color: #667085;
+  font-size: .65rem;
+  font-weight: 850;
+}
+
+.layout-print-head button,
+.layout-print-empty + button {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .62rem;
+  font-weight: 950;
+}
+
+.layout-print-list {
+  display: grid;
+  gap: 8px;
+}
+
+.layout-print-card {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #dfe5ec;
+  border-left: 4px solid #0ea5e9;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.layout-print-card > header {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.layout-print-card header > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.layout-print-card strong {
+  color: #101828;
+  font-size: .78rem;
+}
+
+.layout-print-card span {
+  min-width: 0;
+  overflow: hidden;
+  color: #667085;
+  font-size: .64rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-print-card em {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #344054;
+  font-size: .62rem;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.layout-print-stations {
+  display: grid;
+  gap: 6px;
+}
+
+.layout-print-station {
+  display: grid;
+  grid-template-columns: minmax(80px, .45fr) minmax(180px, 1fr) minmax(90px, .45fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px;
+  border: 1px solid #edf2f7;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.layout-print-station strong {
+  font-size: .7rem;
+}
+
+.layout-print-empty {
+  margin: 0;
+  padding: 8px;
+  border: 1px dashed #cbd8e7;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 850;
 }
 
 .layout-press-card {
@@ -10467,10 +10658,15 @@ p, .muted { color: #7a7a7a; }
   white-space: nowrap;
 }
 
-.layout-die-across {
+.layout-chain-card .layout-die-across {
+  width: fit-content;
+  margin-top: 2px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #fff1f2;
   color: #dc2626;
-  font-size: 1.28rem;
-  line-height: 1;
+  font-size: 1.22rem;
+  line-height: 1.05;
   font-weight: 1000;
 }
 

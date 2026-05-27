@@ -12,6 +12,8 @@ from .models import (
     PerfBladeSetup,
     PerfCylinder,
     Press,
+    PrintPlate,
+    PrintStation,
     RawMaterialInventory,
     Supplier,
     ToolingHistory,
@@ -29,6 +31,8 @@ from .serializers import (
     PerfBladeSetupSerializer,
     PerfCylinderSerializer,
     PressSerializer,
+    PrintPlateSerializer,
+    PrintStationSerializer,
     RawMaterialInventorySerializer,
     SupplierSerializer,
     ToolingHistorySerializer,
@@ -310,6 +314,60 @@ class ToolingRecipeViewSet(BaseToolingViewSet):
     serializer_class = ToolingRecipeSerializer
     search_fields = ["name", "face_type", "liner_type", "shape_type", "notes"]
     ordering_fields = ["name", "label_width_inches", "label_length_inches", "repeat_inches", "tpi", "is_active"]
+
+
+class PrintPlateViewSet(BaseToolingViewSet):
+    serializer_class = PrintPlateSerializer
+    search_fields = [
+        "plate_number",
+        "customer_plate_number",
+        "serial_number",
+        "description",
+        "recipe__name",
+        "stations__pms_color",
+    ]
+    ordering_fields = ["plate_number", "customer_plate_number", "number_around", "number_across", "is_active", "updated_at"]
+
+    def get_queryset(self):
+        qs = (
+            PrintPlate.objects.select_related("recipe")
+            .prefetch_related("stations")
+            .all()
+            .order_by("recipe__name", "plate_number")
+        )
+        recipe = self.request.query_params.get("recipe")
+        if recipe:
+            qs = qs.filter(recipe_id=recipe)
+        return qs
+
+
+class PrintStationViewSet(BaseToolingViewSet):
+    serializer_class = PrintStationSerializer
+    search_fields = [
+        "print_plate__plate_number",
+        "print_plate__customer_plate_number",
+        "print_plate__recipe__name",
+        "station_plate_number",
+        "anilox_gear_number",
+        "pms_color",
+        "color_type",
+        "notes",
+    ]
+    ordering_fields = ["station_number", "pms_color", "color_type", "is_active", "updated_at"]
+
+    def get_queryset(self):
+        qs = (
+            PrintStation.objects.select_related("print_plate", "print_plate__recipe")
+            .all()
+            .order_by("print_plate__recipe__name", "print_plate__plate_number", "station_number")
+        )
+        print_plate = self.request.query_params.get("print_plate")
+        recipe = self.request.query_params.get("recipe")
+        if print_plate:
+            qs = qs.filter(print_plate_id=print_plate)
+        if recipe:
+            qs = qs.filter(print_plate__recipe_id=recipe)
+        return qs
 
 
 class ToolingRecipeOptionViewSet(BaseToolingViewSet):

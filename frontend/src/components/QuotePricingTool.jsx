@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Image as ImageIcon, Layers3, Pencil, Plus, Printer, Ruler, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createRecord, deleteRecord, fetchCollection, updateRecord } from "../api";
+import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import {
   buildLayoutCandidates,
@@ -219,6 +219,16 @@ function jobTicketSearchText(ticket) {
     ticket?.material_spec_master_type_code,
     ticket?.recipe_name,
   ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function mergeJobTicketRows(existing = [], next = []) {
+  const byId = new Map(existing.map((row) => [String(row.id), row]));
+  next.forEach((row) => byId.set(String(row.id), { ...(byId.get(String(row.id)) ?? {}), ...row }));
+  return Array.from(byId.values());
+}
+
+function jobTicketRecipeId(ticket) {
+  return ticket?.recipe ?? ticket?.recipe_id ?? "";
 }
 
 function jobTicketPrimaryImage(ticket) {
@@ -1152,11 +1162,16 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const [selectedQuoteId, setSelectedQuoteId] = useState(storedQuotes[0]?.id ?? null);
   const [jobTickets, setJobTickets] = useState([]);
   const [jobTicketSearch, setJobTicketSearch] = useState("");
-  const [jobTicketPickerOpen, setJobTicketPickerOpen] = useState(!initialJobTicketId);
+  const [jobTicketPickerOpen, setJobTicketPickerOpen] = useState(false);
   const [jobTicketLoadState, setJobTicketLoadState] = useState("idle");
+  const [jobPrintPlates, setJobPrintPlates] = useState([]);
+  const [jobPrintStations, setJobPrintStations] = useState([]);
+  const [jobPrintState, setJobPrintState] = useState("idle");
   const [quoteDataState, setQuoteDataState] = useState("loading");
   const [quoteDataError, setQuoteDataError] = useState("");
   const quoteDataReadyRef = useRef(false);
+  const jobTicketRequestRef = useRef(0);
+  const selectedJobTicketRequestRef = useRef("");
 
   const materialOptions = useMemo(() => {
     return finishedMaterials.map((material) => ({
@@ -1174,7 +1189,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   const selectedMaterial = materialOptions.find((material) => String(material.id) === String(form.selectedMaterialId));
   const selectedJobTicket = jobTickets.find((ticket) => String(ticket.id) === String(quoteInfo.jobTicketId));
-  const showJobTicketResults = jobTicketPickerOpen || !selectedJobTicket;
+  const showJobTicketResults = jobTicketPickerOpen;
   const matchingJobTickets = useMemo(() => {
     const search = jobTicketSearch.trim().toLowerCase();
     const sorted = [...jobTickets].sort((a, b) => jobTicketPartNumber(a).localeCompare(jobTicketPartNumber(b), undefined, { numeric: true }));
@@ -1194,6 +1209,18 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     if (!selectedJobTicket) return null;
     return materialOptions.find((material) => materialMatchesJobTicket(material, selectedJobTicket)) || null;
   }, [materialOptions, selectedJobTicket, selectedJobTicketMasterTypeId]);
+  const activePrintStations = useMemo(
+    () => jobPrintStations.filter((station) => station.is_active !== false),
+    [jobPrintStations]
+  );
+  const jobPrintColorCount = activePrintStations.length;
+  const jobPrintColorSummary = useMemo(() => {
+    return activePrintStations
+      .map((station) => station.pms_color || station.color_type || `Station ${station.station_number}`)
+      .filter(Boolean)
+      .slice(0, 6)
+      .join(", ");
+  }, [activePrintStations]);
   const quotePersonTabs = useMemo(() => {
     const groups = new Map();
     if (currentUser?.name) {
@@ -1415,22 +1442,56 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   useEffect(() => {
     let alive = true;
-    setJobTicketLoadState("loading");
-    fetchCollection("job-tickets", { ordering: "job_name,ticket_number", pageSize: 1000, fetchAll: true })
-      .then((payload) => {
+    const ticketId = String(quoteInfo.jobTicketId || "");
+    if (!ticketId || jobTickets.some((ticket) => String(ticket.id) === ticketId)) return undefined;
+    if (selectedJobTicketRequestRef.current === ticketId) return undefined;
+    selectedJobTicketRequestRef.current = ticketId;
+    if (!jobTickets.length) setJobTicketLoadState("loading");
+    requestApi(`job-tickets/${ticketId}`)
+      .then((ticket) => {
         if (!alive) return;
-        setJobTickets(payload.results ?? []);
+        setJobTickets((prev) => mergeJobTicketRows(prev, ticket ? [ticket] : []));
         setJobTicketLoadState("ready");
       })
       .catch(() => {
         if (!alive) return;
-        setJobTickets([]);
+        selectedJobTicketRequestRef.current = "";
         setJobTicketLoadState("error");
       });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [quoteInfo.jobTicketId, jobTickets]);
+
+  useEffect(() => {
+    if (!jobTicketPickerOpen) return undefined;
+    let alive = true;
+    const requestId = jobTicketRequestRef.current + 1;
+    jobTicketRequestRef.current = requestId;
+    const timerId = window.setTimeout(() => {
+      setJobTicketLoadState("loading");
+      fetchCollection("job-tickets", {
+        search: jobTicketSearch.trim(),
+        ordering: "job_name,ticket_number",
+        pageSize: 50,
+        fetchAll: false,
+      })
+        .then((payload) => {
+          if (!alive || jobTicketRequestRef.current !== requestId) return;
+          setJobTickets((prev) => mergeJobTicketRows(prev, payload.results ?? []));
+          setJobTicketLoadState("ready");
+        })
+        .catch(() => {
+          if (!alive || jobTicketRequestRef.current !== requestId) return;
+          setJobTicketLoadState("error");
+        });
+    }, jobTicketSearch.trim() ? 220 : 0);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(timerId);
+    };
+  }, [jobTicketPickerOpen, jobTicketSearch]);
 
   useEffect(() => {
     if (!selectedMaterial) return;
@@ -1449,6 +1510,39 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   }, [quoteRates]);
 
   useEffect(() => {
+    const recipeId = jobTicketRecipeId(selectedJobTicket);
+    if (!recipeId) {
+      setJobPrintPlates([]);
+      setJobPrintStations([]);
+      setJobPrintState(selectedJobTicket ? "ready" : "idle");
+      return undefined;
+    }
+
+    let alive = true;
+    setJobPrintState("loading");
+    Promise.all([
+      fetchCollection("print-plates", { filters: { recipe: recipeId }, pageSize: 100, fetchAll: true }),
+      fetchCollection("print-stations", { filters: { recipe: recipeId }, pageSize: 250, fetchAll: true }),
+    ])
+      .then(([platePayload, stationPayload]) => {
+        if (!alive) return;
+        setJobPrintPlates(platePayload.results ?? []);
+        setJobPrintStations(stationPayload.results ?? []);
+        setJobPrintState("ready");
+      })
+      .catch(() => {
+        if (!alive) return;
+        setJobPrintPlates([]);
+        setJobPrintStations([]);
+        setJobPrintState("error");
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [selectedJobTicket?.id, selectedJobTicket?.recipe]);
+
+  useEffect(() => {
     if (quoteInfo.linkMode !== "ticket" || !selectedJobTicket) return;
     const dimensions = jobTicketQuoteDimensions(selectedJobTicket);
     const quantity = jobTicketQuoteQuantity(selectedJobTicket);
@@ -1462,8 +1556,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       selectedMaterialId: material?.id || prev.selectedMaterialId,
       msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
       pricingPercent: material ? materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent : prev.pricingPercent,
+      colorCount: jobPrintState === "ready" ? String(jobPrintColorCount) : prev.colorCount,
     }));
-  }, [quoteInfo.linkMode, selectedJobTicket?.id, materialOptions.length]);
+  }, [quoteInfo.linkMode, selectedJobTicket?.id, materialOptions.length, jobPrintState, jobPrintColorCount]);
 
   useEffect(() => {
     if (!selectedJobTicket || jobTicketPickerOpen || jobTicketSearch) return;
@@ -1489,9 +1584,6 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   function updateQuoteInfo(name, value) {
     if (name === "jobTicketId" || name === "linkMode") {
       setWasteManuallyEdited(false);
-      if (name === "linkMode" && value === "ticket" && !selectedJobTicket) {
-        setJobTicketPickerOpen(true);
-      }
     }
     setQuoteInfo((prev) => ({ ...prev, [name]: value }));
   }
@@ -1974,12 +2066,13 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                           <Search size={16} />
                           <input
                             value={jobTicketSearch}
+                            onClick={openJobTicketSearch}
                             onFocus={openJobTicketSearch}
                             onChange={(event) => {
                               setJobTicketSearch(event.target.value);
                               setJobTicketPickerOpen(true);
                             }}
-                            placeholder={jobTicketLoadState === "loading" ? "Loading job tickets..." : "Type a part number, TSM ID, or customer"}
+                            placeholder={jobTicketPickerOpen && jobTicketLoadState === "loading" ? "Loading job tickets..." : "Type a part number, TSM ID, or customer"}
                           />
                         </div>
                       </label>
@@ -2040,6 +2133,20 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                     )}
                     {selectedJobTicket && selectedJobTicketMasterTypeLabel && !jobTicketMaterialMatch && (
                       <p className="quote-ticket-warning">No finished quote material matched this job. Pick a material below or link one in Finished Inventory.</p>
+                    )}
+                    {selectedJobTicket && jobPrintState === "loading" && (
+                      <p className="quote-print-summary muted"><Printer size={14} /> Checking print plates...</p>
+                    )}
+                    {selectedJobTicket && jobPrintState === "ready" && jobPrintColorCount > 0 && (
+                      <p className="quote-print-summary">
+                        <Printer size={14} />
+                        Printed job: {jobPrintColorCount} color station{jobPrintColorCount === 1 ? "" : "s"}
+                        {jobPrintPlates.length ? ` on ${jobPrintPlates.length} plate${jobPrintPlates.length === 1 ? "" : "s"}` : ""}
+                        {jobPrintColorSummary ? ` (${jobPrintColorSummary})` : ""}.
+                      </p>
+                    )}
+                    {selectedJobTicket && jobPrintState === "error" && (
+                      <p className="quote-ticket-warning">Print plate data could not load for this job. Check the color count before quoting.</p>
                     )}
                     {jobTicketLoadState === "error" && <p className="quote-help-text">Job tickets could not load. Use manual entry for this quote.</p>}
                   </div>

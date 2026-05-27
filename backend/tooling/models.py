@@ -788,7 +788,67 @@ class ToolingRecipeTool(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         return super().save(*args, **kwargs)
-    
+
+
+class PrintPlate(models.Model):
+    recipe = models.ForeignKey(
+        ToolingRecipe,
+        on_delete=models.CASCADE,
+        related_name="print_plates",
+    )
+    plate_number = models.CharField(max_length=100)
+    customer_plate_number = models.CharField(max_length=100, blank=True)
+    serial_number = models.CharField(max_length=120, blank=True)
+    description = models.CharField(max_length=220, blank=True)
+    number_around = models.PositiveIntegerField(null=True, blank=True)
+    number_across = models.PositiveIntegerField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["recipe__name", "plate_number"]
+        unique_together = ["recipe", "plate_number"]
+
+    def __str__(self):
+        return f"{self.plate_number} / {self.recipe.name}"
+
+
+class PrintStation(models.Model):
+    COLOR_TYPE_CHOICES = [
+        ("spot", "Spot"),
+        ("process", "Process"),
+        ("white", "White"),
+        ("varnish", "Varnish"),
+        ("coating", "Coating"),
+        ("other", "Other"),
+    ]
+
+    print_plate = models.ForeignKey(
+        PrintPlate,
+        on_delete=models.CASCADE,
+        related_name="stations",
+    )
+    station_number = models.PositiveIntegerField(default=1)
+    station_plate_number = models.CharField(max_length=100, blank=True)
+    print_cylinder_tooth_count = models.PositiveIntegerField(null=True, blank=True)
+    anilox_gear_number = models.CharField(max_length=80, blank=True)
+    pms_color = models.CharField(max_length=80, blank=True)
+    color_type = models.CharField(max_length=30, choices=COLOR_TYPE_CHOICES, default="spot")
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["print_plate__recipe__name", "print_plate__plate_number", "station_number"]
+        unique_together = ["print_plate", "station_number"]
+
+    def __str__(self):
+        return f"{self.print_plate.plate_number} / Station {self.station_number}"
+
+
 # =========================
 # TOOLING HISTORY
 # =========================

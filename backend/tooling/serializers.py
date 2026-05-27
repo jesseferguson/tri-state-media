@@ -9,6 +9,8 @@ from .models import (
     PerfBladeSetup,
     PerfCylinder,
     Press,
+    PrintPlate,
+    PrintStation,
     RawMaterialInventory,
     Supplier,
     ToolingHistory,
@@ -105,6 +107,48 @@ class ToolingRecipeSerializer(serializers.ModelSerializer):
     external_perf_cutting_type = serializers.CharField(read_only=True)
     class Meta:
         model = ToolingRecipe
+        fields = "__all__"
+
+
+class PrintStationNestedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PrintStation
+        fields = [
+            "id",
+            "station_number",
+            "station_plate_number",
+            "print_cylinder_tooth_count",
+            "anilox_gear_number",
+            "pms_color",
+            "color_type",
+            "notes",
+            "is_active",
+        ]
+
+
+class PrintPlateSerializer(serializers.ModelSerializer):
+    recipe_name = serializers.CharField(source="recipe.name", read_only=True)
+    stations = PrintStationNestedSerializer(many=True, read_only=True)
+    station_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PrintPlate
+        fields = "__all__"
+
+    def get_station_count(self, obj):
+        annotated = getattr(obj, "station_count", None)
+        if annotated is not None:
+            return annotated
+        return obj.stations.filter(is_active=True).count()
+
+
+class PrintStationSerializer(serializers.ModelSerializer):
+    print_plate_number = serializers.CharField(source="print_plate.plate_number", read_only=True)
+    recipe = serializers.IntegerField(source="print_plate.recipe_id", read_only=True)
+    recipe_name = serializers.CharField(source="print_plate.recipe.name", read_only=True)
+
+    class Meta:
+        model = PrintStation
         fields = "__all__"
 
 class ToolingRecipeToolNestedSerializer(serializers.ModelSerializer):

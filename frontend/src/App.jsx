@@ -211,8 +211,12 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
   if (resource.key === "recipes") {
     addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 1000, true));
     addLookupSpec(specs, relationLookupSpec("recipe-tools", {}, 2000, true));
+    addLookupSpec(specs, relationLookupSpec("print-plates", {}, 1000, true));
+    addLookupSpec(specs, relationLookupSpec("print-stations", {}, 2000, true));
     addFieldLookups(specs, resourceMap["recipe-options"]?.fields ?? []);
     addFieldLookups(specs, resourceMap["recipe-tools"]?.fields ?? []);
+    addFieldLookups(specs, resourceMap["print-plates"]?.fields ?? []);
+    addFieldLookups(specs, resourceMap["print-stations"]?.fields ?? []);
   }
 
   const entries = await Promise.all(
@@ -1174,6 +1178,12 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     if (toolingWorkspaceForm.mode === "create" && toolingWorkspaceForm.resourceKey === "recipe-tools" && toolingWorkspaceForm.defaults?.recipe_option) {
       hiddenWhenDefaulted.add("recipe_option");
     }
+    if (toolingWorkspaceForm.mode === "create" && toolingWorkspaceForm.resourceKey === "print-plates" && toolingWorkspaceForm.defaults?.recipe) {
+      hiddenWhenDefaulted.add("recipe");
+    }
+    if (toolingWorkspaceForm.mode === "create" && toolingWorkspaceForm.resourceKey === "print-stations" && toolingWorkspaceForm.defaults?.print_plate) {
+      hiddenWhenDefaulted.add("print_plate");
+    }
     return {
       ...base,
       fields: (base.fields ?? []).map((field) => hiddenWhenDefaulted.has(field.name) ? { ...field, hidden: true } : field),
@@ -1187,6 +1197,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       recipes: mergeRows(lookupData.recipes ?? [], resource.key === "recipes" ? rows : []),
       "recipe-options": lookupData["recipe-options"] ?? [],
       "recipe-tools": lookupData["recipe-tools"] ?? [],
+      "print-plates": lookupData["print-plates"] ?? [],
+      "print-stations": lookupData["print-stations"] ?? [],
     };
   }, [lookupQuery.data, resource.key, rows]);
 
@@ -1931,6 +1943,63 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     });
   }
 
+  function openPrintPlateForm(recipe) {
+    setSelected(recipe);
+    setFormMode(null);
+    setToolingWorkspaceForm({
+      resourceKey: "print-plates",
+      mode: "create",
+      record: null,
+      defaults: {
+        recipe: recipe.id,
+        plate_number: "",
+        customer_plate_number: "",
+        serial_number: "",
+        description: "",
+        number_across: "",
+        number_around: "",
+        is_active: true,
+      },
+    });
+  }
+
+  function editPrintPlate(plate) {
+    setFormMode(null);
+    setToolingWorkspaceForm({
+      resourceKey: "print-plates",
+      mode: "edit",
+      record: plate,
+      defaults: {},
+    });
+  }
+
+  function openPrintStationForm(plate) {
+    const stationCount = Number(plate.station_count ?? plate.stations?.length ?? 0);
+    setFormMode(null);
+    setToolingWorkspaceForm({
+      resourceKey: "print-stations",
+      mode: "create",
+      record: null,
+      defaults: {
+        print_plate: plate.id,
+        station_number: stationCount + 1,
+        station_plate_number: plate.plate_number || "",
+        color_type: "spot",
+        is_active: true,
+      },
+    });
+  }
+
+  function editPrintStation(station) {
+    setFormMode(null);
+    setToolingWorkspaceForm({
+      resourceKey: "print-stations",
+      mode: "edit",
+      record: station,
+      defaults: {},
+    });
+  }
+
   async function deleteToolingWorkspaceRecord(resourceKey, row) {
     const targetResource = resourceMap[resourceKey];
     if (!targetResource || !row?.id) return;
@@ -2229,6 +2298,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     rows={visibleRows}
                     recipeOptions={lookupQuery.data?.["recipe-options"] ?? []}
                     recipeTools={lookupQuery.data?.["recipe-tools"] ?? []}
+                    printPlates={lookupQuery.data?.["print-plates"] ?? []}
+                    printStations={lookupQuery.data?.["print-stations"] ?? []}
                     selectedId={selected?.id}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
@@ -2239,6 +2310,12 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onAddTooling={openToolAssignmentForm}
                     onEditTooling={editToolAssignment}
                     onDeleteTooling={(tool) => deleteToolingWorkspaceRecord("recipe-tools", tool)}
+                    onAddPrintPlate={openPrintPlateForm}
+                    onEditPrintPlate={editPrintPlate}
+                    onDeletePrintPlate={(plate) => deleteToolingWorkspaceRecord("print-plates", plate)}
+                    onAddPrintStation={openPrintStationForm}
+                    onEditPrintStation={editPrintStation}
+                    onDeletePrintStation={(station) => deleteToolingWorkspaceRecord("print-stations", station)}
                     renderToolDetail={renderToolingItemDetail}
                   />
                 ) : resource.key === "recipe-options" ? (

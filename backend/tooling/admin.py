@@ -7,6 +7,8 @@ from .models import (
     PerfBladeSetup,
     PerfCylinder,
     Press,
+    PrintPlate,
+    PrintStation,
     Supplier,
     ToolingHistory,
     ToolingLocation,
@@ -26,6 +28,12 @@ class ToolingRecipeToolInline(admin.TabularInline):
     model = ToolingRecipeTool
     extra = 0
     autocomplete_fields = ("mag", "flex_die", "perf_cylinder", "perf_blade_setup")
+
+
+class PrintStationInline(admin.TabularInline):
+    model = PrintStation
+    extra = 0
+    ordering = ("station_number",)
 
 
 @admin.register(Supplier)
@@ -164,6 +172,23 @@ class ToolingRecipeAdmin(admin.ModelAdmin):
     )
     list_filter = ("is_active",)
     search_fields = ("name", "face_type", "liner_type", "shape_type", "notes")
+
+
+@admin.register(PrintPlate)
+class PrintPlateAdmin(admin.ModelAdmin):
+    list_display = ("plate_number", "recipe", "customer_plate_number", "serial_number", "number_across", "number_around", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("plate_number", "customer_plate_number", "serial_number", "description", "recipe__name")
+    autocomplete_fields = ("recipe",)
+    inlines = [PrintStationInline]
+
+
+@admin.register(PrintStation)
+class PrintStationAdmin(admin.ModelAdmin):
+    list_display = ("print_plate", "station_number", "station_plate_number", "print_cylinder_tooth_count", "anilox_gear_number", "pms_color", "color_type", "is_active")
+    list_filter = ("color_type", "is_active")
+    search_fields = ("print_plate__plate_number", "station_plate_number", "pms_color", "anilox_gear_number", "notes")
+    autocomplete_fields = ("print_plate",)
 
 
 @admin.register(ToolingRecipeOption)

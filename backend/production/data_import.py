@@ -20,7 +20,7 @@ from materials.models import (
     MaterialUsage,
     RawMaterialInventory as MaterialInventory,
 )
-from tooling.models import FlexDie, Supplier, ToolingHistory, ToolingLocation, ToolingRecipe
+from tooling.models import FlexDie, PrintPlate, PrintStation, Supplier, ToolingHistory, ToolingLocation, ToolingRecipe
 
 from .models import (
     BoxSpec,
@@ -161,6 +161,33 @@ FINISHED_INVENTORY_COLUMNS = [
     "status",
     "run_date",
     "notes",
+]
+
+PRINT_PLATE_COLUMNS = [
+    "row_id",
+    "recipe_name",
+    "plate_number",
+    "customer_plate_number",
+    "serial_number",
+    "description",
+    "number_around",
+    "number_across",
+    "notes",
+    "is_active",
+]
+
+PRINT_STATION_COLUMNS = [
+    "row_id",
+    "recipe_name",
+    "plate_number",
+    "station_number",
+    "station_plate_number",
+    "print_cylinder_tooth_count",
+    "anilox_gear_number",
+    "pms_color",
+    "color_type",
+    "notes",
+    "is_active",
 ]
 
 IMPORT_TEMPLATES = {
@@ -310,6 +337,41 @@ IMPORT_TEMPLATES = {
             "status": "available",
             "run_date": "",
             "notes": "Imported carton stock",
+        },
+    },
+    "print_plates": {
+        "label": "Print Plates",
+        "description": "Imports print plates linked to a label layout by recipe_name.",
+        "columns": PRINT_PLATE_COLUMNS,
+        "sample": {
+            "row_id": "PLATE-1",
+            "recipe_name": "4 x 6.5 Poly Standard Rolls",
+            "plate_number": "PP-1001",
+            "customer_plate_number": "CUST-44",
+            "serial_number": "SN-7788",
+            "description": "Black plate",
+            "number_around": "1",
+            "number_across": "3",
+            "notes": "",
+            "is_active": "true",
+        },
+    },
+    "print_stations": {
+        "label": "Print Stations",
+        "description": "Imports print stations for an existing print plate. Use recipe_name + plate_number to find the plate.",
+        "columns": PRINT_STATION_COLUMNS,
+        "sample": {
+            "row_id": "STATION-1",
+            "recipe_name": "4 x 6.5 Poly Standard Rolls",
+            "plate_number": "PP-1001",
+            "station_number": "1",
+            "station_plate_number": "PP-1001-A",
+            "print_cylinder_tooth_count": "106",
+            "anilox_gear_number": "900",
+            "pms_color": "PMS 186",
+            "color_type": "spot",
+            "notes": "",
+            "is_active": "true",
         },
     },
 }
@@ -1223,6 +1285,74 @@ def import_finished_inventory(rows):
     return result
 
 
+def import_print_plates(rows):
+    result = import_result()
+    for line_number, row in rows:
+        recipe_name = first(row, "recipe_name", "label_layout", "layout_name", "recipe")
+        plate_number = first(row, "plate_number", "print_plate_number", "plate")
+        if not recipe_name or not plate_number:
+            add_error(result, line_number, "Print plate rows need recipe_name and plate_number.")
+            continue
+
+        recipe = find_recipe(recipe_name)
+        if not recipe:
+            add_error(result, line_number, f"Could not find label layout '{recipe_name}'.")
+            continue
+
+        existing = PrintPlate.objects.filter(recipe=recipe, plate_number__iexact=plate_number).first()
+        defaults = {
+            "recipe": recipe,
+            "plate_number": plate_number[:100],
+            "customer_plate_number": first(row, "customer_plate_number", "customer_plate", "customer_plate_no")[:100],
+            "serial_number": first(row, "serial_number", "serial", "plate_serial")[:120],
+            "description": first(row, "description", "plate_description")[:220],
+            "number_around": int_or_none(first(row, "number_around", "around")),
+            "number_across": int_or_none(first(row, "number_across", "across")),
+            "notes": mark_imported_note(first(row, "notes"), first(row, "row_id"), "Print Plate"),
+            "is_active": bool_value(first(row, "is_active", "active"), default=True),
+        }
+        plate = existing or PrintPlate()
+        save_model(plate, defaults, result)
+    return result
+
+
+def import_print_stations(rows):
+    result = import_result()
+    for line_number, row in rows:
+        recipe_name = first(row, "recipe_name", "label_layout", "layout_name", "recipe")
+        plate_number = first(row, "plate_number", "print_plate_number", "plate")
+        station_number = int_or_none(first(row, "station_number", "station")) or 1
+        if not recipe_name or not plate_number:
+            add_error(result, line_number, "Print station rows need recipe_name and plate_number.")
+            continue
+
+        recipe = find_recipe(recipe_name)
+        if not recipe:
+            add_error(result, line_number, f"Could not find label layout '{recipe_name}'.")
+            continue
+
+        plate = PrintPlate.objects.filter(recipe=recipe, plate_number__iexact=plate_number).first()
+        if not plate:
+            add_error(result, line_number, f"Could not find print plate '{plate_number}' for '{recipe_name}'.")
+            continue
+
+        existing = PrintStation.objects.filter(print_plate=plate, station_number=station_number).first()
+        defaults = {
+            "print_plate": plate,
+            "station_number": station_number,
+            "station_plate_number": first(row, "station_plate_number", "station_plate", "print_plate_no")[:100],
+            "print_cylinder_tooth_count": int_or_none(first(row, "print_cylinder_tooth_count", "print_cylinder_tooth", "cylinder_tooth", "tooth")),
+            "anilox_gear_number": first(row, "anilox_gear_number", "anilox", "anilox_gear")[:80],
+            "pms_color": first(row, "pms_color", "pms", "color")[:80],
+            "color_type": choice_value(first(row, "color_type"), PrintStation.COLOR_TYPE_CHOICES, "spot"),
+            "notes": mark_imported_note(first(row, "notes"), first(row, "row_id"), "Print Station"),
+            "is_active": bool_value(first(row, "is_active", "active"), default=True),
+        }
+        station = existing or PrintStation()
+        save_model(station, defaults, result)
+    return result
+
+
 IMPORTERS = {
     "job_tickets": import_job_tickets,
     "flex_dies": import_flex_dies,
@@ -1230,6 +1360,8 @@ IMPORTERS = {
     "inventory_usage": import_inventory_usage,
     "job_ticket_usage": import_job_ticket_usage,
     "finished_inventory": import_finished_inventory,
+    "print_plates": import_print_plates,
+    "print_stations": import_print_stations,
 }
 
 
