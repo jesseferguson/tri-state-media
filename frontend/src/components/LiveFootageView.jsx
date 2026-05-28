@@ -449,7 +449,7 @@ export default function LiveFootageView() {
 
       try {
         if (shouldFetchDaily) {
-          const buckets = buildBuckets(start, end);
+          const buckets = buildBuckets(start, effectiveNow);
           const labels = buckets.map((date) => `${pad2(date.getHours())}:${pad2(date.getMinutes())}`);
           const results = await Promise.all(
             presses.map((press) => fetchJson(dailyUrl(press.dailyNode), controller.signal).catch((error) => {
