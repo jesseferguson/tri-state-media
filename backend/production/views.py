@@ -6,7 +6,7 @@ from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -29,6 +29,7 @@ from .models import (
     JobTicketEvent,
     JobTicket,
     JobTicketUsage,
+    LiveFootageArchive,
     ProductionSchedule,
     QuoteCostRate,
     QuoteFinishedMaterial,
@@ -49,6 +50,7 @@ from .serializers import (
     JobTicketEventSerializer,
     JobTicketSerializer,
     JobTicketUsageSerializer,
+    LiveFootageArchiveSerializer,
     ProductionScheduleSerializer,
     QuoteCostRateSerializer,
     QuoteFinishedMaterialSerializer,
@@ -575,6 +577,78 @@ class CustomerOrderEventViewSet(viewsets.ReadOnlyModelViewSet):
         if order_number:
             qs = qs.filter(order__order_number__iexact=str(order_number).strip())
         return qs
+
+
+class LiveFootageArchiveViewSet(BaseProductionViewSet):
+    queryset = LiveFootageArchive.objects.all().order_by("-shift_date")
+    serializer_class = LiveFootageArchiveSerializer
+    search_fields = ["notes"]
+    ordering_fields = ["shift_date", "total_footage", "saved_at", "created_at"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        year = self.request.query_params.get("year")
+        date_from = parse_date(str(self.request.query_params.get("date_from") or ""))
+        date_to = parse_date(str(self.request.query_params.get("date_to") or ""))
+        if year:
+            try:
+                qs = qs.filter(shift_date__year=int(year))
+            except (TypeError, ValueError):
+                pass
+        if date_from:
+            qs = qs.filter(shift_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(shift_date__lte=date_to)
+        return qs
+
+    def parse_archive_datetime(self, value):
+        parsed = parse_datetime(str(value or ""))
+        if parsed and timezone.is_naive(parsed):
+            parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+        return parsed
+
+    @action(detail=False, methods=["post"], url_path="archive-shift")
+    def archive_shift(self, request):
+        shift_date = parse_date(str(request.data.get("shift_date") or ""))
+        if not shift_date:
+            return Response({"shift_date": ["Enter the shift date."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            total_footage = Decimal(str(request.data.get("total_footage") or "0"))
+            goal_footage = Decimal(str(request.data.get("goal_footage") or "400000"))
+        except (InvalidOperation, ValueError):
+            return Response({"total_footage": ["Enter valid footage totals."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        if total_footage <= 0:
+            return Response({"total_footage": ["Total footage must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        shift_start = self.parse_archive_datetime(request.data.get("shift_start"))
+        shift_end = self.parse_archive_datetime(request.data.get("shift_end"))
+        if not shift_start or not shift_end:
+            return Response({"shift_start": ["Shift start and end are required."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        press_totals = request.data.get("press_totals") or []
+        if not isinstance(press_totals, list):
+            return Response({"press_totals": ["Press totals must be a list."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        defaults = {
+            "shift_start": shift_start,
+            "shift_end": shift_end,
+            "total_footage": total_footage,
+            "goal_footage": goal_footage,
+            "press_totals": press_totals,
+            "notes": str(request.data.get("notes") or "").strip(),
+        }
+
+        archive, created = LiveFootageArchive.objects.get_or_create(shift_date=shift_date, defaults=defaults)
+        if not created:
+            if total_footage >= Decimal(archive.total_footage or 0):
+                for field, value in defaults.items():
+                    setattr(archive, field, value)
+                archive.save()
+
+        serializer = self.get_serializer(archive)
+        return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 class FinishedInventoryViewSet(BaseProductionViewSet):

@@ -823,6 +823,24 @@ class CustomerOrderEvent(models.Model):
         return f"{self.order_id} / {self.event_type}"
 
 
+class LiveFootageArchive(models.Model):
+    shift_date = models.DateField(unique=True, db_index=True)
+    shift_start = models.DateTimeField()
+    shift_end = models.DateTimeField()
+    total_footage = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    goal_footage = models.DecimalField(max_digits=14, decimal_places=2, default=400000)
+    press_totals = models.JSONField(default=list, blank=True)
+    notes = models.TextField(blank=True)
+    saved_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-shift_date"]
+
+    def __str__(self):
+        return f"{self.shift_date} / {self.total_footage} ft"
+
+
 class FinishedInventory(models.Model):
     STATUS_CHOICES = [
         ("available", "Available"),

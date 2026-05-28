@@ -19,6 +19,7 @@ from .models import (
     JobTicketEvent,
     JobTicket,
     JobTicketUsage,
+    LiveFootageArchive,
     ProductionSchedule,
     QuoteCostRate,
     QuoteFinishedMaterial,
@@ -374,6 +375,12 @@ class JobTicketUsageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = JobTicketUsage
+        fields = "__all__"
+
+
+class LiveFootageArchiveSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LiveFootageArchive
         fields = "__all__"
 
 

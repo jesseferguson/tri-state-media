@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, ProductionSchedule
+from .models import CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, LiveFootageArchive, ProductionSchedule
 
 
 class FinishedInventoryOrderWorkflowTests(TestCase):
@@ -76,3 +76,47 @@ class FinishedInventoryOrderWorkflowTests(TestCase):
         self.assertIsNone(item.customer_order)
         self.assertEqual(item.job_ticket, ticket)
         self.assertEqual(item.quantity, Decimal("3"))
+
+
+class LiveFootageArchiveTests(TestCase):
+    def archive_payload(self, total="12345.6"):
+        return {
+            "shift_date": "2026-05-27",
+            "shift_start": "2026-05-27T05:00:00-04:00",
+            "shift_end": "2026-05-28T02:59:00-04:00",
+            "total_footage": total,
+            "goal_footage": "400000",
+            "press_totals": [
+                {"key": "ETI", "name": "ETI", "total": 10000},
+                {"key": "13NIL", "name": "13 Nilpeter", "total": 2345.6},
+            ],
+        }
+
+    def test_archive_shift_creates_daily_live_footage_record(self):
+        response = self.client.post(
+            reverse("live-footage-archive-archive-shift"),
+            self.archive_payload(),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        archive = LiveFootageArchive.objects.get(shift_date="2026-05-27")
+        self.assertEqual(archive.total_footage, Decimal("12345.60"))
+        self.assertEqual(archive.goal_footage, Decimal("400000.00"))
+        self.assertEqual(archive.press_totals[0]["key"], "ETI")
+
+    def test_archive_shift_keeps_higher_existing_total(self):
+        self.client.post(
+            reverse("live-footage-archive-archive-shift"),
+            self.archive_payload(total="15000"),
+            content_type="application/json",
+        )
+        response = self.client.post(
+            reverse("live-footage-archive-archive-shift"),
+            self.archive_payload(total="12000"),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        archive = LiveFootageArchive.objects.get(shift_date="2026-05-27")
+        self.assertEqual(archive.total_footage, Decimal("15000.00"))

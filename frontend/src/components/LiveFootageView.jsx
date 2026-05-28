@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, AlertTriangle, CalendarDays, Gauge, Goal, History, Save, Timer } from "lucide-react";
+import { fetchCollection, requestApi } from "../api";
 
 const firebaseBase = "https://realtime2-94ff8-default-rtdb.firebaseio.com";
 const goalFootage = 400000;
@@ -14,7 +15,7 @@ const shiftStartHour = 5;
 const shiftStartMinute = 0;
 const shiftEndHour = 2;
 const shiftEndMinute = 59;
-const archiveStorageKey = "tri-state-live-footage-archive-v1";
+const archiveEndpoint = "live-footage-archives";
 
 const presses = [
   { key: "18AZT", name: "18 Aztech", dailyNode: "/18Aztech_SPEED", speedNode: "/18Aztech_CURRENT_SPEED" },
@@ -166,20 +167,6 @@ function pressColor(index) {
   return palette[index % palette.length];
 }
 
-function loadArchive() {
-  try {
-    const raw = window.localStorage.getItem(archiveStorageKey);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveArchive(records) {
-  window.localStorage.setItem(archiveStorageKey, JSON.stringify(records));
-}
-
 function makeArchiveRecord(start, end, dailyData) {
   const pressTotals = presses.map((press) => ({
     key: press.key,
@@ -190,20 +177,33 @@ function makeArchiveRecord(start, end, dailyData) {
   const shiftDate = formatLocalDateKey(start);
 
   return {
-    id: shiftDate,
-    shiftDate,
-    start: start.toISOString(),
-    end: end.toISOString(),
-    savedAt: new Date().toISOString(),
-    totalFootage,
-    pressTotals,
+    shift_date: shiftDate,
+    shift_start: start.toISOString(),
+    shift_end: end.toISOString(),
+    total_footage: totalFootage,
+    goal_footage: goalFootage,
+    press_totals: pressTotals,
   };
 }
 
-function upsertArchiveRecord(records, record) {
-  const existing = records.find((item) => item.id === record.id);
+function normalizeArchiveRecord(record) {
+  const shiftDate = record.shift_date ?? record.shiftDate ?? record.id ?? "";
+  return {
+    id: record.id ?? shiftDate,
+    shiftDate,
+    start: record.shift_start ?? record.start ?? "",
+    end: record.shift_end ?? record.end ?? "",
+    savedAt: record.saved_at ?? record.savedAt ?? record.updated_at ?? "",
+    totalFootage: Number(record.total_footage ?? record.totalFootage ?? 0),
+    pressTotals: Array.isArray(record.press_totals ?? record.pressTotals) ? (record.press_totals ?? record.pressTotals) : [],
+  };
+}
+
+function upsertArchiveRecord(records, rawRecord) {
+  const record = normalizeArchiveRecord(rawRecord);
+  const existing = records.find((item) => item.shiftDate === record.shiftDate);
   if (existing && Number(existing.totalFootage || 0) > Number(record.totalFootage || 0)) return records;
-  const next = records.filter((item) => item.id !== record.id);
+  const next = records.filter((item) => item.shiftDate !== record.shiftDate);
   next.push(record);
   return next.sort((a, b) => String(b.shiftDate).localeCompare(String(a.shiftDate)));
 }
@@ -369,11 +369,13 @@ export default function LiveFootageView() {
   const [activeTab, setActiveTab] = useState("live");
   const [historyRange, setHistoryRange] = useState("ytd");
   const [historyPress, setHistoryPress] = useState("total");
-  const [archiveRecords, setArchiveRecords] = useState(() => loadArchive());
+  const savedArchiveIdsRef = useRef(new Set());
+  const [archiveRecords, setArchiveRecords] = useState([]);
   const [snapshot, setSnapshot] = useState({
     state: "loading",
     error: "",
     archiveStatus: "",
+    historyError: "",
     rangeText: "",
     companyTotal: 0,
     remaining: goalFootage,
@@ -402,16 +404,33 @@ export default function LiveFootageView() {
     [historyRows]
   );
 
-  function commitArchiveRecord(record) {
-    setArchiveRecords((current) => {
-      const next = upsertArchiveRecord(current, record);
-      saveArchive(next);
-      return next;
+  async function loadArchiveRecords() {
+    try {
+      const payload = await fetchCollection(archiveEndpoint, { fetchAll: true, pageSize: 1000, ordering: "-shift_date" });
+      setArchiveRecords((payload.results ?? []).map(normalizeArchiveRecord));
+      setSnapshot((current) => ({ ...current, historyError: "" }));
+    } catch (error) {
+      setSnapshot((current) => ({ ...current, historyError: error.message || "Could not load saved footage history." }));
+    }
+  }
+
+  async function commitArchiveRecord(record) {
+    const archiveId = record.shift_date;
+    if (savedArchiveIdsRef.current.has(archiveId)) return null;
+
+    const saved = await requestApi(`${archiveEndpoint}/archive-shift`, {
+      method: "POST",
+      body: JSON.stringify(record),
     });
+
+    savedArchiveIdsRef.current.add(archiveId);
+    setArchiveRecords((current) => upsertArchiveRecord(current, saved));
+    return normalizeArchiveRecord(saved);
   }
 
   useEffect(() => {
     mountedRef.current = true;
+    loadArchiveRecords();
 
     async function refresh({ forceDaily = false } = {}) {
       activeControllerRef.current?.abort();
@@ -484,9 +503,16 @@ export default function LiveFootageView() {
         let archiveStatus = "";
         if (dailyData && now.getTime() >= end.getTime()) {
           const record = makeArchiveRecord(start, end, dailyData);
-          if (record.totalFootage > 0) {
-            commitArchiveRecord(record);
-            archiveStatus = `Saved ${record.shiftDate} at ${new Date(record.savedAt).toLocaleTimeString()}`;
+          if (Number(record.total_footage || 0) > 0) {
+            try {
+              const savedRecord = await commitArchiveRecord(record);
+              archiveStatus = savedRecord
+                ? `Saved ${savedRecord.shiftDate} to database at ${new Date(savedRecord.savedAt).toLocaleTimeString()}`
+                : "Saved to database";
+            } catch (error) {
+              archiveStatus = "Database archive failed";
+              setSnapshot((current) => ({ ...current, historyError: error.message || "Could not save live footage archive." }));
+            }
           }
         }
 
@@ -498,7 +524,8 @@ export default function LiveFootageView() {
         const pacePerHour = companyTotal / elapsedHours;
         const projected = pacePerHour * shiftHours;
 
-        setSnapshot({
+        setSnapshot((current) => ({
+          ...current,
           state: "ready",
           error: dailyData?.errors?.length ? dailyData.errors.join("\n") : "",
           archiveStatus,
@@ -514,7 +541,7 @@ export default function LiveFootageView() {
             speed: extractSpeed(speedResults[index]),
             total: dailyData?.totalsByKey?.[press.key] ?? 0,
           })),
-        });
+        }));
       } catch (error) {
         if (!mountedRef.current || error.name === "AbortError") return;
         setSnapshot((current) => ({ ...current, state: "error", error: error.message || "Could not load live footage." }));
@@ -648,10 +675,20 @@ export default function LiveFootageView() {
                 {presses.map((press) => <option value={press.key} key={press.key}>{press.name}</option>)}
               </select>
             </label>
+            <button type="button" onClick={loadArchiveRecords}>
+              <Activity size={15} /> Refresh History
+            </button>
           </div>
 
+          {snapshot.historyError && (
+            <div className="live-footage-error">
+              <AlertTriangle size={15} />
+              <span>{snapshot.historyError}</span>
+            </div>
+          )}
+
           <div className="live-footage-metrics">
-            <Metric icon={CalendarDays} label="Saved Shifts" value={formatInt(historyRows.length)} note="Stored on this browser" />
+            <Metric icon={CalendarDays} label="Saved Shifts" value={formatInt(historyRows.length)} note="Stored in Django database" />
             <Metric icon={History} label="Selected Total" value={formatInt(historySelectedTotal)} note={`${historyRange.toUpperCase()} - ${historyPress === "total" ? "Company Total" : presses.find((press) => press.key === historyPress)?.name}`} />
             <Metric icon={Save} label="YTD Company Total" value={formatInt(historyYtdTotal)} note="All saved shifts this year" />
           </div>
@@ -706,7 +743,7 @@ export default function LiveFootageView() {
                       </tr>
                     )) : (
                       <tr>
-                        <td colSpan="4">No saved footage yet. Keep this page open through 2:59 AM to archive the shift.</td>
+                        <td colSpan="4">No saved footage yet. The live page will archive the completed shift to Django at 2:59 AM.</td>
                       </tr>
                     )}
                   </tbody>

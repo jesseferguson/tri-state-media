@@ -12039,6 +12039,21 @@ p, .muted { color: #7a7a7a; }
   font-weight: 850;
 }
 
+.live-footage-history-controls button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: end;
+  padding: 7px 10px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
 .live-footage-history-grid {
   display: grid;
   grid-template-columns: minmax(300px, .45fr) minmax(0, 1fr);
