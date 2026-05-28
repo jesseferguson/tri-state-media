@@ -571,6 +571,21 @@ export default function LiveFootageView() {
     };
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== "live") return undefined;
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (canvasRef.current && dailyCacheRef.current) {
+        drawChart(canvasRef.current, dailyCacheRef.current.seriesList, dailyCacheRef.current.labels);
+        chartDrawnRef.current = true;
+      } else {
+        chartDrawnRef.current = false;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeTab]);
+
   return (
     <section className="live-footage-view">
       <div className="live-footage-hero">
