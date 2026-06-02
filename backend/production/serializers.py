@@ -235,6 +235,7 @@ class CoreInventorySerializer(serializers.ModelSerializer):
 
 
 class JobTicketSerializer(serializers.ModelSerializer):
+    performed_by = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_display = serializers.SerializerMethodField()
     job_images = serializers.SerializerMethodField()
     recent_usage_90d = serializers.SerializerMethodField()
@@ -356,6 +357,14 @@ class JobTicketSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobTicket
         fields = "__all__"
+
+    def create(self, validated_data):
+        validated_data.pop("performed_by", None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop("performed_by", None)
+        return super().update(instance, validated_data)
 
 
 class JobTicketEventSerializer(serializers.ModelSerializer):

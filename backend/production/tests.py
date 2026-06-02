@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, LiveFootageArchive, ProductionSchedule
+from .models import CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, LiveFootageArchive, ProductionSchedule
 
 
 class FinishedInventoryOrderWorkflowTests(TestCase):
@@ -76,6 +76,36 @@ class FinishedInventoryOrderWorkflowTests(TestCase):
         self.assertIsNone(item.customer_order)
         self.assertEqual(item.job_ticket, ticket)
         self.assertEqual(item.quantity, Decimal("3"))
+
+
+class JobTicketHistoryTests(TestCase):
+    def test_patch_logs_actor_and_changed_fields(self):
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-HIST-1",
+            job_name="Old job",
+            product_code="TSM-HIST-1",
+            customer_name="Test Customer",
+        )
+        JobTicketEvent.objects.all().delete()
+
+        response = self.client.patch(
+            reverse("job-ticket-detail", args=[ticket.id]),
+            {
+                "job_name": "New job",
+                "description": "Updated instructions",
+                "performed_by": "Alex Operator",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        event = JobTicketEvent.objects.get(job_ticket=ticket)
+        self.assertEqual(event.event_type, "updated")
+        self.assertEqual(event.performed_by, "Alex Operator")
+        self.assertEqual(event.details["changes"][0]["field"], "job_name")
+        self.assertEqual(event.details["changes"][0]["from"], "Old job")
+        self.assertEqual(event.details["changes"][0]["to"], "New job")
+        self.assertTrue(any(change["field"] == "description" for change in event.details["changes"]))
 
 
 class LiveFootageArchiveTests(TestCase):

@@ -62,6 +62,87 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 
+JOB_TICKET_CHANGE_FIELDS = [
+    ("customer", "Customer"),
+    ("customer_name", "Customer Name Override"),
+    ("job_name", "Job Number"),
+    ("product_code", "TSM ID"),
+    ("description", "Description"),
+    ("box_item_number", "Legacy Box Item #"),
+    ("material_master_type", "Material Type"),
+    ("material_spec", "Legacy Finished Raw Material"),
+    ("label_width_inches", "Label Width"),
+    ("label_length_inches", "Label Length"),
+    ("repeat_inches", "Label Repeat"),
+    ("cutting_type", "Label Cutting Type"),
+    ("face_type", "Face Type"),
+    ("liner_type", "Liner Type"),
+    ("recipe", "Label Layout"),
+    ("requested_quantity", "Requested Quantity"),
+    ("finishing_type", "Finishing"),
+    ("unit_type", "Unit Type"),
+    ("labels_per_unit", "Labels / Unit"),
+    ("units_per_carton", "Labels / Carton"),
+    ("box", "Box"),
+    ("core", "Core"),
+    ("core_size_inches", "Core Size"),
+    ("wind_direction", "Wind Direction"),
+    ("fanfold_gear", "Fanfold Gear"),
+    ("labels_per_fold", "Labels / Fold"),
+    ("ribbon", "Ribbon"),
+    ("laminate", "Laminate"),
+    ("bagged", "Bagged"),
+    ("finishing_notes", "Finishing Notes"),
+    ("carton_label_part_number", "Carton Label Part Number"),
+    ("carton_label_description_a", "Carton Label Description A"),
+    ("carton_label_description_b", "Carton Label Description B"),
+    ("carton_label_description_c", "Carton Label Description C"),
+    ("carton_label_finishing_1", "Carton Label Finishing 1"),
+    ("carton_label_finishing_2", "Carton Label Finishing 2"),
+    ("job_notes", "Job Notes"),
+]
+
+
+def short_summary(value):
+    text = str(value or "")
+    return text if len(text) <= 255 else f"{text[:252]}..."
+
+
+def ticket_compare_value(ticket, field_name):
+    field = ticket._meta.get_field(field_name)
+    if getattr(field, "many_to_one", False):
+        return getattr(ticket, f"{field_name}_id")
+    return getattr(ticket, field_name)
+
+
+def ticket_display_value(ticket, field_name):
+    field = ticket._meta.get_field(field_name)
+    if getattr(field, "many_to_one", False):
+        related = getattr(ticket, field_name)
+        return str(related) if related else ""
+
+    value = getattr(ticket, field_name)
+    if value in [None, ""]:
+        return ""
+    if field.choices:
+        return str(getattr(ticket, f"get_{field_name}_display")())
+    return str(value)
+
+
+def ticket_change_details(previous, current):
+    changes = []
+    for field_name, label in JOB_TICKET_CHANGE_FIELDS:
+        if ticket_compare_value(previous, field_name) == ticket_compare_value(current, field_name):
+            continue
+        changes.append({
+            "field": field_name,
+            "label": label,
+            "from": ticket_display_value(previous, field_name),
+            "to": ticket_display_value(current, field_name),
+        })
+    return changes
+
+
 class BaseProductionViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     parser_classes = [JSONParser, FormParser, MultiPartParser]
@@ -255,6 +336,64 @@ class JobTicketViewSet(BaseProductionViewSet):
 
     image_slots = {"general", "spec", "finishing"}
 
+    def history_actor(self):
+        actor = str(
+            self.request.data.get("performed_by")
+            or self.request.data.get("last_updated_by")
+            or ""
+        ).strip()
+        user = getattr(self.request, "user", None)
+        if not actor and user and user.is_authenticated:
+            actor = user.get_full_name() or user.get_username()
+        return actor or "system"
+
+    def create_ticket_event(self, ticket, event_type, summary, actor, changes=None, extra_details=None):
+        details = {"changes": changes or []}
+        if extra_details:
+            details.update(extra_details)
+        JobTicketEvent.objects.create(
+            job_ticket=ticket,
+            event_type=event_type,
+            summary=short_summary(summary),
+            performed_by=actor or "system",
+            details=details,
+        )
+
+    def perform_create(self, serializer):
+        actor = self.history_actor()
+        ticket = serializer.save()
+        self.create_ticket_event(
+            ticket,
+            "created",
+            f"{actor} created the job ticket.",
+            actor,
+        )
+
+    def perform_update(self, serializer):
+        previous = JobTicket.objects.select_related(
+            "customer",
+            "recipe",
+            "material_spec",
+            "material_spec__master_type",
+            "material_master_type",
+            "box",
+            "core",
+        ).get(pk=serializer.instance.pk)
+        actor = self.history_actor()
+        ticket = serializer.save()
+        changes = ticket_change_details(previous, ticket)
+        if not changes:
+            return
+
+        labels = [change["label"] for change in changes]
+        self.create_ticket_event(
+            ticket,
+            "updated",
+            f"{actor} changed {', '.join(labels[:4])}{'...' if len(labels) > 4 else ''}.",
+            actor,
+            changes=changes,
+        )
+
     def get_queryset(self):
         recent_usage_start = timezone.now() - timedelta(days=90)
         recent_run_start = timezone.localdate() - timedelta(days=90)
@@ -331,16 +470,36 @@ class JobTicketViewSet(BaseProductionViewSet):
         image_field = f"{slot}_image"
         name_field = f"{slot}_image_name"
         description_field = f"{slot}_image_description"
+        slot_label = {
+            "general": "General Image",
+            "spec": "Spec Image",
+            "finishing": "Finishing Image",
+        }.get(slot, slot.title())
+        actor = self.history_actor()
+        changes = []
+        previous_file = getattr(ticket, image_field)
+        previous_file_name = previous_file.name.split("/")[-1] if previous_file else ""
+        previous_name = getattr(ticket, name_field, "")
+        previous_description = getattr(ticket, description_field, "")
 
         if request.method == "DELETE":
             try:
-                current_file = getattr(ticket, image_field)
-                if current_file:
-                    current_file.delete(save=False)
+                if previous_file:
+                    previous_file.delete(save=False)
                 setattr(ticket, image_field, None)
                 setattr(ticket, name_field, "")
                 setattr(ticket, description_field, "")
                 ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
+                if previous_file_name or previous_name or previous_description:
+                    changes.append({"field": image_field, "label": slot_label, "from": previous_name or previous_file_name, "to": ""})
+                    self.create_ticket_event(
+                        ticket,
+                        "updated",
+                        f"{actor} removed {slot_label}.",
+                        actor,
+                        changes=changes,
+                        extra_details={"image_slot": slot, "action": "deleted"},
+                    )
                 return Response(self.get_serializer(ticket).data)
             except Exception as error:
                 logger.exception("Could not delete job ticket image from storage.")
@@ -352,6 +511,7 @@ class JobTicketViewSet(BaseProductionViewSet):
             if current_file:
                 current_file.delete(save=False)
             setattr(ticket, image_field, upload)
+            changes.append({"field": image_field, "label": slot_label, "from": previous_name or previous_file_name, "to": upload.name})
             if not request.data.get("name"):
                 setattr(ticket, name_field, upload.name)
             if slot == "general":
@@ -371,6 +531,22 @@ class JobTicketViewSet(BaseProductionViewSet):
         except Exception as error:
             logger.exception("Could not upload job ticket image to storage.")
             return Response({"error": f"Could not upload image to storage: {error}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+        new_name = getattr(ticket, name_field, "")
+        new_description = getattr(ticket, description_field, "")
+        if previous_name != new_name:
+            changes.append({"field": name_field, "label": f"{slot_label} Name", "from": previous_name, "to": new_name})
+        if previous_description != new_description:
+            changes.append({"field": description_field, "label": f"{slot_label} Description", "from": previous_description, "to": new_description})
+        if changes:
+            self.create_ticket_event(
+                ticket,
+                "updated",
+                f"{actor} updated {slot_label}.",
+                actor,
+                changes=changes,
+                extra_details={"image_slot": slot, "action": "uploaded" if upload else "updated"},
+            )
         return Response(self.get_serializer(ticket).data)
 
 

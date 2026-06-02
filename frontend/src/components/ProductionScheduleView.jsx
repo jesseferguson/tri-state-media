@@ -162,10 +162,11 @@ function scheduleTicketFallback(row) {
 
 function matchingMaterialInventory(ticket, rows) {
   if (!ticket) return [];
+  const masterType = ticket.material_master_type || ticket.material_spec_master_type;
   return (rows ?? []).filter((row) => {
+    if (row.material_type && row.material_type !== "coated_stock") return false;
+    if (masterType) return sameId(row.material_master_type, masterType);
     if (sameId(row.material, ticket.material_spec)) return true;
-    if (ticket.material_master_type && sameId(row.material_master_type, ticket.material_master_type)) return true;
-    if (ticket.material_spec_master_type && sameId(row.material_master_type, ticket.material_spec_master_type)) return true;
     if (ticket.material_spec_code && row.material_code === ticket.material_spec_code) return true;
     if (ticket.material_spec_code && row.code === ticket.material_spec_code) return true;
     return false;

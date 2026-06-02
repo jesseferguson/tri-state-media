@@ -1,14 +1,21 @@
 import { useMemo, useState } from "react";
-import { CalendarPlus, FileText, Image as ImageIcon, PackageCheck } from "lucide-react";
+import { CalendarPlus, FileText, History, Image as ImageIcon, PackageCheck } from "lucide-react";
 import RecipeOptionsView from "./RecipeOptionsView";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import { formatInches, labelize } from "../lib/format";
 
 const tabs = [
   { key: "general", label: "General" },
-  { key: "orders", label: "Order History" },
+  { key: "history", label: "History" },
   { key: "schedule", label: "Schedule" },
   { key: "editor", label: "Editor" },
+];
+
+const historyTabs = [
+  { key: "orders", label: "Orders" },
+  { key: "schedule", label: "Scheduling / Footage" },
+  { key: "ticket", label: "Job Ticket Changes" },
+  { key: "inventory", label: "Inventory" },
 ];
 
 const chartRangeOptions = [
@@ -82,12 +89,12 @@ function ChartLoadingState({ label = "Loading chart data" }) {
   );
 }
 
-function Stat({ label, value, bars, rangeLabel, loading = false }) {
+function Stat({ label, value, valueNode, bars, rangeLabel, loading = false }) {
   return (
     <div className="job-stat">
       <div>
         <span>{label}</span>
-        <strong>{value ?? "--"}</strong>
+        {valueNode ?? <strong>{value ?? "--"}</strong>}
       </div>
       {loading ? <ChartLoadingState /> : bars && <MiniBarChart bars={bars} rangeLabel={rangeLabel} />}
     </div>
@@ -162,10 +169,11 @@ function imageSourceLabel(image) {
 }
 
 function matchingMaterialInventory(ticket, rows) {
+  const masterType = ticket.material_master_type || ticket.material_spec_master_type;
   return (rows ?? []).filter((row) => {
+    if (row.material_type && row.material_type !== "coated_stock") return false;
+    if (masterType) return sameId(row.material_master_type, masterType);
     if (sameId(row.material, ticket.material_spec)) return true;
-    if (ticket.material_master_type && sameId(row.material_master_type, ticket.material_master_type)) return true;
-    if (ticket.material_spec_master_type && sameId(row.material_master_type, ticket.material_spec_master_type)) return true;
     if (ticket.material_spec_code && row.material_code === ticket.material_spec_code) return true;
     if (ticket.material_spec_code && row.code === ticket.material_spec_code) return true;
     return false;
@@ -260,6 +268,15 @@ function matchingCustomerOrderEvents(orders, rows) {
   return (rows ?? []).filter((row) => {
     if (orderIds.has(String(row.order))) return true;
     if (orderNumbers.has(String(row.order_number || "").toLowerCase())) return true;
+    return false;
+  });
+}
+
+function matchingJobTicketEvents(ticket, rows) {
+  return (rows ?? []).filter((row) => {
+    if (sameId(row.job_ticket, ticket.id)) return true;
+    if (sameText(row.job_ticket_number, ticket.ticket_number)) return true;
+    if (sameText(row.product_code, ticket.product_code)) return true;
     return false;
   });
 }
@@ -485,6 +502,34 @@ function finishedLocationGroups(rows) {
   return Array.from(groups.values()).sort((a, b) => a.location.localeCompare(b.location));
 }
 
+function inventoryLocationGroups(rows) {
+  const groups = new Map();
+  (rows ?? []).forEach((row) => {
+    const quantity = inventoryFootage(row);
+    if (quantity <= 0) return;
+    const location = inventoryLocation(row);
+    if (!groups.has(location)) groups.set(location, { location, rows: [], total: 0 });
+    const group = groups.get(location);
+    group.rows.push(row);
+    group.total += quantity;
+  });
+  return Array.from(groups.values()).sort((a, b) => b.total - a.total || a.location.localeCompare(b.location));
+}
+
+function finishedCartonLocationGroups(rows) {
+  const groups = new Map();
+  (rows ?? []).forEach((row) => {
+    const cartons = getBoxCount(row);
+    if (cartons <= 0) return;
+    const location = row.location_full_path || row.location_name || "No location";
+    if (!groups.has(location)) groups.set(location, { location, rows: [], total: 0 });
+    const group = groups.get(location);
+    group.rows.push(row);
+    group.total += cartons;
+  });
+  return Array.from(groups.values()).sort((a, b) => b.total - a.total || a.location.localeCompare(b.location));
+}
+
 function monthsInRange(rangeKey, bars) {
   const now = new Date();
   if (rangeKey === "30bd") return 1;
@@ -558,6 +603,86 @@ function WidthFootageChart({ rows, loading = false }) {
   );
 }
 
+function StatBreakdown({ total, groups, suffix = "", emptyLabel = "No locations" }) {
+  const max = Math.max(...(groups ?? []).map((group) => group.total), 1);
+  return (
+    <div className="job-stat-breakdown">
+      <strong>{total}</strong>
+      {(groups ?? []).length ? (
+        groups.map((group) => (
+          <div key={group.location} className="job-stat-breakdown-row">
+            <span>{group.location}:</span>
+            <b>{formatNumber(group.total, suffix)}</b>
+            <em style={{ "--bar-width": `${Math.max(6, (group.total / max) * 100)}%` }} />
+          </div>
+        ))
+      ) : (
+        <small>{emptyLabel}</small>
+      )}
+    </div>
+  );
+}
+
+function eventDate(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function eventChanges(event) {
+  const rawChanges = event?.details?.changes;
+  if (!Array.isArray(rawChanges)) return [];
+  return rawChanges.map((change, index) => {
+    if (typeof change === "string") return { key: `${event.id || "event"}-${index}`, text: change };
+    const label = change.label || change.field || "Field";
+    return {
+      key: `${event.id || "event"}-${change.field || index}`,
+      label,
+      from: change.from || "--",
+      to: change.to || "--",
+      text: `${label}: ${change.from || "--"} to ${change.to || "--"}`,
+    };
+  });
+}
+
+function JobTicketEventList({ events, emptyText }) {
+  if (!events.length) return <p className="muted">{emptyText}</p>;
+  return (
+    <div className="job-history-event-list">
+      {events.map((event) => {
+        const changes = eventChanges(event);
+        return (
+          <article key={event.id}>
+            <div>
+              <strong>{event.summary || labelize(event.event_type)}</strong>
+              <span>{[eventDate(event.created_at), event.performed_by, labelize(event.event_type)].filter(Boolean).join(" / ")}</span>
+            </div>
+            {changes.length ? (
+              <ul>
+                {changes.map((change) => <li key={change.key}>{change.text}</li>)}
+              </ul>
+            ) : null}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function OrderEventList({ events, emptyText }) {
+  if (!events.length) return <p className="muted">{emptyText}</p>;
+  return (
+    <div className="job-order-event-list">
+      {events.map((event) => (
+        <article key={`${event.source || "order"}-${event.id}`}>
+          <strong>{event.summary}</strong>
+          <span>{[eventDate(event.created_at), labelize(event.event_type), event.performed_by].filter(Boolean).join(" / ")}</span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function usageDate(row) {
   const raw = row?.used_at || row?.date || row?.used_date;
   return parseDateValue(raw);
@@ -578,6 +703,7 @@ export default function JobTicketPanel({
   renderScheduleForm,
 }) {
   const [activeTab, setActiveTab] = useState("general");
+  const [historyTab, setHistoryTab] = useState("orders");
   const [chartRange, setChartRange] = useState("90bd");
   const [receiveForm, setReceiveForm] = useState({
     order_number: "",
@@ -603,6 +729,10 @@ export default function JobTicketPanel({
   const customerOrderEvents = useMemo(
     () => matchingCustomerOrderEvents(customerOrders, lookups["customer-order-events"]),
     [customerOrders, lookups]
+  );
+  const jobTicketEvents = useMemo(
+    () => matchingJobTicketEvents(ticket, lookups["job-ticket-events"]),
+    [ticket, lookups]
   );
 
   const recipeOptions = useMemo(
@@ -638,10 +768,13 @@ export default function JobTicketPanel({
   const availableInventory = materialInventory.filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status));
   const availableInventoryWithFeet = availableInventory.filter((row) => inventoryFootage(row) > 0);
   const inventoryByWidth = useMemo(() => groupInventoryByWidth(availableInventoryWithFeet), [availableInventoryWithFeet]);
+  const materialByLocation = useMemo(() => inventoryLocationGroups(availableInventoryWithFeet), [availableInventoryWithFeet]);
   const availableFinished = finishedRows.filter((row) => row.is_active !== false && !["depleted", "scrapped", "shipped"].includes(row.status));
   const finishedByLocation = useMemo(() => finishedLocationGroups(availableFinished), [availableFinished]);
+  const finishedCartonByLocation = useMemo(() => finishedCartonLocationGroups(availableFinished), [availableFinished]);
   const materialFeet = availableInventoryWithFeet.reduce((sum, row) => sum + inventoryFootage(row), 0);
   const finishedQuantity = availableFinished.reduce((sum, row) => sum + numeric(row.quantity), 0);
+  const finishedCartons = availableFinished.reduce((sum, row) => sum + getBoxCount(row), 0);
   const scheduleTotal = scheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
   const averageScheduled = scheduleRows.length ? scheduleTotal / scheduleRows.length : null;
   const selectedRangeLabel = chartRangeOptions.find((option) => option.key === chartRange)?.label || "90 Days";
@@ -657,6 +790,13 @@ export default function JobTicketPanel({
     () => monthlyAverageFromBars(shippedBars, chartRange),
     [shippedBars, chartRange]
   );
+  const sortedJobTicketEvents = [...jobTicketEvents].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  const ticketChangeEvents = sortedJobTicketEvents.filter((event) => !["scheduled", "schedule_updated", "schedule_removed"].includes(event.event_type));
+  const scheduleJobTicketEvents = sortedJobTicketEvents.filter((event) => ["scheduled", "schedule_updated", "schedule_removed"].includes(event.event_type));
+  const schedulingHistoryEvents = [
+    ...customerOrderEvents.map((event) => ({ ...event, source: "order" })),
+    ...scheduleJobTicketEvents.map((event) => ({ ...event, source: "ticket" })),
+  ].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   const recentSchedules = [...scheduleRows]
     .sort((a, b) => String(dateValue(b)).localeCompare(String(dateValue(a))))
     .slice(0, 6);
@@ -743,13 +883,12 @@ export default function JobTicketPanel({
                 <strong>{ticket.product_code || "--"}</strong>
               </div>
               <div>
+                <span>Job Number</span>
+                <strong>{ticket.job_name || "--"}</strong>
+              </div>
+              <div>
                 <span>Material Type</span>
                 <strong>{ticket.material_master_type_code || ticket.material_spec_master_type_code || "--"}</strong>
-              </div>
-              <div className="job-material-on-hand">
-                <span>Material On Hand</span>
-                <strong>{chartsLoading ? "Loading..." : `${availableInventoryWithFeet.length} rolls / ${formatNumber(materialFeet, " ft")}`}</strong>
-                <WidthFootageChart rows={availableInventoryWithFeet} loading={chartsLoading} />
               </div>
             </div>
           </section>
@@ -767,7 +906,27 @@ export default function JobTicketPanel({
             ))}
           </div>
           <div className="job-stat-grid focus">
-            <Stat label="Finished Stock" value={chartsLoading ? "Loading..." : `${formatNumber(finishedQuantity)} units / ${availableFinished.length} lots`} loading={chartsLoading} />
+            <Stat
+              label="Material On Hand"
+              valueNode={chartsLoading ? <strong>Loading...</strong> : (
+                <StatBreakdown
+                  total={`total: ${availableInventoryWithFeet.length} rolls / ${formatNumber(materialFeet, " ft")}`}
+                  groups={materialByLocation}
+                  suffix=" ft"
+                  emptyLabel="No material locations"
+                />
+              )}
+            />
+            <Stat
+              label="Finished Stock"
+              valueNode={chartsLoading ? <strong>Loading...</strong> : (
+                <StatBreakdown
+                  total={`total: ${formatNumber(finishedCartons)}`}
+                  groups={finishedCartonByLocation}
+                  emptyLabel="No carton locations"
+                />
+              )}
+            />
             <Stat label="Avg Scheduled" value={chartsLoading ? "Loading..." : averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} loading={chartsLoading} />
             <Stat label="Avg Shipped / Month" value={chartsLoading ? "Loading..." : shippedMonthlyAverage ? formatNumber(shippedMonthlyAverage) : "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} loading={chartsLoading} />
           </div>
@@ -951,132 +1110,197 @@ export default function JobTicketPanel({
         </div>
       )}
 
-      {activeTab === "orders" && (
+      {activeTab === "history" && (
         <div className="job-panel-section">
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Receive Finished Inventory</strong>
-              <span>Scan Code 128 order number or enter manually</span>
-            </div>
-            <form className="job-inventory-receive-form" onSubmit={submitReceive}>
-              <label>
-                <span>Order Scan</span>
-                <input
-                  value={receiveForm.order_number}
-                  onChange={(event) => updateReceive("order_number", event.target.value)}
-                  placeholder="ORD260527-0001"
-                  inputMode="text"
-                  autoComplete="off"
-                />
-              </label>
-              <label>
-                <span>Quantity</span>
-                <input type="number" min="0" step="0.001" required value={receiveForm.quantity} onChange={(event) => updateReceive("quantity", event.target.value)} />
-              </label>
-              <label>
-                <span>Location</span>
-                <input required value={receiveForm.location} onChange={(event) => updateReceive("location", event.target.value)} placeholder="Rack / shelf / staging" />
-              </label>
-              <label>
-                <span>Received By</span>
-                <input value={receiveForm.received_by} onChange={(event) => updateReceive("received_by", event.target.value)} placeholder="Name" />
-              </label>
-              <label>
-                <span>Unit</span>
-                <select value={receiveForm.unit} onChange={(event) => updateReceive("unit", event.target.value)}>
-                  <option value="carton">Carton</option>
-                  <option value="case">Case</option>
-                  <option value="roll">Roll</option>
-                  <option value="label">Label</option>
-                  <option value="each">Each</option>
-                </select>
-              </label>
-              <div>
-                <button className="primary-btn" type="submit" disabled={inventoryReceiving}>{inventoryReceiving ? "Receiving..." : "Receive Stock"}</button>
-                {!receiveForm.order_number && <small>Without an order scan this will use the current job ticket.</small>}
-              </div>
-              {inventoryReceiveError && <p>{inventoryReceiveError}</p>}
-            </form>
-          </section>
+          <div className="job-history-tabs" role="tablist" aria-label="History sections">
+            {historyTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={historyTab === tab.key ? "active" : ""}
+                onClick={() => setHistoryTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-          <section className="job-order-dashboard">
-            <div className="job-order-card">
-              <span>Orders</span>
-              <strong>{customerOrders.length}</strong>
-            </div>
-            <div className="job-order-card">
-              <span>Finished On Hand</span>
-              <strong>{formatNumber(finishedQuantity)}</strong>
-            </div>
-            <div className="job-order-card">
-              <span>Inventory Locations</span>
-              <strong>{finishedByLocation.length}</strong>
-            </div>
-          </section>
+          {historyTab === "orders" && (
+            <>
+              <section className="job-order-dashboard">
+                <div className="job-order-card">
+                  <span>Orders</span>
+                  <strong>{customerOrders.length}</strong>
+                </div>
+                <div className="job-order-card">
+                  <span>Scheduled Total</span>
+                  <strong>{formatNumber(scheduleTotal)}</strong>
+                </div>
+                <div className="job-order-card">
+                  <span>Finished Cartons</span>
+                  <strong>{formatNumber(finishedCartons)}</strong>
+                </div>
+              </section>
 
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Order History</strong>
-            </div>
-            {customerOrders.length ? (
-              <div className="job-order-list">
-                {customerOrders.map((order) => (
-                  <article key={order.id}>
-                    <div>
-                      <strong>{order.order_number || `Order ${order.id}`}</strong>
-                      <span>{[order.order_date, order.status, order.press_name].filter(Boolean).join(" / ")}</span>
-                    </div>
-                    <em>{formatNumber(numeric(order.quantity_to_ship) + numeric(order.quantity_to_stock))} planned</em>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No order history has been created for this job yet.</p>
-            )}
-          </section>
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Footage / Schedule History</strong>
-            </div>
-            {customerOrderEvents.length ? (
-              <div className="job-order-event-list">
-                {customerOrderEvents.slice(0, 16).map((event) => (
-                  <article key={event.id}>
-                    <strong>{event.summary}</strong>
-                    <span>{[event.created_at ? new Date(event.created_at).toLocaleString() : "", event.event_type, event.performed_by].filter(Boolean).join(" / ")}</span>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No order events have been recorded yet.</p>
-            )}
-          </section>
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Finished Inventory By Location</strong>
-              <span>{formatNumber(finishedQuantity)} on hand</span>
-            </div>
-            {finishedByLocation.length ? (
-              <div className="job-finished-location-list">
-                {finishedByLocation.map((group) => (
-                  <div key={group.location} className="job-finished-location-group">
-                    <div className="job-finished-location-head">
-                      <strong>{group.location}</strong>
-                      <span>{formatNumber(group.total)} total / {group.rows.length} lot{group.rows.length === 1 ? "" : "s"}</span>
-                    </div>
+              <section className="job-subsection">
+                <div className="job-subsection-head">
+                  <PackageCheck size={15} />
+                  <strong>Orders</strong>
+                </div>
+                {customerOrders.length ? (
+                  <div className="job-order-list">
+                    {customerOrders.map((order) => (
+                      <article key={order.id}>
+                        <div>
+                          <strong>{order.order_number || `Order ${order.id}`}</strong>
+                          <span>{[order.order_date, labelize(order.status), order.press_name].filter(Boolean).join(" / ")}</span>
+                        </div>
+                        <em>{formatNumber(numeric(order.quantity_to_ship) + numeric(order.quantity_to_stock))} planned</em>
+                      </article>
+                    ))}
                   </div>
-                ))}
+                ) : (
+                  <p className="muted">No order history has been created for this job yet.</p>
+                )}
+              </section>
+            </>
+          )}
+
+          {historyTab === "schedule" && (
+            <>
+              <section className="job-subsection">
+                <div className="job-subsection-head">
+                  <CalendarPlus size={15} />
+                  <strong>Scheduling</strong>
+                </div>
+                {recentSchedules.length ? (
+                  <div className="job-inventory-list">
+                    {recentSchedules.map((row) => (
+                      <div key={row.id} className="job-inventory-row">
+                        <strong>{[dateValue(row) || "No date", labelize(row.status), labelize(row.priority)].filter(Boolean).join(" / ")}</strong>
+                        <span>{[row.customer_po ? `PO ${row.customer_po}` : "", scheduleQuantity(row) ? `${formatNumber(scheduleQuantity(row))} total` : ""].filter(Boolean).join(" / ")}</span>
+                        <em>{[row.actual_footage ? `${formatNumber(row.actual_footage, " ft")} actual` : "", row.footage_report || row.notes || "No footage report"].filter(Boolean).join(" / ")}</em>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No schedule records are linked to this job yet.</p>
+                )}
+              </section>
+
+              <section className="job-subsection">
+                <div className="job-subsection-head">
+                  <History size={15} />
+                  <strong>Scheduling / Footage Reports</strong>
+                </div>
+                <OrderEventList events={schedulingHistoryEvents.slice(0, 24)} emptyText="No scheduling or footage history has been recorded yet." />
+              </section>
+            </>
+          )}
+
+          {historyTab === "ticket" && (
+            <section className="job-subsection">
+              <div className="job-subsection-head">
+                <History size={15} />
+                <strong>Job Ticket Changes</strong>
               </div>
-            ) : (
-              <p className="muted">No finished inventory is linked to this job yet.</p>
-            )}
-          </section>
+              <JobTicketEventList events={ticketChangeEvents} emptyText="No job ticket changes have been recorded yet." />
+            </section>
+          )}
+
+          {historyTab === "inventory" && (
+            <>
+              <section className="job-subsection">
+                <div className="job-subsection-head">
+                  <PackageCheck size={15} />
+                  <strong>Receive Finished Inventory</strong>
+                  <span>Scan Code 128 order number or enter manually</span>
+                </div>
+                <form className="job-inventory-receive-form" onSubmit={submitReceive}>
+                  <label>
+                    <span>Order Scan</span>
+                    <input
+                      value={receiveForm.order_number}
+                      onChange={(event) => updateReceive("order_number", event.target.value)}
+                      placeholder="ORD260527-0001"
+                      inputMode="text"
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label>
+                    <span>Quantity</span>
+                    <input type="number" min="0" step="0.001" required value={receiveForm.quantity} onChange={(event) => updateReceive("quantity", event.target.value)} />
+                  </label>
+                  <label>
+                    <span>Location</span>
+                    <input required value={receiveForm.location} onChange={(event) => updateReceive("location", event.target.value)} placeholder="Rack / shelf / staging" />
+                  </label>
+                  <label>
+                    <span>Received By</span>
+                    <input value={receiveForm.received_by} onChange={(event) => updateReceive("received_by", event.target.value)} placeholder="Name" />
+                  </label>
+                  <label>
+                    <span>Unit</span>
+                    <select value={receiveForm.unit} onChange={(event) => updateReceive("unit", event.target.value)}>
+                      <option value="carton">Carton</option>
+                      <option value="case">Case</option>
+                      <option value="roll">Roll</option>
+                      <option value="label">Label</option>
+                      <option value="each">Each</option>
+                    </select>
+                  </label>
+                  <div>
+                    <button className="primary-btn" type="submit" disabled={inventoryReceiving}>{inventoryReceiving ? "Receiving..." : "Receive Stock"}</button>
+                    {!receiveForm.order_number && <small>Without an order scan this will use the current job ticket.</small>}
+                  </div>
+                  {inventoryReceiveError && <p>{inventoryReceiveError}</p>}
+                </form>
+              </section>
+
+              <section className="job-subsection">
+                <div className="job-subsection-head">
+                  <PackageCheck size={15} />
+                  <strong>Finished Inventory By Location</strong>
+                  <span>{formatNumber(finishedQuantity)} on hand</span>
+                </div>
+                {finishedByLocation.length ? (
+                  <div className="job-finished-location-list">
+                    {finishedByLocation.map((group) => (
+                      <div key={group.location} className="job-finished-location-group">
+                        <div className="job-finished-location-head">
+                          <strong>{group.location}</strong>
+                          <span>{formatNumber(group.total)} total / {group.rows.length} lot{group.rows.length === 1 ? "" : "s"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No finished inventory is linked to this job yet.</p>
+                )}
+              </section>
+
+              <section className="job-subsection">
+                <div className="job-subsection-head">
+                  <PackageCheck size={15} />
+                  <strong>Inventory History</strong>
+                  <span>{finishedUsageRows.length} event{finishedUsageRows.length === 1 ? "" : "s"}</span>
+                </div>
+                {finishedUsageRows.length ? (
+                  <div className="job-inventory-list">
+                    {finishedUsageRows.map((row) => (
+                      <div key={row.id} className="job-inventory-row">
+                        <strong>{row.reference || row.finished_inventory_name || labelize(row.usage_type)}</strong>
+                        <span>{[row.used_date, labelize(row.usage_type), row.quantity ? `${formatNumber(row.quantity)} ${row.unit || row.finished_inventory_unit || "units"}` : ""].filter(Boolean).join(" / ")}</span>
+                        <em>{row.finished_inventory_location_full_path || row.finished_inventory_location_name || row.notes || "No location"}</em>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No inventory history has been recorded for this job yet.</p>
+                )}
+              </section>
+            </>
+          )}
         </div>
       )}
 

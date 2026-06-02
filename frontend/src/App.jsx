@@ -171,7 +171,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
   if (resource.key === "job-tickets" && selected) {
     if (selected.material_spec) addLookupSpec(specs, relationLookupSpec("raw-materials", { material: selected.material_spec }, 250));
     if (selected.material_master_type || selected.material_spec_master_type) {
-      addLookupSpec(specs, relationLookupSpec("raw-materials", { master_type: selected.material_master_type || selected.material_spec_master_type }, 250));
+      addLookupSpec(specs, relationLookupSpec("raw-materials", { material_type: "coated_stock", master_type: selected.material_master_type || selected.material_spec_master_type }, 250));
     }
     addLookupSpec(specs, relationLookupSpec("finished-inventory", { job_ticket: selected.id }, 250, true));
     if (selected.product_code) addLookupSpec(specs, relationLookupSpec("finished-inventory", { tsm_id: selected.product_code }, 250, true));
@@ -306,47 +306,6 @@ function scheduleDefaultsForTicket(ticket, currentUser) {
     last_updated_by: currentUser?.name || "",
     status: "unscheduled",
   };
-}
-
-const jobTicketChangeFields = [
-  ["customer", "Customer"],
-  ["job_name", "Job Number"],
-  ["product_code", "TSM ID"],
-  ["description", "Description"],
-  ["material_master_type", "Material Type"],
-  ["material_spec", "Finished Material"],
-  ["label_width_inches", "Label Width"],
-  ["label_length_inches", "Label Length"],
-  ["repeat_inches", "Repeat"],
-  ["cutting_type", "Cutting"],
-  ["finishing_type", "Finishing"],
-  ["unit_type", "Unit Type"],
-  ["labels_per_unit", "Labels per Unit"],
-  ["units_per_carton", "Units per Carton"],
-  ["core_size_inches", "Core Size"],
-  ["wind_direction", "Wind"],
-  ["fanfold_gear", "Fanfold Gear"],
-  ["labels_per_fold", "Labels per Fold"],
-  ["ribbon", "Ribbon"],
-  ["laminate", "Laminate"],
-  ["bagged", "Bagged"],
-  ["box_item_number", "Legacy Box Item #"],
-  ["box", "Box Link"],
-  ["core", "Core Link"],
-  ["recipe", "Recipe"],
-  ["carton_label_part_number", "Carton Label Part Number"],
-  ["carton_label_description_a", "Carton Label Description A"],
-  ["carton_label_description_b", "Carton Label Description B"],
-  ["carton_label_description_c", "Carton Label Description C"],
-  ["carton_label_finishing_1", "Carton Label Finishing 1"],
-  ["carton_label_finishing_2", "Carton Label Finishing 2"],
-];
-
-function summarizeJobTicketChanges(previous, next) {
-  if (!previous || !next) return [];
-  return jobTicketChangeFields
-    .filter(([key]) => String(previous[key] ?? "") !== String(next[key] ?? ""))
-    .map(([key, label]) => `${label}: ${previous[key] || "--"} to ${next[key] || "--"}`);
 }
 
 const initialOpenGroups = Object.fromEntries(
@@ -1253,6 +1212,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       return {
         ...dataPayload,
         ticket_number: generatedJobTicketNumber(dataPayload, formMode === "edit" ? selected : null),
+        performed_by: currentUser?.name || "",
       };
     }
     if (resource.key !== "raw-materials") return payload;
@@ -1330,6 +1290,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           const formData = new FormData();
           formData.append("image", upload.file);
           formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
+          formData.append("performed_by", currentUser?.name || "");
           saved = await uploadRecordAction(resource.endpoint, saved.id, `images/${upload.slot}`, formData);
         }
       }
@@ -1345,24 +1306,6 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       return saved;
     },
     onSuccess: async (saved) => {
-      if (saved && resource.key === "job-tickets") {
-        const changes = formMode === "edit" ? summarizeJobTicketChanges(selected, saved) : [];
-        try {
-          await createRecord("job-ticket-events", {
-            job_ticket: saved.id,
-            event_type: formMode === "edit" ? "updated" : "created",
-            summary: formMode === "edit"
-              ? (changes.length
-                ? `${currentUser.name} updated ${changes.slice(0, 4).join(", ")}${changes.length > 4 ? "..." : ""}.`
-                : `${currentUser.name} updated the job ticket.`)
-              : `${currentUser.name} created the job ticket.`,
-            performed_by: currentUser.name,
-            details: { changes },
-          });
-        } catch {
-          // The ticket save should still succeed if history logging is unavailable.
-        }
-      }
       if (saved && resource.key === "raw-materials") {
         setLocalInventoryRows((prev) => mergeRows([saved], prev));
         queryClient.setQueryData(collectionQueryKey, (current) => {
@@ -1377,6 +1320,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             results,
           };
         });
+      }
+      if (saved && resource.key === "job-tickets") {
+        queryClient.invalidateQueries({ queryKey: ["collection", "job-ticket-events"] });
       }
       queryClient.invalidateQueries({ queryKey: ["collection", resource.key] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
@@ -1746,6 +1692,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       const cleanPayload = {
         ...payload,
         ticket_number: generatedJobTicketNumber(payload, selected),
+        performed_by: currentUser?.name || "",
       };
       delete cleanPayload.__imageUploads;
       let saved = await updateRecord("job-tickets", selected.id, cleanPayload);
@@ -1754,28 +1701,14 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         const formData = new FormData();
         formData.append("image", upload.file);
         formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
+        formData.append("performed_by", currentUser?.name || "");
         saved = await uploadRecordAction("job-tickets", saved.id, `images/${upload.slot}`, formData);
       }
       return saved;
     },
     onSuccess: async (saved) => {
-      const changes = summarizeJobTicketChanges(selected, saved);
-      if (saved?.id) {
-        try {
-          await createRecord("job-ticket-events", {
-            job_ticket: saved.id,
-            event_type: "updated",
-            summary: changes.length
-              ? `${currentUser.name} updated ${changes.slice(0, 4).join(", ")}${changes.length > 4 ? "..." : ""}.`
-              : `${currentUser.name} updated the job ticket.`,
-            performed_by: currentUser.name,
-            details: { changes },
-          });
-        } catch {
-          // History is helpful, but the ticket save should not be blocked by it.
-        }
-      }
       queryClient.invalidateQueries({ queryKey: ["collection", "job-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-ticket-events"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
       setSelected(saved ?? selected);
     },
