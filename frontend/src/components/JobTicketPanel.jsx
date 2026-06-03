@@ -446,10 +446,29 @@ function monthLabel(date) {
   return date.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
 }
 
+function fixedMonthRangeCount(rangeKey) {
+  if (rangeKey === "3mo") return 3;
+  if (rangeKey === "9mo") return 9;
+  return 0;
+}
+
 function monthlyBars(rows, dateGetter, quantityGetter, rangeKey) {
   const start = rangeStart(rangeKey);
   const end = rangeEnd(rangeKey);
   const grouped = new Map();
+  const monthCount = fixedMonthRangeCount(rangeKey);
+  if (start && monthCount) {
+    for (let index = 0; index < monthCount; index += 1) {
+      const date = new Date(start.getFullYear(), start.getMonth() + index, 1);
+      const key = monthKey(date);
+      grouped.set(key, {
+        key,
+        label: monthLabel(date),
+        value: 0,
+        sort: date.getTime(),
+      });
+    }
+  }
   rows
     .map((row) => {
       const rawDate = dateGetter(row);
