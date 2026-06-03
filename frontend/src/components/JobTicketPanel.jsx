@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { CalendarPlus, FileText, History, Image as ImageIcon, PackageCheck } from "lucide-react";
-import RecipeOptionsView from "./RecipeOptionsView";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import { formatInches, labelize } from "../lib/format";
 
@@ -12,7 +11,6 @@ const tabs = [
 
 const historyTabs = [
   { key: "orders", label: "Orders" },
-  { key: "schedule", label: "Scheduling / Footage" },
   { key: "ticket", label: "Job Ticket Changes" },
   { key: "inventory", label: "Inventory" },
 ];
@@ -134,6 +132,10 @@ function sameText(a, b) {
   return left === right;
 }
 
+function compactText(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 function sameNumber(a, b) {
   const left = Number(a);
   const right = Number(b);
@@ -164,13 +166,24 @@ function imageSourceLabel(image) {
 }
 
 function matchingMaterialInventory(ticket, rows) {
-  const masterType = ticket.material_master_type || ticket.material_spec_master_type;
+  const masterTypeIds = [ticket.material_master_type, ticket.material_spec_master_type].filter(Boolean);
+  const masterTypeCodes = [
+    ticket.material_master_type_code,
+    ticket.material_spec_master_type_code,
+  ].map(compactText).filter(Boolean);
+  const masterTypeNames = [
+    ticket.material_master_type_name,
+    ticket.material_spec_master_type_name,
+  ].map(compactText).filter(Boolean);
+  const materialCodes = [ticket.material_spec_code, ticket.material_code].map(compactText).filter(Boolean);
   return (rows ?? []).filter((row) => {
     if (row.material_type && row.material_type !== "coated_stock") return false;
-    if (masterType) return sameId(row.material_master_type, masterType);
+    if (masterTypeIds.some((id) => sameId(row.material_master_type, id))) return true;
+    if (masterTypeCodes.includes(compactText(row.material_master_type_code))) return true;
+    if (masterTypeNames.includes(compactText(row.material_master_type_name))) return true;
     if (sameId(row.material, ticket.material_spec)) return true;
-    if (ticket.material_spec_code && row.material_code === ticket.material_spec_code) return true;
-    if (ticket.material_spec_code && row.code === ticket.material_spec_code) return true;
+    if (materialCodes.includes(compactText(row.material_code))) return true;
+    if (materialCodes.includes(compactText(row.code))) return true;
     return false;
   });
 }
@@ -748,6 +761,247 @@ function OrderEventList({ events, emptyText }) {
   );
 }
 
+function uniqueValues(values) {
+  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
+function scheduleEventScheduleId(event) {
+  return event?.details?.schedule_id ?? event?.details?.schedule ?? event?.schedule_id ?? "";
+}
+
+function orderPlannedQuantity(row) {
+  return numeric(row?.quantity_to_ship) + numeric(row?.quantity_to_stock);
+}
+
+function orderGroupKey(order) {
+  const po = compactText(order?.customer_po);
+  if (po) return `po:${po}`;
+  return `order:${compactText(order?.order_number || order?.id)}`;
+}
+
+function groupDateValue(group) {
+  const dates = [
+    ...group.orders.map((order) => order.updated_at || order.scheduled_date || order.due_date || order.order_date),
+    ...group.schedules.map((schedule) => schedule.updated_at || dateValue(schedule)),
+    ...group.events.map((event) => event.created_at),
+  ].map((value) => parseDateValue(value)).filter(Boolean);
+  if (!dates.length) return 0;
+  return Math.max(...dates.map((date) => date.getTime()));
+}
+
+function buildOrderHistoryGroups({ orders, schedules, orderEvents, scheduleEvents, search }) {
+  const groups = new Map();
+  const claimedScheduleIds = new Set();
+
+  (orders ?? []).forEach((order) => {
+    const key = orderGroupKey(order);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        orders: [],
+        schedules: [],
+        orderEvents: [],
+        scheduleEvents: [],
+        orderNumbers: [],
+        customerPo: order.customer_po || "",
+      });
+    }
+    const group = groups.get(key);
+    group.orders.push(order);
+    group.orderNumbers = uniqueValues([...group.orderNumbers, order.order_number || `Order ${order.id}`]);
+    if (!group.customerPo && order.customer_po) group.customerPo = order.customer_po;
+  });
+
+  groups.forEach((group) => {
+    const scheduleEntryIds = new Set(group.orders.map((order) => String(order.schedule_entry || "")).filter(Boolean));
+    const orderIds = new Set(group.orders.map((order) => String(order.id)));
+    const orderNumbers = new Set(group.orders.map((order) => compactText(order.order_number)).filter(Boolean));
+    group.schedules = (schedules ?? []).filter((schedule) => {
+      if (scheduleEntryIds.has(String(schedule.id))) return true;
+      if (group.customerPo && sameText(schedule.customer_po, group.customerPo)) return true;
+      return false;
+    });
+    group.schedules.forEach((schedule) => claimedScheduleIds.add(String(schedule.id)));
+    const scheduleIds = new Set(group.schedules.map((schedule) => String(schedule.id)));
+    group.orderEvents = (orderEvents ?? []).filter((event) => (
+      orderIds.has(String(event.order)) || orderNumbers.has(compactText(event.order_number))
+    ));
+    group.scheduleEvents = (scheduleEvents ?? []).filter((event) => scheduleIds.has(String(scheduleEventScheduleId(event))));
+  });
+
+  (schedules ?? []).forEach((schedule) => {
+    if (claimedScheduleIds.has(String(schedule.id))) return;
+    const key = schedule.customer_po ? `schedule-po:${compactText(schedule.customer_po)}` : `schedule:${schedule.id}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        orders: [],
+        schedules: [],
+        orderEvents: [],
+        scheduleEvents: [],
+        orderNumbers: [`Schedule ${schedule.id}`],
+        customerPo: schedule.customer_po || "",
+      });
+    }
+    const group = groups.get(key);
+    group.schedules.push(schedule);
+    const scheduleIds = new Set(group.schedules.map((row) => String(row.id)));
+    group.scheduleEvents = (scheduleEvents ?? []).filter((event) => scheduleIds.has(String(scheduleEventScheduleId(event))));
+  });
+
+  const needle = compactText(search);
+  return Array.from(groups.values())
+    .map((group) => {
+      const events = [...group.orderEvents, ...group.scheduleEvents]
+        .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+      const searchText = compactText([
+        ...group.orderNumbers,
+        group.customerPo,
+        ...group.orders.map((order) => order.customer_po),
+        ...group.schedules.map((schedule) => schedule.customer_po),
+      ].join(" "));
+      return { ...group, events, searchText };
+    })
+    .filter((group) => !needle || group.searchText.includes(needle))
+    .sort((a, b) => groupDateValue(b) - groupDateValue(a));
+}
+
+function OrderMetricBars({ items }) {
+  const max = Math.max(...items.map((item) => numeric(item.value)), 1);
+  return (
+    <div className="job-order-metric-bars">
+      {items.map((item) => (
+        <div key={item.label}>
+          <span>{item.label}</span>
+          <strong>{item.display ?? formatNumber(item.value, item.suffix || "")}</strong>
+          <em aria-hidden="true"><i style={{ "--bar-width": `${Math.max(5, (numeric(item.value) / max) * 100)}%` }} /></em>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function orderFootageReports(group) {
+  return [
+    ...group.orders.map((order) => ({
+      key: `order-${order.id}`,
+      date: order.scheduled_date || order.due_date || order.order_date,
+      footage: numeric(order.actual_footage),
+      report: order.footage_report || order.operator_note,
+      source: order.order_number || `Order ${order.id}`,
+    })),
+    ...group.schedules.map((schedule) => ({
+      key: `schedule-${schedule.id}`,
+      date: dateValue(schedule),
+      footage: numeric(schedule.actual_footage),
+      report: schedule.footage_report || schedule.notes,
+      source: `Schedule ${schedule.id}`,
+    })),
+  ].filter((row) => row.footage > 0 || row.report);
+}
+
+function OrderHistoryGroupCard({ group }) {
+  const orderCount = group.orders.length;
+  const scheduleCount = group.schedules.length;
+  const plannedShip = group.orders.length
+    ? group.orders.reduce((sum, order) => sum + numeric(order.quantity_to_ship), 0)
+    : group.schedules.reduce((sum, schedule) => sum + numeric(schedule.quantity_to_ship), 0);
+  const plannedStock = group.orders.length
+    ? group.orders.reduce((sum, order) => sum + numeric(order.quantity_to_stock), 0)
+    : group.schedules.reduce((sum, schedule) => sum + numeric(schedule.quantity_to_stock), 0);
+  const footage = group.schedules.some((schedule) => numeric(schedule.actual_footage) > 0)
+    ? group.schedules.reduce((sum, schedule) => sum + numeric(schedule.actual_footage), 0)
+    : group.orders.reduce((sum, order) => sum + numeric(order.actual_footage), 0);
+  const reports = orderFootageReports(group);
+  const latestStatus = group.orders[0]?.status || group.schedules[0]?.status || "";
+  return (
+    <article className="job-order-history-card">
+      <header>
+        <div>
+          <span>Order / PO</span>
+          <strong>{group.orderNumbers.join(" / ") || "Schedule"}</strong>
+          <em>{group.customerPo ? `PO ${group.customerPo}` : "No PO"}</em>
+        </div>
+        <div className="job-order-status-chip">
+          <strong>{labelize(latestStatus || "open")}</strong>
+          <span>{orderCount} order{orderCount === 1 ? "" : "s"} / {scheduleCount} schedule{scheduleCount === 1 ? "" : "s"}</span>
+        </div>
+      </header>
+
+      <OrderMetricBars
+        items={[
+          { label: "Ship", value: plannedShip },
+          { label: "Stock", value: plannedStock },
+          { label: "Footage", value: footage, suffix: " ft" },
+        ]}
+      />
+
+      <div className="job-order-history-grid">
+        <section>
+          <div className="job-order-section-title">
+            <CalendarPlus size={14} />
+            <strong>Schedule History</strong>
+          </div>
+          {group.schedules.length ? (
+            <div className="job-order-schedule-stack">
+              {group.schedules.map((schedule) => (
+                <div key={schedule.id} className="job-order-schedule-row">
+                  <div>
+                    <strong>{dateValue(schedule) || "No date"}</strong>
+                    <span>{[labelize(schedule.status), labelize(schedule.priority), schedule.press_name].filter(Boolean).join(" / ")}</span>
+                  </div>
+                  <OrderMetricBars
+                    items={[
+                      { label: "Ship", value: numeric(schedule.quantity_to_ship) },
+                      { label: "Stock", value: numeric(schedule.quantity_to_stock) },
+                      { label: "Footage", value: numeric(schedule.actual_footage), suffix: " ft" },
+                    ]}
+                  />
+                  <em>{[schedule.operator ? `Operator ${schedule.operator}` : "", schedule.footage_report || schedule.notes].filter(Boolean).join(" / ") || "No footage report"}</em>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No schedule records are linked to this order yet.</p>
+          )}
+        </section>
+
+        <section>
+          <div className="job-order-section-title">
+            <History size={14} />
+            <strong>Footage Reports</strong>
+          </div>
+          {reports.length ? (
+            <div className="job-footage-report-list">
+              {reports.map((report) => (
+                <div key={report.key}>
+                  <strong>{report.footage ? formatNumber(report.footage, " ft") : "--"}</strong>
+                  <span>{[report.date, report.source].filter(Boolean).join(" / ")}</span>
+                  <p>{report.report || "No report text"}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No footage reports have been entered yet.</p>
+          )}
+        </section>
+      </div>
+
+      {group.events.length ? (
+        <div className="job-order-event-timeline">
+          {group.events.slice(0, 8).map((event) => (
+            <div key={`${event.source || "event"}-${event.id}`}>
+              <span>{eventDate(event.created_at)}</span>
+              <strong>{event.summary || labelize(event.event_type)}</strong>
+              <em>{[labelize(event.event_type), event.performed_by].filter(Boolean).join(" / ")}</em>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function usageDate(row) {
   const raw = row?.used_at || row?.date || row?.used_date;
   return parseDateValue(raw);
@@ -771,6 +1025,7 @@ export default function JobTicketPanel({
   const [historyTab, setHistoryTab] = useState("orders");
   const [chartRange, setChartRange] = useState("3mo");
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [orderHistorySearch, setOrderHistorySearch] = useState("");
   const [receiveForm, setReceiveForm] = useState({
     order_number: "",
     quantity: "",
@@ -801,21 +1056,8 @@ export default function JobTicketPanel({
     [ticket, lookups]
   );
 
-  const recipeOptions = useMemo(
-    () => matchingRecipeOptions(ticket, lookups["recipe-options"]),
-    [ticket, lookups]
-  );
-
   const scheduleRows = useMemo(
     () => matchingSchedule(ticket, lookups["production-schedule"]),
-    [ticket, lookups]
-  );
-  const boxInventoryRows = useMemo(
-    () => matchingBoxInventory(ticket, lookups["box-inventory"]),
-    [ticket, lookups]
-  );
-  const coreInventoryRows = useMemo(
-    () => matchingCoreInventory(ticket, lookups["core-inventory"]),
     [ticket, lookups]
   );
   const usageRows = useMemo(
@@ -833,7 +1075,6 @@ export default function JobTicketPanel({
 
   const availableInventory = materialInventory.filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status));
   const availableInventoryWithFeet = availableInventory.filter((row) => inventoryFootage(row) > 0);
-  const materialByLocation = useMemo(() => inventoryLocationGroups(availableInventoryWithFeet), [availableInventoryWithFeet]);
   const availableFinished = finishedRows.filter((row) => row.is_active !== false && !["depleted", "scrapped", "shipped"].includes(row.status));
   const finishedByLocation = useMemo(() => finishedLocationGroups(availableFinished), [availableFinished]);
   const finishedCartonByLocation = useMemo(() => finishedCartonLocationGroups(availableFinished), [availableFinished]);
@@ -841,7 +1082,6 @@ export default function JobTicketPanel({
   const finishedQuantity = availableFinished.reduce((sum, row) => sum + numeric(row.quantity), 0);
   const finishedCartons = availableFinished.reduce((sum, row) => sum + getBoxCount(row), 0);
   const scheduleTotal = scheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
-  const averageScheduled = scheduleRows.length ? scheduleTotal / scheduleRows.length : null;
   const selectedRangeLabel = chartRangeOptions.find((option) => option.key === chartRange)?.label || "3 Months";
   const shippedBars = useMemo(
     () => monthlyBars(shippedPoints, (row) => row.date, (row) => row.quantity, chartRange),
@@ -854,18 +1094,22 @@ export default function JobTicketPanel({
   const sortedJobTicketEvents = [...jobTicketEvents].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   const ticketChangeEvents = sortedJobTicketEvents.filter((event) => !["scheduled", "schedule_updated", "schedule_removed"].includes(event.event_type));
   const scheduleJobTicketEvents = sortedJobTicketEvents.filter((event) => ["scheduled", "schedule_updated", "schedule_removed"].includes(event.event_type));
-  const schedulingHistoryEvents = [
-    ...customerOrderEvents.map((event) => ({ ...event, source: "order" })),
-    ...scheduleJobTicketEvents.map((event) => ({ ...event, source: "ticket" })),
-  ].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-  const recentSchedules = [...scheduleRows]
-    .sort((a, b) => String(dateValue(b)).localeCompare(String(dateValue(a))))
-    .slice(0, 6);
+  const orderHistoryGroups = useMemo(
+    () => buildOrderHistoryGroups({
+      orders: customerOrders,
+      schedules: scheduleRows,
+      orderEvents: customerOrderEvents.map((event) => ({ ...event, source: "order" })),
+      scheduleEvents: scheduleJobTicketEvents.map((event) => ({ ...event, source: "ticket" })),
+      search: orderHistorySearch,
+    }),
+    [customerOrders, customerOrderEvents, orderHistorySearch, scheduleJobTicketEvents, scheduleRows]
+  );
   const image = primaryImage(ticket);
   const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
-  const partNumber = ticket.product_code || ticket.ticket_number || ticket.job_name || "--";
+  const partNumber = ticket.job_name || ticket.ticket_number || "--";
   const descriptionText = ticket.description || ticket.job_name || ticket.job_notes || "No description entered.";
   const materialTypeDisplay = ticket.material_master_type_code || ticket.material_spec_master_type_code || ticket.material_master_type_name || ticket.material_spec_master_type_name || "--";
+  const activeHistoryTab = historyTabs.some((tab) => tab.key === historyTab) ? historyTab : "orders";
   const visibleTabs = tabs.filter((tab) => {
     if (tab.key === "editor") return canEdit;
     return true;
@@ -953,6 +1197,10 @@ export default function JobTicketPanel({
                   <strong>{ticket.customer_display || ticket.customer_name || "--"}</strong>
                 </div>
                 <div>
+                  <span>TSM ID</span>
+                  <strong>{ticket.product_code || "--"}</strong>
+                </div>
+                <div>
                   <span>Job Number</span>
                   <strong>{ticket.job_name || ticket.ticket_number || "--"}</strong>
                 </div>
@@ -967,32 +1215,6 @@ export default function JobTicketPanel({
               </div>
             </div>
           </section>
-
-          <div className="job-stat-grid focus job-ticket-kpi-grid">
-            <Stat
-              label="Material On Hand"
-              valueNode={chartsLoading ? <strong>Loading...</strong> : (
-                <StatBreakdown
-                  total={`total: ${availableInventoryWithFeet.length} rolls / ${formatNumber(materialFeet, " ft")}`}
-                  groups={materialByLocation}
-                  suffix=" ft"
-                  emptyLabel="No material locations"
-                />
-              )}
-            />
-            <Stat
-              label="Finished Stock"
-              valueNode={chartsLoading ? <strong>Loading...</strong> : (
-                <StatBreakdown
-                  total={`total: ${formatNumber(finishedCartons)}`}
-                  groups={finishedCartonByLocation}
-                  emptyLabel="No carton locations"
-                />
-              )}
-            />
-            <Stat label="Avg Scheduled" value={chartsLoading ? "Loading..." : averageScheduled ? formatNumber(averageScheduled) : "--"} />
-            <Stat label="Avg Shipped / Month" value={chartsLoading ? "Loading..." : shippedMonthlyAverage ? formatNumber(shippedMonthlyAverage) : "--"} />
-          </div>
 
           <div className="job-ticket-main-grid">
             <section className="job-ticket-sheet-card job-ticket-average-card">
@@ -1034,117 +1256,6 @@ export default function JobTicketPanel({
             </div>
             <RawMaterialInventoryTable rows={availableInventoryWithFeet} />
           </section>
-
-          <section className="job-subsection job-ticket-job-details">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Job Details</strong>
-            </div>
-            <div className="job-hero-details">
-              <div>
-                <span>Customer</span>
-                <strong>{ticket.customer_display || ticket.customer_name || "--"}</strong>
-              </div>
-              <div>
-                <span>TSM ID</span>
-                <strong>{ticket.product_code || "--"}</strong>
-              </div>
-              <div>
-                <span>Job Number</span>
-                <strong>{ticket.job_name || "--"}</strong>
-              </div>
-              <div>
-                <span>Material Type</span>
-                <strong>{materialTypeDisplay}</strong>
-              </div>
-            </div>
-          </section>
-          <section className="job-spec-layout">
-            <div className="job-subsection job-spec-card">
-              <div className="job-subsection-head">
-                <PackageCheck size={15} />
-                <strong>Label Specs</strong>
-              </div>
-              <div className="job-info-list compact">
-                <InfoRow label="Size" value={`${formatInches(ticket.label_width_inches)} x ${formatInches(ticket.label_length_inches)}`} />
-                <InfoRow label="Repeat" value={formatInches(ticket.repeat_inches)} />
-                <InfoRow label="Cutting" value={labelize(ticket.cutting_type)} />
-                <InfoRow label="Recipe" value={ticket.recipe_name} wide />
-                <InfoRow label="Description" value={ticket.description} wide />
-              </div>
-            </div>
-
-            <div className="job-subsection job-spec-card">
-              <div className="job-subsection-head">
-                <PackageCheck size={15} />
-                <strong>Packaging Specs</strong>
-              </div>
-              <div className="job-info-list compact">
-                <InfoRow label="Finishing" value={labelize(ticket.finishing_type)} />
-                <InfoRow label={unitPerPackageLabel(ticket)} value={ticket.labels_per_unit} />
-                <InfoRow label={unitsPerCartonLabel(ticket)} value={ticket.units_per_carton} />
-                <InfoRow label="Ribbon" value={labelize(ticket.ribbon || "no_ribbon")} />
-                <InfoRow label="Laminate" value={labelize(ticket.laminate || "no_laminate")} />
-                <InfoRow label="Bagged" value={labelize(ticket.bagged || "not_bagged")} />
-                <InfoRow label="Core / Wind" value={[formatInches(ticket.core_size_inches), ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""].filter(Boolean).join(" / ")} wide />
-                {ticket.finishing_type === "fanfold" && <InfoRow label="Fanfold Gear" value={ticket.fanfold_gear} />}
-                {ticket.finishing_type === "fanfold" && <InfoRow label={labelsPerFoldLabel(ticket)} value={ticket.labels_per_fold} />}
-                <InfoRow label="Box Item #" value={ticket.box_item_number || ticket.linked_box_item_number} />
-                <InfoRow label="Box" value={[ticket.linked_box_item_number, ticket.box_name].filter(Boolean).join(" / ")} wide />
-                <InfoRow label="Core" value={[ticket.core_item_number, ticket.core_name].filter(Boolean).join(" / ")} wide />
-              </div>
-            </div>
-          </section>
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Packaging Inventory</strong>
-            </div>
-            <div className="job-packaging-inventory-grid">
-              <PackagingInventoryTable title="Box Inventory" type="box" rows={boxInventoryRows} />
-              <PackagingInventoryTable title="Core Inventory" type="core" rows={coreInventoryRows} />
-            </div>
-          </section>
-
-          {(ticket.description || ticket.finishing_notes || ticket.job_notes) && (
-            <section className="job-notes-grid">
-              {ticket.description && (
-                <div>
-                  <span>Description</span>
-                  <p>{ticket.description}</p>
-                </div>
-              )}
-              {ticket.finishing_notes && (
-                <div>
-                  <span>Finishing Notes</span>
-                  <p>{ticket.finishing_notes}</p>
-                </div>
-              )}
-              {ticket.job_notes && (
-                <div>
-                  <span>Job Notes</span>
-                  <p>{ticket.job_notes}</p>
-                </div>
-              )}
-            </section>
-          )}
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Tooling Setup</strong>
-            </div>
-            {recipeOptions.length ? (
-              <>
-                <RecipePressOverview rows={recipeOptions} />
-                <RecipeOptionsView rows={recipeOptions} defaultOpenAll />
-              </>
-            ) : (
-              <p className="muted">Attach a tooling recipe to show operator tooling information here.</p>
-            )}
-          </section>
-
         </div>
       )}
 
@@ -1155,7 +1266,7 @@ export default function JobTicketPanel({
               <button
                 key={tab.key}
                 type="button"
-                className={historyTab === tab.key ? "active" : ""}
+                className={activeHistoryTab === tab.key ? "active" : ""}
                 onClick={() => setHistoryTab(tab.key)}
               >
                 {tab.label}
@@ -1163,7 +1274,7 @@ export default function JobTicketPanel({
             ))}
           </div>
 
-          {historyTab === "orders" && (
+          {activeHistoryTab === "orders" && (
             <>
               <section className="job-order-dashboard">
                 <div className="job-order-card">
@@ -1171,12 +1282,20 @@ export default function JobTicketPanel({
                   <strong>{customerOrders.length}</strong>
                 </div>
                 <div className="job-order-card">
-                  <span>Scheduled Total</span>
+                  <span>Schedules</span>
+                  <strong>{scheduleRows.length}</strong>
+                </div>
+                <div className="job-order-card">
+                  <span>Planned Total</span>
                   <strong>{formatNumber(scheduleTotal)}</strong>
                 </div>
                 <div className="job-order-card">
-                  <span>Finished Cartons</span>
-                  <strong>{formatNumber(finishedCartons)}</strong>
+                  <span>Footage</span>
+                  <strong>{formatNumber(orderHistoryGroups.reduce((sum, group) => {
+                    const scheduleFootage = group.schedules.reduce((total, schedule) => total + numeric(schedule.actual_footage), 0);
+                    if (scheduleFootage > 0) return sum + scheduleFootage;
+                    return sum + group.orders.reduce((total, order) => total + numeric(order.actual_footage), 0);
+                  }, 0), " ft")}</strong>
                 </div>
               </section>
 
@@ -1184,59 +1303,32 @@ export default function JobTicketPanel({
                 <div className="job-subsection-head">
                   <PackageCheck size={15} />
                   <strong>Orders</strong>
+                  <span>{orderHistoryGroups.length} group{orderHistoryGroups.length === 1 ? "" : "s"}</span>
                 </div>
-                {customerOrders.length ? (
-                  <div className="job-order-list">
-                    {customerOrders.map((order) => (
-                      <article key={order.id}>
-                        <div>
-                          <strong>{order.order_number || `Order ${order.id}`}</strong>
-                          <span>{[order.order_date, labelize(order.status), order.press_name].filter(Boolean).join(" / ")}</span>
-                        </div>
-                        <em>{formatNumber(numeric(order.quantity_to_ship) + numeric(order.quantity_to_stock))} planned</em>
-                      </article>
+                <div className="job-order-search-row">
+                  <label>
+                    <span>Search Order / PO</span>
+                    <input
+                      value={orderHistorySearch}
+                      onChange={(event) => setOrderHistorySearch(event.target.value)}
+                      placeholder="Order number or PO"
+                    />
+                  </label>
+                </div>
+                {orderHistoryGroups.length ? (
+                  <div className="job-order-history-list">
+                    {orderHistoryGroups.map((group) => (
+                      <OrderHistoryGroupCard key={group.key} group={group} />
                     ))}
                   </div>
                 ) : (
-                  <p className="muted">No order history has been created for this job yet.</p>
+                  <p className="muted">No order or PO records match this search.</p>
                 )}
               </section>
             </>
           )}
 
-          {historyTab === "schedule" && (
-            <>
-              <section className="job-subsection">
-                <div className="job-subsection-head">
-                  <CalendarPlus size={15} />
-                  <strong>Scheduling</strong>
-                </div>
-                {recentSchedules.length ? (
-                  <div className="job-inventory-list">
-                    {recentSchedules.map((row) => (
-                      <div key={row.id} className="job-inventory-row">
-                        <strong>{[dateValue(row) || "No date", labelize(row.status), labelize(row.priority)].filter(Boolean).join(" / ")}</strong>
-                        <span>{[row.customer_po ? `PO ${row.customer_po}` : "", scheduleQuantity(row) ? `${formatNumber(scheduleQuantity(row))} total` : ""].filter(Boolean).join(" / ")}</span>
-                        <em>{[row.actual_footage ? `${formatNumber(row.actual_footage, " ft")} actual` : "", row.footage_report || row.notes || "No footage report"].filter(Boolean).join(" / ")}</em>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="muted">No schedule records are linked to this job yet.</p>
-                )}
-              </section>
-
-              <section className="job-subsection">
-                <div className="job-subsection-head">
-                  <History size={15} />
-                  <strong>Scheduling / Footage Reports</strong>
-                </div>
-                <OrderEventList events={schedulingHistoryEvents.slice(0, 24)} emptyText="No scheduling or footage history has been recorded yet." />
-              </section>
-            </>
-          )}
-
-          {historyTab === "ticket" && (
+          {activeHistoryTab === "ticket" && (
             <section className="job-subsection">
               <div className="job-subsection-head">
                 <History size={15} />
@@ -1246,7 +1338,7 @@ export default function JobTicketPanel({
             </section>
           )}
 
-          {historyTab === "inventory" && (
+          {activeHistoryTab === "inventory" && (
             <>
               <section className="job-subsection">
                 <div className="job-subsection-head">

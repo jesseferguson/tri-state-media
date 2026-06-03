@@ -173,6 +173,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     if (selected.material_master_type || selected.material_spec_master_type) {
       addLookupSpec(specs, relationLookupSpec("raw-materials", { material_type: "coated_stock", master_type: selected.material_master_type || selected.material_spec_master_type }, 250));
     }
+    addLookupSpec(specs, relationLookupSpec("raw-materials", { material_type: "coated_stock" }, 1000, true));
     addLookupSpec(specs, relationLookupSpec("finished-inventory", { job_ticket: selected.id }, 250, true));
     if (selected.product_code) addLookupSpec(specs, relationLookupSpec("finished-inventory", { tsm_id: selected.product_code }, 250, true));
     if (selected.ticket_number) addLookupSpec(specs, relationLookupSpec("finished-inventory", { tsm_id: selected.ticket_number }, 250, true));
