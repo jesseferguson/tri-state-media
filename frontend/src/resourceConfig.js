@@ -1184,6 +1184,8 @@ export const resources = [
     icon: Layers3,
     accent: "#22c55e",
     defaultOrdering: "-serial_number",
+    pageSize: 1000,
+    fetchAll: true,
     tagline: "Physical material inventory by material, lot, width, length, and location.",
     viewMode: "materialInventory",
     columns: [

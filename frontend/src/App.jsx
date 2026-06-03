@@ -23,6 +23,7 @@ import PackagingInventoryView from "./components/PackagingInventoryView";
 import QuotePricingTool from "./components/QuotePricingTool";
 import RecipeOptionsView from "./components/RecipeOptionsView";
 import RecipeToolStackView from "./components/RecipeToolStackView";
+import RollScanStation from "./components/RollScanStation";
 import RollWorkflowWindow from "./components/RollWorkflowWindow";
 import ProductionScheduleView from "./components/ProductionScheduleView";
 import ToolingItemDetailPanel from "./components/ToolingItemDetailPanel";
@@ -244,6 +245,32 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
 
 function currentInventoryQuantity(roll) {
   return Number(roll?.length_feet ?? roll?.quantity ?? 0) || 0;
+}
+
+function compactScanValue(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function findScannedLocation(locations, value) {
+  const scan = compactScanValue(value);
+  if (!scan) return null;
+  return (locations ?? []).find((row) => [
+    row.id,
+    row.code,
+    row.name,
+    row.full_path,
+    row.location_full_path,
+  ].some((field) => compactScanValue(field) === scan));
+}
+
+function locationCodeFromScan(value) {
+  const clean = String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 46);
+  return clean || `LOC-${Date.now()}`;
 }
 
 function rollUsagePayload(roll, overrides = {}) {
@@ -1410,8 +1437,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     },
   });
 
-  async function fallbackRollAction(action, payload) {
-    const roll = selected;
+  async function fallbackRollAction(action, payload, rollOverride = selected) {
+    const roll = rollOverride;
+    if (!roll?.id) throw new Error("No roll selected.");
     async function tryCreateUsage(usagePayload) {
       try {
         return await createRecord("material-usages", usagePayload);
@@ -1589,6 +1617,74 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       queryClient.invalidateQueries({ queryKey: ["collection"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
       setSelected(saved ?? selected);
+    },
+  });
+
+  async function resolveScannedLocationId(value, existingId = "") {
+    if (existingId) return existingId;
+    const text = String(value ?? "").trim();
+    if (!text) return null;
+    const matched = findScannedLocation(lookupQuery.data?.locations ?? [], text);
+    if (matched?.id) return matched.id;
+    const created = await createRecord("locations", {
+      name: text.slice(0, 100),
+      code: locationCodeFromScan(text),
+      location_type: "position",
+      is_active: true,
+      notes: "Created from mobile roll scanner.",
+    });
+    return created.id;
+  }
+
+  const scanRollMutation = useMutation({
+    mutationFn: async ({ action, roll, payload }) => {
+      if (!roll?.id) throw new Error("Scan a valid roll before saving.");
+      const locationId = action === "check-out"
+        ? null
+        : await resolveScannedLocationId(payload.location_text, payload.location);
+      if (action === "check-in") {
+        return fallbackRollAction("return-roll", {
+          ...payload,
+          location: locationId,
+          remaining_quantity: payload.remaining_quantity ?? currentInventoryQuantity(roll),
+          notes: payload.notes || `Scanner check-in at ${payload.location_text || "inventory"}.`,
+        }, roll);
+      }
+      if (action === "check-out") {
+        return fallbackRollAction("check-out", {
+          ...payload,
+          used_for: "Scanner checkout",
+          notes: payload.notes || "Scanner checkout.",
+        }, roll);
+      }
+      const held = await fallbackRollAction("status", {
+        ...payload,
+        status: "on_hold",
+        reference: "Scanner hold / QC",
+        qc_issue: true,
+        qc_notes: payload.notes,
+        notes: payload.notes || "Scanner hold / QC.",
+      }, roll);
+      if (locationId) {
+        return updateRecord("raw-materials", held.id, { location: locationId });
+      }
+      return held;
+    },
+    onSuccess: (saved) => {
+      if (saved) {
+        setLocalInventoryRows((prev) => mergeRows([saved], prev));
+        queryClient.setQueryData(collectionQueryKey, (current) => {
+          if (!current?.results) return current;
+          const exists = current.results.some((row) => String(row.id) === String(saved.id));
+          const results = exists
+            ? current.results.map((row) => String(row.id) === String(saved.id) ? saved : row)
+            : [saved, ...current.results];
+          return { ...current, results, count: Math.max(current.count ?? 0, results.length) };
+        });
+        setSelected(saved);
+      }
+      queryClient.invalidateQueries({ queryKey: ["collection"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
     },
   });
 
@@ -2211,11 +2307,22 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     search={search}
                   />
                 ) : resource.viewMode === "materialInventory" ? (
-                  <MaterialInventoryView
-                    rows={visibleRows}
-                    selectedId={selected?.id}
-                    onSelect={(row) => { setSelected(row); setFormMode(null); setUsageOpen(false); setRollOpen(true); }}
-                  />
+                  <>
+                    <RollScanStation
+                      rows={rows}
+                      locations={lookupQuery.data?.locations ?? []}
+                      submitting={scanRollMutation.isPending}
+                      error={scanRollMutation.error?.message}
+                      currentUser={currentUser}
+                      onSubmit={(payload) => scanRollMutation.mutate(payload)}
+                      onSelect={(row) => { setSelected(row); setFormMode(null); setUsageOpen(false); setRollOpen(true); }}
+                    />
+                    <MaterialInventoryView
+                      rows={visibleRows}
+                      selectedId={selected?.id}
+                      onSelect={(row) => { setSelected(row); setFormMode(null); setUsageOpen(false); setRollOpen(true); }}
+                    />
+                  </>
                 ) : resource.viewMode === "finishedInventory" ? (
                   <FinishedInventoryView
                     rows={visibleRows}

@@ -13346,3 +13346,234 @@ textarea {
     text-align: left;
   }
 }
+
+/* Phone-first roll scanner */
+.roll-scan-station {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.roll-scan-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid #0f766e;
+  border-radius: 8px;
+  background: #0f766e;
+  color: #ffffff;
+  font-size: .82rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.roll-scan-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+}
+
+.roll-scan-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.roll-scan-mode-tabs button {
+  min-width: 0;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475467;
+  font-size: .72rem;
+  font-weight: 900;
+}
+
+.roll-scan-mode-tabs button.active {
+  border-color: #0ea5e9;
+  background: #eff6ff;
+  color: #0f172a;
+}
+
+.roll-scan-field {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.roll-scan-field.wide {
+  grid-column: 1 / -1;
+}
+
+.roll-scan-field > span {
+  color: #667085;
+  font-size: .66rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.roll-scan-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 6px;
+}
+
+.roll-scan-field input,
+.roll-scan-field textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: .9rem;
+}
+
+.roll-scan-field textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+
+.roll-scan-field button {
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.roll-scan-found,
+.roll-scan-missing,
+.roll-scan-location {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.roll-scan-found {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.roll-scan-found > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.roll-scan-found strong,
+.roll-scan-found span,
+.roll-scan-found em,
+.roll-scan-location span,
+.roll-scan-missing span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.roll-scan-found strong {
+  color: #14532d;
+  font-size: .86rem;
+  font-weight: 950;
+}
+
+.roll-scan-found span,
+.roll-scan-found em {
+  color: #3f6212;
+  font-size: .72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.roll-scan-missing {
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.roll-scan-location.ready {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.roll-scan-location.new {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.roll-scan-camera {
+  display: grid;
+  gap: 8px;
+}
+
+.roll-scan-camera video {
+  width: 100%;
+  max-height: 320px;
+  border-radius: 8px;
+  background: #0f172a;
+  object-fit: cover;
+}
+
+.roll-scan-camera button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-weight: 900;
+}
+
+.roll-scan-error {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #991b1b;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.roll-scan-submit {
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .roll-scan-panel {
+    margin-inline: -2px;
+    padding: 10px;
+  }
+
+  .roll-scan-mode-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .roll-scan-toggle,
+  .roll-scan-submit {
+    width: 100%;
+  }
+}
