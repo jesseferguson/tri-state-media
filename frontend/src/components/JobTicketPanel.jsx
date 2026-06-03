@@ -7,7 +7,6 @@ import { formatInches, labelize } from "../lib/format";
 const tabs = [
   { key: "general", label: "General" },
   { key: "history", label: "History" },
-  { key: "schedule", label: "Schedule" },
   { key: "editor", label: "Editor" },
 ];
 
@@ -20,12 +19,8 @@ const historyTabs = [
 
 const chartRangeOptions = [
   { key: "all", label: "All" },
-  { key: "last-quarter", label: "Last Quarter" },
-  { key: "last-year", label: "Last Year" },
-  { key: "ytd", label: "YTD" },
-  { key: "30bd", label: "30 Days", featured: true },
-  { key: "60bd", label: "60 Days", featured: true },
-  { key: "90bd", label: "90 Days", featured: true },
+  { key: "9mo", label: "9 Months" },
+  { key: "3mo", label: "3 Months", featured: true },
 ];
 
 function sameId(a, b) {
@@ -402,6 +397,10 @@ function subtractBusinessDays(days) {
 function rangeStart(rangeKey) {
   const now = new Date();
   if (rangeKey === "all") return null;
+  if (rangeKey === "9mo" || rangeKey === "3mo") {
+    const months = rangeKey === "9mo" ? 9 : 3;
+    return new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+  }
   if (rangeKey === "ytd") return new Date(now.getFullYear(), 0, 1);
   if (rangeKey === "last-year") return new Date(now.getFullYear() - 1, 0, 1);
   if (rangeKey === "last-quarter") {
@@ -532,6 +531,8 @@ function finishedCartonLocationGroups(rows) {
 
 function monthsInRange(rangeKey, bars) {
   const now = new Date();
+  if (rangeKey === "3mo") return 3;
+  if (rangeKey === "9mo") return 9;
   if (rangeKey === "30bd") return 1;
   if (rangeKey === "60bd") return 2;
   if (rangeKey === "90bd") return 3;
@@ -623,6 +624,70 @@ function StatBreakdown({ total, groups, suffix = "", emptyLabel = "No locations"
   );
 }
 
+function FinishedStockSnapshotTable({ groups }) {
+  if (!groups?.length) return <p className="muted">No finished stock is linked to this job yet.</p>;
+  return (
+    <div className="job-ticket-table-wrap">
+      <table className="job-ticket-data-table">
+        <thead>
+          <tr>
+            <th>Location</th>
+            <th className="qty-cell">Quantity</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((group) => {
+            const notes = group.rows.map((row) => row.notes).filter(Boolean).slice(0, 2).join(" / ");
+            return (
+              <tr key={group.location}>
+                <td>{group.location}</td>
+                <td className="qty-cell">{formatNumber(group.total)}</td>
+                <td>{notes || `${group.rows.length} lot${group.rows.length === 1 ? "" : "s"}`}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RawMaterialInventoryTable({ rows }) {
+  const visibleRows = [...(rows ?? [])].sort((a, b) => {
+    const locationCompare = inventoryLocation(a).localeCompare(inventoryLocation(b));
+    if (locationCompare) return locationCompare;
+    return String(a.lot_number || a.serial_number || "").localeCompare(String(b.lot_number || b.serial_number || ""));
+  });
+  if (!visibleRows.length) return <p className="muted">No active raw material inventory is linked to this material type yet.</p>;
+  return (
+    <div className="job-ticket-table-wrap">
+      <table className="job-ticket-data-table raw-material-table">
+        <thead>
+          <tr>
+            <th>Location</th>
+            <th className="qty-cell">Quantity</th>
+            <th>Width</th>
+            <th>Lot Number</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibleRows.map((row) => (
+            <tr key={row.id || `${inventoryLocation(row)}-${row.lot_number || row.serial_number}`}>
+              <td>{inventoryLocation(row)}</td>
+              <td className="qty-cell">{formatNumber(inventoryFootage(row), " ft")}</td>
+              <td>{formatInches(row.width_inches)}</td>
+              <td>{row.lot_number || row.serial_number || "--"}</td>
+              <td>{row.notes || labelize(row.status || "available")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function eventDate(value) {
   if (!value) return "--";
   const date = new Date(value);
@@ -704,7 +769,8 @@ export default function JobTicketPanel({
 }) {
   const [activeTab, setActiveTab] = useState("general");
   const [historyTab, setHistoryTab] = useState("orders");
-  const [chartRange, setChartRange] = useState("90bd");
+  const [chartRange, setChartRange] = useState("3mo");
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [receiveForm, setReceiveForm] = useState({
     order_number: "",
     quantity: "",
@@ -767,7 +833,6 @@ export default function JobTicketPanel({
 
   const availableInventory = materialInventory.filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status));
   const availableInventoryWithFeet = availableInventory.filter((row) => inventoryFootage(row) > 0);
-  const inventoryByWidth = useMemo(() => groupInventoryByWidth(availableInventoryWithFeet), [availableInventoryWithFeet]);
   const materialByLocation = useMemo(() => inventoryLocationGroups(availableInventoryWithFeet), [availableInventoryWithFeet]);
   const availableFinished = finishedRows.filter((row) => row.is_active !== false && !["depleted", "scrapped", "shipped"].includes(row.status));
   const finishedByLocation = useMemo(() => finishedLocationGroups(availableFinished), [availableFinished]);
@@ -777,11 +842,7 @@ export default function JobTicketPanel({
   const finishedCartons = availableFinished.reduce((sum, row) => sum + getBoxCount(row), 0);
   const scheduleTotal = scheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
   const averageScheduled = scheduleRows.length ? scheduleTotal / scheduleRows.length : null;
-  const selectedRangeLabel = chartRangeOptions.find((option) => option.key === chartRange)?.label || "90 Days";
-  const scheduledBars = useMemo(
-    () => monthlyBars(scheduleRows, dateValue, scheduleQuantity, chartRange),
-    [chartRange, scheduleRows]
-  );
+  const selectedRangeLabel = chartRangeOptions.find((option) => option.key === chartRange)?.label || "3 Months";
   const shippedBars = useMemo(
     () => monthlyBars(shippedPoints, (row) => row.date, (row) => row.quantity, chartRange),
     [chartRange, shippedPoints]
@@ -802,8 +863,10 @@ export default function JobTicketPanel({
     .slice(0, 6);
   const image = primaryImage(ticket);
   const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
+  const partNumber = ticket.product_code || ticket.ticket_number || ticket.job_name || "--";
+  const descriptionText = ticket.description || ticket.job_name || ticket.job_notes || "No description entered.";
+  const materialTypeDisplay = ticket.material_master_type_code || ticket.material_spec_master_type_code || ticket.material_master_type_name || ticket.material_spec_master_type_name || "--";
   const visibleTabs = tabs.filter((tab) => {
-    if (tab.key === "schedule") return canSchedule;
     if (tab.key === "editor") return canEdit;
     return true;
   });
@@ -842,25 +905,32 @@ export default function JobTicketPanel({
         </div>
       </div>
 
-      {visibleTabs.length > 1 && (
-        <div className="job-tabs" role="tablist" aria-label="Job ticket sections">
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={activeTab === tab.key ? "active" : ""}
-              onClick={() => selectTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="job-tab-action-row">
+        {visibleTabs.length > 1 && (
+          <div className="job-tabs" role="tablist" aria-label="Job ticket sections">
+            {visibleTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={activeTab === tab.key ? "active" : ""}
+                onClick={() => selectTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {canSchedule && (
+          <button className="job-schedule-action" type="button" onClick={() => setScheduleOpen(true)}>
+            <CalendarPlus size={15} /> Schedule Job
+          </button>
+        )}
+      </div>
 
       {activeTab === "general" && (
         <div className="job-panel-section">
-          <section className="job-hero-section">
-            <div className="job-hero-image">
+          <section className="job-ticket-sheet-head">
+            <div className="job-ticket-sheet-image">
               {image?.url && !imageIsDocument ? (
                 <img src={image.url} alt={image.name || ticket.job_name || "Job image"} />
               ) : image?.url ? (
@@ -873,39 +943,32 @@ export default function JobTicketPanel({
               )}
               {imageSourceLabel(image) && <span className="job-image-source-badge">{imageSourceLabel(image)}</span>}
             </div>
-            <div className="job-hero-details">
-              <div>
-                <span>Customer</span>
-                <strong>{ticket.customer_display || ticket.customer_name || "--"}</strong>
-              </div>
-              <div>
-                <span>TSM ID</span>
-                <strong>{ticket.product_code || "--"}</strong>
-              </div>
-              <div>
-                <span>Job Number</span>
-                <strong>{ticket.job_name || "--"}</strong>
-              </div>
-              <div>
-                <span>Material Type</span>
-                <strong>{ticket.material_master_type_code || ticket.material_spec_master_type_code || "--"}</strong>
+            <div className="job-ticket-title-panel">
+              <span className="job-ticket-title-label">Part Number</span>
+              <strong className="job-ticket-part-number" title={partNumber}>{partNumber}</strong>
+              <p className="job-ticket-description">{descriptionText}</p>
+              <div className="job-ticket-meta-grid">
+                <div>
+                  <span>Customer</span>
+                  <strong>{ticket.customer_display || ticket.customer_name || "--"}</strong>
+                </div>
+                <div>
+                  <span>Job Number</span>
+                  <strong>{ticket.job_name || ticket.ticket_number || "--"}</strong>
+                </div>
+                <div>
+                  <span>Material Type</span>
+                  <strong>{materialTypeDisplay}</strong>
+                </div>
+                <div>
+                  <span>Size</span>
+                  <strong>{`${formatInches(ticket.label_width_inches)} x ${formatInches(ticket.label_length_inches)}`}</strong>
+                </div>
               </div>
             </div>
           </section>
 
-          <div className="job-chart-range">
-            {chartRangeOptions.map((option) => (
-              <button
-                className={`${chartRange === option.key ? "active" : ""} ${option.featured ? "featured" : ""}`}
-                type="button"
-                key={option.key}
-                onClick={() => setChartRange(option.key)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <div className="job-stat-grid focus">
+          <div className="job-stat-grid focus job-ticket-kpi-grid">
             <Stat
               label="Material On Hand"
               valueNode={chartsLoading ? <strong>Loading...</strong> : (
@@ -927,9 +990,75 @@ export default function JobTicketPanel({
                 />
               )}
             />
-            <Stat label="Avg Scheduled" value={chartsLoading ? "Loading..." : averageScheduled ? formatNumber(averageScheduled) : "--"} bars={scheduledBars} rangeLabel={selectedRangeLabel} loading={chartsLoading} />
-            <Stat label="Avg Shipped / Month" value={chartsLoading ? "Loading..." : shippedMonthlyAverage ? formatNumber(shippedMonthlyAverage) : "--"} bars={shippedBars} rangeLabel={selectedRangeLabel} loading={chartsLoading} />
+            <Stat label="Avg Scheduled" value={chartsLoading ? "Loading..." : averageScheduled ? formatNumber(averageScheduled) : "--"} />
+            <Stat label="Avg Shipped / Month" value={chartsLoading ? "Loading..." : shippedMonthlyAverage ? formatNumber(shippedMonthlyAverage) : "--"} />
           </div>
+
+          <div className="job-ticket-main-grid">
+            <section className="job-ticket-sheet-card job-ticket-average-card">
+              <div className="job-ticket-card-head">
+                <strong>Average Shipping</strong>
+                <div className="job-chart-range compact">
+                  {chartRangeOptions.map((option) => (
+                    <button
+                      className={`${chartRange === option.key ? "active" : ""} ${option.featured ? "featured" : ""}`}
+                      type="button"
+                      key={option.key}
+                      onClick={() => setChartRange(option.key)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="job-ticket-average-summary">
+                <span>{selectedRangeLabel}</span>
+                <strong>{chartsLoading ? "Loading..." : shippedMonthlyAverage ? `${formatNumber(shippedMonthlyAverage)} / month` : "--"}</strong>
+              </div>
+              {chartsLoading ? <ChartLoadingState /> : <MiniBarChart bars={shippedBars} rangeLabel={selectedRangeLabel} />}
+            </section>
+
+            <section className="job-ticket-sheet-card">
+              <div className="job-ticket-card-head">
+                <strong>Finished Stock</strong>
+                <span>Inventory: {formatNumber(finishedCartons)}</span>
+              </div>
+              <FinishedStockSnapshotTable groups={finishedCartonByLocation} />
+            </section>
+          </div>
+
+          <section className="job-ticket-sheet-card job-ticket-raw-material-card">
+            <div className="job-ticket-card-head">
+              <strong>Raw Material Inventory</strong>
+              <span>{formatNumber(materialFeet, " ft")} available</span>
+            </div>
+            <RawMaterialInventoryTable rows={availableInventoryWithFeet} />
+          </section>
+
+          <section className="job-subsection job-ticket-job-details">
+            <div className="job-subsection-head">
+              <PackageCheck size={15} />
+              <strong>Job Details</strong>
+            </div>
+            <div className="job-hero-details">
+              <div>
+                <span>Customer</span>
+                <strong>{ticket.customer_display || ticket.customer_name || "--"}</strong>
+              </div>
+              <div>
+                <span>TSM ID</span>
+                <strong>{ticket.product_code || "--"}</strong>
+              </div>
+              <div>
+                <span>Job Number</span>
+                <strong>{ticket.job_name || "--"}</strong>
+              </div>
+              <div>
+                <span>Material Type</span>
+                <strong>{materialTypeDisplay}</strong>
+              </div>
+            </div>
+          </section>
           <section className="job-spec-layout">
             <div className="job-subsection job-spec-card">
               <div className="job-subsection-head">
@@ -1016,97 +1145,6 @@ export default function JobTicketPanel({
             )}
           </section>
 
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Material Inventory By Width</strong>
-            </div>
-            {Object.keys(inventoryByWidth).length ? (
-              <div className="job-inventory-list">
-                {Object.entries(inventoryByWidth).map(([width, group]) => (
-                  <div key={width} className="job-inventory-row">
-                    <strong>{width}</strong>
-                    <span>{`${group.total.toLocaleString()} ft across ${group.rows.length} lots`}</span>
-                    <em>{group.rows.map((row) => row.location_full_path || row.location_name).filter(Boolean).slice(0, 3).join(" / ") || "No location"}</em>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No active inventory rolls are linked to this material family yet.</p>
-            )}
-          </section>
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Finished Stock Inventory</strong>
-              <span>{formatNumber(finishedQuantity)} on hand</span>
-            </div>
-            {finishedByLocation.length ? (
-              <div className="job-finished-location-list">
-                {finishedByLocation.map((group) => (
-                  <div key={group.location} className="job-finished-location-group">
-                    <div className="job-finished-location-head">
-                      <strong>{group.location}</strong>
-                      <span>{formatNumber(group.total)} total / {group.rows.length} lot{group.rows.length === 1 ? "" : "s"}</span>
-                    </div>
-                    {group.rows.map((row) => (
-                      <article key={row.id} className="job-finished-stock-row">
-                        <div>
-                          <strong>{row.name || row.sku || row.job_ticket_number}</strong>
-                          <span>{[row.imported_tsm_id || row.job_ticket_product_code || row.job_ticket_number, row.sku].filter(Boolean).join(" / ")}</span>
-                        </div>
-                        <em>{[row.quantity ? `${formatNumber(row.quantity)} ${row.unit || "units"}` : "", row.run_date, labelize(row.status)].filter(Boolean).join(" / ")}</em>
-                      </article>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No finished stock is linked to this job yet.</p>
-            )}
-          </section>
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <PackageCheck size={15} />
-              <strong>Finished Stock Usage</strong>
-              <span>{finishedUsageRows.length} event{finishedUsageRows.length === 1 ? "" : "s"}</span>
-            </div>
-            {finishedUsageRows.length ? (
-              <div className="job-inventory-list">
-                {finishedUsageRows.slice(0, 8).map((row) => (
-                  <div key={row.id} className="job-inventory-row">
-                    <strong>{row.reference || row.finished_inventory_name || labelize(row.usage_type)}</strong>
-                    <span>{[row.used_date, labelize(row.usage_type), row.quantity ? `${formatNumber(row.quantity)} ${row.unit || row.finished_inventory_unit || "units"}` : ""].filter(Boolean).join(" / ")}</span>
-                    <em>{row.finished_inventory_location_full_path || row.finished_inventory_location_name || row.notes || "No location"}</em>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No finished stock has been sent out from this job yet.</p>
-            )}
-          </section>
-
-          <section className="job-subsection">
-            <div className="job-subsection-head">
-              <CalendarPlus size={15} />
-              <strong>Previous Schedule History</strong>
-            </div>
-            {recentSchedules.length ? (
-              <div className="job-inventory-list">
-                {recentSchedules.map((row) => (
-                  <div key={row.id} className="job-inventory-row">
-                    <strong>{[dateValue(row) || "No date", labelize(row.status), labelize(row.priority)].filter(Boolean).join(" / ")}</strong>
-                    <span>{[row.customer_po ? `PO ${row.customer_po}` : "", scheduleQuantity(row) ? `${formatNumber(scheduleQuantity(row))} total` : ""].filter(Boolean).join(" / ")}</span>
-                    <em>{row.notes || "No operator note"}</em>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">No previous schedule records are linked to this job yet.</p>
-            )}
-          </section>
         </div>
       )}
 
@@ -1304,15 +1342,26 @@ export default function JobTicketPanel({
         </div>
       )}
 
-      {activeTab === "schedule" && (
-        <div className="job-panel-section job-schedule-form-only">
-          {renderScheduleForm?.({ onCancel: () => setActiveTab("general") })}
-        </div>
-      )}
-
       {activeTab === "editor" && (
         <div className="job-panel-section job-editor-form-only">
           {renderEditorForm?.({ onCancel: () => setActiveTab("general") })}
+        </div>
+      )}
+
+      {scheduleOpen && (
+        <div className="job-schedule-dialog-overlay" role="dialog" aria-modal="true" aria-label="Schedule job">
+          <div className="job-schedule-dialog">
+            <header>
+              <div>
+                <p className="eyebrow">Schedule Job</p>
+                <h3>{partNumber}</h3>
+              </div>
+              <button className="ghost-btn" type="button" onClick={() => setScheduleOpen(false)}>
+                Close
+              </button>
+            </header>
+            {renderScheduleForm?.({ onCancel: () => setScheduleOpen(false) })}
+          </div>
         </div>
       )}
     </div>
