@@ -9,6 +9,7 @@ import FlexDieSearch from "./components/FlexDieSearch";
 import FlexDieDetailPanel from "./components/FlexDieDetailPanel";
 import FinishedInventoryView, { FinishedInventoryWindow } from "./components/FinishedInventoryView";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
+import CustomerWorkspace from "./components/CustomerWorkspace";
 import DataImportTool from "./components/DataImportTool";
 import GroupedLocationView from "./components/GroupedLocationView";
 import GroupedUsageView from "./components/GroupedUsageView";
@@ -159,6 +160,12 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
 
   if (resource.endpoint === "materials" && selected?.id) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { material: selected.id }, 150));
+  }
+
+  if (resource.key === "customers" && selected?.id) {
+    addLookupSpec(specs, { key: "quote-records", endpoint: "quote-records", ordering: "-created_at", filters: { customer: selected.id }, pageSize: 1000, fetchAll: true });
+    addLookupSpec(specs, relationLookupSpec("customer-orders", { customer: selected.id }, 1000, true));
+    addLookupSpec(specs, relationLookupSpec("job-tickets", { customer: selected.id }, 1000, true));
   }
 
   if (resource.key === "finished-inventory" && selected?.id) {
@@ -1009,6 +1016,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const [localInventoryRows, setLocalInventoryRows] = useState([]);
   const [localUsageEvents, setLocalUsageEvents] = useState([]);
   const [quoteJobTicketId, setQuoteJobTicketId] = useState("");
+  const [quoteCustomerId, setQuoteCustomerId] = useState("");
   const [toolingWorkspaceForm, setToolingWorkspaceForm] = useState(null);
   const [toolingItemForm, setToolingItemForm] = useState(null);
   const [toolingItemOverrides, setToolingItemOverrides] = useState({});
@@ -2231,6 +2239,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           <QuotePricingTool
             currentUser={currentUser}
             initialJobTicketId={quoteJobTicketId}
+            initialCustomerId={quoteCustomerId}
             canManageQuoteMaterials={canManageQuoteMaterials}
           />
         ) : resource.viewMode === "liveFootage" ? (
@@ -2262,7 +2271,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               />
             )}
 
-            <section className={`content-grid ${["job-tickets", "production-schedule"].includes(resource.key) || isToolingConfigPage ? "wide-list" : ""}`}>
+            <section className={`content-grid ${["customers", "job-tickets", "production-schedule"].includes(resource.key) || isToolingConfigPage ? "wide-list" : ""}`}>
               <div className="list-panel compact-card">
                 <div className="panel-head thin">
                   <div>
@@ -2271,7 +2280,27 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   </div>
                 </div>
 
-                {resource.viewMode === "productionSchedule" ? (
+                {resource.viewMode === "customers" ? (
+                  <CustomerWorkspace
+                    rows={visibleRows}
+                    selected={selected}
+                    quotes={lookupQuery.data?.["quote-records"] ?? []}
+                    orders={lookupQuery.data?.["customer-orders"] ?? []}
+                    jobTickets={lookupQuery.data?.["job-tickets"] ?? []}
+                    loading={lookupQuery.isLoading && Boolean(selected)}
+                    onSelect={(row) => { setSelected(row); setFormMode(null); }}
+                    onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
+                    onDelete={confirmDeleteRecord}
+                    onQuote={(customer) => {
+                      setQuoteCustomerId(String(customer.id));
+                      setQuoteJobTicketId("");
+                      setActiveKey("quote-calculator");
+                      setSelected(null);
+                      setFormMode(null);
+                      setSearch("");
+                    }}
+                  />
+                ) : resource.viewMode === "productionSchedule" ? (
                   <ProductionScheduleView
                     rows={tableRows}
                     selected={selected}
@@ -2403,7 +2432,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 )}
               </div>
 
-              {resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && !isMaterialTypePage && !isToolingConfigPage && (
+              {resource.key !== "customers" && resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && !isMaterialTypePage && !isToolingConfigPage && (
                 <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : toolingItemPageKeys.has(resource.key) && selected ? "tooling-item-detail-shell" : "detail-panel compact-card"}>
                   {selected ? (
                   resource.key === "flex-dies" ? (
@@ -2507,6 +2536,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 canQuote={canQuoteJobTicket}
                 onQuoteJob={() => {
                   setQuoteJobTicketId(String(selected.id));
+                  setQuoteCustomerId("");
                   setActiveKey("quote-calculator");
                   setSelected(null);
                   setFormMode(null);

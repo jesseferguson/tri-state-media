@@ -5,9 +5,9 @@ from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, Cu
 
 @admin.register(Customer)
 class CustomerAdmin(admin.ModelAdmin):
-    list_display = ("name", "customer_code", "contact_name", "phone", "email", "is_active")
+    list_display = ("name", "customer_code", "contact_name", "city", "state", "phone", "email", "is_active")
     list_filter = ("is_active",)
-    search_fields = ("name", "customer_code", "contact_name", "phone", "email", "notes")
+    search_fields = ("name", "customer_code", "contact_name", "phone", "email", "address_line_1", "city", "state", "postal_code", "notes")
 
 
 @admin.register(BoxSpec)

@@ -158,6 +158,8 @@ class QuoteRecordSerializer(serializers.ModelSerializer):
     preparedByUsername = serializers.CharField(source="prepared_by_username", allow_blank=True, required=False)
     preparedByName = serializers.CharField(source="prepared_by_name", allow_blank=True, required=False)
     preparedByRole = serializers.CharField(source="prepared_by_role", allow_blank=True, required=False)
+    customerId = serializers.PrimaryKeyRelatedField(source="customer", queryset=Customer.objects.all(), allow_null=True, required=False)
+    customerCode = serializers.CharField(source="customer.customer_code", read_only=True)
     jobTicketId = serializers.PrimaryKeyRelatedField(source="job_ticket", queryset=JobTicket.objects.all(), allow_null=True, required=False)
     jobTicketNumber = serializers.CharField(source="job_ticket_number", allow_blank=True, required=False)
     customerName = serializers.CharField(source="customer_name", allow_blank=True, required=False)
@@ -180,6 +182,8 @@ class QuoteRecordSerializer(serializers.ModelSerializer):
             "preparedByUsername",
             "preparedByName",
             "preparedByRole",
+            "customerId",
+            "customerCode",
             "jobTicketId",
             "jobTicketNumber",
             "customerName",

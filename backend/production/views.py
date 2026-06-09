@@ -151,7 +151,21 @@ class BaseProductionViewSet(viewsets.ModelViewSet):
 class CustomerViewSet(BaseProductionViewSet):
     queryset = Customer.objects.all().order_by("name")
     serializer_class = CustomerSerializer
-    search_fields = ["name", "customer_code", "contact_name", "phone", "email", "notes"]
+    search_fields = [
+        "name",
+        "customer_code",
+        "contact_name",
+        "phone",
+        "email",
+        "address_line_1",
+        "address_line_2",
+        "address_line_3",
+        "city",
+        "state",
+        "postal_code",
+        "country",
+        "notes",
+    ]
     ordering_fields = ["name", "customer_code", "is_active"]
 
 
@@ -200,12 +214,14 @@ class QuoteFinishedMaterialViewSet(BaseProductionViewSet):
 
 
 class QuoteRecordViewSet(BaseProductionViewSet):
-    queryset = QuoteRecord.objects.select_related("job_ticket").all().order_by("-created_at", "-id")
+    queryset = QuoteRecord.objects.select_related("customer", "job_ticket").all().order_by("-created_at", "-id")
     serializer_class = QuoteRecordSerializer
     lookup_field = "external_id"
     search_fields = [
         "quote_number",
         "customer_name",
+        "customer__name",
+        "customer__customer_code",
         "job_name",
         "product_code",
         "description",
@@ -215,6 +231,20 @@ class QuoteRecordViewSet(BaseProductionViewSet):
         "notes",
     ]
     ordering_fields = ["created_at", "quote_number", "customer_name", "prepared_by_name", "material_name"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        customer = self.request.query_params.get("customer")
+        if customer:
+            customer_value = str(customer).strip()
+            customer_obj = Customer.objects.filter(pk=customer_value).first() if customer_value.isdigit() else None
+            customer_filter = Q(customer_id=customer_value) if customer_value.isdigit() else Q(customer_name__iexact=customer_value)
+            if customer_obj:
+                customer_filter |= Q(customer_name__iexact=customer_obj.name)
+                if customer_obj.customer_code:
+                    customer_filter |= Q(customer__customer_code__iexact=customer_obj.customer_code)
+            qs = qs.filter(customer_filter)
+        return qs
 
 
 @api_view(["POST"])
@@ -430,7 +460,7 @@ class JobTicketViewSet(BaseProductionViewSet):
             .annotate(total=Sum("quantity"))
             .values("total")
         )
-        return (
+        qs = (
             JobTicket.objects.select_related(
                 "customer",
                 "recipe",
@@ -460,6 +490,10 @@ class JobTicketViewSet(BaseProductionViewSet):
             )
             .order_by("-recent_usage_90d", "ticket_number")
         )
+        customer = self.request.query_params.get("customer")
+        if customer:
+            qs = qs.filter(customer_id=customer)
+        return qs
 
     @action(detail=True, methods=["post", "delete"], url_path=r"images/(?P<slot>general|spec|finishing)")
     def images(self, request, pk=None, slot=None):
@@ -704,9 +738,12 @@ class CustomerOrderViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         job_ticket = self.request.query_params.get("job_ticket")
+        customer = self.request.query_params.get("customer")
         order_number = self.request.query_params.get("order_number")
         if job_ticket:
             qs = qs.filter(job_ticket_id=job_ticket)
+        if customer:
+            qs = qs.filter(customer_id=customer)
         if order_number:
             qs = qs.filter(order_number__iexact=str(order_number).strip())
         return qs

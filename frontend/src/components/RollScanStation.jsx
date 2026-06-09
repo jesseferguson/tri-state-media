@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BrowserMultiFormatReader } from "@zxing/browser";
 import { AlertTriangle, Camera, CheckCircle2, ClipboardCheck, PackageCheck, RotateCcw, Search, X } from "lucide-react";
 import { labelize } from "../lib/format";
 
@@ -62,7 +63,10 @@ export default function RollScanStation({ rows, locations, submitting, error, cu
   const [cameraTarget, setCameraTarget] = useState("");
   const [cameraError, setCameraError] = useState("");
   const videoRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const fileTargetRef = useRef("");
   const streamRef = useRef(null);
+  const scannerControlsRef = useRef(null);
   const cameraActiveRef = useRef(false);
 
   const matchedRoll = useMemo(() => matchRoll(rows, rollScan), [rollScan, rows]);
@@ -78,52 +82,132 @@ export default function RollScanStation({ rows, locations, submitting, error, cu
 
   function stopCamera() {
     cameraActiveRef.current = false;
+    scannerControlsRef.current?.stop?.();
+    scannerControlsRef.current = null;
     streamRef.current?.getTracks?.().forEach((track) => track.stop());
     streamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.pause?.();
+      videoRef.current.srcObject = null;
+    }
     setCameraTarget("");
   }
 
-  async function scanLoop(target, detector) {
-    if (!cameraActiveRef.current || !videoRef.current) return;
-    try {
-      const codes = await detector.detect(videoRef.current);
-      const value = codes?.[0]?.rawValue || "";
-      if (value) {
-        if (target === "roll") setRollScan(value);
-        if (target === "location") setLocationScan(value);
-        stopCamera();
-        return;
-      }
-    } catch (error) {
-      setCameraError(error.message || "Camera scan failed.");
-      stopCamera();
-      return;
+  function applyScanValue(target, value) {
+    const cleanValue = String(value ?? "").trim();
+    if (!cleanValue) return false;
+    if (target === "roll") setRollScan(cleanValue);
+    if (target === "location") setLocationScan(cleanValue);
+    return true;
+  }
+
+  function cameraAccessMessage(error) {
+    if (window.isSecureContext === false) {
+      return "Live camera scanning requires HTTPS or localhost. Use photo scan or the scan field.";
     }
-    requestAnimationFrame(() => scanLoop(target, detector));
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return "Live camera scanning is not available here. Use photo scan or the scan field.";
+    }
+    if (error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError") {
+      return "Camera permission was blocked. Allow camera access for this site or use the scan field.";
+    }
+    if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") {
+      return "No camera was found on this device. Use the scan field or manual entry.";
+    }
+    if (error?.name === "NotReadableError" || error?.name === "TrackStartError") {
+      return "The camera is already in use by another app. Close the other app and try again.";
+    }
+    return error?.message || "Could not open the camera.";
+  }
+
+  function openPhotoScanner(target) {
+    fileTargetRef.current = target;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }
+
+  async function scanImageFile(event) {
+    const file = event.target.files?.[0];
+    const target = fileTargetRef.current;
+    if (!file || !target) return;
+    setCameraError("");
+    const imageUrl = URL.createObjectURL(file);
+    try {
+      const scanner = new BrowserMultiFormatReader(undefined, {
+        delayBetweenScanAttempts: 120,
+      });
+      const image = new Image();
+      image.src = imageUrl;
+      const result = await scanner.decodeFromImageElement(image);
+      if (!applyScanValue(target, result?.getText?.())) {
+        setCameraError("No barcode was found in that image. Try a clearer photo or use the scan field.");
+      }
+    } catch {
+      setCameraError("No barcode was found in that image. Try a clearer photo or use the scan field.");
+    } finally {
+      URL.revokeObjectURL(imageUrl);
+      fileTargetRef.current = "";
+      event.target.value = "";
+    }
+  }
+
+  async function waitForCameraElement() {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (videoRef.current) return videoRef.current;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return videoRef.current;
   }
 
   async function startCamera(target) {
+    stopCamera();
     setCameraError("");
-    if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError("Camera barcode scanning is not available in this browser. Use the scan field or manual entry.");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError(cameraAccessMessage());
+      openPhotoScanner(target);
+      return;
+    }
+    if (window.isSecureContext === false) {
+      setCameraError(cameraAccessMessage());
+      openPhotoScanner(target);
       return;
     }
     try {
-      const detector = new window.BarcodeDetector({
-        formats: ["code_128", "code_39", "qr_code", "data_matrix", "pdf417", "ean_13"],
-      });
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      streamRef.current = stream;
       cameraActiveRef.current = true;
       setCameraTarget(target);
-      requestAnimationFrame(() => {
-        if (!videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        videoRef.current.play?.();
-        scanLoop(target, detector);
+      const video = await waitForCameraElement();
+      if (!cameraActiveRef.current || !video) return;
+
+      const scanner = new BrowserMultiFormatReader(undefined, {
+        delayBetweenScanAttempts: 120,
+        delayBetweenScanSuccess: 300,
       });
+      const controls = await scanner.decodeFromConstraints(
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        },
+        video,
+        (result, _scanError, activeControls) => {
+          if (applyScanValue(target, result?.getText?.())) {
+            activeControls?.stop?.();
+            stopCamera();
+          }
+        }
+      );
+      if (!cameraActiveRef.current) {
+        controls?.stop?.();
+        return;
+      }
+      scannerControlsRef.current = controls;
+      streamRef.current = video.srcObject;
     } catch (error) {
-      setCameraError(error.message || "Could not open the camera.");
+      setCameraError(cameraAccessMessage(error));
       stopCamera();
     }
   }
@@ -158,6 +242,16 @@ export default function RollScanStation({ rows, locations, submitting, error, cu
 
       {open && (
         <form className="roll-scan-panel" onSubmit={submit}>
+          <input
+            ref={fileInputRef}
+            className="roll-scan-file-input"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            tabIndex="-1"
+            onChange={scanImageFile}
+          />
+
           <div className="roll-scan-mode-tabs" role="tablist" aria-label="Roll scanner action">
             <button type="button" className={mode === "check-in" ? "active" : ""} onClick={() => setMode("check-in")}>
               <RotateCcw size={15} /> Check In
@@ -174,7 +268,7 @@ export default function RollScanStation({ rows, locations, submitting, error, cu
             <span>Roll ID</span>
             <div>
               <input value={rollScan} onChange={(event) => setRollScan(event.target.value)} placeholder="Scan or enter roll tag" autoComplete="off" autoFocus />
-              <button type="button" onClick={() => startCamera("roll")}><Camera size={15} /></button>
+              <button type="button" onClick={() => startCamera("roll")} aria-label="Scan roll with camera" title="Scan roll with camera"><Camera size={15} /></button>
             </div>
           </label>
 
@@ -198,7 +292,7 @@ export default function RollScanStation({ rows, locations, submitting, error, cu
             <span>Location</span>
             <div>
               <input value={locationScan} onChange={(event) => setLocationScan(event.target.value)} placeholder="Scan location or type shelf" autoComplete="off" />
-              <button type="button" onClick={() => startCamera("location")}><Camera size={15} /></button>
+              <button type="button" onClick={() => startCamera("location")} aria-label="Scan location with camera" title="Scan location with camera"><Camera size={15} /></button>
             </div>
           </label>
 

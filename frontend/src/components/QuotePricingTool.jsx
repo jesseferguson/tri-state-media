@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Image as ImageIcon, Layers3, Pencil, Plus, Printer, Ruler, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
+import triStateQuoteLogo from "../assets/tri-state-media-logo.png";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import {
   buildLayoutCandidates,
@@ -26,6 +27,9 @@ const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", cu
 const unitCurrencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 });
 const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
 const percentFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+const quoteDefaultExpirationDays = 30;
+const quoteDefaultUnitOfMeasure = "M";
+const quoteThankYouMessage = "Thank you for the opportunity to serve...";
 
 const initialForm = {
   selectedMaterialId: "manual",
@@ -85,11 +89,17 @@ const emptyFinishedForm = {
 const emptyQuoteInfo = {
   linkMode: "ticket",
   jobTicketId: "",
+  customerId: "",
+  customerCode: "",
   customerName: "",
   jobName: "",
   productCode: "",
   contactName: "",
   contactEmail: "",
+  clientPo: "",
+  customerAddress: "",
+  quoteExpirationDate: "",
+  unitOfMeasure: quoteDefaultUnitOfMeasure,
   preparedBy: "",
   notes: "",
 };
@@ -169,11 +179,41 @@ function quoteNumber() {
   return `Q-${y}${m}${d}-${tail}`;
 }
 
+function quoteDateObject(value) {
+  if (!value) return new Date(NaN);
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+  return new Date(value);
+}
+
 function quoteDateLabel(value) {
   if (!value) return "--";
-  const date = new Date(value);
+  const date = quoteDateObject(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function quoteLongDateLabel(value) {
+  if (!value) return "--";
+  const date = quoteDateObject(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+}
+
+function quoteDateInputValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function quoteFutureDateInput(value, days = quoteDefaultExpirationDays) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + days);
+  return quoteDateInputValue(date);
 }
 
 function jobTicketLabel(ticket) {
@@ -219,6 +259,40 @@ function jobTicketSearchText(ticket) {
     ticket?.material_spec_master_type_code,
     ticket?.recipe_name,
   ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function customerAddressLines(customer) {
+  if (!customer) return [];
+  return [
+    customer.address_line_1,
+    customer.address_line_2,
+    customer.address_line_3,
+    [customer.city, customer.state, customer.postal_code].filter(Boolean).join(", ").replace(", ,", ","),
+    customer.country,
+  ].map((line) => String(line || "").trim()).filter(Boolean);
+}
+
+function customerQuoteAddress(customer) {
+  return customerAddressLines(customer).join("\n");
+}
+
+function customerSearchText(customer) {
+  return [
+    customer.name,
+    customer.customer_code,
+    customer.contact_name,
+    customer.phone,
+    customer.email,
+    customer.address_line_1,
+    customer.city,
+    customer.state,
+    customer.postal_code,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function customerPickerLabel(customer) {
+  if (!customer) return "No customer";
+  return [customer.customer_code, customer.name].filter(Boolean).join(" / ") || customer.name || `Customer ${customer.id}`;
 }
 
 function mergeJobTicketRows(existing = [], next = []) {
@@ -324,6 +398,7 @@ function finishedMaterialPayload(material) {
 function quoteRecordPayload(quote) {
   return {
     ...quote,
+    customerId: quote.customerId || null,
     jobTicketId: quote.jobTicketId || null,
     contactEmail: quote.contactEmail || "",
   };
@@ -499,6 +574,96 @@ function quoteTotals(quote) {
 function quoteItemDescription(item, quote) {
   const form = item.form || {};
   return item.itemName || quote.jobName || `${form.labelWidth || 0}" x ${form.labelLength || 0}" label`;
+}
+
+function quoteSalesInfo(quote) {
+  const salesQuote = quote?.form?.salesQuote || {};
+  return {
+    customerId: quote.customerId || salesQuote.customerId || "",
+    customerCode: quote.customerCode || salesQuote.customerCode || "",
+    clientPo: salesQuote.clientPo || "",
+    customerAddress: salesQuote.customerAddress || "",
+    quoteExpirationDate: salesQuote.quoteExpirationDate || quoteFutureDateInput(quote?.createdAt),
+    unitOfMeasure: salesQuote.unitOfMeasure || quoteDefaultUnitOfMeasure,
+  };
+}
+
+function quoteForLines(quote) {
+  const salesInfo = quoteSalesInfo(quote);
+  return [
+    quote.customerName || "--",
+    quote.contactName || "",
+    ...String(salesInfo.customerAddress || "").split(/\r?\n/),
+  ].map((line) => line.trim()).filter(Boolean);
+}
+
+function quoteLinePartNumber(item, quote) {
+  return item.itemName || quote.jobName || quote.jobTicketNumber || quote.quoteNumber;
+}
+
+function quoteLineDescriptionRows(item, quote) {
+  const form = item.form || {};
+  const size = form.labelWidth && form.labelLength ? `${form.labelWidth}" x ${form.labelLength}"` : "";
+  return [
+    size ? `${size} label` : quoteDescription(quote),
+    item.materialName && item.materialName !== "Manual MSI Cost" ? item.materialName : quotePublicMaterialName(quote),
+    quote.productCode ? `TSM ID ${quote.productCode}` : "",
+    "Price per 1,000 labels.",
+  ].filter(Boolean);
+}
+
+function quoteTableQuantity(item, unitOfMeasure = quoteDefaultUnitOfMeasure) {
+  const quantity = Number(item.form?.quantity || item.pricing?.quantity || 0);
+  if (unitOfMeasure === "M") return Number.isFinite(quantity) ? (quantity / 1000).toFixed(3) : "0.000";
+  return Number.isFinite(quantity) ? Math.round(quantity).toLocaleString() : "0";
+}
+
+function quoteTableUnitPrice(item, unitOfMeasure = quoteDefaultUnitOfMeasure) {
+  if (unitOfMeasure === "M") return money(Number(item.pricing?.pricePerThousand || 0));
+  return unitMoney(Number(item.pricing?.pricePerLabel || 0));
+}
+
+function quoteTableUomLabel(unitOfMeasure = quoteDefaultUnitOfMeasure) {
+  return unitOfMeasure === "EA" ? "EA" : "M";
+}
+
+function quoteTerms(quote) {
+  const customer = quote.customerName || "this customer";
+  return [
+    "Price does not include shipping & handling, freight, or tax unless specified. Price is valid only for the quantity shown.",
+    "FOB Terms: Origin/Shipping Point unless otherwise specified.",
+    "All claims for mis-shipments must be made within 5 days of receipt.",
+    `This quote was created specifically for ${customer}. Please respect the relationship and do not share this pricing with others.`,
+  ];
+}
+
+function loadQuoteLogoForPdf() {
+  if (typeof window === "undefined" || typeof Image === "undefined") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth || image.width;
+        canvas.height = image.naturalHeight || image.height;
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        const payload = dataUrl.split(",")[1] || "";
+        const binary = window.atob(payload);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+        resolve({ width: canvas.width, height: canvas.height, bytes });
+      } catch {
+        resolve(null);
+      }
+    };
+    image.onerror = () => resolve(null);
+    image.src = triStateQuoteLogo;
+  });
 }
 
 function quoteCustomerDetailRows(quote) {
@@ -797,6 +962,8 @@ function quoteSearchText(quote) {
   return [
     quote.quoteNumber,
     quote.customerName,
+    quote.customerCode,
+    quote.form?.salesQuote?.customerCode,
     quote.jobName,
     quote.productCode,
     quote.materialName,
@@ -961,92 +1128,99 @@ function FinishedMaterialForm({ form, rawMaterials, update, submit, editing = fa
 
 function QuoteDocument({ quote }) {
   if (!quote) return <p className="quote-empty">Select a saved quote to view it.</p>;
-  const detailRows = quoteCustomerDetailRows(quote);
-  const priceRows = quoteCustomerPriceRows(quote);
-  const includedServices = quoteIncludedServices(quote);
   const items = quoteItems(quote);
   const totals = quoteTotals(quote);
+  const salesInfo = quoteSalesInfo(quote);
+  const quoteLines = quoteForLines(quote);
+  const terms = quoteTerms(quote);
 
   return (
     <article className="quote-document">
-      <header className="quote-doc-single-head">
-        <div>
-          <strong>Tri-State Media</strong>
-          <span>Quote {quote.quoteNumber}</span>
-          <em>{quoteDateLabel(quote.createdAt)}</em>
+      <header className="quote-doc-sales-head">
+        <div className="quote-doc-brand">
+          <img src={triStateQuoteLogo} alt="Tri-State Media" />
         </div>
-        <div>
-          <span>Total Quote</span>
-          <strong>{money(totals.sellPrice)}</strong>
-          <em>{money(totals.pricePerThousand)} / M</em>
+        <div className="quote-doc-title-block">
+          <span>Sales Quote</span>
+          <strong>{quote.quoteNumber}</strong>
+          <em>Total in US$</em>
+          <b>{money(totals.sellPrice)}</b>
         </div>
       </header>
 
-      <section className="quote-doc-meta">
-        <div>
-          <span>Customer</span>
-          <strong>{quote.customerName || "--"}</strong>
-          <em>{quote.contactName || quote.contactEmail || ""}</em>
+      <section className="quote-doc-sales-meta">
+        <div className="quote-doc-quote-for">
+          <span>Quotation for:</span>
+          {quoteLines.map((line, index) => (
+            index === 0 ? <strong key={`${line}-${index}`}>{line}</strong> : <em key={`${line}-${index}`}>{line}</em>
+          ))}
         </div>
-        <div>
-          <span>Job</span>
-          <strong>{quote.jobName || "--"}</strong>
-          <em>{quote.jobTicketNumber ? `Job Ticket ${quote.jobTicketNumber}` : quote.productCode || "Manual quote"}</em>
-        </div>
-        <div>
-          <span>Prepared By</span>
-          <strong>{quotePreparedByName(quote)}</strong>
-          <em>{quotePreparedByRole(quote) || (quote.createdAt ? quoteDateLabel(quote.createdAt) : "")}</em>
-        </div>
-        <div>
-          <span>Quote Date</span>
-          <strong>{quoteDateLabel(quote.createdAt)}</strong>
-          <em>{quote.quoteNumber}</em>
+        <div className="quote-doc-date-card">
+          <div><span>Date:</span><strong>{quoteLongDateLabel(quote.createdAt)}</strong></div>
+          <div><span>Customer ID:</span><strong>{salesInfo.customerCode || salesInfo.customerId || "--"}</strong></div>
+          <div><span>Quote Expiration Date:</span><strong>{quoteLongDateLabel(salesInfo.quoteExpirationDate)}</strong></div>
         </div>
       </section>
 
       <section className="quote-doc-line-item">
-        <h3>{items.length > 1 ? "Quoted Items" : "Quoted Item"}</h3>
-        <div className="quote-doc-item-table">
+        <table className="quote-doc-sales-table">
+          <thead>
+            <tr>
+              <th>Part Number &amp; Description</th>
+              <th>Qty</th>
+              <th>UoM</th>
+              <th>Per Unit US$</th>
+              <th>Extended US$</th>
+            </tr>
+          </thead>
+          <tbody>
           {items.map((item) => (
-            <div className="quote-doc-item-row" key={item.id || quoteItemDescription(item, quote)}>
-              <div><span>Quantity</span><strong>{Number(item.form?.quantity || item.pricing?.quantity || 0).toLocaleString()}</strong></div>
-              <div><span>Description</span><strong>{quoteItemDescription(item, quote)}</strong><em>{item.materialName && item.materialName !== "Manual MSI Cost" ? item.materialName : ""}</em></div>
-              <div><span>Price / M</span><strong>{money(Number(item.pricing?.pricePerThousand || 0))}</strong></div>
-              <div><span>Total</span><strong>{money(Number(item.pricing?.sellPrice || 0))}</strong></div>
-            </div>
+            <tr key={item.id || quoteItemDescription(item, quote)}>
+              <td>
+                <strong>{quoteLinePartNumber(item, quote)}</strong>
+                {quoteLineDescriptionRows(item, quote).map((line, lineIndex) => <span key={`${line}-${lineIndex}`}>{line}</span>)}
+              </td>
+              <td>{quoteTableQuantity(item, salesInfo.unitOfMeasure)}</td>
+              <td>{quoteTableUomLabel(salesInfo.unitOfMeasure)}</td>
+              <td>{quoteTableUnitPrice(item, salesInfo.unitOfMeasure)}</td>
+              <td>{money(Number(item.pricing?.sellPrice || 0))}</td>
+            </tr>
           ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan="4">Total in US$</td>
+              <td>{money(totals.sellPrice)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </section>
+
+      <section className="quote-doc-signature-grid">
+        <div className="quote-doc-signature">
+          <p>Client P.O. {salesInfo.clientPo || "_______________________"}</p>
+          <p>Authorized Signature: _______________________</p>
+          <p>Printed Name: _____________________________</p>
+          <p>Title: ____________________________________</p>
+          <p>Date: _________________________</p>
+          <strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong>
+        </div>
+        <div className="quote-doc-contact-card">
+          <strong>{quoteThankYouMessage}</strong>
+          <span>{quotePreparedByName(quote)}</span>
+          <em>{quotePreparedByRole(quote) || "Tri-State Media"}</em>
+          {quote.contactEmail && <em>{quote.contactEmail}</em>}
         </div>
       </section>
 
-      <section className="quote-doc-compact-grid">
-        <div>
-          <h3>Quote Details</h3>
-          {detailRows.map(([label, value]) => (
-            <div className="quote-doc-row" key={label}><span>{label}</span><strong>{value}</strong></div>
-          ))}
-        </div>
-        <div>
-          <h3>Customer Pricing</h3>
-          {priceRows.map(([label, value]) => (
-            <div className="quote-doc-row" key={label}><span>{label}</span><strong>{value}</strong></div>
-          ))}
-        </div>
-      </section>
-
-      <section className="quote-doc-included">
-        <h3>Included</h3>
-        <div>
-          {includedServices.map((service) => <span key={service}>{service}</span>)}
-        </div>
-      </section>
-
+      <section className="quote-doc-terms">
       {quote.notes && (
-        <section className="quote-doc-notes">
-          <h3>Notes</h3>
           <p>{quote.notes}</p>
-        </section>
       )}
+        <ul>
+          {terms.map((term) => <li key={term}>{term}</li>)}
+        </ul>
+      </section>
     </article>
   );
 }
@@ -1140,7 +1314,7 @@ function InternalQuoteBreakdown({ quote, materialOptions = [] }) {
   );
 }
 
-export default function QuotePricingTool({ currentUser, initialJobTicketId = "", canManageQuoteMaterials = false }) {
+export default function QuotePricingTool({ currentUser, initialJobTicketId = "", initialCustomerId = "", canManageQuoteMaterials = false }) {
   const storedLibrary = useMemo(loadMaterialLibrary, []);
   const storedQuotes = useMemo(loadSavedQuotes, []);
   const [activeTab, setActiveTab] = useState("pricing");
@@ -1160,6 +1334,26 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const [quoteItemsDraft, setQuoteItemsDraft] = useState([]);
   const [savedQuotes, setSavedQuotes] = useState(storedQuotes);
   const [selectedQuoteId, setSelectedQuoteId] = useState(storedQuotes[0]?.id ?? null);
+  const [customers, setCustomers] = useState([]);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [customerCreateOpen, setCustomerCreateOpen] = useState(false);
+  const [customerSaving, setCustomerSaving] = useState(false);
+  const [customerDraft, setCustomerDraft] = useState({
+    name: "",
+    customer_code: "",
+    contact_name: "",
+    phone: "",
+    email: "",
+    address_line_1: "",
+    address_line_2: "",
+    address_line_3: "",
+    city: "",
+    state: "",
+    postal_code: "",
+    country: "",
+    is_active: true,
+  });
   const [jobTickets, setJobTickets] = useState([]);
   const [jobTicketSearch, setJobTicketSearch] = useState("");
   const [jobTicketPickerOpen, setJobTicketPickerOpen] = useState(false);
@@ -1189,6 +1383,18 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   const selectedMaterial = materialOptions.find((material) => String(material.id) === String(form.selectedMaterialId));
   const selectedJobTicket = jobTickets.find((ticket) => String(ticket.id) === String(quoteInfo.jobTicketId));
+  const selectedCustomer = customers.find((customer) => String(customer.id) === String(quoteInfo.customerId || selectedJobTicket?.customer || ""));
+  const matchingCustomers = useMemo(() => {
+    const search = customerSearch.trim().toLowerCase();
+    const activeCustomers = [...customers].filter((customer) => customer.is_active !== false);
+    const sorted = activeCustomers.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { numeric: true }));
+    if (!search) return sorted.slice(0, 18);
+    const tokens = search.split(/\s+/).filter(Boolean);
+    return sorted.filter((customer) => {
+      const haystack = customerSearchText(customer);
+      return tokens.every((token) => haystack.includes(token));
+    }).slice(0, 24);
+  }, [customers, customerSearch]);
   const showJobTicketResults = jobTicketPickerOpen;
   const matchingJobTickets = useMemo(() => {
     const search = jobTicketSearch.trim().toLowerCase();
@@ -1372,17 +1578,19 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
         setQuoteDataError("");
       }
       try {
-        let [rawPayload, finishedPayload, quotePayload, ratePayload] = await Promise.all([
+        let [rawPayload, finishedPayload, quotePayload, ratePayload, customerPayload] = await Promise.all([
           fetchCollection("quote-raw-materials", { pageSize: 1000, fetchAll: true }),
           fetchCollection("quote-finished-materials", { pageSize: 1000, fetchAll: true }),
           fetchCollection("quote-records", { ordering: "-created_at", pageSize: 1000, fetchAll: true }),
           fetchCollection("quote-cost-rates", { pageSize: 1000, fetchAll: true }),
+          fetchCollection("customers", { ordering: "name", pageSize: 1000, fetchAll: true }),
         ]);
 
         let rawResults = rawPayload.results ?? [];
         let finishedResults = finishedPayload.results ?? [];
         let quoteResults = quotePayload.results ?? [];
         let rateResults = ratePayload.results ?? [];
+        let customerResults = customerPayload.results ?? [];
 
         if (!rawResults.length && storedLibrary.rawMaterials.length) {
           rawResults = await Promise.all(storedLibrary.rawMaterials.map((raw) => createRecord("quote-raw-materials", rawMaterialPayload(raw))));
@@ -1405,6 +1613,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
         setFinishedMaterials(finishedResults);
         setQuoteRates(rateResults);
         setSavedQuotes(quoteResults);
+        setCustomers(customerResults);
         setSelectedQuoteId((current) => current && quoteResults.some((quote) => quote.id === current) ? current : quoteResults[0]?.id ?? null);
         quoteDataReadyRef.current = true;
         setQuoteDataState("ready");
@@ -1439,6 +1648,18 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     }));
     setJobTicketPickerOpen(false);
   }, [initialJobTicketId]);
+
+  useEffect(() => {
+    if (!initialCustomerId || !customers.length) return;
+    const customer = customers.find((item) => String(item.id) === String(initialCustomerId));
+    if (!customer) return;
+    setActiveTab("pricing");
+    setQuoteInfo((prev) => ({
+      ...prev,
+      linkMode: prev.jobTicketId ? prev.linkMode : "manual",
+    }));
+    selectCustomer(customer);
+  }, [initialCustomerId, customers.length]);
 
   useEffect(() => {
     let alive = true;
@@ -1561,6 +1782,22 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   }, [quoteInfo.linkMode, selectedJobTicket?.id, materialOptions.length, jobPrintState, jobPrintColorCount]);
 
   useEffect(() => {
+    if (quoteInfo.linkMode !== "ticket" || !selectedJobTicket) return;
+    const linkedCustomer = customers.find((customer) => String(customer.id) === String(selectedJobTicket.customer || ""));
+    const customerName = linkedCustomer?.name || selectedJobTicket.customer_display || selectedJobTicket.customer_name || "";
+    setQuoteInfo((prev) => ({
+      ...prev,
+      customerId: linkedCustomer?.id ? String(linkedCustomer.id) : prev.customerId,
+      customerCode: linkedCustomer?.customer_code || prev.customerCode,
+      customerName: customerName || prev.customerName,
+      contactName: linkedCustomer?.contact_name || prev.contactName,
+      contactEmail: linkedCustomer?.email || prev.contactEmail,
+      customerAddress: linkedCustomer ? customerQuoteAddress(linkedCustomer) : prev.customerAddress,
+    }));
+    if (linkedCustomer) setCustomerSearch(customerPickerLabel(linkedCustomer));
+  }, [quoteInfo.linkMode, selectedJobTicket?.id, selectedJobTicket?.customer, customers.length]);
+
+  useEffect(() => {
     if (!selectedJobTicket || jobTicketPickerOpen || jobTicketSearch) return;
     setJobTicketSearch(jobTicketPartNumber(selectedJobTicket));
   }, [selectedJobTicket?.id, jobTicketPickerOpen, jobTicketSearch]);
@@ -1586,6 +1823,80 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       setWasteManuallyEdited(false);
     }
     setQuoteInfo((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function selectCustomer(customer) {
+    if (!customer) return;
+    setQuoteInfo((prev) => ({
+      ...prev,
+      customerId: String(customer.id),
+      customerCode: customer.customer_code || "",
+      customerName: customer.name || prev.customerName,
+      contactName: customer.contact_name || prev.contactName,
+      contactEmail: customer.email || prev.contactEmail,
+      customerAddress: customerQuoteAddress(customer) || prev.customerAddress,
+    }));
+    setCustomerSearch(customerPickerLabel(customer));
+    setCustomerPickerOpen(false);
+  }
+
+  function clearCustomerSelection() {
+    setQuoteInfo((prev) => ({
+      ...prev,
+      customerId: "",
+      customerCode: "",
+    }));
+    setCustomerSearch("");
+    setCustomerPickerOpen(false);
+  }
+
+  function updateCustomerDraft(name, value) {
+    setCustomerDraft((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function createQuoteCustomer() {
+    const name = customerDraft.name.trim();
+    if (!name || customerSaving) return;
+    setCustomerSaving(true);
+    try {
+      const saved = await createRecord("customers", {
+        ...customerDraft,
+        name,
+        customer_code: customerDraft.customer_code.trim(),
+        contact_name: customerDraft.contact_name.trim(),
+        phone: customerDraft.phone.trim(),
+        email: customerDraft.email.trim(),
+        address_line_1: customerDraft.address_line_1.trim(),
+        address_line_2: customerDraft.address_line_2.trim(),
+        address_line_3: customerDraft.address_line_3.trim(),
+        city: customerDraft.city.trim(),
+        state: customerDraft.state.trim(),
+        postal_code: customerDraft.postal_code.trim(),
+        country: customerDraft.country.trim(),
+      });
+      setCustomers((prev) => [saved, ...prev.filter((customer) => String(customer.id) !== String(saved.id))]);
+      selectCustomer(saved);
+      setCustomerDraft({
+        name: "",
+        customer_code: "",
+        contact_name: "",
+        phone: "",
+        email: "",
+        address_line_1: "",
+        address_line_2: "",
+        address_line_3: "",
+        city: "",
+        state: "",
+        postal_code: "",
+        country: "",
+        is_active: true,
+      });
+      setCustomerCreateOpen(false);
+    } catch (error) {
+      window.alert(`Could not create customer: ${error.message}`);
+    } finally {
+      setCustomerSaving(false);
+    }
   }
 
   function selectJobTicket(ticket) {
@@ -1672,33 +1983,44 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   function buildQuoteRecord() {
     const ticket = quoteInfo.linkMode === "ticket" ? selectedJobTicket : null;
-    const customerName = ticket?.customer_display || ticket?.customer_name || quoteInfo.customerName;
+    const recordCustomer = selectedCustomer || customers.find((customer) => String(customer.id) === String(ticket?.customer || "")) || null;
+    const customerName = recordCustomer?.name || ticket?.customer_display || ticket?.customer_name || quoteInfo.customerName;
     const jobName = ticket?.job_name || ticket?.product_name || quoteInfo.jobName;
     const productCode = ticket?.product_code || "";
     const preparedBy = currentUser?.name || quoteInfo.preparedBy;
     const items = quoteItemsDraft.length ? quoteItemsDraft : [buildCurrentQuoteItem()];
     const totals = quoteTotals({ form: { items }, pricing: { items } });
+    const createdAt = new Date().toISOString();
+    const salesQuote = {
+      customerId: recordCustomer?.id ? String(recordCustomer.id) : quoteInfo.customerId,
+      customerCode: recordCustomer?.customer_code || quoteInfo.customerCode,
+      clientPo: quoteInfo.clientPo.trim(),
+      customerAddress: quoteInfo.customerAddress.trim() || customerQuoteAddress(recordCustomer),
+      quoteExpirationDate: quoteInfo.quoteExpirationDate || quoteFutureDateInput(createdAt),
+      unitOfMeasure: quoteInfo.unitOfMeasure || quoteDefaultUnitOfMeasure,
+    };
     const record = {
       id: makeId("quote"),
       quoteNumber: quoteNumber(),
-      createdAt: new Date().toISOString(),
+      createdAt,
       preparedByUserId: currentUser?.id || "",
       preparedByUsername: currentUser?.username || "",
       preparedByName: preparedBy,
       preparedByRole: currentUser?.role || "",
+      customerId: recordCustomer?.id || quoteInfo.customerId || null,
       jobTicketId: ticket?.id ?? null,
       jobTicketNumber: ticket?.ticket_number ?? "",
       customerName,
       jobName,
       productCode,
-      contactName: quoteInfo.contactName,
-      contactEmail: quoteInfo.contactEmail,
+      contactName: quoteInfo.contactName || recordCustomer?.contact_name || "",
+      contactEmail: quoteInfo.contactEmail || recordCustomer?.email || "",
       preparedBy,
       notes: quoteInfo.notes,
       materialName: items.length === 1 ? items[0].materialName : "Multiple materials",
       materialSource: items.length === 1 ? items[0].materialSource : "multiple",
       materialComponents: items.length === 1 ? items[0].materialComponents : `${items.length} quoted items`,
-      form: { ...form, repeat: String(pricing.repeat), items },
+      form: { ...form, repeat: String(pricing.repeat), items, salesQuote },
       pricing: { ...totals, items },
     };
     return record;
@@ -1722,11 +2044,11 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   function printQuote(quote) {
     if (!quote) return;
-    const detailRows = quoteCustomerDetailRows(quote);
-    const priceRows = quoteCustomerPriceRows(quote);
-    const includedServices = quoteIncludedServices(quote);
     const items = quoteItems(quote);
     const totals = quoteTotals(quote);
+    const salesInfo = quoteSalesInfo(quote);
+    const quoteLines = quoteForLines(quote);
+    const terms = quoteTerms(quote);
     const html = `<!doctype html>
 <html>
 <head>
@@ -1734,39 +2056,29 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 <style>
 @page{size:letter;margin:.35in}
 body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
-.page{width:8.5in;min-height:11in;margin:0 auto;background:#fff;padding:.42in;box-sizing:border-box}
-.head{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid #111827;padding-bottom:12px}
-.head div:last-child{text-align:right}.head strong{display:block;font-size:20px}.head span,.head em,.meta span,.item span,.row span{display:block;color:#667085;font-size:10px;text-transform:uppercase;font-weight:700;font-style:normal}
-.head h1{margin:4px 0 0;font-size:30px}.head div:last-child strong{font-size:30px}
-.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.meta div{border:1px solid #e5e7eb;padding:8px}.meta strong{display:block;margin-top:2px;font-size:12px}.meta em{display:block;color:#667085;font-size:10px;font-style:normal;margin-top:2px}
-.item{margin-top:12px}.item h2,.grid h2,.included h2,.notes h2{font-size:13px;margin:0 0 6px}.item-table{border:1px solid #111827}.item-row{display:grid;grid-template-columns:1fr 2fr 1fr 1fr;border-top:1px solid #e5e7eb}.item-row:first-child{border-top:0}.item-row div{padding:8px;border-left:1px solid #e5e7eb}.item-row div:first-child{border-left:0}.item strong{font-size:12px}.item em{display:block;color:#667085;font-size:9px;font-style:normal;margin-top:2px}.item-row div:last-child strong{font-size:15px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.box,.included,.notes{border:1px solid #e5e7eb;padding:9px}.row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #eef2f7;padding:5px 0}.row:first-of-type{border-top:0}.row strong{text-align:right;font-size:11px}.included{margin-top:12px}.included div{display:flex;flex-wrap:wrap;gap:6px}.included span{padding:5px 7px;border:1px solid #e5e7eb;border-radius:999px;color:#344054;font-size:10px}.notes{margin-top:12px}.notes p{margin:0;font-size:11px;line-height:1.3;white-space:pre-wrap}
+.page{width:8.5in;min-height:11in;margin:0 auto;background:#fff;padding:.34in;box-sizing:border-box}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
+.brand{min-width:0;flex:1}.brand img{max-width:5.45in;height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:11px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:9px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:10px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:11px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:92px 1fr;border-top:1px solid #111827;min-height:24px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{padding:6px 7px;font-size:10px}
+.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:9px;text-align:left;padding:7px 6px}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:7px 6px;font-size:10px}.sales-table td:first-child{border-left:0}.sales-table th:nth-child(1){width:50%}.sales-table th:nth-child(2){width:10%}.sales-table th:nth-child(3){width:9%}.sales-table th:nth-child(4){width:15%}.sales-table th:nth-child(5){width:16%}.sales-table strong{display:block;font-size:10px}.sales-table span{display:block;margin-top:4px;font-size:9px;line-height:1.25}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
+.signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-box p{margin:0 0 10px;font-size:10px}.sig-box strong{display:block;margin-top:6px;font-size:10px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px}.contact span{margin-top:16px;font-size:11px;font-weight:700}.contact em{margin-top:8px;font-size:10px;font-style:normal}
+.terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:10px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:8.5px;line-height:1.32}
 @media print{body{background:white}.page{margin:0;width:auto;min-height:auto;padding:0}.no-print{display:none}}
 </style>
 </head>
 <body>
 <main class="page">
-<section class="head"><div><strong>Tri-State Media</strong><span>Quote ${escapeHtml(quote.quoteNumber)}</span><em>${escapeHtml(quoteDateLabel(quote.createdAt))}</em></div><div><span>Total Quote</span><strong>${escapeHtml(money(totals.sellPrice))}</strong><em>${escapeHtml(money(totals.pricePerThousand))} / M</em></div></section>
+<section class="head"><div class="brand"><img src="${escapeHtml(triStateQuoteLogo)}" alt="Tri-State Media"></div><div class="title"><span>Sales Quote</span><strong>${escapeHtml(quote.quoteNumber)}</strong><em>Total in US$</em><b>${escapeHtml(money(totals.sellPrice))}</b></div></section>
 <section class="meta">
-<div><span>Customer</span><strong>${escapeHtml(clipText(quote.customerName || "--", 32))}</strong><em>${escapeHtml(clipText(quote.contactName || quote.contactEmail || "", 36))}</em></div>
-<div><span>Job</span><strong>${escapeHtml(clipText(quote.jobName || "--", 32))}</strong><em>${escapeHtml(clipText(quote.jobTicketNumber ? `Job Ticket ${quote.jobTicketNumber}` : quote.productCode || "Manual quote", 36))}</em></div>
-<div><span>Prepared By</span><strong>${escapeHtml(clipText(quotePreparedByName(quote), 32))}</strong><em>${escapeHtml(quotePreparedByRole(quote) || quoteDateLabel(quote.createdAt))}</em></div>
-<div><span>Quote Date</span><strong>${escapeHtml(quoteDateLabel(quote.createdAt))}</strong><em>${escapeHtml(quote.quoteNumber)}</em></div>
+<div class="quote-for"><span>Quotation for:</span>${quoteLines.map((line, index) => index === 0 ? `<strong>${escapeHtml(line)}</strong>` : `<em>${escapeHtml(line)}</em>`).join("")}</div>
+<div class="date-card"><div><span>Date:</span><strong>${escapeHtml(quoteLongDateLabel(quote.createdAt))}</strong></div><div><span>Customer ID:</span><strong>${escapeHtml(salesInfo.customerCode || salesInfo.customerId || "--")}</strong></div><div><span>Quote Expiration Date:</span><strong>${escapeHtml(quoteLongDateLabel(salesInfo.quoteExpirationDate))}</strong></div></div>
 </section>
-<section class="item"><h2>${items.length > 1 ? "Quoted Items" : "Quoted Item"}</h2><div class="item-table">
-${items.map((item) => `<div class="item-row"><div><span>Quantity</span><strong>${escapeHtml(Number(item.form?.quantity || item.pricing?.quantity || 0).toLocaleString())}</strong></div><div><span>Description</span><strong>${escapeHtml(clipText(quoteItemDescription(item, quote), 52))}</strong><em>${escapeHtml(clipText(item.materialName && item.materialName !== "Manual MSI Cost" ? item.materialName : "", 54))}</em></div><div><span>Price / M</span><strong>${escapeHtml(money(Number(item.pricing?.pricePerThousand || 0)))}</strong></div><div><span>Total</span><strong>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</strong></div></div>`).join("")}
-</div>
+<section class="item"><table class="sales-table"><thead><tr><th>Part Number &amp; Description</th><th>Qty</th><th>UoM</th><th>Per Unit US$</th><th>Extended US$</th></tr></thead><tbody>
+${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr>`).join("")}
+</tbody><tfoot><tr><td colspan="4">Total in US$</td><td>${escapeHtml(money(totals.sellPrice))}</td></tr></tfoot></table>
 </section>
-<section class="grid">
-<div class="box"><h2>Quote Details</h2>
-${detailRows.map(([label, value]) => `<div class="row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}
-</div>
-<div class="box"><h2>Customer Pricing</h2>
-${priceRows.map(([label, value]) => `<div class="row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}
-</div>
-</section>
-<section class="included"><h2>Included</h2><div>${includedServices.map((service) => `<span>${escapeHtml(service)}</span>`).join("")}</div></section>
-${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.notes)}</p></section>` : ""}
+<section class="signature"><div class="sig-box"><p>Client P.O. ${escapeHtml(salesInfo.clientPo || "_______________________")}</p><p>Authorized Signature: _______________________</p><p>Printed Name: _____________________________</p><p>Title: ____________________________________</p><p>Date: _________________________</p><strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong></div><div class="contact"><strong>${escapeHtml(quoteThankYouMessage)}</strong><span>${escapeHtml(quotePreparedByName(quote))}</span><em>${escapeHtml(quotePreparedByRole(quote) || "Tri-State Media")}</em>${quote.contactEmail ? `<em>${escapeHtml(quote.contactEmail)}</em>` : ""}</div></section>
+<section class="terms">${quote.notes ? `<p>${escapeHtml(quote.notes)}</p>` : ""}<ul>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ul></section>
 </main>
 <script>window.print();</script>
 </body>
@@ -1780,17 +2092,18 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
     popup.document.close();
   }
 
-  function downloadQuotePdf(quote) {
+  async function downloadQuotePdf(quote) {
     if (!quote) return;
-    const details = quoteCustomerDetailRows(quote);
-    const prices = quoteCustomerPriceRows(quote);
-    const includedServices = quoteIncludedServices(quote);
     const items = quoteItems(quote);
     const totals = quoteTotals(quote);
+    const salesInfo = quoteSalesInfo(quote);
+    const quoteLines = quoteForLines(quote);
+    const terms = quoteTerms(quote);
+    const logoImage = await loadQuoteLogoForPdf();
     const commands = [];
 
-    function text(x, y, size, value, font = "F1") {
-      commands.push(`BT /${font} ${size} Tf ${x} ${y} Td (${pdfEscape(value)}) Tj ET`);
+    function text(x, y, size, value, font = "F1", gray = 0) {
+      commands.push(`BT /${font} ${size} Tf ${gray} g ${x} ${y} Td (${pdfEscape(value)}) Tj ET`);
     }
 
     function line(x1, y1, x2, y2) {
@@ -1801,107 +2114,163 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
       commands.push(`${x} ${y} ${w} ${h} re S`);
     }
 
-    commands.push("0.08 w");
-    text(42, 748, 18, "Tri-State Media", "F2");
-    text(42, 731, 9, `Quote ${quote.quoteNumber}`);
-    text(42, 718, 9, quoteDateLabel(quote.createdAt));
-    text(410, 748, 9, "Total Quote", "F2");
-    text(410, 724, 26, money(totals.sellPrice), "F2");
-    text(410, 708, 10, `${money(totals.pricePerThousand)} / M`);
-    line(42, 694, 570, 694);
-
-    const meta = [
-      ["Customer", quote.customerName || "--", quote.contactName || quote.contactEmail || ""],
-      ["Job", quote.jobName || "--", quote.jobTicketNumber ? `Job Ticket ${quote.jobTicketNumber}` : quote.productCode || "Manual quote"],
-      ["Prepared By", quotePreparedByName(quote), quotePreparedByRole(quote) || quoteDateLabel(quote.createdAt)],
-      ["Quote Date", quoteDateLabel(quote.createdAt), quote.quoteNumber],
-    ];
-    meta.forEach(([label, value, sub], index) => {
-      const x = 42 + index * 132;
-      box(x, 630, 122, 48);
-      text(x + 7, 665, 7, label, "F2");
-      text(x + 7, 650, 10, clipText(value, 22), "F2");
-      text(x + 7, 637, 7, clipText(sub, 25));
-    });
-
-    text(42, 606, 12, items.length > 1 ? "Quoted Items" : "Quoted Item", "F2");
-    const itemBoxHeight = Math.min(3, items.length) * 30 + 8;
-    box(42, 588 - itemBoxHeight, 528, itemBoxHeight);
-    items.slice(0, 3).forEach((item, index) => {
-      const y = 574 - index * 30;
-      text(52, y + 7, 7, "Quantity", "F2");
-      text(52, y - 6, 10, Number(item.form?.quantity || item.pricing?.quantity || 0).toLocaleString(), "F2");
-      text(150, y + 7, 7, "Description", "F2");
-      text(150, y - 6, 10, clipText(quoteItemDescription(item, quote), 42), "F2");
-      text(420, y + 7, 7, "Price / M", "F2");
-      text(420, y - 6, 10, money(Number(item.pricing?.pricePerThousand || 0)), "F2");
-      text(500, y + 7, 7, "Total", "F2");
-      text(500, y - 6, 10, money(Number(item.pricing?.sellPrice || 0)), "F2");
-      if (index < Math.min(3, items.length) - 1) line(42, y - 15, 570, y - 15);
-    });
-    if (items.length > 3) text(52, 588 - itemBoxHeight + 7, 8, `${items.length - 3} additional item(s) included in quote total.`);
-
-    const detailTitleY = 562 - itemBoxHeight;
-    const detailBoxTop = detailTitleY - 12;
-    const detailBoxBottom = detailBoxTop - 178;
-    text(42, detailTitleY, 12, "Quote Details", "F2");
-    text(314, detailTitleY, 12, "Customer Pricing", "F2");
-    box(42, detailBoxBottom, 240, 178);
-    box(314, detailBoxBottom, 256, 178);
-
-    details.forEach(([label, value], index) => {
-      const y = detailBoxTop - 18 - index * 20;
-      text(54, y, 7, label, "F2");
-      text(166, y, 8, clipText(value, 28));
-      if (index < details.length - 1) line(54, y - 8, 270, y - 8);
-    });
-
-    prices.forEach(([label, value], index) => {
-      const y = detailBoxTop - 18 - index * 20;
-      text(326, y, 7, label, "F2");
-      text(488, y, 8, clipText(value, 20));
-      if (index < prices.length - 1) line(326, y - 8, 558, y - 8);
-    });
-
-    const includedTitleY = detailBoxBottom - 28;
-    text(42, includedTitleY, 12, "Included", "F2");
-    box(42, includedTitleY - 28, 528, 18);
-    text(54, includedTitleY - 22, 8, clipText(includedServices.join(", "), 115));
-
-    if (quote.notes) {
-      const notesTitleY = includedTitleY - 54;
-      text(42, notesTitleY, 12, "Notes", "F2");
-      box(42, notesTitleY - 70, 528, 58);
-      const note = clipText(quote.notes.replace(/\s+/g, " "), 170);
-      const chunks = note.match(/.{1,86}(\s|$)/g) || [note];
-      chunks.slice(0, 3).forEach((chunk, index) => text(54, notesTitleY - 28 - index * 14, 8, chunk.trim()));
+    function fillBox(x, y, w, h, gray = 0) {
+      commands.push(`${gray} g ${x} ${y} ${w} ${h} re f 0 g`);
     }
+
+    commands.push("0 g 0 G 0.08 w");
+    if (logoImage) {
+      const logoWidth = 330;
+      const logoHeight = Math.round((logoImage.height / logoImage.width) * logoWidth);
+      commands.push(`q ${logoWidth} 0 0 ${logoHeight} 42 ${764 - logoHeight} cm /Logo Do Q`);
+    } else {
+      text(42, 748, 24, "Tri-State Media", "F2");
+      text(42, 728, 8, "Labels and media solutions");
+    }
+    text(440, 748, 16, "Sales Quote", "F2");
+    text(440, 731, 8, quote.quoteNumber);
+    text(440, 704, 8, "Total in US$", "F2");
+    text(440, 684, 18, money(totals.sellPrice), "F2");
+    line(42, 670, 570, 670);
+
+    text(42, 642, 10, "Quotation for:", "F2");
+    quoteLines.slice(0, 5).forEach((lineText, index) => {
+      text(42, 624 - index * 13, index === 0 ? 10 : 8, clipText(lineText, 46), index === 0 ? "F2" : "F1");
+    });
+
+    box(330, 570, 240, 76);
+    line(330, 621, 570, 621);
+    line(330, 596, 570, 596);
+    line(420, 570, 420, 646);
+    text(340, 630, 8, "Date:", "F2");
+    text(428, 630, 8, quoteLongDateLabel(quote.createdAt));
+    text(340, 605, 8, "Customer ID:", "F2");
+    text(428, 605, 8, clipText(salesInfo.customerCode || salesInfo.customerId || "--", 26));
+    text(340, 580, 8, "Quote Expiration Date:", "F2");
+    text(428, 580, 8, quoteLongDateLabel(salesInfo.quoteExpirationDate));
+
+    const tableX = 42;
+    const tableTop = 542;
+    const headerHeight = 18;
+    const rowHeight = 48;
+    const visibleItems = items.slice(0, 4);
+    const columns = [42, 312, 366, 410, 492, 570];
+    const tableBottom = tableTop - headerHeight - visibleItems.length * rowHeight - 20;
+    fillBox(tableX, tableTop - headerHeight, 528, headerHeight, 0);
+    text(50, tableTop - 12, 8, "Part Number & Description", "F2", 1);
+    text(326, tableTop - 12, 8, "Qty", "F2", 1);
+    text(378, tableTop - 12, 8, "UoM", "F2", 1);
+    text(426, tableTop - 12, 8, "Per Unit US$", "F2", 1);
+    text(506, tableTop - 12, 8, "Extended US$", "F2", 1);
+    box(tableX, tableBottom, 528, tableTop - tableBottom);
+    columns.slice(1, -1).forEach((x) => line(x, tableBottom, x, tableTop));
+    line(tableX, tableTop - headerHeight, 570, tableTop - headerHeight);
+
+    visibleItems.forEach((item, index) => {
+      const yTop = tableTop - headerHeight - index * rowHeight;
+      const yBase = yTop - 16;
+      text(50, yBase, 8, clipText(quoteLinePartNumber(item, quote), 46), "F2");
+      quoteLineDescriptionRows(item, quote).slice(0, 3).forEach((lineText, rowIndex) => {
+        text(50, yBase - 11 - rowIndex * 10, 7, clipText(lineText, 60));
+      });
+      text(326, yBase, 8, quoteTableQuantity(item, salesInfo.unitOfMeasure));
+      text(382, yBase, 8, quoteTableUomLabel(salesInfo.unitOfMeasure));
+      text(424, yBase, 8, quoteTableUnitPrice(item, salesInfo.unitOfMeasure));
+      text(505, yBase, 8, money(Number(item.pricing?.sellPrice || 0)));
+      line(tableX, yTop - rowHeight, 570, yTop - rowHeight);
+    });
+    if (items.length > visibleItems.length) text(50, tableBottom + 8, 7, `${items.length - visibleItems.length} additional item(s) included in quote total.`);
+    text(424, tableBottom + 7, 8, "Total in US$", "F2");
+    text(505, tableBottom + 7, 8, money(totals.sellPrice), "F2");
+
+    const signatureTop = tableBottom - 34;
+    text(54, signatureTop, 8, `Client P.O. ${salesInfo.clientPo || "_______________________"}`);
+    text(54, signatureTop - 20, 8, "Authorized Signature: _______________________");
+    text(54, signatureTop - 40, 8, "Printed Name: _____________________________");
+    text(54, signatureTop - 60, 8, "Title: ____________________________________");
+    text(54, signatureTop - 80, 8, "Date: _________________________");
+    text(54, signatureTop - 104, 8, "**Please provide both the Bill To and Ship To addresses");
+    text(54, signatureTop - 116, 8, "when submitting your order.**");
+
+    fillBox(330, signatureTop - 122, 240, 128, 0.92);
+    box(330, signatureTop - 122, 240, 128);
+    text(348, signatureTop - 24, 10, quoteThankYouMessage, "F2");
+    text(470, signatureTop - 54, 8, quotePreparedByName(quote), "F2");
+    text(438, signatureTop - 76, 8, quotePreparedByRole(quote) || "Tri-State Media");
+    if (quote.contactEmail) text(414, signatureTop - 98, 8, quote.contactEmail);
+
+    let termsY = 122;
+    if (quote.notes) {
+      text(42, termsY, 8, clipText(quote.notes.replace(/\s+/g, " "), 110));
+      termsY -= 14;
+    }
+    terms.slice(0, 4).forEach((term) => {
+      text(42, termsY, 6, `* ${clipText(term, 145)}`);
+      termsY -= 11;
+    });
 
     text(42, 42, 7, "Generated from the Tri-State Media quoting tool.");
 
     const stream = commands.join("\n");
+    const contentObjectNumber = logoImage ? 7 : 6;
+    const pageResources = logoImage
+      ? "<< /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Logo 6 0 R >> >>"
+      : "<< /Font << /F1 4 0 R /F2 5 0 R >> >>";
     const objects = [
       "<< /Type /Catalog /Pages 2 0 R >>",
       "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>",
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources ${pageResources} /Contents ${contentObjectNumber} 0 R >>`,
       "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
       "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
-      `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
     ];
-    let pdf = "%PDF-1.4\n";
-    const offsets = [0];
-    objects.forEach((object, index) => {
-      offsets.push(pdf.length);
-      pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-    });
-    const xref = pdf.length;
-    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-    offsets.slice(1).forEach((offset) => {
-      pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
-    });
-    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+    if (logoImage) {
+      objects.push({
+        parts: [
+          `<< /Type /XObject /Subtype /Image /Width ${logoImage.width} /Height ${logoImage.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logoImage.bytes.length} >>\nstream\n`,
+          logoImage.bytes,
+          "\nendstream",
+        ],
+      });
+    }
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
 
-    const blob = new Blob([pdf], { type: "application/pdf" });
+    const encoder = new TextEncoder();
+    const chunks = [];
+    const offsets = [0];
+    let byteLength = 0;
+
+    function appendPdfChunk(chunk) {
+      const bytes = typeof chunk === "string" ? encoder.encode(chunk) : chunk;
+      chunks.push(bytes);
+      byteLength += bytes.length;
+    }
+
+    appendPdfChunk("%PDF-1.4\n");
+    objects.forEach((object, index) => {
+      offsets.push(byteLength);
+      appendPdfChunk(`${index + 1} 0 obj\n`);
+      if (object.parts) {
+        object.parts.forEach((part) => appendPdfChunk(part));
+      } else {
+        appendPdfChunk(object);
+      }
+      appendPdfChunk("\nendobj\n");
+    });
+    const xref = byteLength;
+    appendPdfChunk(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
+    offsets.slice(1).forEach((offset) => {
+      appendPdfChunk(`${String(offset).padStart(10, "0")} 00000 n \n`);
+    });
+    appendPdfChunk(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+
+    const pdfBytes = new Uint8Array(byteLength);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+      pdfBytes.set(chunk, offset);
+      offset += chunk.length;
+    });
+
+    const blob = new Blob([pdfBytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -2057,6 +2426,100 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                   <button className={quoteInfo.linkMode === "ticket" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "ticket")}>Use Job Ticket</button>
                   <button className={quoteInfo.linkMode === "manual" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "manual")}>Manual Entry</button>
                 </div>
+                <div className="quote-customer-picker">
+                  <label className="quote-ticket-search">
+                    <span>Customer Account</span>
+                    <div>
+                      <Search size={16} />
+                      <input
+                        value={customerSearch}
+                        onClick={() => setCustomerPickerOpen(true)}
+                        onFocus={() => setCustomerPickerOpen(true)}
+                        onChange={(event) => {
+                          setCustomerSearch(event.target.value);
+                          setCustomerPickerOpen(true);
+                        }}
+                        placeholder="Search customer, Customer ID, contact, city, or email"
+                      />
+                    </div>
+                  </label>
+                  {selectedCustomer && (
+                    <div className="quote-selected-customer">
+                      <div>
+                        <span>Selected Customer</span>
+                        <strong>{selectedCustomer.name}</strong>
+                        <em>{[selectedCustomer.customer_code ? `ID ${selectedCustomer.customer_code}` : "", selectedCustomer.contact_name, selectedCustomer.email].filter(Boolean).join(" / ")}</em>
+                      </div>
+                      <button className="ghost-btn" type="button" onClick={clearCustomerSelection}>Clear</button>
+                    </div>
+                  )}
+                  {customerPickerOpen && (
+                    <div className="quote-customer-results">
+                      <div className="quote-ticket-results-head">
+                        <span>{matchingCustomers.length.toLocaleString()} customer match{matchingCustomers.length === 1 ? "" : "es"}</span>
+                        <button type="button" onClick={() => setCustomerCreateOpen((current) => !current)}>
+                          <Plus size={14} /> Add Customer
+                        </button>
+                      </div>
+                      {matchingCustomers.map((customer) => (
+                        <button type="button" key={customer.id} onClick={() => selectCustomer(customer)}>
+                          <strong>{customerPickerLabel(customer)}</strong>
+                          <span>{[customer.contact_name, customer.email, customer.phone].filter(Boolean).join(" / ") || "No contact on file"}</span>
+                          <em>{customerAddressLines(customer).slice(0, 2).join(" / ") || "No address on file"}</em>
+                        </button>
+                      ))}
+                      {!matchingCustomers.length && <p className="quote-ticket-empty">No customers matched that search.</p>}
+                    </div>
+                  )}
+                  {customerCreateOpen && (
+                    <div className="quote-customer-create">
+                      <div className="quote-simple-grid quote-info-grid">
+                        <Field label="Customer">
+                          <input value={customerDraft.name} onChange={(event) => updateCustomerDraft("name", event.target.value)} />
+                        </Field>
+                        <Field label="Customer ID">
+                          <input value={customerDraft.customer_code} onChange={(event) => updateCustomerDraft("customer_code", event.target.value)} />
+                        </Field>
+                        <Field label="Contact">
+                          <input value={customerDraft.contact_name} onChange={(event) => updateCustomerDraft("contact_name", event.target.value)} />
+                        </Field>
+                        <Field label="Email">
+                          <input type="email" value={customerDraft.email} onChange={(event) => updateCustomerDraft("email", event.target.value)} />
+                        </Field>
+                        <Field label="Phone">
+                          <input value={customerDraft.phone} onChange={(event) => updateCustomerDraft("phone", event.target.value)} />
+                        </Field>
+                        <Field label="Address Line 1">
+                          <input value={customerDraft.address_line_1} onChange={(event) => updateCustomerDraft("address_line_1", event.target.value)} />
+                        </Field>
+                        <Field label="Address Line 2">
+                          <input value={customerDraft.address_line_2} onChange={(event) => updateCustomerDraft("address_line_2", event.target.value)} />
+                        </Field>
+                        <Field label="Address Line 3">
+                          <input value={customerDraft.address_line_3} onChange={(event) => updateCustomerDraft("address_line_3", event.target.value)} />
+                        </Field>
+                        <Field label="City">
+                          <input value={customerDraft.city} onChange={(event) => updateCustomerDraft("city", event.target.value)} />
+                        </Field>
+                        <Field label="State">
+                          <input value={customerDraft.state} onChange={(event) => updateCustomerDraft("state", event.target.value)} />
+                        </Field>
+                        <Field label="Zip">
+                          <input value={customerDraft.postal_code} onChange={(event) => updateCustomerDraft("postal_code", event.target.value)} />
+                        </Field>
+                        <Field label="Country">
+                          <input value={customerDraft.country} onChange={(event) => updateCustomerDraft("country", event.target.value)} />
+                        </Field>
+                      </div>
+                      <div className="quote-form-actions">
+                        <button className="ghost-btn" type="button" onClick={() => setCustomerCreateOpen(false)}>Cancel</button>
+                        <button className="primary-btn" type="button" onClick={createQuoteCustomer} disabled={customerSaving || !customerDraft.name.trim()}>
+                          {customerSaving ? "Saving..." : "Save Customer"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {quoteInfo.linkMode === "ticket" ? (
                   <div className="quote-ticket-grid">
                     <div className="quote-ticket-picker">
@@ -2160,6 +2623,30 @@ ${quote.notes ? `<section class="notes"><h2>Notes</h2><p>${escapeHtml(quote.note
                     </Field>
                   </div>
                 )}
+                <div className="quote-simple-grid quote-info-grid quote-sales-info-grid">
+                  <Field label="Contact Name">
+                    <input value={quoteInfo.contactName} onChange={(event) => updateQuoteInfo("contactName", event.target.value)} />
+                  </Field>
+                  <Field label="Contact Email">
+                    <input type="email" value={quoteInfo.contactEmail} onChange={(event) => updateQuoteInfo("contactEmail", event.target.value)} />
+                  </Field>
+                  <Field label="Client P.O.">
+                    <input value={quoteInfo.clientPo} onChange={(event) => updateQuoteInfo("clientPo", event.target.value)} />
+                  </Field>
+                  <Field label="Quote Expiration">
+                    <input type="date" value={quoteInfo.quoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
+                  </Field>
+                  <Field label="UoM">
+                    <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
+                      <option value="M">M - per 1,000 labels</option>
+                      <option value="EA">EA - each label</option>
+                    </select>
+                  </Field>
+                  <label className="quote-field quote-field-wide">
+                    <span>Quotation Address</span>
+                    <textarea value={quoteInfo.customerAddress} onChange={(event) => updateQuoteInfo("customerAddress", event.target.value)} />
+                  </label>
+                </div>
               </section>
 
               <section className="quote-section quote-primary-section">
