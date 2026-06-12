@@ -108,6 +108,7 @@ class QuoteCostRateSerializer(serializers.ModelSerializer):
 
 class QuoteFinishedMaterialSerializer(serializers.ModelSerializer):
     id = serializers.CharField(source="external_id")
+    unitType = serializers.CharField(source="unit_type", required=False)
     materialMasterTypeId = serializers.PrimaryKeyRelatedField(source="material_master_type", queryset=MaterialMasterType.objects.all(), allow_null=True, required=False)
     materialMasterTypeCode = serializers.CharField(source="material_master_type.code", read_only=True)
     materialMasterTypeName = serializers.CharField(source="material_master_type.name", read_only=True)
@@ -130,6 +131,7 @@ class QuoteFinishedMaterialSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "unitType",
             "materialMasterTypeId",
             "materialMasterTypeCode",
             "materialMasterTypeName",

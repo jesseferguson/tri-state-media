@@ -6745,6 +6745,102 @@ p, .muted { color: #7a7a7a; }
   gap: 10px;
 }
 
+.quote-identity-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(160px, 1fr) minmax(120px, .65fr);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #d7e4f2;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.quote-identity-grid .quote-field:first-child input {
+  min-height: 44px;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.quote-item-identity-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.quote-link-window {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe6f2;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.quote-link-window-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef2f7;
+  cursor: pointer;
+  list-style: none;
+}
+
+.quote-link-window-head strong,
+.quote-link-window-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-link-window-head strong {
+  color: #101828;
+  font-size: .86rem;
+  font-weight: 950;
+}
+
+.quote-link-window-head span {
+  color: #667085;
+  font-size: .74rem;
+  font-weight: 800;
+}
+
+.quote-link-window-head::-webkit-details-marker {
+  display: none;
+}
+
+.quote-link-window-head span {
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+.quote-link-window-head::after {
+  content: "+";
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dbeafe;
+  border-radius: 7px;
+  background: #f8fbff;
+  color: #1d4ed8;
+  font-size: .9rem;
+  font-weight: 950;
+}
+
+.quote-link-window[open] .quote-link-window-head::after {
+  content: "-";
+}
+
+.quote-customer-contact-panel .quote-sales-info-grid {
+  padding-top: 10px;
+  border-top: 1px solid #eef2f7;
+}
+
 .quote-material-targets {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -7108,6 +7204,10 @@ p, .muted { color: #7a7a7a; }
   padding: 10px;
 }
 
+.quote-compact-details > .quote-simple-grid {
+  padding: 10px;
+}
+
 .quote-control-block {
   min-width: 0;
   display: grid;
@@ -7421,6 +7521,44 @@ p, .muted { color: #7a7a7a; }
   border: 1px solid #dbe6f2;
   border-radius: 8px;
   background: #f8fafc;
+}
+
+.quote-customer-create summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #1d4ed8;
+  font-size: .78rem;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+
+.quote-customer-create summary::-webkit-details-marker {
+  display: none;
+}
+
+.quote-customer-create summary::after {
+  content: "+";
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #1d4ed8;
+}
+
+.quote-customer-create[open] summary::after {
+  content: "-";
+}
+
+.quote-customer-create > .quote-simple-grid {
+  padding-top: 8px;
+  border-top: 1px solid #e4eaf2;
 }
 
 @media (max-width: 640px) {
@@ -9305,6 +9443,7 @@ p, .muted { color: #7a7a7a; }
   .quote-material-targets,
   .quote-rate-grid,
   .quote-current-msi-note,
+  .quote-identity-grid,
   .quote-top-grid,
   .quote-simple-grid,
   .quote-field-grid,
@@ -9682,6 +9821,7 @@ p, .muted { color: #7a7a7a; }
   .quote-material-targets,
   .quote-rate-grid,
   .quote-current-msi-note,
+  .quote-identity-grid,
   .quote-top-grid,
   .quote-field-grid,
   .quote-metric-grid,
@@ -9726,6 +9866,11 @@ p, .muted { color: #7a7a7a; }
   .quote-internal-head div:last-child,
   .quote-internal-row strong {
     text-align: left;
+  }
+
+  .quote-link-window-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .quote-doc-sales-meta,
@@ -10034,7 +10179,7 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-secondary-input-grid {
-  grid-template-columns: repeat(6, minmax(82px, 1fr));
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
   gap: 7px;
   padding: 8px;
   border: 1px solid #edf2f7;

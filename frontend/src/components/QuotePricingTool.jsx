@@ -30,9 +30,21 @@ const percentFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits:
 const quoteDefaultExpirationDays = 30;
 const quoteDefaultUnitOfMeasure = "M";
 const quoteThankYouMessage = "Thank you for the opportunity to serve...";
+const quoteUnitTypeChoices = [
+  ["label", "Label"],
+  ["tag", "Tag"],
+];
+const quoteFinishingTypeChoices = [
+  ["rolls", "Rolls"],
+  ["fanfold", "Fanfold"],
+  ["sheeted", "Sheeted"],
+];
+const quoteCoreSizeChoices = ["", "0.75", "1", "3"];
 
 const initialForm = {
   selectedMaterialId: "manual",
+  unitType: "label",
+  itemNote: "",
   labelWidth: "4",
   labelLength: "2",
   repeat: "2.125",
@@ -40,6 +52,10 @@ const initialForm = {
   materialWidth: "8.75",
   gap: "0.125",
   sideTrim: "0.325",
+  finishingType: "rolls",
+  coreSize: "",
+  labelsPerUnit: "",
+  labelsPerCarton: "",
   acrossMode: "auto",
   numberAcross: "",
   wastePercent: "7",
@@ -67,6 +83,7 @@ const emptyRawForm = {
 
 const emptyFinishedForm = {
   name: "",
+  unitType: "label",
   materialMasterTypeId: "",
   sourceType: "made",
   width_inches: "8.75",
@@ -87,11 +104,12 @@ const emptyFinishedForm = {
 };
 
 const emptyQuoteInfo = {
-  linkMode: "ticket",
+  linkMode: "manual",
   jobTicketId: "",
   customerId: "",
   customerCode: "",
   customerName: "",
+  itemName: "",
   jobName: "",
   productCode: "",
   contactName: "",
@@ -115,6 +133,41 @@ function unitMoney(value) {
 function number(value, suffix = "") {
   const safe = Number.isFinite(value) ? value : 0;
   return `${numberFormatter.format(safe)}${suffix}`;
+}
+
+function choiceLabel(choices, value, fallback = "") {
+  return choices.find(([choiceValue]) => choiceValue === value)?.[1] || fallback || value || "";
+}
+
+function quoteUnitType(value = "label") {
+  return value === "tag" ? "tag" : "label";
+}
+
+function quoteUnitLabel(value, plural = false) {
+  const unit = quoteUnitType(value);
+  if (unit === "tag") return plural ? "tags" : "tag";
+  return plural ? "labels" : "label";
+}
+
+function quoteUnitTitle(value, plural = false) {
+  const label = quoteUnitLabel(value, plural);
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function quoteFinishingLabel(value = "rolls") {
+  return choiceLabel(quoteFinishingTypeChoices, value, "Rolls");
+}
+
+function quoteFinishingContainer(value = "rolls") {
+  if (value === "fanfold") return "stack";
+  if (value === "sheeted") return "sheet";
+  return "roll";
+}
+
+function quoteCoreLabel(value) {
+  const size = toQuoteNumber(value, NaN);
+  if (!Number.isFinite(size) || size <= 0) return "";
+  return `${String(Number(size.toFixed(3)))}" core`;
 }
 
 function makeId(prefix) {
@@ -377,6 +430,7 @@ function finishedMaterialPayload(material) {
   return {
     id: material.id || makeId("finished"),
     name: material.name || "",
+    unitType: material.unitType || "label",
     materialMasterTypeId: material.materialMasterTypeId || null,
     sourceType: material.sourceType || "made",
     purchasedMsiCost: moneyInput(material.purchasedMsiCost),
@@ -524,7 +578,89 @@ function quotePublicMaterialName(quote) {
 }
 
 function quoteDescription(quote) {
-  return quote.jobName || `${quote.form.labelWidth}" x ${quote.form.labelLength}" label`;
+  const form = quote?.form || {};
+  return quote?.jobName || `${form.labelWidth || 0}" x ${form.labelLength || 0}" ${quoteUnitLabel(form.unitType)}`;
+}
+
+function quoteItemUnitType(item, quote = {}) {
+  return quoteUnitType(item?.form?.unitType || quote?.form?.unitType || "label");
+}
+
+function quoteItemUnitLabel(item, quote = {}, plural = false) {
+  return quoteUnitLabel(quoteItemUnitType(item, quote), plural);
+}
+
+function quoteItemUnitTitle(item, quote = {}, plural = false) {
+  return quoteUnitTitle(quoteItemUnitType(item, quote), plural);
+}
+
+function quoteItemContainerLabel(form = {}, plural = false) {
+  const container = quoteFinishingContainer(form.finishingType);
+  if (!plural) return container;
+  return container === "stack" ? "stacks" : `${container}s`;
+}
+
+function quoteLineMaterialDescription(item, quote) {
+  const materialName = item?.materialName && item.materialName !== "Manual MSI Cost"
+    ? item.materialName
+    : quotePublicMaterialName(quote);
+  return materialName === "As specified" ? "" : materialName;
+}
+
+function quoteLinePrimaryDescription(item, quote) {
+  const form = item?.form || quote?.form || {};
+  const unitType = quoteItemUnitType(item, quote);
+  const size = form.labelWidth && form.labelLength ? `${form.labelWidth} x ${form.labelLength}` : "";
+  const materialDescription = quoteLineMaterialDescription(item, quote);
+  const materialHasUnit = new RegExp(`\\b${quoteUnitLabel(unitType)}s?\\b`, "i").test(materialDescription);
+  const productDescription = [
+    materialDescription,
+    materialHasUnit ? "" : quoteItemUnitTitle(item, quote),
+  ].filter(Boolean).join(" ");
+  const finishing = form.finishingType ? quoteFinishingLabel(form.finishingType).replace(/s$/, "") : "";
+  return [
+    [size, productDescription].filter(Boolean).join(" "),
+    finishing,
+  ].filter(Boolean).join(", ") || quoteDescription(quote);
+}
+
+function quoteLinePackagingRow(item, quote) {
+  const form = item?.form || quote?.form || {};
+  const unitType = quoteItemUnitType(item, quote);
+  const rows = [];
+  const coreLabel = quoteCoreLabel(form.coreSize);
+  if (coreLabel) rows.push(coreLabel);
+  const labelsPerUnit = toQuoteNumber(form.labelsPerUnit, NaN);
+  if (Number.isFinite(labelsPerUnit) && labelsPerUnit > 0) {
+    rows.push(`${Math.round(labelsPerUnit).toLocaleString()} ${quoteUnitLabel(unitType, true)}/${quoteItemContainerLabel(form)}`);
+  }
+  const labelsPerCarton = toQuoteNumber(form.labelsPerCarton, NaN);
+  if (Number.isFinite(labelsPerCarton) && labelsPerCarton > 0) {
+    rows.push(`${Math.round(labelsPerCarton).toLocaleString()} ${quoteUnitLabel(unitType, true)}/carton`);
+  }
+  return rows.join(", ");
+}
+
+function quoteCompactUnitMoney(value) {
+  const safe = Number.isFinite(value) ? value : 0;
+  if (safe >= 1) return money(safe);
+  const fixed = safe.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  return `$${fixed || "0"}`;
+}
+
+function quoteLinePriceSummary(item, quote) {
+  const unitType = quoteItemUnitType(item, quote);
+  const pricePerItem = Number(item?.pricing?.pricePerLabel || 0);
+  const pricePerThousand = Number(item?.pricing?.pricePerThousand || 0);
+  const labelsPerCarton = toQuoteNumber(item?.form?.labelsPerCarton, NaN);
+  const parts = [
+    `${quoteCompactUnitMoney(pricePerItem)}/${quoteUnitLabel(unitType)}`,
+    `${money(pricePerThousand)}/thousand`,
+  ];
+  if (Number.isFinite(labelsPerCarton) && labelsPerCarton > 0) {
+    parts.push(`${money(pricePerItem * labelsPerCarton)}/carton`);
+  }
+  return parts.join(" or ");
 }
 
 function quoteItems(quote) {
@@ -573,7 +709,7 @@ function quoteTotals(quote) {
 
 function quoteItemDescription(item, quote) {
   const form = item.form || {};
-  return item.itemName || quote.jobName || `${form.labelWidth || 0}" x ${form.labelLength || 0}" label`;
+  return item.itemName || quote.jobName || `${form.labelWidth || 0}" x ${form.labelLength || 0}" ${quoteItemUnitLabel(item, quote)}`;
 }
 
 function quoteSalesInfo(quote) {
@@ -603,12 +739,12 @@ function quoteLinePartNumber(item, quote) {
 
 function quoteLineDescriptionRows(item, quote) {
   const form = item.form || {};
-  const size = form.labelWidth && form.labelLength ? `${form.labelWidth}" x ${form.labelLength}"` : "";
   return [
-    size ? `${size} label` : quoteDescription(quote),
-    item.materialName && item.materialName !== "Manual MSI Cost" ? item.materialName : quotePublicMaterialName(quote),
+    quoteLinePrimaryDescription(item, quote),
     quote.productCode ? `TSM ID ${quote.productCode}` : "",
-    "Price per 1,000 labels.",
+    form.itemNote,
+    quoteLinePackagingRow(item, quote),
+    quoteLinePriceSummary(item, quote),
   ].filter(Boolean);
 }
 
@@ -668,9 +804,12 @@ function loadQuoteLogoForPdf() {
 
 function quoteCustomerDetailRows(quote) {
   const items = quoteItems(quote);
+  const singleItem = items.length === 1 ? items[0] : null;
   const rows = [
-    ["Label Size", items.length > 1 ? "Multiple items" : `${quote.form.labelWidth}" x ${quote.form.labelLength}"`],
+    ["Item Size", items.length > 1 ? "Multiple items" : `${quote.form.labelWidth}" x ${quote.form.labelLength}" ${quoteItemUnitLabel(singleItem, quote)}`],
+    ["Item Type", items.length > 1 ? "Multiple item types" : quoteItemUnitTitle(singleItem, quote)],
     ["Finished Material", items.length > 1 ? "Multiple materials" : quotePublicMaterialName(quote)],
+    ["Finishing", items.length > 1 ? "Multiple finishings" : quoteFinishingLabel(singleItem?.form?.finishingType || quote.form?.finishingType)],
     ["Quantity", Number(quoteTotals(quote).quantity || quote.form.quantity || 0).toLocaleString()],
     ["Quote Number", quote.quoteNumber],
     ["Quote Date", quoteDateLabel(quote.createdAt)],
@@ -681,10 +820,13 @@ function quoteCustomerDetailRows(quote) {
 
 function quoteCustomerPriceRows(quote) {
   const totals = quoteTotals(quote);
+  const items = quoteItems(quote);
+  const singleItem = items.length === 1 ? items[0] : null;
+  const unitTitle = quoteItemUnitTitle(singleItem, quote);
   return [
     ["Quantity", Number(totals.quantity || quote.form.quantity || 0).toLocaleString()],
     ["Price / M", money(totals.pricePerThousand)],
-    ["Price / Label", unitMoney(totals.pricePerLabel)],
+    [`Price / ${unitTitle}`, unitMoney(totals.pricePerLabel)],
     ["Quoted Total", money(totals.sellPrice)],
   ];
 }
@@ -698,7 +840,9 @@ function quoteIncludedServices(quote) {
   });
   if (quoteItems(quote).some((item) => Number(item.form?.colorCount || 0) > 0)) services.add("Colors");
   if (quoteItems(quote).some((item) => Number(item.form?.coatingCount || 0) > 0)) services.add("Coatings");
-  return services.size ? Array.from(services) : ["Labels produced to quoted specification"];
+  if (services.size) return Array.from(services);
+  const hasTags = quoteItems(quote).some((item) => quoteItemUnitType(item, quote) === "tag");
+  return [`${hasTags ? "Tags" : "Labels"} produced to quoted specification`];
 }
 
 function percent(value) {
@@ -840,6 +984,7 @@ function quoteInternalSections(quote) {
       title: "Quote Inputs",
       rows: [
         ["Customer", quote.customerName || "--"],
+        ["Item Name", quoteLinePartNumber(items[0], quote) || "--"],
         ["Job Number", quote.jobName || "--"],
         ...(quote.productCode ? [["TSM ID", quote.productCode]] : []),
         ["Job Ticket", quote.jobTicketNumber || "Manual quote"],
@@ -850,9 +995,15 @@ function quoteInternalSections(quote) {
     {
       title: "Material + Layout",
       rows: [
+        ["Item Type", quoteItemUnitTitle(items[0], quote)],
+        ["Proof Note", quote.form?.itemNote || "--"],
         ["Finished Material", quote.materialName || "Manual MSI Cost"],
         ["Material Source", quote.materialSource || "manual"],
         ["Components", quote.materialComponents || "--"],
+        ["Finishing", quoteFinishingLabel(quote.form?.finishingType)],
+        ["Core", quoteCoreLabel(quote.form?.coreSize) || "--"],
+        [`${quoteItemUnitTitle(items[0], quote, true)} / ${quoteItemContainerLabel(quote.form || {})}`, quote.form?.labelsPerUnit || "--"],
+        [`${quoteItemUnitTitle(items[0], quote, true)} / Carton`, quote.form?.labelsPerCarton || "--"],
         ["Material Width", number(Number(quote.form?.materialWidth || 0), '"')],
         ["Number Across", quote.pricing?.numberAcross || "--"],
         ["Layout Width", number(Number(quote.pricing?.totalLayoutWidth || 0), '"')],
@@ -863,11 +1014,11 @@ function quoteInternalSections(quote) {
     {
       title: "MSI Calculation",
       rows: [
-        ["Label Size", `${quote.form?.labelWidth || 0}" x ${quote.form?.labelLength || 0}"`],
+        ["Item Size", `${quote.form?.labelWidth || 0}" x ${quote.form?.labelLength || 0}" ${quoteItemUnitLabel(items[0], quote)}`],
         ["Auto Repeat", number(Number(quote.pricing?.repeat || quote.form?.repeat || 0), '"')],
         ["Run Footage", number(Number(quote.pricing?.runFootage || 0), " ft")],
         ["Quantity", Number(quote.form?.quantity || 0).toLocaleString()],
-        ["Finished Label MSI", number(Number(quote.pricing?.finishedMsi || 0))],
+        ["Finished Item MSI", number(Number(quote.pricing?.finishedMsi || 0))],
         ["Base Material MSI", number(Number(quote.pricing?.baseMaterialMsi || 0))],
         ["Waste Percent", percent(Number(quote.form?.wastePercent || 0))],
         ["Recommended Waste", percent(Number(quote.pricing?.recommendedWastePercent || 0))],
@@ -895,7 +1046,7 @@ function quoteInternalSections(quote) {
         ["Pricing Method", quotePricingModeLabel(quote)],
         ["Sell Price", money(Number(quote.pricing?.sellPrice || 0))],
         ["Price / M", money(Number(quote.pricing?.pricePerThousand || 0))],
-        ["Price / Label", unitMoney(Number(quote.pricing?.pricePerLabel || 0))],
+        [`Price / ${quoteItemUnitTitle(items[0], quote)}`, unitMoney(Number(quote.pricing?.pricePerLabel || 0))],
         ["Profit Dollars", money(Number(quote.pricing?.profit || 0))],
         ["Actual Margin", percent(quoteActualMargin(quote))],
         ["Actual Markup", percent(quoteActualMarkup(quote))],
@@ -964,9 +1115,12 @@ function quoteSearchText(quote) {
     quote.customerName,
     quote.customerCode,
     quote.form?.salesQuote?.customerCode,
+    quote.form?.itemName,
+    quoteItems(quote).map((item) => item.itemName).join(" "),
     quote.jobName,
     quote.productCode,
     quote.materialName,
+    quoteItems(quote).map((item) => quoteFinishingLabel(item.form?.finishingType)).join(" "),
     quotePreparedByName(quote),
     quotePreparedByRole(quote),
     quoteDateLabel(quote.createdAt),
@@ -1076,6 +1230,11 @@ function FinishedMaterialForm({ form, rawMaterials, update, submit, editing = fa
     <form className="quote-library-form" onSubmit={submit}>
       <Field label="Name">
         <input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="PM / 40# / Permanent" />
+      </Field>
+      <Field label="Material Unit">
+        <select value={form.unitType} onChange={(event) => update("unitType", event.target.value)}>
+          {quoteUnitTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+        </select>
       </Field>
       <Field label="Source">
         <select value={form.sourceType} onChange={(event) => update("sourceType", event.target.value)}>
@@ -1267,7 +1426,7 @@ function InternalQuoteBreakdown({ quote, materialOptions = [] }) {
           <section className="quote-internal-formula">
             <span>Material formula</span>
             <code>
-              ({quote.pricing?.repeat || quote.form?.repeat || 0} repeat x {Number(quote.form?.quantity || 0).toLocaleString()} labels x {quote.form?.materialWidth || 0}" web) / (1000 x {quote.pricing?.numberAcross || 0} across) x {number(Number(quote.pricing?.wasteMultiplier || 1))} waste x {unitMoney(msiUnitCost)}
+              ({quote.pricing?.repeat || quote.form?.repeat || 0} repeat x {Number(quote.form?.quantity || 0).toLocaleString()} {quoteItemUnitLabel(items[0], quote, true)} x {quote.form?.materialWidth || 0}" web) / (1000 x {quote.pricing?.numberAcross || 0} across) x {number(Number(quote.pricing?.wasteMultiplier || 1))} waste x {unitMoney(msiUnitCost)}
             </code>
           </section>
           <section className="quote-current-msi-note">
@@ -1719,8 +1878,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     setForm((prev) => ({
       ...prev,
       msiCost: String(selectedMaterial.calculatedMsiCost),
+      unitType: selectedMaterial.unitType || prev.unitType,
     }));
-  }, [selectedMaterial?.id, selectedMaterial?.calculatedMsiCost, selectedMaterial?.width_inches]);
+  }, [selectedMaterial?.id, selectedMaterial?.calculatedMsiCost, selectedMaterial?.unitType, selectedMaterial?.width_inches]);
 
   useEffect(() => {
     setForm((prev) => ({
@@ -1774,6 +1934,11 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       labelLength: dimensions.length,
       gap: dimensions.gap,
       quantity: quantity.quantity,
+      unitType: selectedJobTicket.unit_type || material?.unitType || prev.unitType,
+      finishingType: selectedJobTicket.finishing_type || prev.finishingType,
+      coreSize: dimensionInputValue(selectedJobTicket.core_size_inches) || prev.coreSize,
+      labelsPerUnit: quantityInputValue(selectedJobTicket.labels_per_unit) || prev.labelsPerUnit,
+      labelsPerCarton: quantityInputValue(selectedJobTicket.labels_per_carton || selectedJobTicket.units_per_carton) || prev.labelsPerCarton,
       selectedMaterialId: material?.id || prev.selectedMaterialId,
       msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
       pricingPercent: material ? materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent : prev.pricingPercent,
@@ -1787,6 +1952,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const customerName = linkedCustomer?.name || selectedJobTicket.customer_display || selectedJobTicket.customer_name || "";
     setQuoteInfo((prev) => ({
       ...prev,
+      itemName: prev.itemName || jobTicketPartNumber(selectedJobTicket),
+      jobName: selectedJobTicket.job_name || prev.jobName,
+      productCode: selectedJobTicket.product_code || prev.productCode,
       customerId: linkedCustomer?.id ? String(linkedCustomer.id) : prev.customerId,
       customerCode: linkedCustomer?.customer_code || prev.customerCode,
       customerName: customerName || prev.customerName,
@@ -1821,6 +1989,10 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   function updateQuoteInfo(name, value) {
     if (name === "jobTicketId" || name === "linkMode") {
       setWasteManuallyEdited(false);
+    }
+    if (name === "linkMode") {
+      if (value === "manual") setJobTicketPickerOpen(false);
+      if (value === "ticket") setCustomerPickerOpen(false);
     }
     setQuoteInfo((prev) => ({ ...prev, [name]: value }));
   }
@@ -1901,7 +2073,13 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   function selectJobTicket(ticket) {
     setWasteManuallyEdited(false);
-    setQuoteInfo((prev) => ({ ...prev, jobTicketId: String(ticket.id) }));
+    setQuoteInfo((prev) => ({
+      ...prev,
+      jobTicketId: String(ticket.id),
+      itemName: jobTicketPartNumber(ticket),
+      jobName: ticket.job_name || ticket.product_name || "",
+      productCode: ticket.product_code || "",
+    }));
     setJobTicketSearch(jobTicketPartNumber(ticket));
     setJobTicketPickerOpen(false);
   }
@@ -1947,6 +2125,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     setForm((prev) => ({
       ...prev,
       selectedMaterialId: value,
+      unitType: material?.unitType || prev.unitType,
       msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
       pricingPercent: material ? materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent : prev.pricingPercent,
     }));
@@ -1957,9 +2136,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   }
 
   function buildCurrentQuoteItem() {
-    const itemName = quoteInfo.linkMode === "ticket"
+    const itemName = quoteInfo.itemName.trim() || (quoteInfo.linkMode === "ticket"
       ? selectedJobTicket?.job_name || selectedJobTicket?.product_name || "Job ticket item"
-      : quoteInfo.jobName || "Manual quote item";
+      : quoteInfo.jobName || "Manual quote item");
     return {
       id: makeId("item"),
       itemName,
@@ -1985,8 +2164,8 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const ticket = quoteInfo.linkMode === "ticket" ? selectedJobTicket : null;
     const recordCustomer = selectedCustomer || customers.find((customer) => String(customer.id) === String(ticket?.customer || "")) || null;
     const customerName = recordCustomer?.name || ticket?.customer_display || ticket?.customer_name || quoteInfo.customerName;
-    const jobName = ticket?.job_name || ticket?.product_name || quoteInfo.jobName;
-    const productCode = ticket?.product_code || "";
+    const jobName = quoteInfo.jobName || ticket?.job_name || ticket?.product_name || quoteInfo.itemName;
+    const productCode = quoteInfo.productCode || ticket?.product_code || "";
     const preparedBy = currentUser?.name || quoteInfo.preparedBy;
     const items = quoteItemsDraft.length ? quoteItemsDraft : [buildCurrentQuoteItem()];
     const totals = quoteTotals({ form: { items }, pricing: { items } });
@@ -2020,7 +2199,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       materialName: items.length === 1 ? items[0].materialName : "Multiple materials",
       materialSource: items.length === 1 ? items[0].materialSource : "multiple",
       materialComponents: items.length === 1 ? items[0].materialComponents : `${items.length} quoted items`,
-      form: { ...form, repeat: String(pricing.repeat), items, salesQuote },
+      form: { ...form, itemName: quoteInfo.itemName.trim(), repeat: String(pricing.repeat), items, salesQuote },
       pricing: { ...totals, items },
     };
     return record;
@@ -2152,7 +2331,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     const tableX = 42;
     const tableTop = 542;
     const headerHeight = 18;
-    const rowHeight = 48;
+    const rowHeight = 60;
     const visibleItems = items.slice(0, 4);
     const columns = [42, 312, 366, 410, 492, 570];
     const tableBottom = tableTop - headerHeight - visibleItems.length * rowHeight - 20;
@@ -2170,7 +2349,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
       const yTop = tableTop - headerHeight - index * rowHeight;
       const yBase = yTop - 16;
       text(50, yBase, 8, clipText(quoteLinePartNumber(item, quote), 46), "F2");
-      quoteLineDescriptionRows(item, quote).slice(0, 3).forEach((lineText, rowIndex) => {
+      quoteLineDescriptionRows(item, quote).slice(0, 4).forEach((lineText, rowIndex) => {
         text(50, yBase - 11 - rowIndex * 10, 7, clipText(lineText, 60));
       });
       text(326, yBase, 8, quoteTableQuantity(item, salesInfo.unitOfMeasure));
@@ -2327,6 +2506,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     setForm((prev) => ({
       ...prev,
       selectedMaterialId: saved.id,
+      unitType: saved.unitType || prev.unitType,
       msiCost: String(calculateFinishedMaterialMsiCost(saved, rawMaterials, quoteRates)),
       pricingPercent: materialTargetPricingPercent(saved, prev.pricingMode) || prev.pricingPercent,
     }));
@@ -2367,6 +2547,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     setForm((prev) => ({
       ...prev,
       selectedMaterialId: material.id,
+      unitType: material.unitType || prev.unitType,
       msiCost: String(material.calculatedMsiCost),
       pricingPercent: materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent,
     }));
@@ -2422,10 +2603,20 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                   <FileText size={16} />
                   <strong>Quote Info</strong>
                 </div>
-                <div className="quote-segmented compact">
-                  <button className={quoteInfo.linkMode === "ticket" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "ticket")}>Use Job Ticket</button>
-                  <button className={quoteInfo.linkMode === "manual" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "manual")}>Manual Entry</button>
+                <div className="quote-segmented compact quote-info-mode-tabs">
+                  <button className={quoteInfo.linkMode === "manual" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "manual")}>Custom Quote</button>
+                  <button className={quoteInfo.linkMode === "ticket" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "ticket")}>Job Ticket</button>
                 </div>
+                <details className="quote-link-window quote-customer-contact-panel" defaultOpen={quoteInfo.linkMode === "manual" ? !selectedCustomer : !selectedJobTicket}>
+                  <summary className="quote-link-window-head">
+                    <strong>{quoteInfo.linkMode === "ticket" ? "Job Ticket + Contact" : "Customer + Contact"}</strong>
+                    <span>
+                      {quoteInfo.linkMode === "ticket"
+                        ? selectedJobTicket ? jobTicketPartNumber(selectedJobTicket) : "Search an existing job ticket"
+                        : [selectedCustomer?.name || quoteInfo.customerName || "Select customer", quoteInfo.contactName, quoteInfo.contactEmail].filter(Boolean).join(" / ")}
+                    </span>
+                  </summary>
+                {quoteInfo.linkMode === "manual" && (
                 <div className="quote-customer-picker">
                   <label className="quote-ticket-search">
                     <span>Customer Account</span>
@@ -2471,8 +2662,13 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                       {!matchingCustomers.length && <p className="quote-ticket-empty">No customers matched that search.</p>}
                     </div>
                   )}
-                  {customerCreateOpen && (
-                    <div className="quote-customer-create">
+                  {(customerCreateOpen || (customerSearch.trim() && !matchingCustomers.length)) && (
+                    <details
+                      className="quote-customer-create"
+                      open={customerCreateOpen}
+                      onToggle={(event) => setCustomerCreateOpen(event.currentTarget.open)}
+                    >
+                      <summary>New Customer Details</summary>
                       <div className="quote-simple-grid quote-info-grid">
                         <Field label="Customer">
                           <input value={customerDraft.name} onChange={(event) => updateCustomerDraft("name", event.target.value)} />
@@ -2517,9 +2713,10 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                           {customerSaving ? "Saving..." : "Save Customer"}
                         </button>
                       </div>
-                    </div>
+                    </details>
                   )}
                 </div>
+                )}
                 {quoteInfo.linkMode === "ticket" ? (
                   <div className="quote-ticket-grid">
                     <div className="quote-ticket-picker">
@@ -2613,46 +2810,43 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                     )}
                     {jobTicketLoadState === "error" && <p className="quote-help-text">Job tickets could not load. Use manual entry for this quote.</p>}
                   </div>
-                ) : (
-                  <div className="quote-simple-grid quote-info-grid">
-                    <Field label="Customer">
-                      <input value={quoteInfo.customerName} onChange={(event) => updateQuoteInfo("customerName", event.target.value)} />
+                ) : null}
+                  <div className="quote-simple-grid quote-info-grid quote-sales-info-grid">
+                    <Field label="Contact Name">
+                      <input value={quoteInfo.contactName} onChange={(event) => updateQuoteInfo("contactName", event.target.value)} />
                     </Field>
-                    <Field label="Job Number">
-                      <input value={quoteInfo.jobName} onChange={(event) => updateQuoteInfo("jobName", event.target.value)} />
+                    <Field label="Contact Email">
+                      <input type="email" value={quoteInfo.contactEmail} onChange={(event) => updateQuoteInfo("contactEmail", event.target.value)} />
                     </Field>
+                    <Field label="Client P.O.">
+                      <input value={quoteInfo.clientPo} onChange={(event) => updateQuoteInfo("clientPo", event.target.value)} />
+                    </Field>
+                    <Field label="Quote Expiration">
+                      <input type="date" value={quoteInfo.quoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
+                    </Field>
+                    <Field label="UoM">
+                      <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
+                        <option value="M">M - per 1,000 {quoteUnitLabel(form.unitType, true)}</option>
+                        <option value="EA">EA - each {quoteUnitLabel(form.unitType)}</option>
+                      </select>
+                    </Field>
+                    <label className="quote-field quote-field-wide">
+                      <span>Quotation Address</span>
+                      <textarea value={quoteInfo.customerAddress} onChange={(event) => updateQuoteInfo("customerAddress", event.target.value)} />
+                    </label>
                   </div>
-                )}
-                <div className="quote-simple-grid quote-info-grid quote-sales-info-grid">
-                  <Field label="Contact Name">
-                    <input value={quoteInfo.contactName} onChange={(event) => updateQuoteInfo("contactName", event.target.value)} />
-                  </Field>
-                  <Field label="Contact Email">
-                    <input type="email" value={quoteInfo.contactEmail} onChange={(event) => updateQuoteInfo("contactEmail", event.target.value)} />
-                  </Field>
-                  <Field label="Client P.O.">
-                    <input value={quoteInfo.clientPo} onChange={(event) => updateQuoteInfo("clientPo", event.target.value)} />
-                  </Field>
-                  <Field label="Quote Expiration">
-                    <input type="date" value={quoteInfo.quoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
-                  </Field>
-                  <Field label="UoM">
-                    <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
-                      <option value="M">M - per 1,000 labels</option>
-                      <option value="EA">EA - each label</option>
-                    </select>
-                  </Field>
-                  <label className="quote-field quote-field-wide">
-                    <span>Quotation Address</span>
-                    <textarea value={quoteInfo.customerAddress} onChange={(event) => updateQuoteInfo("customerAddress", event.target.value)} />
-                  </label>
-                </div>
+                </details>
               </section>
 
               <section className="quote-section quote-primary-section">
                 <div className="quote-section-head">
                   <CircleDollarSign size={16} />
                   <strong>Quote Details</strong>
+                </div>
+                <div className="quote-identity-grid quote-item-identity-grid">
+                  <Field label="Quoted Item / Part #">
+                    <input value={quoteInfo.itemName} onChange={(event) => updateQuoteInfo("itemName", event.target.value)} placeholder="DTT-4-8-F-BLS" />
+                  </Field>
                 </div>
                 <div className="quote-top-grid quote-main-input-grid">
                   <Field label="Finished Material">
@@ -2663,7 +2857,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                       ))}
                     </select>
                   </Field>
-                  <Field label="Quantity" suffix="labels">
+                  <Field label="Quantity" suffix={quoteUnitLabel(form.unitType, true)}>
                     <input type="number" step="1" value={form.quantity} onChange={(event) => updateField("quantity", event.target.value)} />
                   </Field>
                   <Field label="Waste" suffix="%">
@@ -2690,15 +2884,42 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                 )}
 
                 <div className="quote-simple-grid quote-secondary-input-grid">
-                  <Field label="Label Width" suffix="in">
+                  <Field label="Item Type">
+                    <select value={form.unitType} onChange={(event) => updateField("unitType", event.target.value)}>
+                      {quoteUnitTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                    </select>
+                  </Field>
+                  <Field label={`${quoteUnitTitle(form.unitType)} Width`} suffix="in">
                     <input type="number" step="0.0001" value={form.labelWidth} onChange={(event) => updateField("labelWidth", event.target.value)} />
                   </Field>
-                  <Field label="Label Length" suffix="in">
+                  <Field label={`${quoteUnitTitle(form.unitType)} Length`} suffix="in">
                     <input type="number" step="0.0001" value={form.labelLength} onChange={(event) => updateField("labelLength", event.target.value)} />
                   </Field>
                   <Field label="Gap" suffix="in">
                     <input type="number" step="0.0001" value={form.gap} onChange={(event) => updateField("gap", event.target.value)} />
                   </Field>
+                  <Field label="Finishing">
+                    <select value={form.finishingType} onChange={(event) => updateField("finishingType", event.target.value)}>
+                      {quoteFinishingTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Core Size">
+                    <select value={form.coreSize} onChange={(event) => updateField("coreSize", event.target.value)}>
+                      {quoteCoreSizeChoices.map((size) => (
+                        <option value={size} key={size || "none"}>{size ? `${size}"` : "No core"}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label={`${quoteUnitTitle(form.unitType, true)} / ${quoteItemContainerLabel(form)}`}>
+                    <input type="number" step="1" min="0" value={form.labelsPerUnit} onChange={(event) => updateField("labelsPerUnit", event.target.value)} />
+                  </Field>
+                  <Field label={`${quoteUnitTitle(form.unitType, true)} / Carton`}>
+                    <input type="number" step="1" min="0" value={form.labelsPerCarton} onChange={(event) => updateField("labelsPerCarton", event.target.value)} />
+                  </Field>
+                  <label className="quote-field quote-field-wide">
+                    <span>Proof Note</span>
+                    <input value={form.itemNote} onChange={(event) => updateField("itemNote", event.target.value)} placeholder="Yellow border" />
+                  </label>
                   {manualMaterialWidth && (
                     <Field label="Material Width" suffix="in">
                       <input type="number" step="0.0001" value={form.materialWidth} onChange={(event) => updateField("materialWidth", event.target.value)} />
@@ -2728,7 +2949,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
 
                 <div className="quote-auto-repeat">
                   <Ruler size={15} />
-                  <span>Repeat is calculated automatically from label length plus gap.</span>
+                  <span>Repeat is calculated automatically from {quoteUnitLabel(form.unitType)} length plus gap.</span>
                   <strong>{number(pricing.repeat, '"')}</strong>
                 </div>
                 <div className="quote-waste-recommendation">
@@ -2817,7 +3038,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                   <em>{currentProfitHealth.displayLabel} {percent(currentProfitHealth.displayCurrent)} / target {percent(currentProfitHealth.displayTarget)}</em>
                   <small>{currentProfitHealth.secondaryLabel}</small>
                 </div>
-                <Metric label="Price / Label" value={unitMoney(pricing.pricePerLabel)} />
+                <Metric label={`Price / ${quoteUnitTitle(form.unitType)}`} value={unitMoney(pricing.pricePerLabel)} />
               </div>
 
               <div className="quote-breakdown">
@@ -2884,7 +3105,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                 ))}
               </div>
             ) : (
-              <p className="quote-empty">No lane option fits the current label and material width.</p>
+              <p className="quote-empty">No lane option fits the current item and material width.</p>
             )}
           </section>
         </>
@@ -3024,7 +3245,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                   <article className={`quote-library-row ${form.selectedMaterialId === material.id ? "active" : ""}`} key={material.id}>
                     <div>
                       <strong>{material.name}</strong>
-                      <span>{material.masterTypeLabel ? `${material.masterTypeLabel} / ` : ""}{material.sourceType === "purchased" ? "Purchased" : "Made in-house"} / {material.componentLabel}</span>
+                      <span>{quoteUnitTitle(material.unitType)} / {material.masterTypeLabel ? `${material.masterTypeLabel} / ` : ""}{material.sourceType === "purchased" ? "Purchased" : "Made in-house"} / {material.componentLabel}</span>
                     </div>
                     <em>{unitMoney(material.calculatedMsiCost)}/MSI</em>
                     <span>{percentFormatter.format(Number(material.baseMarkupPercent || 0))}% minimum / {percentFormatter.format(Number((material.targetMarkupPercent ?? material.targetMarginPercent) || 0))}% target markup</span>

@@ -107,6 +107,7 @@ class QuoteCostRate(models.Model):
 class QuoteFinishedMaterial(models.Model):
     external_id = models.CharField(max_length=120, unique=True)
     name = models.CharField(max_length=180)
+    unit_type = models.CharField(max_length=20, choices=[("label", "Label"), ("tag", "Tag")], default="label")
     material_master_type = models.ForeignKey(
         MaterialMasterType,
         on_delete=models.SET_NULL,
