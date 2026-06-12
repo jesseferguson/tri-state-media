@@ -122,6 +122,23 @@ const emptyQuoteInfo = {
   notes: "",
 };
 
+const emptyCustomerDraft = {
+  name: "",
+  customer_code: "",
+  contact_name: "",
+  phone: "",
+  email: "",
+  address_line_1: "",
+  address_line_2: "",
+  address_line_3: "",
+  city: "",
+  state: "",
+  postal_code: "",
+  country: "",
+  quotation_address: "",
+  is_active: true,
+};
+
 function money(value) {
   return currencyFormatter.format(Number.isFinite(value) ? value : 0);
 }
@@ -1500,21 +1517,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [customerCreateOpen, setCustomerCreateOpen] = useState(false);
   const [customerSaving, setCustomerSaving] = useState(false);
-  const [customerDraft, setCustomerDraft] = useState({
-    name: "",
-    customer_code: "",
-    contact_name: "",
-    phone: "",
-    email: "",
-    address_line_1: "",
-    address_line_2: "",
-    address_line_3: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "",
-    is_active: true,
-  });
+  const [customerDraft, setCustomerDraft] = useState(emptyCustomerDraft);
   const [jobTickets, setJobTickets] = useState([]);
   const [jobTicketSearch, setJobTicketSearch] = useState("");
   const [jobTicketPickerOpen, setJobTicketPickerOpen] = useState(false);
@@ -2033,8 +2036,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     if (!name || customerSaving) return;
     setCustomerSaving(true);
     try {
+      const quoteAddress = customerDraft.quotation_address.trim();
       const saved = await createRecord("customers", {
-        ...customerDraft,
+        is_active: customerDraft.is_active !== false,
         name,
         customer_code: customerDraft.customer_code.trim(),
         contact_name: customerDraft.contact_name.trim(),
@@ -2050,21 +2054,8 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       });
       setCustomers((prev) => [saved, ...prev.filter((customer) => String(customer.id) !== String(saved.id))]);
       selectCustomer(saved);
-      setCustomerDraft({
-        name: "",
-        customer_code: "",
-        contact_name: "",
-        phone: "",
-        email: "",
-        address_line_1: "",
-        address_line_2: "",
-        address_line_3: "",
-        city: "",
-        state: "",
-        postal_code: "",
-        country: "",
-        is_active: true,
-      });
+      if (quoteAddress) setQuoteInfo((prev) => ({ ...prev, customerAddress: quoteAddress }));
+      setCustomerDraft(emptyCustomerDraft);
       setCustomerCreateOpen(false);
     } catch (error) {
       window.alert(`Could not create customer: ${error.message}`);
@@ -2586,6 +2577,119 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     setRawForm(emptyRawForm);
   }
 
+  function renderCustomerAccountPanel() {
+    return (
+      <div className="quote-customer-picker">
+        <label className="quote-ticket-search">
+          <span>Customer Account</span>
+          <div>
+            <Search size={16} />
+            <input
+              value={customerSearch}
+              onClick={() => setCustomerPickerOpen(true)}
+              onFocus={() => setCustomerPickerOpen(true)}
+              onChange={(event) => {
+                setCustomerSearch(event.target.value);
+                setCustomerPickerOpen(true);
+              }}
+              placeholder="Search customer, Customer ID, contact, city, or email"
+            />
+          </div>
+        </label>
+
+        {selectedCustomer && (
+          <div className="quote-selected-customer">
+            <div>
+              <span>Selected Customer</span>
+              <strong>{selectedCustomer.name}</strong>
+              <em>{[selectedCustomer.customer_code ? `ID ${selectedCustomer.customer_code}` : "", selectedCustomer.contact_name, selectedCustomer.email].filter(Boolean).join(" / ")}</em>
+            </div>
+            <button className="ghost-btn" type="button" onClick={clearCustomerSelection}>Clear</button>
+          </div>
+        )}
+
+        {customerPickerOpen && (
+          <div className="quote-customer-results">
+            <div className="quote-ticket-results-head">
+              <span>{matchingCustomers.length.toLocaleString()} customer match{matchingCustomers.length === 1 ? "" : "es"}</span>
+              <button type="button" onClick={() => setCustomerCreateOpen((current) => !current)}>
+                <Plus size={14} /> Add Customer
+              </button>
+            </div>
+            {matchingCustomers.map((customer) => (
+              <button type="button" key={customer.id} onClick={() => selectCustomer(customer)}>
+                <strong>{customerPickerLabel(customer)}</strong>
+                <span>{[customer.contact_name, customer.email, customer.phone].filter(Boolean).join(" / ") || "No contact on file"}</span>
+                <em>{customerAddressLines(customer).slice(0, 2).join(" / ") || "No address on file"}</em>
+              </button>
+            ))}
+            {!matchingCustomers.length && <p className="quote-ticket-empty">No customers matched that search.</p>}
+          </div>
+        )}
+
+        <details
+          className="quote-customer-create"
+          open={customerCreateOpen}
+          onToggle={(event) => setCustomerCreateOpen(event.currentTarget.open)}
+        >
+          <summary>New Customer Details</summary>
+          <div className="quote-simple-grid quote-info-grid">
+            <Field label="Customer">
+              <input value={customerDraft.name} onChange={(event) => updateCustomerDraft("name", event.target.value)} />
+            </Field>
+            <Field label="Customer ID">
+              <input value={customerDraft.customer_code} onChange={(event) => updateCustomerDraft("customer_code", event.target.value)} />
+            </Field>
+            <Field label="Contact Name">
+              <input value={customerDraft.contact_name} onChange={(event) => updateCustomerDraft("contact_name", event.target.value)} />
+            </Field>
+            <Field label="Contact Email">
+              <input type="email" value={customerDraft.email} onChange={(event) => updateCustomerDraft("email", event.target.value)} />
+            </Field>
+            <Field label="Phone">
+              <input value={customerDraft.phone} onChange={(event) => updateCustomerDraft("phone", event.target.value)} />
+            </Field>
+            <Field label="Address Line 1">
+              <input value={customerDraft.address_line_1} onChange={(event) => updateCustomerDraft("address_line_1", event.target.value)} />
+            </Field>
+            <Field label="Address Line 2">
+              <input value={customerDraft.address_line_2} onChange={(event) => updateCustomerDraft("address_line_2", event.target.value)} />
+            </Field>
+            <Field label="Address Line 3">
+              <input value={customerDraft.address_line_3} onChange={(event) => updateCustomerDraft("address_line_3", event.target.value)} />
+            </Field>
+            <Field label="City">
+              <input value={customerDraft.city} onChange={(event) => updateCustomerDraft("city", event.target.value)} />
+            </Field>
+            <Field label="State">
+              <input value={customerDraft.state} onChange={(event) => updateCustomerDraft("state", event.target.value)} />
+            </Field>
+            <Field label="Zip">
+              <input value={customerDraft.postal_code} onChange={(event) => updateCustomerDraft("postal_code", event.target.value)} />
+            </Field>
+            <Field label="Country">
+              <input value={customerDraft.country} onChange={(event) => updateCustomerDraft("country", event.target.value)} />
+            </Field>
+            <label className="quote-field quote-field-wide">
+              <span>Quotation Address</span>
+              <textarea
+                value={customerDraft.quotation_address}
+                onChange={(event) => updateCustomerDraft("quotation_address", event.target.value)}
+                placeholder="Optional quote address if it should differ from the customer account address"
+              />
+            </label>
+          </div>
+          <div className="quote-form-actions">
+            <button className="ghost-btn" type="button" onClick={() => setCustomerCreateOpen(false)}>Cancel</button>
+            <button className="primary-btn" type="button" onClick={createQuoteCustomer} disabled={customerSaving || !customerDraft.name.trim()}>
+              {customerSaving ? "Saving..." : "Save Customer"}
+            </button>
+          </div>
+        </details>
+      </div>
+    );
+  }
+
   return (
     <section className="quote-tool">
       <nav className="quote-tabs" aria-label="Quote calculator sections">
@@ -2614,116 +2718,16 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                   <button className={quoteInfo.linkMode === "manual" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "manual")}>Custom Quote</button>
                   <button className={quoteInfo.linkMode === "ticket" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "ticket")}>Job Ticket</button>
                 </div>
-                <details className="quote-link-window quote-customer-contact-panel" defaultOpen={quoteInfo.linkMode === "manual" ? !selectedCustomer : !selectedJobTicket}>
+                <details className="quote-link-window quote-customer-contact-panel" defaultOpen={!selectedCustomer || (quoteInfo.linkMode === "ticket" && !selectedJobTicket)}>
                   <summary className="quote-link-window-head">
-                    <strong>{quoteInfo.linkMode === "ticket" ? "Job Ticket + Contact" : "Customer + Contact"}</strong>
+                    <strong>{quoteInfo.linkMode === "ticket" ? "Customer Account + Job Ticket" : "Customer Account"}</strong>
                     <span>
                       {quoteInfo.linkMode === "ticket"
-                        ? selectedJobTicket ? jobTicketPartNumber(selectedJobTicket) : "Search an existing job ticket"
-                        : [selectedCustomer?.name || quoteInfo.customerName || "Select customer", quoteInfo.contactName, quoteInfo.contactEmail].filter(Boolean).join(" / ")}
+                        ? [selectedCustomer?.name || quoteInfo.customerName || "Select customer", selectedJobTicket ? jobTicketPartNumber(selectedJobTicket) : "Search job ticket"].filter(Boolean).join(" / ")
+                        : selectedCustomer?.name || quoteInfo.customerName || "Select or add customer"}
                     </span>
                   </summary>
-                {quoteInfo.linkMode === "manual" && (
-                <div className="quote-customer-picker">
-                  <label className="quote-ticket-search">
-                    <span>Customer Account</span>
-                    <div>
-                      <Search size={16} />
-                      <input
-                        value={customerSearch}
-                        onClick={() => setCustomerPickerOpen(true)}
-                        onFocus={() => setCustomerPickerOpen(true)}
-                        onChange={(event) => {
-                          setCustomerSearch(event.target.value);
-                          setCustomerPickerOpen(true);
-                        }}
-                        placeholder="Search customer, Customer ID, contact, city, or email"
-                      />
-                    </div>
-                  </label>
-                  {selectedCustomer && (
-                    <div className="quote-selected-customer">
-                      <div>
-                        <span>Selected Customer</span>
-                        <strong>{selectedCustomer.name}</strong>
-                        <em>{[selectedCustomer.customer_code ? `ID ${selectedCustomer.customer_code}` : "", selectedCustomer.contact_name, selectedCustomer.email].filter(Boolean).join(" / ")}</em>
-                      </div>
-                      <button className="ghost-btn" type="button" onClick={clearCustomerSelection}>Clear</button>
-                    </div>
-                  )}
-                  {customerPickerOpen && (
-                    <div className="quote-customer-results">
-                      <div className="quote-ticket-results-head">
-                        <span>{matchingCustomers.length.toLocaleString()} customer match{matchingCustomers.length === 1 ? "" : "es"}</span>
-                        <button type="button" onClick={() => setCustomerCreateOpen((current) => !current)}>
-                          <Plus size={14} /> Add Customer
-                        </button>
-                      </div>
-                      {matchingCustomers.map((customer) => (
-                        <button type="button" key={customer.id} onClick={() => selectCustomer(customer)}>
-                          <strong>{customerPickerLabel(customer)}</strong>
-                          <span>{[customer.contact_name, customer.email, customer.phone].filter(Boolean).join(" / ") || "No contact on file"}</span>
-                          <em>{customerAddressLines(customer).slice(0, 2).join(" / ") || "No address on file"}</em>
-                        </button>
-                      ))}
-                      {!matchingCustomers.length && <p className="quote-ticket-empty">No customers matched that search.</p>}
-                    </div>
-                  )}
-                  {(customerCreateOpen || (customerSearch.trim() && !matchingCustomers.length)) && (
-                    <details
-                      className="quote-customer-create"
-                      open={customerCreateOpen}
-                      onToggle={(event) => setCustomerCreateOpen(event.currentTarget.open)}
-                    >
-                      <summary>New Customer Details</summary>
-                      <div className="quote-simple-grid quote-info-grid">
-                        <Field label="Customer">
-                          <input value={customerDraft.name} onChange={(event) => updateCustomerDraft("name", event.target.value)} />
-                        </Field>
-                        <Field label="Customer ID">
-                          <input value={customerDraft.customer_code} onChange={(event) => updateCustomerDraft("customer_code", event.target.value)} />
-                        </Field>
-                        <Field label="Contact">
-                          <input value={customerDraft.contact_name} onChange={(event) => updateCustomerDraft("contact_name", event.target.value)} />
-                        </Field>
-                        <Field label="Email">
-                          <input type="email" value={customerDraft.email} onChange={(event) => updateCustomerDraft("email", event.target.value)} />
-                        </Field>
-                        <Field label="Phone">
-                          <input value={customerDraft.phone} onChange={(event) => updateCustomerDraft("phone", event.target.value)} />
-                        </Field>
-                        <Field label="Address Line 1">
-                          <input value={customerDraft.address_line_1} onChange={(event) => updateCustomerDraft("address_line_1", event.target.value)} />
-                        </Field>
-                        <Field label="Address Line 2">
-                          <input value={customerDraft.address_line_2} onChange={(event) => updateCustomerDraft("address_line_2", event.target.value)} />
-                        </Field>
-                        <Field label="Address Line 3">
-                          <input value={customerDraft.address_line_3} onChange={(event) => updateCustomerDraft("address_line_3", event.target.value)} />
-                        </Field>
-                        <Field label="City">
-                          <input value={customerDraft.city} onChange={(event) => updateCustomerDraft("city", event.target.value)} />
-                        </Field>
-                        <Field label="State">
-                          <input value={customerDraft.state} onChange={(event) => updateCustomerDraft("state", event.target.value)} />
-                        </Field>
-                        <Field label="Zip">
-                          <input value={customerDraft.postal_code} onChange={(event) => updateCustomerDraft("postal_code", event.target.value)} />
-                        </Field>
-                        <Field label="Country">
-                          <input value={customerDraft.country} onChange={(event) => updateCustomerDraft("country", event.target.value)} />
-                        </Field>
-                      </div>
-                      <div className="quote-form-actions">
-                        <button className="ghost-btn" type="button" onClick={() => setCustomerCreateOpen(false)}>Cancel</button>
-                        <button className="primary-btn" type="button" onClick={createQuoteCustomer} disabled={customerSaving || !customerDraft.name.trim()}>
-                          {customerSaving ? "Saving..." : "Save Customer"}
-                        </button>
-                      </div>
-                    </details>
-                  )}
-                </div>
-                )}
+                  {renderCustomerAccountPanel()}
                 {quoteInfo.linkMode === "ticket" ? (
                   <div className="quote-ticket-grid">
                     <div className="quote-ticket-picker">
@@ -2818,30 +2822,6 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                     {jobTicketLoadState === "error" && <p className="quote-help-text">Job tickets could not load. Use manual entry for this quote.</p>}
                   </div>
                 ) : null}
-                  <div className="quote-simple-grid quote-info-grid quote-sales-info-grid">
-                    <Field label="Contact Name">
-                      <input value={quoteInfo.contactName} onChange={(event) => updateQuoteInfo("contactName", event.target.value)} />
-                    </Field>
-                    <Field label="Contact Email">
-                      <input type="email" value={quoteInfo.contactEmail} onChange={(event) => updateQuoteInfo("contactEmail", event.target.value)} />
-                    </Field>
-                    <Field label="Client P.O.">
-                      <input value={quoteInfo.clientPo} onChange={(event) => updateQuoteInfo("clientPo", event.target.value)} />
-                    </Field>
-                    <Field label="Quote Expiration">
-                      <input type="date" value={quoteInfo.quoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
-                    </Field>
-                    <Field label="UoM">
-                      <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
-                        <option value="M">M - per 1,000 {quoteUnitLabel(form.unitType, true)}</option>
-                        <option value="EA">EA - each {quoteUnitLabel(form.unitType)}</option>
-                      </select>
-                    </Field>
-                    <label className="quote-field quote-field-wide">
-                      <span>Quotation Address</span>
-                      <textarea value={quoteInfo.customerAddress} onChange={(event) => updateQuoteInfo("customerAddress", event.target.value)} />
-                    </label>
-                  </div>
                 </details>
               </section>
 
@@ -2855,6 +2835,26 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                     <input value={quoteInfo.itemName} onChange={(event) => updateQuoteInfo("itemName", event.target.value)} placeholder="DTT-4-8-F-BLS" />
                   </Field>
                 </div>
+                <details className="quote-link-window quote-quote-options">
+                  <summary className="quote-link-window-head">
+                    <strong>Quote Options</strong>
+                    <span>{[quoteInfo.clientPo ? `PO ${quoteInfo.clientPo}` : "", quoteInfo.quoteExpirationDate ? `Expires ${quoteInfo.quoteExpirationDate}` : "", quoteInfo.unitOfMeasure || quoteDefaultUnitOfMeasure].filter(Boolean).join(" / ") || "PO, expiration, and UoM"}</span>
+                  </summary>
+                  <div className="quote-simple-grid quote-info-grid quote-options-grid">
+                    <Field label="Client P.O.">
+                      <input value={quoteInfo.clientPo} onChange={(event) => updateQuoteInfo("clientPo", event.target.value)} />
+                    </Field>
+                    <Field label="Quote Expiration">
+                      <input type="date" value={quoteInfo.quoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
+                    </Field>
+                    <Field label="UoM">
+                      <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
+                        <option value="M">M - per 1,000 {quoteUnitLabel(form.unitType, true)}</option>
+                        <option value="EA">EA - each {quoteUnitLabel(form.unitType)}</option>
+                      </select>
+                    </Field>
+                  </div>
+                </details>
                 <div className="quote-top-grid quote-main-input-grid">
                   <Field label="Finished Material">
                     <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>

@@ -6868,8 +6868,12 @@ p, .muted { color: #7a7a7a; }
   content: "-";
 }
 
-.quote-customer-contact-panel .quote-sales-info-grid {
-  padding-top: 10px;
+.quote-quote-options {
+  background: #fbfdff;
+}
+
+.quote-options-grid {
+  padding-top: 8px;
   border-top: 1px solid #eef2f7;
 }
 
@@ -7591,6 +7595,10 @@ p, .muted { color: #7a7a7a; }
 .quote-customer-create > .quote-simple-grid {
   padding-top: 8px;
   border-top: 1px solid #e4eaf2;
+}
+
+.quote-customer-create .quote-field-wide {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 640px) {
