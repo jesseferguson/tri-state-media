@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
+import { BadgeCheck, Building2, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
 import { createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
@@ -41,11 +41,13 @@ import {
   roleHasResourceAccess,
   saveRoleToApi,
   saveRoles,
+  saveSession,
   saveUserToApi,
   saveUsers,
   signIn,
   userIsAdmin,
 } from "./lib/localAuth";
+import { quoteCompanyKey, quoteCompanyLabel, quoteCompanyOptions } from "./lib/quoteCompanies";
 import { emptyFlexDieFilters, filterFlexDies, filterRows } from "./lib/filtering";
 import { formatCell, getRecordTitle } from "./lib/format";
 
@@ -420,6 +422,7 @@ const emptyUserForm = {
   username: "",
   password: "",
   role: "CSR",
+  quoteCompany: "tri_state_media",
   active: true,
 };
 
@@ -502,6 +505,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
       username: user.username,
       password: "",
       role: user.role || "CSR",
+      quoteCompany: quoteCompanyKey(user.quoteCompany),
       active: user.active !== false,
     });
     setError("");
@@ -621,6 +625,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
       username,
       password: form.password || users.find((user) => user.id === editingId)?.password || "",
       role: form.role,
+      quoteCompany: quoteCompanyKey(form.quoteCompany),
       active: form.active,
       createdAt: users.find((user) => user.id === editingId)?.createdAt || new Date().toISOString(),
     };
@@ -716,6 +721,12 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
                 {roleDefinitions.map((role) => <option value={role.name} key={role.id}>{role.name}</option>)}
               </select>
             </label>
+            <label className="field">
+              <span>Quote Company</span>
+              <select value={quoteCompanyKey(form.quoteCompany)} onChange={(event) => update("quoteCompany", event.target.value)}>
+                {quoteCompanyOptions.map((company) => <option value={company.value} key={company.value}>{company.label}</option>)}
+              </select>
+            </label>
             <label className="check-field">
               <input type="checkbox" checked={form.active} onChange={(event) => update("active", event.target.checked)} disabled={editingId && form.username === "admin"} />
               <span>Active user</span>
@@ -741,7 +752,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
                     <span className="user-avatar">{userInitials(user.name)}</span>
                     <div>
                       <strong>{user.name}</strong>
-                      <span>{user.username} / {user.role}</span>
+                      <span>{user.username} / {user.role} / {quoteCompanyLabel(user.quoteCompany)}</span>
                     </div>
                   </div>
                   <span className={`user-status-pill ${user.active === false ? "inactive" : "active"}`}>{user.active === false ? "Inactive" : "Active"}</span>
@@ -827,8 +838,9 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
   );
 }
 
-function AccountMenu({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }) {
+function AccountMenu({ currentUser, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
   const [open, setOpen] = useState(false);
+  const activeQuoteCompany = quoteCompanyKey(currentUser?.quoteCompany);
 
   function openUsers() {
     setOpen(false);
@@ -850,6 +862,22 @@ function AccountMenu({ currentUser, canManageUsers, onOpenUserAdmin, onSignOut }
           <div>
             <strong>{currentUser.name}</strong>
             <span>{currentUser.username} / {currentUser.role}</span>
+          </div>
+          <div className="account-company-card">
+            <span>Quote Company</span>
+            <div className="account-company-options">
+              {quoteCompanyOptions.map((company) => (
+                <button
+                  className={`account-company-option ${company.value === activeQuoteCompany ? "active" : ""}`}
+                  type="button"
+                  onClick={() => onQuoteCompanyChange(company.value)}
+                  key={company.value}
+                >
+                  <Building2 size={14} />
+                  <span>{company.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
           {canManageUsers && <button type="button" onClick={openUsers}><Users size={15} /> Manage Users</button>}
           <button type="button" onClick={() => { setOpen(false); onSignOut(); }}><LogOut size={15} /> Sign Out</button>
@@ -924,6 +952,35 @@ export default function App() {
     setUserPanelOpen(false);
   }
 
+  async function handleQuoteCompanyChange(value) {
+    if (!currentUser) return;
+    const nextQuoteCompany = quoteCompanyKey(value);
+    if (nextQuoteCompany === quoteCompanyKey(currentUser.quoteCompany)) return;
+
+    const matchesCurrentUser = (user) =>
+      String(user.id) === String(currentUser.id) || String(user.username || "").toLowerCase() === String(currentUser.username || "").toLowerCase();
+    const nextUser = { ...currentUser, quoteCompany: nextQuoteCompany };
+    const nextUsers = users.map((user) => matchesCurrentUser(user) ? { ...user, quoteCompany: nextQuoteCompany } : user);
+    setCurrentUser(nextUser);
+    setUsers(nextUsers);
+    saveUsers(nextUsers);
+    saveSession(nextUser);
+
+    if (String(currentUser.id || "").startsWith("user-")) return;
+
+    try {
+      const saved = await updateRecord("company-users", currentUser.id, { quoteCompany: nextQuoteCompany });
+      const syncedUser = { ...nextUser, ...saved, quoteCompany: quoteCompanyKey(saved.quoteCompany) };
+      const syncedUsers = nextUsers.map((user) => matchesCurrentUser(user) ? { ...user, ...syncedUser } : user);
+      setCurrentUser(syncedUser);
+      setUsers(syncedUsers);
+      saveUsers(syncedUsers);
+      saveSession(syncedUser);
+    } catch (error) {
+      console.warn("Could not sync quote company preference.", error);
+    }
+  }
+
   async function refreshCompanyAccess() {
     const [apiUsers, apiRoles] = await Promise.all([loadUsersFromApi(), loadRolesFromApi()]);
     saveUsers(apiUsers);
@@ -983,6 +1040,7 @@ export default function App() {
         roleDefinitions={roleDefinitions}
         canManageUsers={userIsAdmin(currentUser)}
         onOpenUserAdmin={() => setUserPanelOpen(true)}
+        onQuoteCompanyChange={handleQuoteCompanyChange}
         onSignOut={handleSignOut}
       />
       {userPanelOpen && userIsAdmin(currentUser) && (
@@ -999,7 +1057,7 @@ export default function App() {
   );
 }
 
-function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserAdmin, onSignOut }) {
+function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
   const queryClient = useQueryClient();
   const [activeKey, setActiveKey] = useState(() => defaultResourceKeyForRole(roleDefinitions, currentUser?.role));
   const [search, setSearch] = useState("");
@@ -2109,6 +2167,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           currentUser={currentUser}
           canManageUsers={canManageUsers}
           onOpenUserAdmin={onOpenUserAdmin}
+          onQuoteCompanyChange={onQuoteCompanyChange}
           onSignOut={onSignOut}
         />
         {!singleResourceMode && (
@@ -2212,6 +2271,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               currentUser={currentUser}
               canManageUsers={canManageUsers}
               onOpenUserAdmin={onOpenUserAdmin}
+              onQuoteCompanyChange={onQuoteCompanyChange}
               onSignOut={onSignOut}
             />
           </div>

@@ -1,4 +1,5 @@
 import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
+import { quoteCompanyKey } from "./quoteCompanies";
 
 export const userStorageKey = "tsm_company_users_v1";
 export const sessionStorageKey = "tsm_active_user_v1";
@@ -44,6 +45,7 @@ const defaultAdminUser = {
   password: "Bluelabels7&",
   name: "Admin",
   role: "Admin",
+  quoteCompany: "tri_state_media",
   active: true,
   createdAt: "2026-05-15T00:00:00.000Z",
 };
@@ -67,6 +69,7 @@ export function normalizeUser(user = {}) {
     password: String(user.password || ""),
     name: String(user.name || user.username || "").trim(),
     role: user.role || "CSR",
+    quoteCompany: quoteCompanyKey(user.quoteCompany || user.quote_company),
     active: user.active !== false,
     createdAt: user.createdAt || new Date().toISOString(),
   };
@@ -190,6 +193,7 @@ export async function saveUserToApi(user) {
     password: user.password || "",
     name: user.name,
     role: user.role,
+    quoteCompany: quoteCompanyKey(user.quoteCompany),
     active: user.active !== false,
   };
   if (String(user.id || "").startsWith("user-")) {

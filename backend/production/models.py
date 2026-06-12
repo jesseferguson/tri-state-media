@@ -7,6 +7,12 @@ from materials.models import MaterialMasterType, MaterialSpec, MaterialUsage, Ra
 from tooling.models import Press, ToolingLocation, ToolingRecipe, ToolingRecipeOption
 
 
+QUOTE_COMPANY_CHOICES = [
+    ("tri_state_media", "Tri-State Media"),
+    ("barcode_labels", "Barcode Labels"),
+]
+
+
 def job_ticket_image_upload_path(instance, filename):
     safe_ticket = str(instance.ticket_number or instance.pk or "job-ticket").replace("/", "-").replace("\\", "-")
     return f"production/job-tickets/{safe_ticket}/{uuid4().hex}-{filename}"
@@ -55,6 +61,7 @@ class CompanyUser(models.Model):
     name = models.CharField(max_length=150)
     password_hash = models.CharField(max_length=255)
     role = models.ForeignKey(CompanyRole, on_delete=models.PROTECT, related_name="users")
+    quote_company = models.CharField(max_length=40, choices=QUOTE_COMPANY_CHOICES, default="tri_state_media")
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -148,6 +155,7 @@ class QuoteRecord(models.Model):
     prepared_by_username = models.CharField(max_length=80, blank=True)
     prepared_by_name = models.CharField(max_length=150, blank=True)
     prepared_by_role = models.CharField(max_length=80, blank=True)
+    quote_company = models.CharField(max_length=40, choices=QUOTE_COMPANY_CHOICES, default="tri_state_media")
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name="quote_records")
     job_ticket = models.ForeignKey("JobTicket", on_delete=models.SET_NULL, null=True, blank=True, related_name="quote_records")
     job_ticket_number = models.CharField(max_length=80, blank=True)

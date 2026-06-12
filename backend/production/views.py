@@ -179,8 +179,8 @@ class CompanyRoleViewSet(BaseProductionViewSet):
 class CompanyUserViewSet(BaseProductionViewSet):
     queryset = CompanyUser.objects.select_related("role").all().order_by("name", "username")
     serializer_class = CompanyUserSerializer
-    search_fields = ["name", "username", "role__name"]
-    ordering_fields = ["name", "username", "active", "created_at"]
+    search_fields = ["name", "username", "role__name", "quote_company"]
+    ordering_fields = ["name", "username", "quote_company", "active", "created_at"]
 
 
 class QuoteRawMaterialViewSet(BaseProductionViewSet):
@@ -227,10 +227,11 @@ class QuoteRecordViewSet(BaseProductionViewSet):
         "description",
         "prepared_by_name",
         "prepared_by_role",
+        "quote_company",
         "material_name",
         "notes",
     ]
-    ordering_fields = ["created_at", "quote_number", "customer_name", "prepared_by_name", "material_name"]
+    ordering_fields = ["created_at", "quote_number", "customer_name", "prepared_by_name", "quote_company", "material_name"]
 
     def get_queryset(self):
         qs = super().get_queryset()

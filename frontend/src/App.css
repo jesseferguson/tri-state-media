@@ -731,7 +731,7 @@ p { margin: 4px 0 0; color: #aebed3; line-height: 1.35; }
   z-index: 1800;
   top: calc(100% + 8px);
   right: 0;
-  width: 240px;
+  width: 268px;
   display: grid;
   gap: 6px;
   padding: 8px;
@@ -773,6 +773,38 @@ p { margin: 4px 0 0; color: #aebed3; line-height: 1.35; }
 }
 .account-menu-panel button:hover {
   background: #f3f6fa;
+}
+.account-company-card {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #eef2f7;
+}
+.account-menu-panel .account-company-card > span {
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.account-company-options {
+  display: grid;
+  gap: 6px;
+}
+.account-menu-panel .account-company-option {
+  justify-content: flex-start;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+.account-menu-panel .account-company-option.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #175cd3;
+}
+.account-menu-panel .account-company-option span {
+  color: inherit;
+  font-size: .76rem;
+  font-weight: 850;
 }
 .primary-btn, .ghost-btn, .danger-btn {
   min-height: 36px;
@@ -8170,7 +8202,7 @@ p, .muted { color: #7a7a7a; }
 
 .quote-doc-brand img {
   display: block;
-  width: min(100%, 538px);
+  width: min(100%, var(--quote-logo-width, 538px));
   height: auto;
 }
 

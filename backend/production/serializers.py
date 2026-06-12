@@ -21,6 +21,7 @@ from .models import (
     JobTicketUsage,
     LiveFootageArchive,
     ProductionSchedule,
+    QUOTE_COMPANY_CHOICES,
     QuoteCostRate,
     QuoteFinishedMaterial,
     QuoteRawMaterial,
@@ -57,12 +58,13 @@ class CompanyRoleSerializer(serializers.ModelSerializer):
 
 class CompanyUserSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source="role.name")
+    quoteCompany = serializers.ChoiceField(source="quote_company", choices=QUOTE_COMPANY_CHOICES, required=False)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
 
     class Meta:
         model = CompanyUser
-        fields = ["id", "username", "password", "name", "role", "active", "createdAt"]
+        fields = ["id", "username", "password", "name", "role", "quoteCompany", "active", "createdAt"]
 
     def create(self, validated_data):
         password = validated_data.pop("password", "")
@@ -160,6 +162,7 @@ class QuoteRecordSerializer(serializers.ModelSerializer):
     preparedByUsername = serializers.CharField(source="prepared_by_username", allow_blank=True, required=False)
     preparedByName = serializers.CharField(source="prepared_by_name", allow_blank=True, required=False)
     preparedByRole = serializers.CharField(source="prepared_by_role", allow_blank=True, required=False)
+    quoteCompany = serializers.ChoiceField(source="quote_company", choices=QUOTE_COMPANY_CHOICES, required=False)
     customerId = serializers.PrimaryKeyRelatedField(source="customer", queryset=Customer.objects.all(), allow_null=True, required=False)
     customerCode = serializers.CharField(source="customer.customer_code", read_only=True)
     jobTicketId = serializers.PrimaryKeyRelatedField(source="job_ticket", queryset=JobTicket.objects.all(), allow_null=True, required=False)
@@ -184,6 +187,7 @@ class QuoteRecordSerializer(serializers.ModelSerializer):
             "preparedByUsername",
             "preparedByName",
             "preparedByRole",
+            "quoteCompany",
             "customerId",
             "customerCode",
             "jobTicketId",

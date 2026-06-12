@@ -1,8 +1,8 @@
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Image as ImageIcon, Layers3, Pencil, Plus, Printer, Ruler, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
-import triStateQuoteLogo from "../assets/tri-state-media-logo.png";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
+import { quoteCompanyForKey, quoteCompanyForQuote } from "../lib/quoteBranding";
 import {
   buildLayoutCandidates,
   calculateBestMaterialWidth,
@@ -715,6 +715,7 @@ function quoteItemDescription(item, quote) {
 function quoteSalesInfo(quote) {
   const salesQuote = quote?.form?.salesQuote || {};
   return {
+    quoteCompany: quoteCompanyForKey(quote?.quoteCompany || salesQuote.quoteCompany).key,
     customerId: quote.customerId || salesQuote.customerId || "",
     customerCode: quote.customerCode || salesQuote.customerCode || "",
     clientPo: salesQuote.clientPo || "",
@@ -773,7 +774,7 @@ function quoteTerms(quote) {
   ];
 }
 
-function loadQuoteLogoForPdf() {
+function loadQuoteLogoForPdf(logoSrc) {
   if (typeof window === "undefined" || typeof Image === "undefined") return Promise.resolve(null);
   return new Promise((resolve) => {
     const image = new Image();
@@ -798,7 +799,7 @@ function loadQuoteLogoForPdf() {
       }
     };
     image.onerror = () => resolve(null);
-    image.src = triStateQuoteLogo;
+    image.src = logoSrc || quoteCompanyForKey().logo;
   });
 }
 
@@ -1290,14 +1291,15 @@ function QuoteDocument({ quote }) {
   const items = quoteItems(quote);
   const totals = quoteTotals(quote);
   const salesInfo = quoteSalesInfo(quote);
+  const quoteCompany = quoteCompanyForQuote(quote);
   const quoteLines = quoteForLines(quote);
   const terms = quoteTerms(quote);
 
   return (
     <article className="quote-document">
       <header className="quote-doc-sales-head">
-        <div className="quote-doc-brand">
-          <img src={triStateQuoteLogo} alt="Tri-State Media" />
+        <div className="quote-doc-brand" style={{ "--quote-logo-width": quoteCompany.logoWidth }}>
+          <img src={quoteCompany.logo} alt={quoteCompany.label} />
         </div>
         <div className="quote-doc-title-block">
           <span>Sales Quote</span>
@@ -1367,7 +1369,7 @@ function QuoteDocument({ quote }) {
         <div className="quote-doc-contact-card">
           <strong>{quoteThankYouMessage}</strong>
           <span>{quotePreparedByName(quote)}</span>
-          <em>{quotePreparedByRole(quote) || "Tri-State Media"}</em>
+          <em>{quotePreparedByRole(quote) || quoteCompany.label}</em>
           {quote.contactEmail && <em>{quote.contactEmail}</em>}
         </div>
       </section>
@@ -2167,6 +2169,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const jobName = quoteInfo.jobName || ticket?.job_name || ticket?.product_name || quoteInfo.itemName;
     const productCode = quoteInfo.productCode || ticket?.product_code || "";
     const preparedBy = currentUser?.name || quoteInfo.preparedBy;
+    const quoteCompany = quoteCompanyForKey(currentUser?.quoteCompany);
     const items = quoteItemsDraft.length ? quoteItemsDraft : [buildCurrentQuoteItem()];
     const totals = quoteTotals({ form: { items }, pricing: { items } });
     const createdAt = new Date().toISOString();
@@ -2177,6 +2180,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       customerAddress: quoteInfo.customerAddress.trim() || customerQuoteAddress(recordCustomer),
       quoteExpirationDate: quoteInfo.quoteExpirationDate || quoteFutureDateInput(createdAt),
       unitOfMeasure: quoteInfo.unitOfMeasure || quoteDefaultUnitOfMeasure,
+      quoteCompany: quoteCompany.key,
     };
     const record = {
       id: makeId("quote"),
@@ -2186,6 +2190,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       preparedByUsername: currentUser?.username || "",
       preparedByName: preparedBy,
       preparedByRole: currentUser?.role || "",
+      quoteCompany: quoteCompany.key,
       customerId: recordCustomer?.id || quoteInfo.customerId || null,
       jobTicketId: ticket?.id ?? null,
       jobTicketNumber: ticket?.ticket_number ?? "",
@@ -2226,6 +2231,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const items = quoteItems(quote);
     const totals = quoteTotals(quote);
     const salesInfo = quoteSalesInfo(quote);
+    const quoteCompany = quoteCompanyForQuote(quote);
     const quoteLines = quoteForLines(quote);
     const terms = quoteTerms(quote);
     const html = `<!doctype html>
@@ -2237,7 +2243,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .page{width:8.5in;min-height:11in;margin:0 auto;background:#fff;padding:.34in;box-sizing:border-box}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
-.brand{min-width:0;flex:1}.brand img{max-width:5.45in;height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:11px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:9px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
+.brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:11px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:9px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
 .meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:10px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:11px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:92px 1fr;border-top:1px solid #111827;min-height:24px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{padding:6px 7px;font-size:10px}
 .item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:9px;text-align:left;padding:7px 6px}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:7px 6px;font-size:10px}.sales-table td:first-child{border-left:0}.sales-table th:nth-child(1){width:50%}.sales-table th:nth-child(2){width:10%}.sales-table th:nth-child(3){width:9%}.sales-table th:nth-child(4){width:15%}.sales-table th:nth-child(5){width:16%}.sales-table strong{display:block;font-size:10px}.sales-table span{display:block;margin-top:4px;font-size:9px;line-height:1.25}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
 .signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-box p{margin:0 0 10px;font-size:10px}.sig-box strong{display:block;margin-top:6px;font-size:10px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px}.contact span{margin-top:16px;font-size:11px;font-weight:700}.contact em{margin-top:8px;font-size:10px;font-style:normal}
@@ -2247,7 +2253,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 </head>
 <body>
 <main class="page">
-<section class="head"><div class="brand"><img src="${escapeHtml(triStateQuoteLogo)}" alt="Tri-State Media"></div><div class="title"><span>Sales Quote</span><strong>${escapeHtml(quote.quoteNumber)}</strong><em>Total in US$</em><b>${escapeHtml(money(totals.sellPrice))}</b></div></section>
+<section class="head"><div class="brand"><img src="${escapeHtml(quoteCompany.logo)}" alt="${escapeHtml(quoteCompany.label)}"></div><div class="title"><span>Sales Quote</span><strong>${escapeHtml(quote.quoteNumber)}</strong><em>Total in US$</em><b>${escapeHtml(money(totals.sellPrice))}</b></div></section>
 <section class="meta">
 <div class="quote-for"><span>Quotation for:</span>${quoteLines.map((line, index) => index === 0 ? `<strong>${escapeHtml(line)}</strong>` : `<em>${escapeHtml(line)}</em>`).join("")}</div>
 <div class="date-card"><div><span>Date:</span><strong>${escapeHtml(quoteLongDateLabel(quote.createdAt))}</strong></div><div><span>Customer ID:</span><strong>${escapeHtml(salesInfo.customerCode || salesInfo.customerId || "--")}</strong></div><div><span>Quote Expiration Date:</span><strong>${escapeHtml(quoteLongDateLabel(salesInfo.quoteExpirationDate))}</strong></div></div>
@@ -2256,7 +2262,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr>`).join("")}
 </tbody><tfoot><tr><td colspan="4">Total in US$</td><td>${escapeHtml(money(totals.sellPrice))}</td></tr></tfoot></table>
 </section>
-<section class="signature"><div class="sig-box"><p>Client P.O. ${escapeHtml(salesInfo.clientPo || "_______________________")}</p><p>Authorized Signature: _______________________</p><p>Printed Name: _____________________________</p><p>Title: ____________________________________</p><p>Date: _________________________</p><strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong></div><div class="contact"><strong>${escapeHtml(quoteThankYouMessage)}</strong><span>${escapeHtml(quotePreparedByName(quote))}</span><em>${escapeHtml(quotePreparedByRole(quote) || "Tri-State Media")}</em>${quote.contactEmail ? `<em>${escapeHtml(quote.contactEmail)}</em>` : ""}</div></section>
+<section class="signature"><div class="sig-box"><p>Client P.O. ${escapeHtml(salesInfo.clientPo || "_______________________")}</p><p>Authorized Signature: _______________________</p><p>Printed Name: _____________________________</p><p>Title: ____________________________________</p><p>Date: _________________________</p><strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong></div><div class="contact"><strong>${escapeHtml(quoteThankYouMessage)}</strong><span>${escapeHtml(quotePreparedByName(quote))}</span><em>${escapeHtml(quotePreparedByRole(quote) || quoteCompany.label)}</em>${quote.contactEmail ? `<em>${escapeHtml(quote.contactEmail)}</em>` : ""}</div></section>
 <section class="terms">${quote.notes ? `<p>${escapeHtml(quote.notes)}</p>` : ""}<ul>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ul></section>
 </main>
 <script>window.print();</script>
@@ -2276,9 +2282,10 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     const items = quoteItems(quote);
     const totals = quoteTotals(quote);
     const salesInfo = quoteSalesInfo(quote);
+    const quoteCompany = quoteCompanyForQuote(quote);
     const quoteLines = quoteForLines(quote);
     const terms = quoteTerms(quote);
-    const logoImage = await loadQuoteLogoForPdf();
+    const logoImage = await loadQuoteLogoForPdf(quoteCompany.logo);
     const commands = [];
 
     function text(x, y, size, value, font = "F1", gray = 0) {
@@ -2299,12 +2306,12 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
 
     commands.push("0 g 0 G 0.08 w");
     if (logoImage) {
-      const logoWidth = 330;
+      const logoWidth = quoteCompany.pdfLogoWidth || 330;
       const logoHeight = Math.round((logoImage.height / logoImage.width) * logoWidth);
       commands.push(`q ${logoWidth} 0 0 ${logoHeight} 42 ${764 - logoHeight} cm /Logo Do Q`);
     } else {
-      text(42, 748, 24, "Tri-State Media", "F2");
-      text(42, 728, 8, "Labels and media solutions");
+      text(42, 748, 24, quoteCompany.label, "F2");
+      text(42, 728, 8, quoteCompany.pdfFallbackSubtitle || "");
     }
     text(440, 748, 16, "Sales Quote", "F2");
     text(440, 731, 8, quote.quoteNumber);
@@ -2375,7 +2382,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     box(330, signatureTop - 122, 240, 128);
     text(348, signatureTop - 24, 10, quoteThankYouMessage, "F2");
     text(470, signatureTop - 54, 8, quotePreparedByName(quote), "F2");
-    text(438, signatureTop - 76, 8, quotePreparedByRole(quote) || "Tri-State Media");
+    text(438, signatureTop - 76, 8, quotePreparedByRole(quote) || quoteCompany.label);
     if (quote.contactEmail) text(414, signatureTop - 98, 8, quote.contactEmail);
 
     let termsY = 122;
@@ -2388,7 +2395,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
       termsY -= 11;
     });
 
-    text(42, 42, 7, "Generated from the Tri-State Media quoting tool.");
+    text(42, 42, 7, `Generated from the ${quoteCompany.label} quoting tool.`);
 
     const stream = commands.join("\n");
     const contentObjectNumber = logoImage ? 7 : 6;
