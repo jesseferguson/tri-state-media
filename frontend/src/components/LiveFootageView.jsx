@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertTriangle, CalendarDays, Gauge, Goal, History, Save, Timer } from "lucide-react";
+import { Activity, AlertTriangle, CalendarDays, CheckCircle2, Gauge, Goal, History, Maximize2, Minimize2, Save, Timer } from "lucide-react";
 import { fetchCollection, requestApi } from "../api";
 
 const firebaseBase = "https://realtime2-94ff8-default-rtdb.firebaseio.com";
@@ -348,9 +348,9 @@ function drawChart(canvas, seriesList, labels) {
   });
 }
 
-function Metric({ icon: Icon, label, value, note }) {
+function Metric({ icon: Icon, label, value, note, tone = "" }) {
   return (
-    <article className="live-footage-metric">
+    <article className={`live-footage-metric ${tone ? `live-footage-metric-${tone}` : ""}`}>
       <span><Icon size={15} /> {label}</span>
       <strong>{value}</strong>
       <em>{note}</em>
@@ -358,7 +358,7 @@ function Metric({ icon: Icon, label, value, note }) {
   );
 }
 
-export default function LiveFootageView() {
+export default function LiveFootageView({ tvMode = false, onTvModeChange = () => {} }) {
   const canvasRef = useRef(null);
   const dailyCacheRef = useRef(null);
   const lastDailyFetchRef = useRef(0);
@@ -403,6 +403,7 @@ export default function LiveFootageView() {
     })),
     [historyRows]
   );
+  const goalHit = snapshot.companyTotal >= goalFootage;
 
   async function loadArchiveRecords() {
     try {
@@ -584,7 +585,7 @@ export default function LiveFootageView() {
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [activeTab]);
+  }, [activeTab, tvMode]);
 
   return (
     <section className="live-footage-view">
@@ -594,15 +595,21 @@ export default function LiveFootageView() {
           <h2>Companywide Footage Race</h2>
           <span>{snapshot.rangeText || "Loading shift window..."}</span>
         </div>
-        <button type="button" onClick={() => {
-          dailyCacheRef.current = null;
-          lastDailyFetchRef.current = 0;
-          chartDrawnRef.current = false;
-          setSnapshot((current) => ({ ...current, state: "loading" }));
-          refreshRef.current?.({ forceDaily: true });
-        }}>
-          <Activity size={15} /> Refresh Daily
-        </button>
+        <div className="live-footage-hero-actions">
+          <button type="button" onClick={() => {
+            dailyCacheRef.current = null;
+            lastDailyFetchRef.current = 0;
+            chartDrawnRef.current = false;
+            setSnapshot((current) => ({ ...current, state: "loading" }));
+            refreshRef.current?.({ forceDaily: true });
+          }}>
+            <Activity size={15} /> Refresh Daily
+          </button>
+          <button className="live-footage-tv-btn" type="button" onClick={() => onTvModeChange(!tvMode)}>
+            {tvMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            {tvMode ? "Exit TV Mode" : "TV Mode"}
+          </button>
+        </div>
       </div>
 
       <div className="live-footage-tabs">
@@ -617,18 +624,28 @@ export default function LiveFootageView() {
       {activeTab === "live" ? (
         <>
           <div className="live-footage-metrics">
-            <Metric icon={Goal} label="Shift Goal" value={formatInt(goalFootage)} note="5:00 AM -> 2:59 AM next day" />
-            <Metric icon={Gauge} label="Total So Far" value={formatInt(snapshot.companyTotal)} note={snapshot.paceText || "Waiting for Firebase data"} />
+            <Metric icon={Goal} label="Shift Goal" value={formatInt(goalFootage)} note="5:00 AM -> 2:59 AM next day" tone={goalHit ? "hit" : ""} />
+            <Metric icon={goalHit ? CheckCircle2 : Gauge} label="Total So Far" value={formatInt(snapshot.companyTotal)} note={goalHit ? "Shift goal reached" : snapshot.paceText || "Waiting for Firebase data"} tone={goalHit ? "hit" : ""} />
             <Metric icon={Timer} label="Remaining" value={formatInt(snapshot.remaining)} note="To hit the shift target" />
           </div>
 
-          <div className="live-footage-progress">
+          <div className={`live-footage-progress ${goalHit ? "goal-hit" : ""}`}>
             <div><span style={{ width: `${snapshot.percent}%` }} /></div>
             <p>
-              {snapshot.percent.toFixed(1)}% to goal
+              {goalHit ? "Goal hit" : `${snapshot.percent.toFixed(1)}% to goal`}
               <em>Updated {snapshot.updatedAt || "--"}{snapshot.archiveStatus ? ` - ${snapshot.archiveStatus}` : ""}</em>
             </p>
           </div>
+
+          {goalHit && (
+            <div className="live-footage-goal-hit">
+              <CheckCircle2 size={22} />
+              <div>
+                <strong>Shift goal hit</strong>
+                <span>{formatInt(snapshot.companyTotal)} ft against a {formatInt(goalFootage)} ft goal</span>
+              </div>
+            </div>
+          )}
 
           {snapshot.error && (
             <div className="live-footage-error">
@@ -661,9 +678,9 @@ export default function LiveFootageView() {
                         <em>{tile.key}</em>
                       </div>
                     </div>
-                    <div>
-                      <strong>{formatInt(tile.speed)} <small>FPM</small></strong>
-                      <em>{formatInt(tile.total)} ft</em>
+                    <div className="live-footage-press-numbers">
+                      <strong>{formatInt(tile.total)} <small>ft</small></strong>
+                      <em>{formatInt(tile.speed)} FPM</em>
                     </div>
                   </div>
                 ))}

@@ -10,7 +10,7 @@ const tabs = [
 ];
 
 const historyTabs = [
-  { key: "orders", label: "Orders" },
+  { key: "orders", label: "Jobs Ran" },
   { key: "ticket", label: "Job Ticket Changes" },
   { key: "inventory", label: "Inventory" },
 ];
@@ -919,6 +919,21 @@ function orderFootageReports(group) {
   ].filter((row) => row.footage > 0 || row.report);
 }
 
+function groupScheduledBy(group) {
+  return uniqueValues([
+    ...group.schedules.map((schedule) => schedule.scheduled_by || schedule.last_updated_by),
+    ...group.orders.map((order) => order.scheduled_by || order.last_updated_by),
+  ].filter(Boolean)).join(" / ");
+}
+
+function groupRunDateLabel(group) {
+  const dates = [
+    ...group.schedules.map(dateValue),
+    ...group.orders.map((order) => order.scheduled_date || order.due_date || order.order_date),
+  ].filter(Boolean);
+  return dates[0] || "";
+}
+
 function OrderHistoryGroupCard({ group }) {
   const orderCount = group.orders.length;
   const scheduleCount = group.schedules.length;
@@ -933,91 +948,115 @@ function OrderHistoryGroupCard({ group }) {
     : group.orders.reduce((sum, order) => sum + numeric(order.actual_footage), 0);
   const reports = orderFootageReports(group);
   const latestStatus = group.orders[0]?.status || group.schedules[0]?.status || "";
+  const scheduledBy = groupScheduledBy(group);
+  const runDate = groupRunDateLabel(group);
   return (
-    <article className="job-order-history-card">
-      <header>
-        <div>
-          <span>Order / PO</span>
+    <details className="job-order-history-card">
+      <summary className="job-order-history-summary">
+        <div className="job-order-history-main">
+          <span>Job Ran</span>
           <strong>{group.orderNumbers.join(" / ") || "Schedule"}</strong>
           <em>{group.customerPo ? `PO ${group.customerPo}` : "No PO"}</em>
         </div>
-        <div className="job-order-status-chip">
-          <strong>{labelize(latestStatus || "open")}</strong>
+        <div className="job-order-history-quick">
+          <div>
+            <span>Scheduled By</span>
+            <strong>{scheduledBy || "--"}</strong>
+          </div>
+          <div>
+            <span>Run Date</span>
+            <strong>{runDate || "--"}</strong>
+          </div>
+          <div>
+            <span>Status</span>
+            <strong>{labelize(latestStatus || "open")}</strong>
+          </div>
+          <div>
+            <span>Footage</span>
+            <strong>{footage ? formatNumber(footage, " ft") : "--"}</strong>
+          </div>
+        </div>
+        <span className="job-order-history-expand">Details</span>
+      </summary>
+
+      <div className="job-order-history-detail">
+        <div className="job-order-detail-summary">
           <span>{orderCount} order{orderCount === 1 ? "" : "s"} / {scheduleCount} schedule{scheduleCount === 1 ? "" : "s"}</span>
+          <span>{group.customerPo ? `PO ${group.customerPo}` : "No PO on file"}</span>
         </div>
-      </header>
 
-      <OrderMetricBars
-        items={[
-          { label: "Ship", value: plannedShip },
-          { label: "Stock", value: plannedStock },
-          { label: "Footage", value: footage, suffix: " ft" },
-        ]}
-      />
+        <OrderMetricBars
+          items={[
+            { label: "Ship", value: plannedShip },
+            { label: "Stock", value: plannedStock },
+            { label: "Footage", value: footage, suffix: " ft" },
+          ]}
+        />
 
-      <div className="job-order-history-grid">
-        <section>
-          <div className="job-order-section-title">
-            <CalendarPlus size={14} />
-            <strong>Schedule History</strong>
-          </div>
-          {group.schedules.length ? (
-            <div className="job-order-schedule-stack">
-              {group.schedules.map((schedule) => (
-                <div key={schedule.id} className="job-order-schedule-row">
-                  <div>
-                    <strong>{dateValue(schedule) || "No date"}</strong>
-                    <span>{[labelize(schedule.status), labelize(schedule.priority), schedule.press_name].filter(Boolean).join(" / ")}</span>
+        <div className="job-order-history-grid">
+          <section>
+            <div className="job-order-section-title">
+              <CalendarPlus size={14} />
+              <strong>Schedule History</strong>
+            </div>
+            {group.schedules.length ? (
+              <div className="job-order-schedule-stack">
+                {group.schedules.map((schedule) => (
+                  <div key={schedule.id} className="job-order-schedule-row">
+                    <div>
+                      <strong>{dateValue(schedule) || "No date"}</strong>
+                      <span>{[labelize(schedule.status), labelize(schedule.priority), schedule.press_name].filter(Boolean).join(" / ")}</span>
+                    </div>
+                    <OrderMetricBars
+                      items={[
+                        { label: "Ship", value: numeric(schedule.quantity_to_ship) },
+                        { label: "Stock", value: numeric(schedule.quantity_to_stock) },
+                        { label: "Footage", value: numeric(schedule.actual_footage), suffix: " ft" },
+                      ]}
+                    />
+                    <em>{[schedule.scheduled_by ? `Scheduled by ${schedule.scheduled_by}` : "", schedule.operator ? `Operator ${schedule.operator}` : "", schedule.footage_report || schedule.notes].filter(Boolean).join(" / ") || "No footage report"}</em>
                   </div>
-                  <OrderMetricBars
-                    items={[
-                      { label: "Ship", value: numeric(schedule.quantity_to_ship) },
-                      { label: "Stock", value: numeric(schedule.quantity_to_stock) },
-                      { label: "Footage", value: numeric(schedule.actual_footage), suffix: " ft" },
-                    ]}
-                  />
-                  <em>{[schedule.operator ? `Operator ${schedule.operator}` : "", schedule.footage_report || schedule.notes].filter(Boolean).join(" / ") || "No footage report"}</em>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">No schedule records are linked to this order yet.</p>
-          )}
-        </section>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No schedule records are linked to this order yet.</p>
+            )}
+          </section>
 
-        <section>
-          <div className="job-order-section-title">
-            <History size={14} />
-            <strong>Footage Reports</strong>
-          </div>
-          {reports.length ? (
-            <div className="job-footage-report-list">
-              {reports.map((report) => (
-                <div key={report.key}>
-                  <strong>{report.footage ? formatNumber(report.footage, " ft") : "--"}</strong>
-                  <span>{[report.date, report.source].filter(Boolean).join(" / ")}</span>
-                  <p>{report.report || "No report text"}</p>
-                </div>
-              ))}
+          <section>
+            <div className="job-order-section-title">
+              <History size={14} />
+              <strong>Footage Reports</strong>
             </div>
-          ) : (
-            <p className="muted">No footage reports have been entered yet.</p>
-          )}
-        </section>
-      </div>
-
-      {group.events.length ? (
-        <div className="job-order-event-timeline">
-          {group.events.slice(0, 8).map((event) => (
-            <div key={`${event.source || "event"}-${event.id}`}>
-              <span>{eventDate(event.created_at)}</span>
-              <strong>{event.summary || labelize(event.event_type)}</strong>
-              <em>{[labelize(event.event_type), event.performed_by].filter(Boolean).join(" / ")}</em>
-            </div>
-          ))}
+            {reports.length ? (
+              <div className="job-footage-report-list">
+                {reports.map((report) => (
+                  <div key={report.key}>
+                    <strong>{report.footage ? formatNumber(report.footage, " ft") : "--"}</strong>
+                    <span>{[report.date, report.source].filter(Boolean).join(" / ")}</span>
+                    <p>{report.report || "No report text"}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No footage reports have been entered yet.</p>
+            )}
+          </section>
         </div>
-      ) : null}
-    </article>
+
+        {group.events.length ? (
+          <div className="job-order-event-timeline">
+            {group.events.slice(0, 8).map((event) => (
+              <div key={`${event.source || "event"}-${event.id}`}>
+                <span>{eventDate(event.created_at)}</span>
+                <strong>{event.summary || labelize(event.event_type)}</strong>
+                <em>{[labelize(event.event_type), event.performed_by].filter(Boolean).join(" / ")}</em>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -1295,42 +1334,19 @@ export default function JobTicketPanel({
 
           {activeHistoryTab === "orders" && (
             <>
-              <section className="job-order-dashboard">
-                <div className="job-order-card">
-                  <span>Orders</span>
-                  <strong>{customerOrders.length}</strong>
-                </div>
-                <div className="job-order-card">
-                  <span>Schedules</span>
-                  <strong>{scheduleRows.length}</strong>
-                </div>
-                <div className="job-order-card">
-                  <span>Planned Total</span>
-                  <strong>{formatNumber(scheduleTotal)}</strong>
-                </div>
-                <div className="job-order-card">
-                  <span>Footage</span>
-                  <strong>{formatNumber(orderHistoryGroups.reduce((sum, group) => {
-                    const scheduleFootage = group.schedules.reduce((total, schedule) => total + numeric(schedule.actual_footage), 0);
-                    if (scheduleFootage > 0) return sum + scheduleFootage;
-                    return sum + group.orders.reduce((total, order) => total + numeric(order.actual_footage), 0);
-                  }, 0), " ft")}</strong>
-                </div>
-              </section>
-
               <section className="job-subsection">
                 <div className="job-subsection-head">
                   <PackageCheck size={15} />
-                  <strong>Orders</strong>
-                  <span>{orderHistoryGroups.length} group{orderHistoryGroups.length === 1 ? "" : "s"}</span>
+                  <strong>Jobs Ran</strong>
+                  <span>{orderHistoryGroups.length} run{orderHistoryGroups.length === 1 ? "" : "s"}</span>
                 </div>
                 <div className="job-order-search-row">
                   <label>
-                    <span>Search Order / PO</span>
+                    <span>Search Job / PO</span>
                     <input
                       value={orderHistorySearch}
                       onChange={(event) => setOrderHistorySearch(event.target.value)}
-                      placeholder="Order number or PO"
+                      placeholder="Order, schedule, or PO"
                     />
                   </label>
                 </div>
@@ -1341,7 +1357,7 @@ export default function JobTicketPanel({
                     ))}
                   </div>
                 ) : (
-                  <p className="muted">No order or PO records match this search.</p>
+                  <p className="muted">No jobs ran match this search.</p>
                 )}
               </section>
             </>

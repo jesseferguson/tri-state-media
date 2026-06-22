@@ -111,6 +111,46 @@ class MaterialSpec(models.Model):
         related_name="finished_coating_materials",
         limit_choices_to={"material_type": "coating"},
     )
+    allowed_face_materials = models.ManyToManyField(
+        "self",
+        blank=True,
+        symmetrical=False,
+        related_name="compatible_face_finished_materials",
+        limit_choices_to={"material_type": "face"},
+        help_text="Face data types this finished raw material may be made with.",
+    )
+    allowed_liner_materials = models.ManyToManyField(
+        "self",
+        blank=True,
+        symmetrical=False,
+        related_name="compatible_liner_finished_materials",
+        limit_choices_to={"material_type": "liner"},
+        help_text="Liner data types this finished raw material may be made with.",
+    )
+    allowed_adhesive_materials = models.ManyToManyField(
+        "self",
+        blank=True,
+        symmetrical=False,
+        related_name="compatible_adhesive_finished_materials",
+        limit_choices_to={"material_type": "adhesive"},
+        help_text="Adhesive data types this finished raw material may be made with.",
+    )
+    allowed_silicone_materials = models.ManyToManyField(
+        "self",
+        blank=True,
+        symmetrical=False,
+        related_name="compatible_silicone_finished_materials",
+        limit_choices_to={"material_type": "silicone"},
+        help_text="Silicone data types this finished raw material may be made with.",
+    )
+    allowed_coating_materials = models.ManyToManyField(
+        "self",
+        blank=True,
+        symmetrical=False,
+        related_name="compatible_coating_finished_materials",
+        limit_choices_to={"material_type": "coating"},
+        help_text="Coating or varnish data types this finished raw material may be made with.",
+    )
 
     scheduled_by = models.CharField(max_length=100, blank=True)
     coater_cut_plan = models.CharField(

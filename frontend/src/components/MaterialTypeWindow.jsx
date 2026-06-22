@@ -17,7 +17,7 @@ function optionTitle(option) {
 export default function MaterialTypeWindow({ material, options, onClose, onEdit, onDelete, onAddSupplierOption, onEditSupplierOption }) {
   const activeOptions = (options ?? []).filter((option) => option.is_active !== false);
   const summaryItems = [
-    ["Code", material.code],
+    ...(material.material_type === "coated_stock" ? [["Code", material.code]] : []),
     ["Data Type", material.name],
     ["Type", labelize(material.material_type)],
     ["Color", material.color],
@@ -38,7 +38,7 @@ export default function MaterialTypeWindow({ material, options, onClose, onEdit,
               <Edit3 size={15} /> Edit
             </button>
             <button className="primary-btn" type="button" onClick={onAddSupplierOption}>
-              <Plus size={15} /> Supplier Option
+              <Plus size={15} /> Supplier / Purchase Option
             </button>
             {onDelete && (
               <button className="danger-btn" type="button" onClick={onDelete}>
@@ -57,7 +57,7 @@ export default function MaterialTypeWindow({ material, options, onClose, onEdit,
 
         <section className="type-options-panel">
           <div className="type-section-head">
-            <strong>Supplier Options</strong>
+            <strong>Supplier / Purchase Options</strong>
             <span>{activeOptions.length} active / {(options ?? []).length} total</span>
           </div>
 

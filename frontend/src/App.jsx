@@ -10,6 +10,7 @@ import FlexDieDetailPanel from "./components/FlexDieDetailPanel";
 import FinishedInventoryView, { FinishedInventoryWindow } from "./components/FinishedInventoryView";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
 import CustomerWorkspace from "./components/CustomerWorkspace";
+import CoaterOperatorView from "./components/CoaterOperatorView";
 import DataImportTool from "./components/DataImportTool";
 import GroupedLocationView from "./components/GroupedLocationView";
 import GroupedUsageView from "./components/GroupedUsageView";
@@ -19,8 +20,10 @@ import LabelLayoutsView from "./components/LabelLayoutsView";
 import LiveFootageView from "./components/LiveFootageView";
 import MaterialInventoryView from "./components/MaterialInventoryView";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
+import MaterialTypeManager from "./components/MaterialTypeManager";
 import MaterialUsageWindow from "./components/MaterialUsageWindow";
 import PackagingInventoryView from "./components/PackagingInventoryView";
+import PressSpeedSidebarWidget from "./components/PressSpeedSidebarWidget";
 import QuotePricingTool from "./components/QuotePricingTool";
 import RecipeOptionsView from "./components/RecipeOptionsView";
 import RecipeToolStackView from "./components/RecipeToolStackView";
@@ -307,6 +310,12 @@ function inventoryTotalFeetForMaterial(row, inventoryRows) {
   return activeInventoryFeet(inventoryRows.filter((inventory) => String(inventory.material) === String(row.id)));
 }
 
+function firstMaterialComponentId(material, preferredKey, allowedKey) {
+  if (material?.[preferredKey]) return material[preferredKey];
+  const allowed = Array.isArray(material?.[allowedKey]) ? material[allowedKey] : [];
+  return allowed[0] || null;
+}
+
 function generatedJobTicketNumber(payload = {}, currentTicket = null) {
   const existing = String(payload.ticket_number || "").trim();
   if (existing) return existing;
@@ -397,13 +406,14 @@ function refreshIntervalForResource(key) {
 }
 
 function visibleResourcesForRole(roleDefinitions, roleName) {
-  return resources.filter((item) => !item.permissionOnly && roleHasResourceAccess(roleDefinitions, roleName, item.key));
+  return resources.filter((item) => !item.permissionOnly && !item.hideFromNav && roleHasResourceAccess(roleDefinitions, roleName, item.key));
 }
 
 function defaultResourceKeyForRole(roleDefinitions, roleName) {
   const visible = visibleResourcesForRole(roleDefinitions, roleName);
   const normalizedRole = String(roleName || "").toLowerCase();
   if (normalizedRole === "sales" && visible.some((item) => item.key === "quote-calculator")) return "quote-calculator";
+  if (normalizedRole === "coater" && visible.some((item) => item.key === "coater-operator")) return "coater-operator";
   if (visible.some((item) => item.key === "job-tickets")) return "job-tickets";
   return visible[0]?.key ?? "quote-calculator";
 }
@@ -1071,10 +1081,12 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const [finishedInventoryOpen, setFinishedInventoryOpen] = useState(false);
   const [finishedMaterialOpen, setFinishedMaterialOpen] = useState(false);
   const [materialTypeOpen, setMaterialTypeOpen] = useState(false);
+  const [materialTypeManagerOpen, setMaterialTypeManagerOpen] = useState(false);
   const [localInventoryRows, setLocalInventoryRows] = useState([]);
   const [localUsageEvents, setLocalUsageEvents] = useState([]);
   const [quoteJobTicketId, setQuoteJobTicketId] = useState("");
   const [quoteCustomerId, setQuoteCustomerId] = useState("");
+  const [liveFootageTvMode, setLiveFootageTvMode] = useState(false);
   const [toolingWorkspaceForm, setToolingWorkspaceForm] = useState(null);
   const [toolingItemForm, setToolingItemForm] = useState(null);
   const [toolingItemOverrides, setToolingItemOverrides] = useState({});
@@ -1185,6 +1197,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     if (!selected || !isMaterialTypePage) return [];
     return (lookupQuery.data?.["material-supplier-options"] ?? []).filter((row) => String(row.material) === String(selected.id));
   }, [isMaterialTypePage, lookupQuery.data, selected]);
+  const materialMasterTypes = useMemo(
+    () => [...(lookupQuery.data?.["material-master-types"] ?? [])].sort((a, b) => String(a.code || a.name || "").localeCompare(String(b.code || b.name || ""), undefined, { numeric: true })),
+    [lookupQuery.data]
+  );
   const selectedFlexDieHistory = useMemo(() => {
     if (!selected || resource.key !== "flex-dies") return [];
     return (lookupQuery.data?.history ?? []).filter((row) => String(row.flex_die) === String(selected.id));
@@ -1779,48 +1795,77 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const finishedScheduleMutation = useMutation({
     mutationFn: async ({ material, schedule }) => {
       const required = [
-        ["face_material", "Face Type"],
-        ["liner_material", "Liner Type"],
-        ["adhesive_material", "Adhesive Type"],
-        ["silicone_material", "Silicone Type"],
+        ["face_material", "allowed_face_materials", "Face Type"],
+        ["liner_material", "allowed_liner_materials", "Liner Type"],
+        ["adhesive_material", "allowed_adhesive_materials", "Adhesive Type"],
+        ["silicone_material", "allowed_silicone_materials", "Silicone Type"],
       ];
-      const missing = required.filter(([key]) => !material[key]).map(([, label]) => label);
+      const missing = required
+        .filter(([preferredKey, allowedKey]) => !firstMaterialComponentId(material, preferredKey, allowedKey))
+        .map(([, , label]) => label);
       if (missing.length) {
         throw new Error(`Add these component types before scheduling: ${missing.join(", ")}`);
       }
+      const liner = firstMaterialComponentId(material, "liner_material", "allowed_liner_materials");
+      const face = firstMaterialComponentId(material, "face_material", "allowed_face_materials");
+      const adhesive = firstMaterialComponentId(material, "adhesive_material", "allowed_adhesive_materials");
+      const silicone = firstMaterialComponentId(material, "silicone_material", "allowed_silicone_materials");
+      const coating = firstMaterialComponentId(material, "coating_material", "allowed_coating_materials");
 
-      let etiPress = (lookupQuery.data?.presses ?? []).find((press) => String(press.name ?? "").trim().toLowerCase() === "eti");
-      if (!etiPress) {
-        etiPress = await createRecord("presses", {
-          name: "ETI",
-          is_active: true,
-        });
-      }
+      const scheduledPress = schedule.press
+        ? (lookupQuery.data?.presses ?? []).find((press) => String(press.id) === String(schedule.press))
+        : null;
       return createRecord("coater-roll-tags", {
         name: material.name || material.material_family || material.code,
         status: "scheduled",
         print_status: "not_printed",
+        scheduled_by: currentUser?.name || "",
         scheduled_material: material.id,
         produced_material: material.id,
-        liner: material.liner_material,
-        face: material.face_material,
-        adhesive: material.adhesive_material,
-        silicone: material.silicone_material,
-        coating: material.coating_material || null,
+        liner,
+        face,
+        adhesive,
+        silicone,
+        coating,
         result_code: material.code,
         length_feet: schedule.feet,
+        run_date: schedule.run_date || null,
         cut_description: schedule.cut_description,
         operator_notes: schedule.operator_notes,
         notes: [
           schedule.cut_description ? `Cut: ${schedule.cut_description}` : "",
           schedule.operator_notes ? `Operator note: ${schedule.operator_notes}` : "",
         ].filter(Boolean).join("\n"),
-        press: etiPress?.id ?? null,
-        log_inventory: true,
+        press: scheduledPress?.id ?? null,
+        log_inventory: false,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
+  const materialTypeSaveMutation = useMutation({
+    mutationFn: ({ mode, record, payload }) => {
+      const cleanPayload = {
+        ...payload,
+        code: String(payload.code || "").trim().toUpperCase(),
+        name: String(payload.name || "").trim(),
+      };
+      if (mode === "edit" && record?.id) return updateRecord("material-master-types", record.id, cleanPayload);
+      return createRecord("material-master-types", cleanPayload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "material-master-types"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
+  const materialTypeDeleteMutation = useMutation({
+    mutationFn: (row) => deleteRecord("material-master-types", row.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "material-master-types"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
     },
   });
@@ -1957,8 +2002,14 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     setUsageOpen(false);
     setRollOpen(false);
     setFinishedMaterialOpen(false);
+    setMaterialTypeManagerOpen(false);
     setToolingWorkspaceForm(null);
     setSearch("");
+  }
+
+  function openLiveFootageFromSidebar() {
+    setLiveFootageTvMode(false);
+    switchResource("live-footage");
   }
 
   function toggleGroup(key) {
@@ -2155,8 +2206,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     ? (toolingItemOverrides[`${resource.key}:${selected.id}`] ?? selected)
     : selected;
 
+  const liveFootageFullView = resource.viewMode === "liveFootage" && liveFootageTvMode;
+
   return (
-    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""}`}>
+    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""}`}>
       <section className="mobile-shell-bar compact-card">
         <div>
           <p className="eyebrow">Tri-State Media</p>
@@ -2184,12 +2237,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         )}
       </section>
 
-      <aside className="sidebar">
-        <div className="brand-card">
-          <p className="eyebrow">Tooling Control</p>
-          <h1>Recipes + Tools</h1>
-          <p>Compact setup library built for future recipe recommendations.</p>
-        </div>
+      {!liveFootageFullView && <aside className="sidebar">
+        <PressSpeedSidebarWidget onOpenLiveFootage={openLiveFootageFromSidebar} />
 
         {topLevelGroups.map((group) => {
           const childGroups = resourceGroups.filter((item) => item.parent === group.key);
@@ -2253,10 +2302,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             </section>
           );
         })}
-      </aside>
+      </aside>}
 
       <section className="work-area">
-        <header className="topbar compact-card">
+        {!liveFootageFullView && <header className="topbar compact-card">
           <div>
             <p className="eyebrow">{resource.singular}</p>
             <h2>{resource.label}</h2>
@@ -2264,8 +2313,11 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           </div>
           <div className="top-actions">
             {!showingStaticView && <button className="ghost-btn" type="button" onClick={() => listQuery.refetch()}><RefreshCcw size={15} /> Refresh</button>}
+            {resource.key === "material-coated-stock" && !showingStaticView && (
+              <button className="ghost-btn" type="button" onClick={() => setMaterialTypeManagerOpen(true)}>Material Types</button>
+            )}
             {!resource.disableCreate && !showingStaticView && (
-              <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults({}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : "Add"}</button>
+              <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults({}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : resource.key === "material-coated-stock" ? "Add Finished Raw Material" : "Add"}</button>
             )}
             <AccountMenu
               currentUser={currentUser}
@@ -2275,7 +2327,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               onSignOut={onSignOut}
             />
           </div>
-        </header>
+        </header>}
 
         {saveMutation.error && <div className="error-box">{saveMutation.error.message}</div>}
         {finishedScheduleMutation.error && <div className="error-box">{finishedScheduleMutation.error.message}</div>}
@@ -2283,6 +2335,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {scheduleRemoveMutation.error && <div className="error-box">{scheduleRemoveMutation.error.message}</div>}
         {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
+        {materialTypeSaveMutation.error && <div className="error-box">{materialTypeSaveMutation.error.message}</div>}
+        {materialTypeDeleteMutation.error && <div className="error-box">{materialTypeDeleteMutation.error.message}</div>}
         {toolingWorkspaceMutation.error && <div className="error-box">{toolingWorkspaceMutation.error.message}</div>}
         {toolingItemStatusMutation.error && <div className="error-box">{toolingItemStatusMutation.error.message}</div>}
         {toolingItemFormMutation.error && <div className="error-box">{toolingItemFormMutation.error.message}</div>}
@@ -2303,7 +2357,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             canManageQuoteMaterials={canManageQuoteMaterials}
           />
         ) : resource.viewMode === "liveFootage" ? (
-          <LiveFootageView />
+          <LiveFootageView tvMode={liveFootageTvMode} onTvModeChange={setLiveFootageTvMode} />
+        ) : resource.viewMode === "coaterOperator" ? (
+          <CoaterOperatorView currentUser={currentUser} />
         ) : resource.viewMode === "dataImport" ? (
           <DataImportTool currentUser={currentUser} />
         ) : (
@@ -2315,6 +2371,27 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 <Search size={16} />
                 <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${resource.label.toLowerCase()}...`} />
                 <span>{visibleRows.length} / {rows.length}</span>
+              </section>
+            )}
+
+            {resource.key === "material-coated-stock" && (
+              <section className="material-setup-panel compact-card">
+                <article>
+                  <strong>Material Types</strong>
+                  <span>Broad families used for quoting and job matching.</span>
+                  <em>{materialMasterTypes.slice(0, 4).map((row) => row.code || row.name).filter(Boolean).join(" / ") || "PM / PM-PET / PET"}</em>
+                </article>
+                <article>
+                  <strong>Finished Raw Materials</strong>
+                  <span>Specific coated constructions with face, liner, adhesive, and silicone choices.</span>
+                  <em>{visibleRows.length} active record{visibleRows.length === 1 ? "" : "s"}</em>
+                </article>
+                <div>
+                  <button className="ghost-btn" type="button" onClick={() => setMaterialTypeManagerOpen(true)}>Manage Material Types</button>
+                  <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults({}); setFormMode("create"); }}>
+                    <Plus size={15} /> Add Finished Raw Material
+                  </button>
+                </div>
               </section>
             )}
 
@@ -2804,11 +2881,23 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           />
         )}
 
+        {materialTypeManagerOpen && resource.key === "material-coated-stock" && (
+          <MaterialTypeManager
+            rows={materialMasterTypes}
+            saving={materialTypeSaveMutation.isPending}
+            deleting={materialTypeDeleteMutation.isPending}
+            onClose={() => setMaterialTypeManagerOpen(false)}
+            onSave={(payload) => materialTypeSaveMutation.mutateAsync(payload)}
+            onDelete={(row) => materialTypeDeleteMutation.mutateAsync(row)}
+          />
+        )}
+
         {finishedMaterialOpen && selected && resource.key === "material-coated-stock" && (
           <FinishedMaterialWindow
             material={selected}
             usageRows={usageRows}
             inventoryRows={selectedMaterialInventoryRows}
+            presses={lookupQuery.data?.presses ?? []}
             scheduling={finishedScheduleMutation.isPending}
             onClose={() => setFinishedMaterialOpen(false)}
             onEdit={() => {

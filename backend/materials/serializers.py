@@ -20,6 +20,11 @@ class MaterialMasterTypeSerializer(serializers.ModelSerializer):
 
 class MaterialSpecSerializer(serializers.ModelSerializer):
     inventory_total_feet = serializers.SerializerMethodField()
+    allowed_face_material_summary = serializers.SerializerMethodField()
+    allowed_liner_material_summary = serializers.SerializerMethodField()
+    allowed_adhesive_material_summary = serializers.SerializerMethodField()
+    allowed_silicone_material_summary = serializers.SerializerMethodField()
+    allowed_coating_material_summary = serializers.SerializerMethodField()
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     master_type_code = serializers.CharField(source="master_type.code", read_only=True)
     master_type_name = serializers.CharField(source="master_type.name", read_only=True)
@@ -42,6 +47,37 @@ class MaterialSpecSerializer(serializers.ModelSerializer):
     class Meta:
         model = MaterialSpec
         fields = "__all__"
+
+    def component_summary(self, obj, relation_name, fallback=None):
+        values = []
+        if fallback:
+            values.append(fallback)
+        relation = getattr(obj, relation_name)
+        for item in relation.all():
+            label = item.material_family or item.name or item.code
+            if label and label not in values:
+                values.append(label)
+        return " / ".join(values)
+
+    def get_allowed_face_material_summary(self, obj):
+        fallback = obj.face_material.material_family or obj.face_material.name if obj.face_material_id else ""
+        return self.component_summary(obj, "allowed_face_materials", fallback)
+
+    def get_allowed_liner_material_summary(self, obj):
+        fallback = obj.liner_material.material_family or obj.liner_material.name if obj.liner_material_id else ""
+        return self.component_summary(obj, "allowed_liner_materials", fallback)
+
+    def get_allowed_adhesive_material_summary(self, obj):
+        fallback = obj.adhesive_material.material_family or obj.adhesive_material.name if obj.adhesive_material_id else ""
+        return self.component_summary(obj, "allowed_adhesive_materials", fallback)
+
+    def get_allowed_silicone_material_summary(self, obj):
+        fallback = obj.silicone_material.material_family or obj.silicone_material.name if obj.silicone_material_id else ""
+        return self.component_summary(obj, "allowed_silicone_materials", fallback)
+
+    def get_allowed_coating_material_summary(self, obj):
+        fallback = obj.coating_material.material_family or obj.coating_material.name if obj.coating_material_id else ""
+        return self.component_summary(obj, "allowed_coating_materials", fallback)
 
     def get_inventory_total_feet(self, obj):
         annotated_total = getattr(obj, "inventory_total_feet", None)

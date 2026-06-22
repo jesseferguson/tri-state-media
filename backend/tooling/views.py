@@ -50,8 +50,16 @@ class BaseToolingViewSet(viewsets.ModelViewSet):
 class SupplierViewSet(BaseToolingViewSet):
     queryset = Supplier.objects.all().order_by("name")
     serializer_class = SupplierSerializer
-    search_fields = ["name", "email", "phone", "city", "state", "zip_code", "notes"]
-    ordering_fields = ["name", "city", "state", "is_active"]
+    search_fields = ["name", "tags", "email", "phone", "city", "state", "zip_code", "notes"]
+    ordering_fields = ["name", "tags", "city", "state", "is_active"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        tags = self.request.query_params.get("tags")
+        if tags:
+            for tag in [value.strip() for value in tags.split(",") if value.strip()]:
+                qs = qs.filter(tags__icontains=tag)
+        return qs
 
 
 class ToolingLocationViewSet(BaseToolingViewSet):

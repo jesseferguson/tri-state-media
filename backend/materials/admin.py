@@ -22,6 +22,10 @@ class MaterialSpecAdmin(admin.ModelAdmin):
         "adhesive_material",
         "silicone_material",
         "coating_material",
+        "allowed_face_material_summary",
+        "allowed_liner_material_summary",
+        "allowed_adhesive_material_summary",
+        "allowed_silicone_material_summary",
         "liner_pounds",
         "gsm",
         "material_family",
@@ -46,6 +50,16 @@ class MaterialSpecAdmin(admin.ModelAdmin):
         "silicone_material__code",
         "coating_material__name",
         "coating_material__code",
+        "allowed_face_materials__name",
+        "allowed_face_materials__code",
+        "allowed_liner_materials__name",
+        "allowed_liner_materials__code",
+        "allowed_adhesive_materials__name",
+        "allowed_adhesive_materials__code",
+        "allowed_silicone_materials__name",
+        "allowed_silicone_materials__code",
+        "allowed_coating_materials__name",
+        "allowed_coating_materials__code",
         "scheduled_by",
         "coater_cut_plan",
         "operator_notes",
@@ -59,7 +73,32 @@ class MaterialSpecAdmin(admin.ModelAdmin):
         "adhesive_material",
         "silicone_material",
         "coating_material",
+        "allowed_face_materials",
+        "allowed_liner_materials",
+        "allowed_adhesive_materials",
+        "allowed_silicone_materials",
+        "allowed_coating_materials",
     )
+
+    def _component_summary(self, obj, relation_name):
+        values = []
+        for item in getattr(obj, relation_name).all():
+            label = item.material_family or item.name or item.code
+            if label and label not in values:
+                values.append(label)
+        return " / ".join(values)
+
+    def allowed_face_material_summary(self, obj):
+        return self._component_summary(obj, "allowed_face_materials")
+
+    def allowed_liner_material_summary(self, obj):
+        return self._component_summary(obj, "allowed_liner_materials")
+
+    def allowed_adhesive_material_summary(self, obj):
+        return self._component_summary(obj, "allowed_adhesive_materials")
+
+    def allowed_silicone_material_summary(self, obj):
+        return self._component_summary(obj, "allowed_silicone_materials")
 
 
 @admin.register(MaterialSupplierOption)

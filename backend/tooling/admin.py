@@ -38,9 +38,9 @@ class PrintStationInline(admin.TabularInline):
 
 @admin.register(Supplier)
 class SupplierAdmin(admin.ModelAdmin):
-    list_display = ("name", "email", "phone", "is_active")
+    list_display = ("name", "tags", "email", "phone", "is_active")
     list_filter = ("is_active",)
-    search_fields = ("name", "email", "phone", "city", "state", "zip_code")
+    search_fields = ("name", "tags", "email", "phone", "city", "state", "zip_code")
 
 
 @admin.register(ToolingLocation)

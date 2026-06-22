@@ -32,6 +32,12 @@ export const defaultRoleDefinitions = [
     allowedResourceKeys: ["production-schedule", "job-tickets", "customer-orders", "presses"],
   },
   {
+    id: "role-coater",
+    name: "Coater",
+    description: "Coater operator lineup and roll tag workflow",
+    allowedResourceKeys: ["coater-operator"],
+  },
+  {
     id: "role-manager",
     name: "Manager",
     description: "Management access",

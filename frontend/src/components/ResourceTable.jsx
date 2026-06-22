@@ -6,6 +6,11 @@ function columnLabel(resource, column) {
     recipe_name: "Label Layout",
     recipe_option: "Press Setup Option",
     recipe_option_name: "Press Setup Option",
+    allowed_face_material_summary: "Face Types",
+    allowed_liner_material_summary: "Liner Types",
+    allowed_adhesive_material_summary: "Adhesive Types",
+    allowed_silicone_material_summary: "Silicone Types",
+    allowed_coating_material_summary: "Coating Types",
   };
   if (friendlyLabels[column]) return friendlyLabels[column];
   if (column === "inventory_total_feet") return "Inventory Feet";

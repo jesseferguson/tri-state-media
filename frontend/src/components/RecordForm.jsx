@@ -349,6 +349,28 @@ function scopeRows(rows, field) {
   return rows.filter((row) => matchesLookupFilters(row, field.lookupFilters));
 }
 
+function splitTags(value) {
+  return String(value ?? "")
+    .split(/[,;]+/)
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function fieldRecommendedTags(field) {
+  if (!field.recommendedSupplierTags) return [];
+  return Array.isArray(field.recommendedSupplierTags)
+    ? field.recommendedSupplierTags.map((tag) => String(tag).trim().toLowerCase()).filter(Boolean)
+    : splitTags(field.recommendedSupplierTags);
+}
+
+function rowHasRecommendedSupplierTag(row, field) {
+  if (field.relation !== "suppliers") return false;
+  const recommended = fieldRecommendedTags(field);
+  if (!recommended.length) return false;
+  const rowTags = splitTags(row.tags);
+  return recommended.some((tag) => rowTags.includes(tag));
+}
+
 function familyKey(row) {
   return row.material_family || row.name || getRecordTitle(row);
 }
@@ -425,6 +447,10 @@ function getRelationTitle(row, field) {
       row.customer_code,
       row.contact_name,
     ].filter(Boolean).join(" / ");
+  }
+
+  if (field.relation === "suppliers") {
+    return [row.name ?? getRecordTitle(row), row.tags].filter(Boolean).join(" / ");
   }
 
   if (field.relation === "materials") {
@@ -508,6 +534,12 @@ function getRelationTitle(row, field) {
 }
 
 function getRelationSubtitle(row, field) {
+  if (field.relation === "suppliers") {
+    const tags = splitTags(row.tags);
+    const recommended = rowHasRecommendedSupplierTag(row, field) ? "Recommended" : "";
+    return [recommended, tags.join(", "), row.city, row.state].filter(Boolean).join(" / ");
+  }
+
   if (field.relation === "recipes") {
     return [
       row.shape_type,
@@ -546,9 +578,15 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = q ? optionRows.filter((row) => makeSearchText(row, field).includes(q) || getRelationTitle(row, field).toLowerCase().includes(q)) : optionRows;
-    const sorted = field.recommendFromJobLayout
-      ? [...base].sort((a, b) => recipeMatchScore(b, field.recommendationContext ?? {}) - recipeMatchScore(a, field.recommendationContext ?? {}) || String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { numeric: true }))
-      : base;
+    const sorted = [...base].sort((a, b) => {
+      if (field.recommendFromJobLayout) {
+        const recipeScore = recipeMatchScore(b, field.recommendationContext ?? {}) - recipeMatchScore(a, field.recommendationContext ?? {});
+        if (recipeScore) return recipeScore;
+      }
+      const supplierScore = Number(rowHasRecommendedSupplierTag(b, field)) - Number(rowHasRecommendedSupplierTag(a, field));
+      if (supplierScore) return supplierScore;
+      return String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { numeric: true });
+    });
     return sorted.slice(0, field.maxResults ?? 80);
   }, [optionRows, query, field]);
 
@@ -572,6 +610,7 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
             {filtered.map((row) => (
               <button key={row.id} type="button" className={Number(row.id) === Number(value) ? "selected" : ""} onClick={() => { onChange(Number(row.id)); setOpen(false); setQuery(""); }}>
                 <strong>{getRelationTitle(row, field)}</strong>
+                {field.relation === "suppliers" && <span>{getRelationSubtitle(row, field)}</span>}
                 <span>{[row.status, row.current_location_name, row.press_name, row.recipe_name].filter(Boolean).join(" · ")}</span>
               </button>
             ))}
@@ -798,7 +837,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
                   <select id={id} multiple value={selected.map(String)} onChange={(event) => update(field.name, Array.from(event.target.selectedOptions).map((option) => Number(option.value)))}>
                     {rows.map((row) => <option key={row.id} value={row.id}>{getRelationTitle(row, lookupField)}</option>)}
                   </select>
-                  <small>Hold Ctrl to pick multiple.</small>
+                  <small>{field.helpText ? `${field.helpText} ` : ""}Hold Ctrl to pick multiple.</small>
                 </label>
               </Fragment>
             );

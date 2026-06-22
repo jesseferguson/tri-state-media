@@ -320,11 +320,48 @@ const linerDataTypeField = {
 };
 
 const baseMaterialColumns = [
-  "master_type_code",
   "name",
-  "code",
+  "color",
+  "liner_pounds",
   "is_active",
 ];
+
+const componentMaterialTypes = ["liner", "face", "adhesive", "silicone", "coating"];
+
+function choiceLabel(choices, value) {
+  return choices.find(([choiceValue]) => choiceValue === value)?.[1] || value;
+}
+
+function materialDataTypeLabel(row) {
+  return [
+    row?.name || row?.material_family || row?.code || "Material",
+    choiceLabel(choiceLists.rawMaterialType, row?.material_type),
+  ].filter(Boolean).join(" - ");
+}
+
+function supplierField(recommendedSupplierTags, extra = {}) {
+  const tags = Array.isArray(recommendedSupplierTags) ? recommendedSupplierTags : [recommendedSupplierTags].filter(Boolean);
+  return {
+    name: "supplier",
+    label: "Supplier",
+    type: "searchRelation",
+    relation: "suppliers",
+    searchable: true,
+    recommendedSupplierTags: tags,
+    maxResults: 500,
+    searchFields: ["name", "tags", "phone", "email", "city", "state", "notes"],
+    helpText: tags.length ? `Suppliers tagged ${tags.join(" or ")} are recommended first.` : undefined,
+    ...extra,
+  };
+}
+
+function finishedMaterialField(field) {
+  return {
+    ...field,
+    showWhen: { material_type: "coated_stock" },
+    clearWhenHidden: null,
+  };
+}
 
 const finishedMaterialColumns = [
   "code",
@@ -332,6 +369,9 @@ const finishedMaterialColumns = [
   "material_family",
   "inventory_total_feet",
   "name",
+  "allowed_face_material_summary",
+  "allowed_liner_material_summary",
+  "allowed_adhesive_material_summary",
   "gsm",
   "is_active",
 ];
@@ -340,53 +380,123 @@ function componentRelationFields() {
   return [
     {
       name: "face_material",
-      label: "Face Type",
+      label: "Preferred Face Type",
       type: "searchRelation",
       relation: "materials",
       searchable: true,
+      display: materialDataTypeLabel,
       groupByFamily: true,
       lookupFilters: { material_type: "face" },
       searchFields: ["code", "name", "company", "material_family", "gsm", "color", "notes"],
+      section: "Preferred Defaults",
+      helpText: "Default face type to use when scheduling. Allowed face types below control compatibility.",
     },
     {
       name: "liner_material",
-      label: "Liner Type",
+      label: "Preferred Liner Type",
       type: "searchRelation",
       relation: "materials",
       searchable: true,
+      display: materialDataTypeLabel,
       groupByFamily: true,
       lookupFilters: { material_type: "liner" },
       searchFields: ["code", "name", "company", "material_family", "liner_pounds", "gsm", "color", "notes"],
+      section: "Preferred Defaults",
+      helpText: "Default liner type to use when scheduling. Allowed liner types below control compatibility.",
     },
     {
       name: "adhesive_material",
-      label: "Adhesive Type",
+      label: "Preferred Adhesive Type",
       type: "searchRelation",
       relation: "materials",
       searchable: true,
+      display: materialDataTypeLabel,
       groupByFamily: true,
       lookupFilters: { material_type: "adhesive" },
       searchFields: ["code", "name", "company", "material_family", "gsm", "notes"],
+      section: "Preferred Defaults",
+      helpText: "Default adhesive type to use when scheduling. Allowed adhesive types below control compatibility.",
     },
     {
       name: "silicone_material",
-      label: "Silicone Type",
+      label: "Preferred Silicone Type",
       type: "searchRelation",
       relation: "materials",
       searchable: true,
+      display: materialDataTypeLabel,
       groupByFamily: true,
       lookupFilters: { material_type: "silicone" },
       searchFields: ["code", "name", "company", "material_family", "gsm", "notes"],
+      section: "Preferred Defaults",
+      helpText: "Default silicone type to use when scheduling. Allowed silicone types below control compatibility.",
     },
     {
       name: "coating_material",
-      label: "Coating / Varnish Type",
+      label: "Preferred Coating / Varnish Type",
       type: "searchRelation",
       relation: "materials",
       searchable: true,
+      display: materialDataTypeLabel,
       groupByFamily: true,
       lookupFilters: { material_type: "coating" },
       searchFields: ["code", "name", "company", "material_family", "gsm", "notes"],
+      section: "Preferred Defaults",
+      helpText: "Default coating type to use when scheduling. Allowed coating types below control compatibility.",
+    },
+    {
+      name: "allowed_face_materials",
+      label: "Allowed Face Types",
+      type: "multiRelation",
+      relation: "materials",
+      display: materialDataTypeLabel,
+      lookupFilters: { material_type: "face" },
+      searchFields: ["code", "name", "company", "material_family", "gsm", "color", "notes"],
+      section: "Compatibility",
+      helpText: "All face types that can be used to make this finished raw material.",
+    },
+    {
+      name: "allowed_liner_materials",
+      label: "Allowed Liner Types",
+      type: "multiRelation",
+      relation: "materials",
+      display: materialDataTypeLabel,
+      lookupFilters: { material_type: "liner" },
+      searchFields: ["code", "name", "company", "material_family", "liner_pounds", "gsm", "color", "notes"],
+      section: "Compatibility",
+      helpText: "All liner types that can be used to make this finished raw material.",
+    },
+    {
+      name: "allowed_adhesive_materials",
+      label: "Allowed Adhesive Types",
+      type: "multiRelation",
+      relation: "materials",
+      display: materialDataTypeLabel,
+      lookupFilters: { material_type: "adhesive" },
+      searchFields: ["code", "name", "company", "material_family", "gsm", "notes"],
+      section: "Compatibility",
+      helpText: "All adhesive types that can be used to make this finished raw material.",
+    },
+    {
+      name: "allowed_silicone_materials",
+      label: "Allowed Silicone Types",
+      type: "multiRelation",
+      relation: "materials",
+      display: materialDataTypeLabel,
+      lookupFilters: { material_type: "silicone" },
+      searchFields: ["code", "name", "company", "material_family", "gsm", "notes"],
+      section: "Compatibility",
+      helpText: "All silicone types that can be used to make this finished raw material.",
+    },
+    {
+      name: "allowed_coating_materials",
+      label: "Allowed Coating / Varnish Types",
+      type: "multiRelation",
+      relation: "materials",
+      display: materialDataTypeLabel,
+      lookupFilters: { material_type: "coating" },
+      searchFields: ["code", "name", "company", "material_family", "gsm", "notes"],
+      section: "Compatibility",
+      helpText: "All coating or varnish types that can be used to make this finished raw material.",
     },
   ];
 }
@@ -399,24 +509,24 @@ function materialFields(defaultType = "liner", hiddenType = false, namePlacehold
     { name: "material_type", label: "Material Type", type: "select", choices: choiceLists.rawMaterialType, required: true, defaultValue: defaultType, hidden: hiddenType },
     { name: "code", label: "Code", type: "text", placeholder: "Auto-generated", hidden: true },
     { name: "name", label: isFinishedRawMaterial ? "Description" : "Data Type", type: "text", required: true, placeholder: namePlaceholder },
-    {
+    finishedMaterialField({
       name: "master_type",
       label: "Master Material Type",
       type: "searchRelation",
       relation: "material-master-types",
       searchable: true,
       searchFields: ["code", "name", "description"],
-      helpText: "Central type such as PM, PMDT, PET, LPO, or LV. This links job tickets, inventory, and quoting.",
-    },
+      helpText: "Finished construction family such as PM, PM/PET, PET, LPO, or LV. Component data types stay reusable across these families.",
+    }),
     ...(isFinishedRawMaterial ? [
-      { name: "company", label: "Company", type: "text", placeholder: "Internal or supplier description" },
+      finishedMaterialField({ name: "company", label: "Company", type: "text", placeholder: "Internal or supplier description" }),
     ] : []),
     { name: "liner_pounds", label: "Liner Pounds", type: "number", step: "0.01", showWhen: { material_type: "liner" }, clearWhenHidden: null },
     ...(isFinishedRawMaterial ? [
-      { name: "gsm", label: "Glue GSM", type: "number", step: "0.01" },
-      { name: "material_family", label: "Material Family", type: "text", placeholder: "PM, PMDT, PET, LPO, LV..." },
+      finishedMaterialField({ name: "gsm", label: "Glue GSM", type: "number", step: "0.01" }),
+      finishedMaterialField({ name: "material_family", label: "Material Family", type: "text", placeholder: "PM, PMDT, PET, LPO, LV..." }),
     ] : []),
-    ...(isFinishedRawMaterial ? componentRelationFields() : []),
+    ...(isFinishedRawMaterial ? componentRelationFields().map(finishedMaterialField) : []),
     ...(!isLiner ? [{ name: "color", label: "Color", type: "text" }] : []),
     { name: "is_active", label: "Active", type: "checkbox", defaultValue: true },
     { name: "notes", label: "Notes", type: "textarea" },
@@ -427,21 +537,17 @@ function materialSupplierOptionFields() {
   return [
     {
       name: "material",
-      label: "Data Type",
+      label: "Component Data Type",
       type: "searchRelation",
       relation: "materials",
       searchable: true,
       required: true,
-      searchFields: ["name", "code", "material_type", "color", "notes"],
+      lookupFilters: { material_type: componentMaterialTypes },
+      display: materialDataTypeLabel,
+      searchFields: ["name", "material_type", "color", "notes"],
+      maxResults: 500,
     },
-    {
-      name: "supplier",
-      label: "Supplier",
-      type: "searchRelation",
-      relation: "suppliers",
-      searchable: true,
-      searchFields: ["name", "phone", "email", "city", "state"],
-    },
+    supplierField("material"),
     { name: "supplier_name", label: "Supplier Name", type: "text" },
     { name: "option_name", label: "Option Description", type: "text", placeholder: "PM 3.5 mil coating" },
     { name: "supplier_item_number", label: "Supplier Item #", type: "text" },
@@ -593,6 +699,21 @@ export const resources = [
     viewMode: "liveFootage",
     disableCreate: true,
     tagline: "Realtime Firebase footage dashboard for press speed, shift totals, and the companywide footage goal.",
+    columns: [],
+    fields: [],
+  },
+
+  {
+    key: "coater-operator",
+    label: "Coater Operator",
+    singular: "Coater Operator",
+    group: "production",
+    icon: Factory,
+    accent: "#0f766e",
+    staticView: true,
+    viewMode: "coaterOperator",
+    disableCreate: true,
+    tagline: "Coater operator lineup for scheduled material runs, roll tags, and finished product jobs.",
     columns: [],
     fields: [],
   },
@@ -933,6 +1054,7 @@ export const resources = [
     group: "production-material",
     icon: Layers3,
     accent: "#0ea5e9",
+    hideFromNav: true,
     defaultOrdering: "code,name",
     tagline: "Central material type list used to connect job tickets, material specs, inventory, and quoting.",
     columns: [
@@ -957,6 +1079,7 @@ export const resources = [
     group: "production-material",
     icon: Layers3,
     accent: "#84cc16",
+    hideFromNav: true,
     defaultOrdering: "material_type,company,name,code",
     tagline: "Master data types for finished raw materials, faces, liners, adhesives, silicone, and coatings. Inventory rolls link back to these records.",
     columns: [
@@ -988,7 +1111,7 @@ export const resources = [
     defaultOrdering: "company,name,code",
     tagline: materialType === "coated_stock"
       ? "Finished raw material master records. Link face, liner, adhesive, silicone, coating, cuts, target run length, and operator notes."
-      : `${label} master list. Add the ordered data types you run, then inventory rolls can link back to these records.`,
+      : `${label} reusable component list. Add supplier options to each data type, then inventory rolls can link back to the correct supplier and lot.`,
     columns: materialType === "coated_stock" ? finishedMaterialColumns : baseMaterialColumns,
     fields: materialFields(materialType, true, placeholder),
   })),
@@ -996,8 +1119,8 @@ export const resources = [
   {
     key: "material-supplier-options",
     endpoint: "material-supplier-options",
-    label: "Material Supplier Options",
-    singular: "Material Supplier Option",
+    label: "Material Supplier / Purchase Options",
+    singular: "Material Supplier / Purchase Option",
     group: "production-material",
     icon: Store,
     accent: "#14b8a6",
@@ -2250,15 +2373,7 @@ export const resources = [
         choices: choiceLists.faceType,
       },
       { ...linerDataTypeField },
-      {
-        name: "supplier",
-        label: "Supplier",
-        type: "searchRelation",
-        relation: "suppliers",
-        searchable: true,
-        section: "Storage",
-        searchFields: ["name", "phone", "email", "city", "state"],
-      },
+      supplierField("tooling", { section: "Storage" }),
       {
         name: "current_location",
         label: "Location",
@@ -2326,14 +2441,7 @@ export const resources = [
         type: "number",
         step: "0.0001",
       },
-      {
-        name: "supplier",
-        label: "Supplier",
-        type: "searchRelation",
-        relation: "suppliers",
-        searchable: true,
-        searchFields: ["name", "phone", "email", "city", "state"],
-      },
+      supplierField("tooling"),
       {
         name: "current_location",
         label: "Location",
@@ -2410,14 +2518,7 @@ export const resources = [
         label: "Max Blades",
         type: "number",
       },
-      {
-        name: "supplier",
-        label: "Supplier",
-        type: "searchRelation",
-        relation: "suppliers",
-        searchable: true,
-        searchFields: ["name", "phone", "email", "city", "state"],
-      },
+      supplierField("tooling"),
       {
         name: "current_location",
         label: "Location",
@@ -2758,6 +2859,7 @@ export const resources = [
     tagline: "Supplier contact list for tooling purchases, repairs, and references.",
     columns: [
       "name",
+      "tags",
       "phone",
       "email",
       "city",
@@ -2780,6 +2882,13 @@ export const resources = [
         name: "email",
         label: "Email",
         type: "email",
+      },
+      {
+        name: "tags",
+        label: "Tags",
+        type: "text",
+        placeholder: "tooling, material, box, core",
+        helpText: "Comma-separated tags recommend this supplier in matching forms.",
       },
       {
         name: "city",

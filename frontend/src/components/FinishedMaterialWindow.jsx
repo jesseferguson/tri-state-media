@@ -1,5 +1,5 @@
 import { CalendarPlus, Pencil, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatCell, formatFeet, getRecordTitle, labelize } from "../lib/format";
 
 function usageTitle(row) {
@@ -226,24 +226,47 @@ function WidthUsageChart({ inventoryRows, usageRows }) {
   );
 }
 
-export default function FinishedMaterialWindow({ material, usageRows = [], inventoryRows = [], scheduling = false, onClose, onEdit, onSchedule }) {
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function defaultCoaterPress(presses) {
+  return (presses ?? []).find((press) => String(press.name || "").trim().toLowerCase() === "eti")
+    ?? (presses ?? []).find((press) => /coater|eti/i.test(String(press.name || "")))
+    ?? (presses ?? [])[0]
+    ?? null;
+}
+
+function compatibilitySummary(material, summaryKey, familyKey, nameKey) {
+  return material[summaryKey] || material[familyKey] || material[nameKey];
+}
+
+export default function FinishedMaterialWindow({ material, usageRows = [], inventoryRows = [], presses = [], scheduling = false, onClose, onEdit, onSchedule }) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const defaultPress = defaultCoaterPress(presses);
   const [scheduleForm, setScheduleForm] = useState({
     cut_description: "",
     feet: material.target_run_length_feet || "",
+    press: defaultPress?.id || "",
+    run_date: today(),
     operator_notes: "",
   });
+
+  useEffect(() => {
+    if (!defaultPress?.id || scheduleForm.press) return;
+    setScheduleForm((prev) => ({ ...prev, press: defaultPress.id }));
+  }, [defaultPress?.id, scheduleForm.press]);
 
   const fields = [
     ["Code", material.code],
     ["Family", material.material_family],
     ["Inventory", inventoryTotalFeet(material, inventoryRows)],
     ["Glue GSM", material.gsm],
-    ["Face Type", material.face_material_family || material.face_material_name],
-    ["Liner Type", material.liner_material_family || material.liner_material_name],
-    ["Adhesive Type", material.adhesive_material_family || material.adhesive_material_name],
-    ["Silicone Type", material.silicone_material_family || material.silicone_material_name],
-    ["Coating Type", material.coating_material_family || material.coating_material_name],
+    ["Face Types", compatibilitySummary(material, "allowed_face_material_summary", "face_material_family", "face_material_name")],
+    ["Liner Types", compatibilitySummary(material, "allowed_liner_material_summary", "liner_material_family", "liner_material_name")],
+    ["Adhesive Types", compatibilitySummary(material, "allowed_adhesive_material_summary", "adhesive_material_family", "adhesive_material_name")],
+    ["Silicone Types", compatibilitySummary(material, "allowed_silicone_material_summary", "silicone_material_family", "silicone_material_name")],
+    ["Coating Types", compatibilitySummary(material, "allowed_coating_material_summary", "coating_material_family", "coating_material_name")],
     ["Active", material.is_active ? "Yes" : "No"],
   ];
 
@@ -256,9 +279,13 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
     onSchedule?.({
       cut_description: scheduleForm.cut_description,
       feet: scheduleForm.feet === "" ? null : Number(scheduleForm.feet),
+      press: scheduleForm.press || null,
+      run_date: scheduleForm.run_date || null,
       operator_notes: scheduleForm.operator_notes,
     });
   }
+
+  const selectedSchedulePress = presses.find((press) => String(press.id) === String(scheduleForm.press)) || defaultPress;
 
   return (
     <section className="finished-overlay" role="dialog" aria-modal="true" aria-label="Finished raw material">
@@ -294,11 +321,24 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
           <form className="finished-schedule-form" onSubmit={submitSchedule}>
             <div className="finished-schedule-title">
               <span>Schedule</span>
-              <strong>Press: ETI</strong>
+              <strong>{selectedSchedulePress ? `Press: ${selectedSchedulePress.name}` : "Coater Lineup"}</strong>
             </div>
             <label>
-              <span>Cut Description</span>
-              <input value={scheduleForm.cut_description} onChange={(event) => updateSchedule("cut_description", event.target.value)} placeholder="Example: 3 x 13 in" />
+              <span>Press</span>
+              <select value={scheduleForm.press} onChange={(event) => updateSchedule("press", event.target.value)}>
+                <option value="">Unassigned</option>
+                {presses.map((press) => (
+                  <option value={press.id} key={press.id}>{press.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Run Date</span>
+              <input type="date" value={scheduleForm.run_date} onChange={(event) => updateSchedule("run_date", event.target.value)} />
+            </label>
+            <label>
+              <span>Cutting Notes</span>
+              <input value={scheduleForm.cut_description} onChange={(event) => updateSchedule("cut_description", event.target.value)} placeholder="Cut 9/9" />
             </label>
             <label>
               <span>Feet</span>

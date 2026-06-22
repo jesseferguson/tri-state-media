@@ -52,6 +52,16 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
         "silicone_material__code",
         "coating_material__name",
         "coating_material__code",
+        "allowed_face_materials__name",
+        "allowed_face_materials__code",
+        "allowed_liner_materials__name",
+        "allowed_liner_materials__code",
+        "allowed_adhesive_materials__name",
+        "allowed_adhesive_materials__code",
+        "allowed_silicone_materials__name",
+        "allowed_silicone_materials__code",
+        "allowed_coating_materials__name",
+        "allowed_coating_materials__code",
         "scheduled_by",
         "coater_cut_plan",
         "operator_notes",
@@ -84,6 +94,13 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
                 "silicone_material",
                 "coating_material",
             )
+            .prefetch_related(
+                "allowed_face_materials",
+                "allowed_liner_materials",
+                "allowed_adhesive_materials",
+                "allowed_silicone_materials",
+                "allowed_coating_materials",
+            )
             .annotate(
                 inventory_total_feet=Coalesce(
                     Sum(
@@ -101,7 +118,8 @@ class MaterialSpecViewSet(BaseMaterialsViewSet):
         material_type = self.request.query_params.get("material_type")
         master_type = self.request.query_params.get("master_type")
         if material_type:
-            qs = qs.filter(material_type=material_type)
+            material_types = [value.strip() for value in material_type.split(",") if value.strip()]
+            qs = qs.filter(material_type__in=material_types)
         if master_type:
             qs = qs.filter(master_type_id=master_type)
         return qs

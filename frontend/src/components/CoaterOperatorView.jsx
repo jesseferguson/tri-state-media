@@ -1,0 +1,632 @@
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, Factory, PackageCheck, Play, RefreshCcw, Ruler } from "lucide-react";
+import { fetchCollection, updateRecord } from "../api";
+import { formatInches, getRecordTitle, labelize } from "../lib/format";
+
+const activeMaterialStatuses = new Set(["scheduled", "running", "on_hold"]);
+const activeProductStatuses = new Set(["scheduled", "ready", "running", "on_hold"]);
+const componentSlots = [
+  { key: "liner", preferredKey: "liner_material", label: "Liner", type: "liner", inventoryKey: "liner_inventory", allowedKey: "allowed_liner_materials" },
+  { key: "face", preferredKey: "face_material", label: "Face", type: "face", inventoryKey: "face_inventory", allowedKey: "allowed_face_materials" },
+  { key: "adhesive", preferredKey: "adhesive_material", label: "Adhesive", type: "adhesive", inventoryKey: "adhesive_inventory", allowedKey: "allowed_adhesive_materials" },
+  { key: "silicone", preferredKey: "silicone_material", label: "Silicone", type: "silicone", inventoryKey: "silicone_inventory", allowedKey: "allowed_silicone_materials" },
+  { key: "coating", preferredKey: "coating_material", label: "Coating", type: "coating", inventoryKey: "coating_inventory", allowedKey: "allowed_coating_materials", optional: true },
+];
+
+function sameId(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined || a === "" || b === "") return false;
+  return String(a) === String(b);
+}
+
+function numberOrNull(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isCoaterPress(press) {
+  const name = String(press?.name || "").toLowerCase();
+  return name.includes("eti") || name.includes("coater");
+}
+
+function qty(value, suffix = "") {
+  const number = Number(value ?? 0);
+  if (!Number.isFinite(number)) return "--";
+  return `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}${suffix}`;
+}
+
+function shortDate(value) {
+  if (!value) return "--";
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString();
+}
+
+function materialLabel(row) {
+  return [row?.name || row?.material_name, labelize(row?.material_type)].filter(Boolean).join(" - ") || "Select";
+}
+
+function inventoryLabel(row) {
+  return [
+    row.serial_number || row.source_roll_tag_number,
+    row.supplier_name,
+    row.lot_number ? `Lot ${row.lot_number}` : "",
+    row.width_inches ? `${formatInches(row.width_inches)} wide` : "",
+    row.length_feet || row.quantity ? `${qty(row.length_feet ?? row.quantity, " ft")}` : "",
+  ].filter(Boolean).join(" / ") || getRecordTitle(row);
+}
+
+function supplierOptionTitle(option) {
+  return [
+    option.supplier_name || option.supplier_lookup_name || "Supplier",
+    option.option_name,
+    option.supplier_item_number ? `Item # ${option.supplier_item_number}` : "",
+  ].filter(Boolean).join(" / ");
+}
+
+function supplierOptionMeta(option) {
+  return [
+    option.thickness_mil ? `${qty(option.thickness_mil, " mil")}` : "",
+    option.width_inches ? `${formatInches(option.width_inches)} wide` : "",
+    option.length_feet ? `${qty(option.length_feet, " ft")}` : "",
+  ].filter(Boolean).join(" / ");
+}
+
+function activeInventory(rows, materialType, materialId = "") {
+  return (rows ?? []).filter((row) => {
+    if (row.is_active === false || ["depleted", "scrapped", "in_use"].includes(row.status)) return false;
+    if (row.material_type !== materialType) return false;
+    if (materialId) return sameId(row.material, materialId);
+    return true;
+  });
+}
+
+function allowedComponentIds(material, slot) {
+  const ids = [];
+  if (material?.[slot.preferredKey]) ids.push(material[slot.preferredKey]);
+  const allowed = Array.isArray(material?.[slot.allowedKey]) ? material[slot.allowedKey] : [];
+  allowed.forEach((id) => {
+    if (id && !ids.some((existing) => sameId(existing, id))) ids.push(id);
+  });
+  return ids;
+}
+
+function defaultComponentId(material, tag, slot) {
+  if (tag?.[slot.key]) return tag[slot.key];
+  const ids = allowedComponentIds(material, slot);
+  return ids[0] || "";
+}
+
+function plantFloorLocation(locations) {
+  return (locations ?? []).find((row) => /plant\s*floor/i.test(`${row.full_path || ""} ${row.name || ""}`)) ?? null;
+}
+
+function componentInventoryLots(form, inventoryRows) {
+  return componentSlots
+    .map((slot) => (inventoryRows ?? []).find((row) => sameId(row.id, form[slot.inventoryKey])))
+    .filter(Boolean)
+    .map((row) => row.lot_number || row.serial_number)
+    .filter(Boolean);
+}
+
+function generatedLot(tag, form, inventoryRows) {
+  const lots = componentInventoryLots(form, inventoryRows).slice(0, 3).join("-");
+  return [tag?.tag_number, lots || "LOT", today().replaceAll("-", "")].filter(Boolean).join("-");
+}
+
+function noteBlock(tag, form, inventoryRows) {
+  const lines = [
+    tag.cut_description ? `Cutting Notes: ${tag.cut_description}` : "",
+    form.operator_notes ? `Operator Notes: ${form.operator_notes}` : "",
+    ...componentSlots.map((slot) => {
+      const inv = (inventoryRows ?? []).find((row) => sameId(row.id, form[slot.inventoryKey]));
+      return inv ? `${slot.label}: ${inventoryLabel(inv)}` : "";
+    }),
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+function defaultRollForm(tag, data, currentUser) {
+  const material = (data.materials ?? []).find((row) => sameId(row.id, tag?.scheduled_material));
+  const location = tag?.location || plantFloorLocation(data.locations)?.id || "";
+  const form = {
+    liner: defaultComponentId(material, tag, componentSlots[0]),
+    face: defaultComponentId(material, tag, componentSlots[1]),
+    adhesive: defaultComponentId(material, tag, componentSlots[2]),
+    silicone: defaultComponentId(material, tag, componentSlots[3]),
+    coating: defaultComponentId(material, tag, componentSlots[4]),
+    liner_inventory: tag?.liner_inventory || "",
+    face_inventory: tag?.face_inventory || "",
+    adhesive_inventory: tag?.adhesive_inventory || "",
+    silicone_inventory: tag?.silicone_inventory || "",
+    coating_inventory: tag?.coating_inventory || "",
+    width_inches: tag?.width_inches || "",
+    length_feet: tag?.length_feet || "",
+    weight_lbs: tag?.weight_lbs || "",
+    result_lot_number: tag?.result_lot_number || "",
+    location,
+    operator_notes: tag?.operator_notes || "",
+    operator: currentUser?.name || tag?.operator || "",
+  };
+  return { ...form, result_lot_number: form.result_lot_number || generatedLot(tag, form, data.inventory) };
+}
+
+function validateRollForm(form) {
+  const missing = [];
+  componentSlots.forEach((slot) => {
+    if (slot.optional) return;
+    if (!form[slot.key]) missing.push(`${slot.label} type`);
+    if (!form[slot.inventoryKey]) missing.push(`${slot.label} roll`);
+  });
+  if (!numberOrNull(form.length_feet) || numberOrNull(form.length_feet) <= 0) missing.push("Run feet");
+  if (!form.result_lot_number) missing.push("Lot number");
+  return missing;
+}
+
+function PressFilter({ presses, selectedPress, onSelect }) {
+  return (
+    <div className="coater-press-tabs" role="tablist" aria-label="Coater press filter">
+      <button className={selectedPress === "all" ? "active" : ""} type="button" onClick={() => onSelect("all")}>All</button>
+      {presses.map((press) => (
+        <button className={String(selectedPress) === String(press.id) ? "active" : ""} type="button" key={press.id} onClick={() => onSelect(String(press.id))}>
+          {press.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MaterialJobCard({ tag, selected, onSelect }) {
+  return (
+    <button className={`coater-job-card ${selected ? "active" : ""}`} type="button" onClick={onSelect}>
+      <div>
+        <span>{tag.tag_number || "Scheduled Run"}</span>
+        <strong>{tag.scheduled_material_name || tag.name}</strong>
+      </div>
+      <em>{[tag.press_name || "No press", tag.cut_description || "No cutting notes"].filter(Boolean).join(" / ")}</em>
+      <footer>
+        <span>{labelize(tag.status)}</span>
+        <strong>{tag.length_feet ? qty(tag.length_feet, " ft") : "--"}</strong>
+      </footer>
+    </button>
+  );
+}
+
+function ComponentPicker({ slot, form, setForm, materials, inventory, supplierOptions, allowedIds = [] }) {
+  const materialOptions = materials.filter((row) => {
+    if (row.material_type !== slot.type || row.is_active === false) return false;
+    if (!allowedIds.length) return true;
+    return allowedIds.some((id) => sameId(id, row.id));
+  });
+  const inventoryOptions = activeInventory(inventory, slot.type, form[slot.key]);
+  const selectedSupplierOptions = (supplierOptions ?? [])
+    .filter((option) => option.is_active !== false && sameId(option.material, form[slot.key]))
+    .sort((a, b) => String(a.supplier_name || a.supplier_lookup_name || "").localeCompare(String(b.supplier_name || b.supplier_lookup_name || "")));
+  const visibleSupplierOptions = selectedSupplierOptions.slice(0, 3);
+
+  function updateMaterial(value) {
+    setForm((prev) => ({ ...prev, [slot.key]: value, [slot.inventoryKey]: "" }));
+  }
+
+  function updateInventory(value) {
+    const selectedInventory = inventory.find((row) => sameId(row.id, value));
+    setForm((prev) => ({
+      ...prev,
+      [slot.inventoryKey]: value,
+      [slot.key]: selectedInventory?.material || prev[slot.key],
+    }));
+  }
+
+  return (
+    <section className="coater-component-card">
+      <header>
+        <strong>{slot.label}</strong>
+        {slot.optional && <span>Optional</span>}
+      </header>
+      <label>
+        <span>{slot.label} Type</span>
+        <select value={form[slot.key] || ""} onChange={(event) => updateMaterial(event.target.value)} required={!slot.optional}>
+          <option value="">Select type</option>
+          {materialOptions.map((row) => (
+            <option value={row.id} key={row.id}>{materialLabel(row)}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span>{slot.label} Roll</span>
+        <select value={form[slot.inventoryKey] || ""} onChange={(event) => updateInventory(event.target.value)} required={!slot.optional}>
+          <option value="">Select roll</option>
+          {inventoryOptions.map((row) => (
+            <option value={row.id} key={row.id}>{inventoryLabel(row)}</option>
+          ))}
+        </select>
+      </label>
+      {form[slot.key] && (
+        <div className="coater-supplier-options">
+          <span>Supplier Options</span>
+          {visibleSupplierOptions.length ? (
+            <>
+              {visibleSupplierOptions.map((option) => (
+                <div key={option.id} className="coater-supplier-option">
+                  <strong>{supplierOptionTitle(option)}</strong>
+                  {supplierOptionMeta(option) && <em>{supplierOptionMeta(option)}</em>}
+                </div>
+              ))}
+              {selectedSupplierOptions.length > visibleSupplierOptions.length && (
+                <small>+{selectedSupplierOptions.length - visibleSupplierOptions.length} more</small>
+              )}
+            </>
+          ) : (
+            <em>No supplier options saved</em>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
+  const [form, setForm] = useState(() => defaultRollForm(tag, data, currentUser));
+  const missing = validateRollForm(form);
+  const scheduledMaterial = (data.materials ?? []).find((row) => sameId(row.id, tag?.scheduled_material));
+
+  useEffect(() => {
+    setForm(defaultRollForm(tag, data, currentUser));
+  }, [tag?.id]);
+
+  function update(name, value) {
+    setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    const requiredMissing = validateRollForm(form);
+    if (requiredMissing.length) return;
+    onSave(form);
+  }
+
+  return (
+    <form className="coater-roll-form" onSubmit={submit}>
+      <header>
+        <div>
+          <span>Material Roll</span>
+          <strong>{tag.scheduled_material_name || tag.name}</strong>
+          <em>{tag.cut_description || "No cutting notes"}</em>
+        </div>
+        <span className="coater-roll-id">{tag.tag_number}</span>
+      </header>
+
+      <div className="coater-component-grid">
+        {componentSlots.map((slot) => (
+          <ComponentPicker
+            key={slot.key}
+            slot={slot}
+            form={form}
+            setForm={setForm}
+            materials={data.materials}
+            inventory={data.inventory}
+            supplierOptions={data.supplierOptions}
+            allowedIds={allowedComponentIds(scheduledMaterial, slot)}
+          />
+        ))}
+      </div>
+
+      <div className="coater-roll-details-grid">
+        <label>
+          <span>Cutting Notes</span>
+          <input value={tag.cut_description || ""} readOnly />
+        </label>
+        <label>
+          <span>Width</span>
+          <input type="number" step="0.001" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} />
+        </label>
+        <label>
+          <span>Run Feet</span>
+          <input type="number" step="0.01" value={form.length_feet} onChange={(event) => update("length_feet", event.target.value)} required />
+        </label>
+        <label>
+          <span>Weight</span>
+          <input type="number" step="0.01" value={form.weight_lbs} onChange={(event) => update("weight_lbs", event.target.value)} />
+        </label>
+        <label>
+          <span>Lot Number</span>
+          <input value={form.result_lot_number} onChange={(event) => update("result_lot_number", event.target.value)} required />
+        </label>
+        <label>
+          <span>Plant Location</span>
+          <select value={form.location || ""} onChange={(event) => update("location", event.target.value)}>
+            <option value="">No location</option>
+            {data.locations.map((row) => (
+              <option value={row.id} key={row.id}>{row.full_path || row.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Operator</span>
+          <input value={form.operator} onChange={(event) => update("operator", event.target.value)} />
+        </label>
+        <label className="field-wide">
+          <span>Operator Notes</span>
+          <textarea value={form.operator_notes} onChange={(event) => update("operator_notes", event.target.value)} />
+        </label>
+      </div>
+
+      {error && <p className="coater-error">{error}</p>}
+      {missing.length ? <p className="coater-form-note">Missing: {missing.join(", ")}</p> : null}
+
+      <div className="coater-roll-actions">
+        <button className="primary-btn" type="submit" disabled={saving || missing.length > 0}>
+          <CheckCircle2 size={16} /> {saving ? "Creating..." : "Create Roll Tag"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ProductJobCard({ row, form, setForm, updating, onStart, onComplete }) {
+  const formValue = form[row.id] ?? { actual_footage: row.actual_footage || "", footage_report: row.footage_report || "" };
+
+  function update(name, value) {
+    setForm((prev) => ({ ...prev, [row.id]: { ...formValue, [name]: value } }));
+  }
+
+  return (
+    <article className="coater-product-card">
+      <div>
+        <span>{row.job_ticket_number || "Job"}</span>
+        <strong>{row.job_name || row.job_product_code || getRecordTitle(row)}</strong>
+        <em>{[row.customer_name, row.customer_po ? `PO ${row.customer_po}` : "", row.press_name].filter(Boolean).join(" / ")}</em>
+      </div>
+      <div className="coater-product-specs">
+        <span>{formatInches(row.job_label_width_inches)} x {formatInches(row.job_label_length_inches)}</span>
+        <span>{labelize(row.status)}</span>
+        <span>{row.quantity_to_ship ? `${qty(row.quantity_to_ship)} ship` : `${qty(row.quantity_to_stock)} stock`}</span>
+      </div>
+      <div className="coater-product-controls">
+        <button className="ghost-btn xs" type="button" onClick={() => onStart(row)} disabled={updating || row.status === "running"}>
+          <Play size={13} /> Start
+        </button>
+        <input type="number" step="0.01" placeholder="Footage" value={formValue.actual_footage} onChange={(event) => update("actual_footage", event.target.value)} />
+        <input placeholder="Report note" value={formValue.footage_report} onChange={(event) => update("footage_report", event.target.value)} />
+        <button className="primary-btn xs" type="button" onClick={() => onComplete(row, formValue)} disabled={updating}>
+          Complete
+        </button>
+      </div>
+    </article>
+  );
+}
+
+export default function CoaterOperatorView({ currentUser }) {
+  const queryClient = useQueryClient();
+  const [selectedPress, setSelectedPress] = useState("all");
+  const [selectedTagId, setSelectedTagId] = useState("");
+  const [productForms, setProductForms] = useState({});
+
+  const dataQuery = useQuery({
+    queryKey: ["coater-operator-data"],
+    queryFn: async () => {
+      const [tags, schedule, materials, inventory, supplierOptions, presses, locations] = await Promise.all([
+        fetchCollection("coater-roll-tags", { ordering: "-run_date,tag_number", pageSize: 500, fetchAll: true }),
+        fetchCollection("production-schedule", { ordering: "scheduled_date,press_sequence", pageSize: 500, fetchAll: true }),
+        fetchCollection("materials", { ordering: "material_type,name", pageSize: 500, fetchAll: true }),
+        fetchCollection("raw-materials", { ordering: "material_type,name,serial_number", pageSize: 500, fetchAll: true }),
+        fetchCollection("material-supplier-options", { ordering: "material__material_type,material__name,supplier_name", pageSize: 1000, fetchAll: true }),
+        fetchCollection("presses", { ordering: "name", pageSize: 250, fetchAll: true }),
+        fetchCollection("locations", { ordering: "name", pageSize: 500, fetchAll: true }),
+      ]);
+      return {
+        tags: tags.results ?? [],
+        schedule: schedule.results ?? [],
+        materials: materials.results ?? [],
+        inventory: inventory.results ?? [],
+        supplierOptions: supplierOptions.results ?? [],
+        presses: presses.results ?? [],
+        locations: locations.results ?? [],
+      };
+    },
+    staleTime: 20_000,
+    refetchInterval: 60_000,
+  });
+
+  const data = dataQuery.data ?? { tags: [], schedule: [], materials: [], inventory: [], supplierOptions: [], presses: [], locations: [] };
+  const operatorName = currentUser?.name || "";
+  const preferredPresses = useMemo(() => {
+    const coater = data.presses.filter(isCoaterPress);
+    return coater.length ? coater : data.presses;
+  }, [data.presses]);
+  const defaultPress = preferredPresses.find((press) => /eti/i.test(press.name)) ?? preferredPresses[0];
+
+  useEffect(() => {
+    if (selectedPress !== "all" || !defaultPress?.id) return;
+    setSelectedPress(String(defaultPress.id));
+  }, [defaultPress?.id, selectedPress]);
+
+  const materialJobs = useMemo(() => data.tags
+    .filter((tag) => activeMaterialStatuses.has(tag.status))
+    .filter((tag) => selectedPress === "all" || sameId(tag.press, selectedPress))
+    .sort((a, b) => String(a.run_date || "").localeCompare(String(b.run_date || "")) || String(a.tag_number || "").localeCompare(String(b.tag_number || ""))),
+  [data.tags, selectedPress]);
+
+  const productJobs = useMemo(() => data.schedule
+    .filter((row) => activeProductStatuses.has(row.status))
+    .filter((row) => selectedPress === "all" || sameId(row.press, selectedPress))
+    .sort((a, b) => Number(a.press_sequence || 9999) - Number(b.press_sequence || 9999) || String(a.scheduled_date || a.due_date || "").localeCompare(String(b.scheduled_date || b.due_date || ""))),
+  [data.schedule, selectedPress]);
+
+  const selectedTag = useMemo(() => {
+    if (selectedTagId) return materialJobs.find((tag) => sameId(tag.id, selectedTagId)) ?? materialJobs[0] ?? null;
+    return materialJobs[0] ?? null;
+  }, [materialJobs, selectedTagId]);
+
+  useEffect(() => {
+    if (!selectedTag?.id) {
+      setSelectedTagId("");
+      return;
+    }
+    if (!selectedTagId || !materialJobs.some((tag) => sameId(tag.id, selectedTagId))) {
+      setSelectedTagId(String(selectedTag.id));
+    }
+  }, [materialJobs, selectedTag?.id, selectedTagId]);
+
+  const completeTagMutation = useMutation({
+    mutationFn: async ({ tag, form }) => {
+      const missing = validateRollForm(form);
+      if (missing.length) throw new Error(`Missing: ${missing.join(", ")}`);
+      const material = data.materials.find((row) => sameId(row.id, tag.scheduled_material || tag.produced_material));
+      return updateRecord("coater-roll-tags", tag.id, {
+        status: "complete",
+        print_status: tag.print_status === "printed" ? "printed" : "queued",
+        liner: numberOrNull(form.liner),
+        face: numberOrNull(form.face),
+        adhesive: numberOrNull(form.adhesive),
+        silicone: numberOrNull(form.silicone),
+        coating: numberOrNull(form.coating),
+        liner_inventory: numberOrNull(form.liner_inventory),
+        face_inventory: numberOrNull(form.face_inventory),
+        adhesive_inventory: numberOrNull(form.adhesive_inventory),
+        silicone_inventory: numberOrNull(form.silicone_inventory),
+        coating_inventory: numberOrNull(form.coating_inventory),
+        produced_material: tag.produced_material || tag.scheduled_material || null,
+        result_code: tag.result_code || material?.code || "",
+        result_serial_number: tag.result_serial_number || tag.tag_number,
+        result_lot_number: form.result_lot_number,
+        width_inches: numberOrNull(form.width_inches),
+        length_feet: numberOrNull(form.length_feet),
+        weight_lbs: numberOrNull(form.weight_lbs),
+        operator: form.operator || operatorName,
+        run_date: today(),
+        location: numberOrNull(form.location),
+        log_inventory: true,
+        operator_notes: form.operator_notes || tag.operator_notes || "",
+        notes: noteBlock(tag, form, data.inventory),
+      });
+    },
+    onSuccess: (saved) => {
+      setSelectedTagId(String(saved.id));
+      queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
+  const productMutation = useMutation({
+    mutationFn: ({ row, payload }) => updateRecord("production-schedule", row.id, {
+      ...payload,
+      operator: operatorName || row.operator,
+      last_updated_by: operatorName || row.last_updated_by,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
+  function startProductJob(row) {
+    productMutation.mutate({ row, payload: { status: "running" } });
+  }
+
+  function completeProductJob(row, formValue) {
+    productMutation.mutate({
+      row,
+      payload: {
+        status: "complete",
+        actual_footage: numberOrNull(formValue.actual_footage),
+        footage_report: formValue.footage_report || row.footage_report || "",
+      },
+    });
+  }
+
+  return (
+    <section className="coater-operator-view">
+      <header className="coater-hero">
+        <div>
+          <p className="eyebrow">Coater Operator</p>
+          <h2>Coater Lineup</h2>
+          <span>{operatorName || "Operator"} / {materialJobs.length} material run{materialJobs.length === 1 ? "" : "s"} / {productJobs.length} product job{productJobs.length === 1 ? "" : "s"}</span>
+        </div>
+        <button className="ghost-btn" type="button" onClick={() => dataQuery.refetch()} disabled={dataQuery.isFetching}>
+          <RefreshCcw size={15} /> {dataQuery.isFetching ? "Refreshing" : "Refresh"}
+        </button>
+      </header>
+
+      <PressFilter presses={preferredPresses} selectedPress={selectedPress} onSelect={setSelectedPress} />
+
+      {dataQuery.error && <p className="coater-error">{dataQuery.error.message}</p>}
+
+      <div className="coater-work-grid">
+        <section className="coater-panel">
+          <header>
+            <div>
+              <span><Ruler size={14} /> Material Jobs</span>
+              <strong>{materialJobs.length} scheduled</strong>
+            </div>
+          </header>
+          <div className="coater-job-list">
+            {materialJobs.map((tag) => (
+              <MaterialJobCard
+                tag={tag}
+                selected={sameId(tag.id, selectedTag?.id)}
+                key={tag.id}
+                onSelect={() => setSelectedTagId(String(tag.id))}
+              />
+            ))}
+            {!materialJobs.length && <p className="coater-empty">No material jobs are scheduled for this press.</p>}
+          </div>
+        </section>
+
+        <section className="coater-panel coater-run-panel">
+          <header>
+            <div>
+              <span><Factory size={14} /> Run Material</span>
+              <strong>{selectedTag?.tag_number || "No run selected"}</strong>
+            </div>
+          </header>
+          {selectedTag ? (
+            <RollRunForm
+              tag={selectedTag}
+              data={data}
+              currentUser={currentUser}
+              saving={completeTagMutation.isPending}
+              error={completeTagMutation.error?.message}
+              onSave={(form) => completeTagMutation.mutate({ tag: selectedTag, form })}
+            />
+          ) : (
+            <p className="coater-empty">Select a scheduled material run.</p>
+          )}
+        </section>
+      </div>
+
+      <section className="coater-panel coater-product-panel">
+        <header>
+          <div>
+            <span><PackageCheck size={14} /> Finished Product Jobs</span>
+            <strong>{productJobs.length} scheduled</strong>
+          </div>
+        </header>
+        <div className="coater-product-list">
+          {productJobs.map((row) => (
+            <ProductJobCard
+              row={row}
+              key={row.id}
+              form={productForms}
+              setForm={setProductForms}
+              updating={productMutation.isPending}
+              onStart={startProductJob}
+              onComplete={completeProductJob}
+            />
+          ))}
+          {!productJobs.length && <p className="coater-empty">No finished product jobs are scheduled for this press.</p>}
+        </div>
+      </section>
+    </section>
+  );
+}

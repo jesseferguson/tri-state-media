@@ -26,6 +26,11 @@ class Supplier(models.Model):
     zip_code = models.CharField(max_length=20, blank=True)
     country = models.CharField(max_length=50, default="USA")
 
+    tags = models.CharField(
+        max_length=240,
+        blank=True,
+        help_text="Comma-separated tags such as tooling, material, box, core, shipping.",
+    )
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
 
