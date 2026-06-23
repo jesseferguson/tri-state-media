@@ -1,10 +1,6 @@
-import { CalendarPlus, Pencil, X } from "lucide-react";
+import { Activity, CalendarPlus, Layers3, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatCell, formatFeet, getRecordTitle, labelize } from "../lib/format";
-
-function usageTitle(row) {
-  return [row.reference, row.inventory_serial, row.inventory_lot].filter(Boolean).join(" / ") || labelize(row.usage_type);
-}
+import { formatFeet, getRecordTitle } from "../lib/format";
 
 function dailyUsage(rows) {
   const byDate = new Map();
@@ -18,47 +14,6 @@ function dailyUsage(rows) {
   return Array.from(byDate.entries())
     .map(([date, qty]) => ({ date, qty }))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-}
-
-function MaterialUsageChart({ rows }) {
-  const points = dailyUsage(rows);
-  const max = Math.max(...points.map((point) => point.qty), 1);
-  const total = points.reduce((sum, point) => sum + point.qty, 0);
-
-  return (
-    <section className="finished-usage-card">
-      <div className="finished-usage-head">
-        <div>
-          <span>Usage Chart</span>
-          <strong>{total.toLocaleString()} ft total</strong>
-        </div>
-        <em>X: date / Y: footage</em>
-      </div>
-
-      {points.length ? (
-        <div className="finished-chart" role="img" aria-label="Material usage by date">
-          <div className="finished-y-axis">
-            <span>{max.toLocaleString()}</span>
-            <span>{Math.round(max / 2).toLocaleString()}</span>
-            <span>0</span>
-          </div>
-          <div className="finished-bars">
-            {points.map((point) => (
-              <div className="finished-bar-cell" key={point.date}>
-                <div className="finished-bar-track">
-                  <span style={{ height: `${Math.max(5, Math.round((point.qty / max) * 100))}%` }} />
-                </div>
-                <strong>{point.qty.toLocaleString()}</strong>
-                <em>{String(point.date).slice(5)}</em>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <p className="finished-usage-empty">No usage has been recorded for this material yet.</p>
-      )}
-    </section>
-  );
 }
 
 function widthLabel(value) {
@@ -109,10 +64,12 @@ function inventoryByWidth(rows) {
     loc.statuses.add(row.status || "available");
   });
 
-  return Array.from(byWidth.values()).map((entry) => ({
-    ...entry,
-    locations: Array.from(entry.byLocation.values()),
-  }));
+  return Array.from(byWidth.values())
+    .map((entry) => ({
+      ...entry,
+      locations: Array.from(entry.byLocation.values()).sort((a, b) => b.total - a.total),
+    }))
+    .sort((a, b) => parseFloat(a.width) - parseFloat(b.width));
 }
 
 function InventoryByWidth({ rows }) {
@@ -123,20 +80,20 @@ function InventoryByWidth({ rows }) {
     <section className="finished-usage-card inventory-by-width-card">
       <div className="finished-usage-head">
         <div>
-          <span>Inventory On Hand</span>
+          <span>Widths and Locations</span>
           <strong>{total.toLocaleString()} ft total</strong>
         </div>
-        <em>Grouped by width and location</em>
+        <em>{groups.length.toLocaleString()} width{groups.length === 1 ? "" : "s"} on hand</em>
       </div>
 
       {groups.length ? (
         <div className="inventory-width-list">
           {groups.map((group) => (
-            <details key={group.width} className="inventory-width-group" open>
+            <details key={group.width} className="inventory-width-group">
               <summary>
                 <strong>{group.width}</strong>
-                <span>{group.rolls} lots</span>
-                <em>{group.total.toLocaleString()} ft</em>
+                <span>{group.locations.length} location{group.locations.length === 1 ? "" : "s"}</span>
+                <em>{group.rolls} lots / {group.total.toLocaleString()} ft</em>
               </summary>
               <div className="inventory-location-list">
                 {group.locations.map((location) => {
@@ -161,71 +118,6 @@ function InventoryByWidth({ rows }) {
   );
 }
 
-function widthUsageData(inventoryRows, usageRows) {
-  const byWidth = new Map();
-
-  function ensure(width) {
-    const key = widthLabel(width);
-    if (!byWidth.has(key)) byWidth.set(key, { width: key, added: 0, used: 0, rolls: 0 });
-    return byWidth.get(key);
-  }
-
-  inventoryRows.forEach((row) => {
-    const entry = ensure(row.width_inches);
-    const current = Number(row.length_feet ?? row.quantity ?? 0);
-    entry.added += Number.isFinite(current) ? current : 0;
-    entry.rolls += 1;
-  });
-
-  usageRows.forEach((row) => {
-    const qty = Number(row.quantity ?? 0);
-    if (!Number.isFinite(qty) || qty <= 0) return;
-    const entry = ensure(row.inventory_width_inches);
-    if (usageConsumes(row)) {
-      entry.used += qty;
-      entry.added += qty;
-    }
-  });
-
-  return Array.from(byWidth.values())
-    .filter((row) => row.added > 0 || row.used > 0)
-    .sort((a, b) => parseFloat(a.width) - parseFloat(b.width));
-}
-
-function WidthUsageChart({ inventoryRows, usageRows }) {
-  const rows = widthUsageData(inventoryRows, usageRows);
-  const max = Math.max(...rows.flatMap((row) => [row.added, row.used]), 1);
-
-  return (
-    <section className="finished-usage-card">
-      <div className="finished-usage-head">
-        <div>
-          <span>Width Usage</span>
-          <strong>Added vs used footage</strong>
-        </div>
-        <em>Grouped by width</em>
-      </div>
-
-      {rows.length ? (
-        <div className="width-usage-chart">
-          {rows.map((row) => (
-            <article className="width-usage-row" key={row.width}>
-              <strong>{row.width}</strong>
-              <div className="width-bars">
-                <span className="added" style={{ width: `${Math.max(4, Math.round((row.added / max) * 100))}%` }} />
-                <span className="used" style={{ width: `${Math.max(4, Math.round((row.used / max) * 100))}%` }} />
-              </div>
-              <em>{row.added.toLocaleString()} added / {row.used.toLocaleString()} used</em>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <p className="finished-usage-empty">No width inventory or usage has been recorded for this material yet.</p>
-      )}
-    </section>
-  );
-}
-
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -241,8 +133,118 @@ function compatibilitySummary(material, summaryKey, familyKey, nameKey) {
   return material[summaryKey] || material[familyKey] || material[nameKey];
 }
 
-export default function FinishedMaterialWindow({ material, usageRows = [], inventoryRows = [], presses = [], scheduling = false, onClose, onEdit, onSchedule }) {
-  const [scheduleOpen, setScheduleOpen] = useState(false);
+function compactValue(value, suffix = "") {
+  if (value === null || value === undefined || value === "") return "--";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return `${value}${suffix}`;
+  return `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}${suffix}`;
+}
+
+function materialTypeName(material) {
+  return material.master_type_code || material.master_type_name || material.material_family || "--";
+}
+
+function DetailTile({ label, value, tone = "" }) {
+  return (
+    <div className={`material-detail-tile ${tone}`}>
+      <span>{label}</span>
+      <strong>{value || "--"}</strong>
+    </div>
+  );
+}
+
+function CompatibilityCard({ label, value }) {
+  return (
+    <article className="material-compat-card">
+      <span>{label}</span>
+      <strong>{value || "--"}</strong>
+    </article>
+  );
+}
+
+function NotesPanel({ material }) {
+  const notes = [
+    ["Cut Plan", material.coater_cut_plan],
+    ["Operator Notes", material.operator_notes],
+    ["Notes", material.notes],
+  ].filter(([, value]) => value);
+
+  return (
+    <section className="material-detail-section material-notes-panel">
+      <div className="material-section-head">
+        <div>
+          <span>Notes</span>
+          <strong>Run guidance</strong>
+        </div>
+      </div>
+      {notes.length ? (
+        <div className="material-notes-list">
+          {notes.map(([label, value]) => (
+            <article key={label}>
+              <span>{label}</span>
+              <p>{value}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="finished-usage-empty compact">No notes saved for this material.</p>
+      )}
+    </section>
+  );
+}
+
+function usageAverage(rows) {
+  const usageEvents = rows.filter((row) => {
+    const qty = Number(row.quantity ?? 0);
+    return Number.isFinite(qty) && qty > 0 && usageConsumes(row);
+  });
+  const points = dailyUsage(usageEvents);
+  const total = points.reduce((sum, point) => sum + point.qty, 0);
+  return {
+    total,
+    events: usageEvents.length,
+    days: points.length,
+    lastDate: points.at(-1)?.date || "",
+    averagePerDay: points.length ? total / points.length : 0,
+    averagePerEvent: usageEvents.length ? total / usageEvents.length : 0,
+  };
+}
+
+function AverageUsagePanel({ rows, onViewUsage }) {
+  const stats = usageAverage(rows);
+
+  return (
+    <section className="material-detail-section usage-average-panel">
+      <div className="material-section-head">
+        <div>
+          <span>Average Usage</span>
+          <strong>{stats.days ? `${Math.round(stats.averagePerDay).toLocaleString()} ft / usage day` : "--"}</strong>
+        </div>
+        <Activity size={18} />
+      </div>
+      <div className="usage-average-grid">
+        <article>
+          <span>Average Event</span>
+          <strong>{stats.events ? `${Math.round(stats.averagePerEvent).toLocaleString()} ft` : "--"}</strong>
+        </article>
+        <article>
+          <span>Days Used</span>
+          <strong>{stats.days.toLocaleString()}</strong>
+        </article>
+        <article>
+          <span>Last Usage</span>
+          <strong>{stats.lastDate || "--"}</strong>
+        </article>
+      </div>
+      <button className="ghost-btn material-activity-btn" type="button" onClick={onViewUsage}>
+        <Activity size={15} /> View Activity
+      </button>
+    </section>
+  );
+}
+
+export default function FinishedMaterialWindow({ material, usageRows = [], inventoryRows = [], presses = [], scheduling = false, canSchedule = true, startScheduleOpen = false, onClose, onEdit, onSchedule, onViewUsage }) {
+  const [scheduleOpen, setScheduleOpen] = useState(Boolean(canSchedule && startScheduleOpen));
   const defaultPress = defaultCoaterPress(presses);
   const [scheduleForm, setScheduleForm] = useState({
     cut_description: "",
@@ -257,18 +259,9 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
     setScheduleForm((prev) => ({ ...prev, press: defaultPress.id }));
   }, [defaultPress?.id, scheduleForm.press]);
 
-  const fields = [
-    ["Code", material.code],
-    ["Family", material.material_family],
-    ["Inventory", inventoryTotalFeet(material, inventoryRows)],
-    ["Glue GSM", material.gsm],
-    ["Face Types", compatibilitySummary(material, "allowed_face_material_summary", "face_material_family", "face_material_name")],
-    ["Liner Types", compatibilitySummary(material, "allowed_liner_material_summary", "liner_material_family", "liner_material_name")],
-    ["Adhesive Types", compatibilitySummary(material, "allowed_adhesive_material_summary", "adhesive_material_family", "adhesive_material_name")],
-    ["Silicone Types", compatibilitySummary(material, "allowed_silicone_material_summary", "silicone_material_family", "silicone_material_name")],
-    ["Coating Types", compatibilitySummary(material, "allowed_coating_material_summary", "coating_material_family", "coating_material_name")],
-    ["Active", material.is_active ? "Yes" : "No"],
-  ];
+  useEffect(() => {
+    setScheduleOpen(Boolean(canSchedule && startScheduleOpen));
+  }, [canSchedule, material.id, startScheduleOpen]);
 
   function updateSchedule(name, value) {
     setScheduleForm((prev) => ({ ...prev, [name]: value }));
@@ -276,6 +269,7 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
 
   function submitSchedule(event) {
     event.preventDefault();
+    if (!canSchedule) return;
     onSchedule?.({
       cut_description: scheduleForm.cut_description,
       feet: scheduleForm.feet === "" ? null : Number(scheduleForm.feet),
@@ -286,81 +280,105 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
   }
 
   const selectedSchedulePress = presses.find((press) => String(press.id) === String(scheduleForm.press)) || defaultPress;
+  const activeInventory = activeInventoryRows(inventoryRows);
+  const compatibility = [
+    ["Face", compatibilitySummary(material, "allowed_face_material_summary", "face_material_family", "face_material_name")],
+    ["Liner", compatibilitySummary(material, "allowed_liner_material_summary", "liner_material_family", "liner_material_name")],
+    ["Adhesive", compatibilitySummary(material, "allowed_adhesive_material_summary", "adhesive_material_family", "adhesive_material_name")],
+    ["Silicone", compatibilitySummary(material, "allowed_silicone_material_summary", "silicone_material_family", "silicone_material_name")],
+    ["Coating", compatibilitySummary(material, "allowed_coating_material_summary", "coating_material_family", "coating_material_name")],
+  ];
 
   return (
-    <section className="finished-overlay" role="dialog" aria-modal="true" aria-label="Finished raw material">
+    <section className="finished-overlay" role="dialog" aria-modal="true" aria-label="Material">
       <div className="finished-window compact-card">
-        <header className="finished-window-head">
-          <div>
-            <p className="eyebrow">Finished Raw Material</p>
+        <header className="finished-window-head material-detail-hero">
+          <div className="material-title-block">
+            <p className="eyebrow">{canSchedule ? "Tri-State Material" : "Outside Material"}</p>
             <h2>{getRecordTitle(material)}</h2>
+            <div className="material-title-chips">
+              <span>{materialTypeName(material)}</span>
+              {material.company && <span>{material.company}</span>}
+              <span>{material.is_active ? "Active" : "Inactive"}</span>
+            </div>
           </div>
           <div className="finished-window-actions">
-            <button className="ghost-btn" type="button" onClick={() => setScheduleOpen((value) => !value)}><CalendarPlus size={15} /> Schedule</button>
+            {canSchedule && (
+              <button className="ghost-btn" type="button" onClick={() => setScheduleOpen((value) => !value)}><CalendarPlus size={15} /> Schedule Material</button>
+            )}
             <button className="primary-btn" type="button" onClick={onEdit}><Pencil size={15} /> Edit</button>
             <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
           </div>
         </header>
 
-        <div className="finished-material-grid">
-          {fields.map(([label, value]) => (
-            <div key={label}>
-              <span>{label}</span>
-              <strong>{value || "--"}</strong>
+        <div className="material-detail-body">
+          <section className="material-detail-overview">
+            <DetailTile label="Material Type" value={materialTypeName(material)} tone="primary" />
+            <DetailTile label="Inventory" value={inventoryTotalFeet(material, inventoryRows)} />
+            <DetailTile label="Lots" value={`${activeInventory.length.toLocaleString()} active`} />
+            <DetailTile label="Glue GSM" value={compactValue(material.gsm)} />
+            <DetailTile label="Target Run" value={compactValue(material.target_run_length_feet, " ft")} />
+            <DetailTile label="Code" value={material.code} />
+          </section>
+
+          <section className="material-detail-section material-construction-panel">
+            <div className="material-section-head">
+              <div>
+                <span>Construction</span>
+                <strong>{material.material_family || materialTypeName(material)}</strong>
+              </div>
+              <Layers3 size={18} />
             </div>
-          ))}
-        </div>
-
-        <MaterialUsageChart rows={usageRows} />
-
-        <InventoryByWidth rows={inventoryRows} />
-
-        <WidthUsageChart inventoryRows={inventoryRows} usageRows={usageRows} />
-
-        {scheduleOpen && (
-          <form className="finished-schedule-form" onSubmit={submitSchedule}>
-            <div className="finished-schedule-title">
-              <span>Schedule</span>
-              <strong>{selectedSchedulePress ? `Press: ${selectedSchedulePress.name}` : "Coater Lineup"}</strong>
+            <div className="material-compat-grid">
+              {compatibility.map(([label, value]) => (
+                <CompatibilityCard key={label} label={label} value={value} />
+              ))}
             </div>
-            <label>
-              <span>Press</span>
-              <select value={scheduleForm.press} onChange={(event) => updateSchedule("press", event.target.value)}>
-                <option value="">Unassigned</option>
-                {presses.map((press) => (
-                  <option value={press.id} key={press.id}>{press.name}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Run Date</span>
-              <input type="date" value={scheduleForm.run_date} onChange={(event) => updateSchedule("run_date", event.target.value)} />
-            </label>
-            <label>
-              <span>Cutting Notes</span>
-              <input value={scheduleForm.cut_description} onChange={(event) => updateSchedule("cut_description", event.target.value)} placeholder="Cut 9/9" />
-            </label>
-            <label>
-              <span>Feet</span>
-              <input type="number" step="0.01" value={scheduleForm.feet} onChange={(event) => updateSchedule("feet", event.target.value)} placeholder="Run feet" />
-            </label>
-            <label className="field-wide">
-              <span>Note To Operator</span>
-              <textarea value={scheduleForm.operator_notes} onChange={(event) => updateSchedule("operator_notes", event.target.value)} placeholder="Operator note for this scheduled run" />
-            </label>
-            <div className="finished-schedule-actions">
-              <button className="primary-btn" type="submit" disabled={scheduling}>{scheduling ? "Scheduling..." : "Put On Schedule"}</button>
-            </div>
-          </form>
-        )}
+          </section>
 
-        <div className="finished-usage-list">
-          {usageRows.slice(0, 6).map((row) => (
-            <article key={row.id}>
-              <strong>{usageTitle(row)}</strong>
-              <span>{[formatCell(row, "used_date"), labelize(row.usage_type), row.quantity ? `${row.quantity} ${row.unit}` : ""].filter(Boolean).join(" / ")}</span>
-            </article>
-          ))}
+          {canSchedule && scheduleOpen && (
+            <form className="finished-schedule-form material-detail-section" onSubmit={submitSchedule}>
+              <div className="finished-schedule-title">
+                <span>Schedule Material</span>
+                <strong>{selectedSchedulePress ? `Press: ${selectedSchedulePress.name}` : "Coater Lineup"}</strong>
+              </div>
+              <label>
+                <span>Press</span>
+                <select value={scheduleForm.press} onChange={(event) => updateSchedule("press", event.target.value)}>
+                  <option value="">Unassigned</option>
+                  {presses.map((press) => (
+                    <option value={press.id} key={press.id}>{press.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Run Date</span>
+                <input type="date" value={scheduleForm.run_date} onChange={(event) => updateSchedule("run_date", event.target.value)} />
+              </label>
+              <label>
+                <span>Cutting Notes</span>
+                <input value={scheduleForm.cut_description} onChange={(event) => updateSchedule("cut_description", event.target.value)} placeholder="Cut 9/9" />
+              </label>
+              <label>
+                <span>Feet</span>
+                <input type="number" step="0.01" value={scheduleForm.feet} onChange={(event) => updateSchedule("feet", event.target.value)} placeholder="Run feet" />
+              </label>
+              <label className="field-wide">
+                <span>Note To Operator</span>
+                <textarea value={scheduleForm.operator_notes} onChange={(event) => updateSchedule("operator_notes", event.target.value)} placeholder="Operator note for this scheduled run" />
+              </label>
+              <div className="finished-schedule-actions">
+                <button className="primary-btn" type="submit" disabled={scheduling}>{scheduling ? "Scheduling..." : "Schedule Material"}</button>
+              </div>
+            </form>
+          )}
+
+          <InventoryByWidth rows={inventoryRows} />
+
+          <div className="material-detail-grid">
+            <AverageUsagePanel rows={usageRows} onViewUsage={onViewUsage} />
+            <NotesPanel material={material} />
+          </div>
         </div>
       </div>
     </section>

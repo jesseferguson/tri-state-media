@@ -220,7 +220,7 @@ class MaterialSupplierOption(models.Model):
         return " / ".join([part for part in parts if part])
 
     def save(self, *args, **kwargs):
-        if self.supplier and not self.supplier_name:
+        if self.supplier:
             self.supplier_name = self.supplier.name
         super().save(*args, **kwargs)
 

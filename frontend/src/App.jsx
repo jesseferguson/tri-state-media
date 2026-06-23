@@ -19,6 +19,7 @@ import JobTicketPanel from "./components/JobTicketPanel";
 import LabelLayoutsView from "./components/LabelLayoutsView";
 import LiveFootageView from "./components/LiveFootageView";
 import MaterialInventoryView from "./components/MaterialInventoryView";
+import MaterialTypeTable from "./components/MaterialTypeTable";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
 import MaterialTypeManager from "./components/MaterialTypeManager";
 import MaterialUsageWindow from "./components/MaterialUsageWindow";
@@ -30,6 +31,7 @@ import RecipeToolStackView from "./components/RecipeToolStackView";
 import RollScanStation from "./components/RollScanStation";
 import RollWorkflowWindow from "./components/RollWorkflowWindow";
 import ProductionScheduleView from "./components/ProductionScheduleView";
+import SupplierTable from "./components/SupplierTable";
 import ToolingItemDetailPanel from "./components/ToolingItemDetailPanel";
 import {
   clearSession,
@@ -159,8 +161,8 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("presses", {}, 100));
   }
 
-  if (isMaterialTypePage && selected?.id) {
-    addLookupSpec(specs, relationLookupSpec("material-supplier-options", { material: selected.id }, 150));
+  if (isMaterialTypePage) {
+    addLookupSpec(specs, relationLookupSpec("material-supplier-options", { material_type: resource.filters?.material_type }, 1000, true));
   }
 
   if (resource.endpoint === "materials" && selected?.id) {
@@ -409,6 +411,11 @@ function visibleResourcesForRole(roleDefinitions, roleName) {
   return resources.filter((item) => !item.permissionOnly && !item.hideFromNav && roleHasResourceAccess(roleDefinitions, roleName, item.key));
 }
 
+function resourceAvailableForRole(roleDefinitions, roleName, key) {
+  const item = resourceMap[key];
+  return Boolean(item && !item.permissionOnly && roleHasResourceAccess(roleDefinitions, roleName, item.key));
+}
+
 function defaultResourceKeyForRole(roleDefinitions, roleName) {
   const visible = visibleResourcesForRole(roleDefinitions, roleName);
   const normalizedRole = String(roleName || "").toLowerCase();
@@ -441,6 +448,15 @@ const emptyRoleForm = {
   description: "",
   allowedResourceKeys: ["quote-calculator"],
 };
+
+const materialOwnerTabs = [
+  { key: "tri_state", label: "Tri-State Media Materials" },
+  { key: "other", label: "Other Materials" },
+];
+
+function isTriStateMaterial(row) {
+  return /tri\s*-?\s*state\s+media/i.test(String(row?.company || ""));
+}
 
 function SignInScreen({ onSignIn }) {
   const [username, setUsername] = useState("");
@@ -1080,8 +1096,11 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const [rollOpen, setRollOpen] = useState(false);
   const [finishedInventoryOpen, setFinishedInventoryOpen] = useState(false);
   const [finishedMaterialOpen, setFinishedMaterialOpen] = useState(false);
+  const [finishedMaterialStartSchedule, setFinishedMaterialStartSchedule] = useState(false);
   const [materialTypeOpen, setMaterialTypeOpen] = useState(false);
   const [materialTypeManagerOpen, setMaterialTypeManagerOpen] = useState(false);
+  const [materialOwnerTab, setMaterialOwnerTab] = useState("tri_state");
+  const [materialSupplierReturnKey, setMaterialSupplierReturnKey] = useState("");
   const [localInventoryRows, setLocalInventoryRows] = useState([]);
   const [localUsageEvents, setLocalUsageEvents] = useState([]);
   const [quoteJobTicketId, setQuoteJobTicketId] = useState("");
@@ -1095,7 +1114,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     () => visibleResourcesForRole(roleDefinitions, currentUser?.role),
     [roleDefinitions, currentUser?.role]
   );
-  const activeKeyAllowed = allowedResources.some((item) => item.key === activeKey);
+  const activeKeyAllowed = resourceAvailableForRole(roleDefinitions, currentUser?.role, activeKey);
   const resource = activeKeyAllowed
     ? resourceMap[activeKey]
     : allowedResources[0] ?? resourceMap["quote-calculator"] ?? resources[0];
@@ -1216,14 +1235,25 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     resource.endpoint === "materials"
   );
   const canConsumeMaterial = Boolean(selected) && resource.key === "raw-materials";
+  const materialSearchRows = useMemo(() => {
+    if (resource.key !== "material-coated-stock") return [];
+    return filterRows(rows, search);
+  }, [rows, resource.key, search]);
+  const materialTabCounts = useMemo(() => ({
+    tri_state: materialSearchRows.filter(isTriStateMaterial).length,
+    other: materialSearchRows.filter((row) => !isTriStateMaterial(row)).length,
+  }), [materialSearchRows]);
   const visibleRows = useMemo(() => {
     if (resource.searchMode === "flexDie") return filterFlexDies(rows, flexFilters);
     const filtered = filterRows(rows, search);
+    if (resource.key === "material-coated-stock") {
+      return filtered.filter((row) => materialOwnerTab === "tri_state" ? isTriStateMaterial(row) : !isTriStateMaterial(row));
+    }
     if (resource.key === "raw-materials") {
       return filtered.filter((row) => !["in_use", "depleted", "scrapped"].includes(row.status));
     }
     return filtered;
-  }, [rows, search, flexFilters, resource.key, resource.searchMode]);
+  }, [rows, search, flexFilters, resource.key, resource.searchMode, materialOwnerTab]);
   const tableRows = useMemo(() => {
     if (resource.key !== "material-coated-stock") return visibleRows;
     const inventoryRows = lookupQuery.data?.["raw-materials"] ?? [];
@@ -1436,6 +1466,15 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       }
       queryClient.invalidateQueries({ queryKey: ["collection", resource.key] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      if (resource.key === "material-supplier-options" && materialSupplierReturnKey) {
+        queryClient.invalidateQueries({ queryKey: ["collection", materialSupplierReturnKey] });
+        setActiveKey(materialSupplierReturnKey);
+        setSelected(null);
+        setFormMode(null);
+        setCreateDefaults({});
+        setMaterialSupplierReturnKey("");
+        return;
+      }
       setSelected(saved ?? null);
       setFormMode(null);
       setCreateDefaults({});
@@ -1999,12 +2038,24 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     setSelected(null);
     setFormMode(null);
     setCreateDefaults({});
+    setMaterialSupplierReturnKey("");
     setUsageOpen(false);
     setRollOpen(false);
     setFinishedMaterialOpen(false);
+    setFinishedMaterialStartSchedule(false);
     setMaterialTypeManagerOpen(false);
     setToolingWorkspaceForm(null);
     setSearch("");
+  }
+
+  function closeRecordForm() {
+    if (resource.key === "material-supplier-options" && materialSupplierReturnKey) {
+      setActiveKey(materialSupplierReturnKey);
+      setMaterialSupplierReturnKey("");
+      setSelected(null);
+    }
+    setFormMode(null);
+    setCreateDefaults({});
   }
 
   function openLiveFootageFromSidebar() {
@@ -2019,6 +2070,13 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   function editRecord(row) {
     setSelected(row);
     setFormMode("edit");
+  }
+
+  function openMaterialDetail(row, startSchedule = false) {
+    setSelected(row);
+    setFormMode(null);
+    setFinishedMaterialStartSchedule(Boolean(startSchedule && isTriStateMaterial(row)));
+    setFinishedMaterialOpen(true);
   }
 
   function confirmDeleteRecord(row) {
@@ -2317,7 +2375,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               <button className="ghost-btn" type="button" onClick={() => setMaterialTypeManagerOpen(true)}>Material Types</button>
             )}
             {!resource.disableCreate && !showingStaticView && (
-              <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults({}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : resource.key === "material-coated-stock" ? "Add Finished Raw Material" : "Add"}</button>
+              <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults(resource.key === "material-coated-stock" && materialOwnerTab === "tri_state" ? { company: "Tri-State Media" } : {}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : resource.key === "material-coated-stock" ? "Add Material" : "Add"}</button>
             )}
             <AccountMenu
               currentUser={currentUser}
@@ -2382,16 +2440,34 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   <em>{materialMasterTypes.slice(0, 4).map((row) => row.code || row.name).filter(Boolean).join(" / ") || "PM / PM-PET / PET"}</em>
                 </article>
                 <article>
-                  <strong>Finished Raw Materials</strong>
+                  <strong>Materials</strong>
                   <span>Specific coated constructions with face, liner, adhesive, and silicone choices.</span>
                   <em>{visibleRows.length} active record{visibleRows.length === 1 ? "" : "s"}</em>
                 </article>
                 <div>
                   <button className="ghost-btn" type="button" onClick={() => setMaterialTypeManagerOpen(true)}>Manage Material Types</button>
-                  <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults({}); setFormMode("create"); }}>
-                    <Plus size={15} /> Add Finished Raw Material
+                  <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults(materialOwnerTab === "tri_state" ? { company: "Tri-State Media" } : {}); setFormMode("create"); }}>
+                    <Plus size={15} /> Add Material
                   </button>
                 </div>
+                <nav className="material-owner-tabs" aria-label="Material ownership filter">
+                  {materialOwnerTabs.map((tab) => (
+                    <button
+                      className={materialOwnerTab === tab.key ? "active" : ""}
+                      type="button"
+                      key={tab.key}
+                      onClick={() => {
+                        setMaterialOwnerTab(tab.key);
+                        setSelected(null);
+                        setFinishedMaterialOpen(false);
+                        setFinishedMaterialStartSchedule(false);
+                      }}
+                    >
+                      <span>{tab.label}</span>
+                      <strong>{materialTabCounts[tab.key] ?? 0}</strong>
+                    </button>
+                  ))}
+                </nav>
               </section>
             )}
 
@@ -2403,12 +2479,12 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 lookups={recordFormLookups}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
-                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
               />
             )}
 
-            <section className={`content-grid ${["customers", "job-tickets", "production-schedule"].includes(resource.key) || isToolingConfigPage ? "wide-list" : ""}`}>
+            <section className={`content-grid ${["customers", "job-tickets", "production-schedule", "material-coated-stock", "suppliers"].includes(resource.key) || isMaterialTypePage || isToolingConfigPage ? "wide-list" : ""}`}>
               <div className="list-panel compact-card">
                 <div className="panel-head thin">
                   <div>
@@ -2554,22 +2630,65 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
                   />
+                ) : resource.key === "suppliers" ? (
+                  <SupplierTable
+                    rows={visibleRows}
+                    onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
+                    onDelete={canManageUsers ? confirmDeleteRecord : undefined}
+                  />
+                ) : isMaterialTypePage ? (
+                  <MaterialTypeTable
+                    rows={visibleRows}
+                    options={lookupQuery.data?.["material-supplier-options"] ?? []}
+                    selectedId={selected?.id}
+                    onSelect={(row) => { setSelected(row); setFormMode(null); }}
+                    onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
+                    onDelete={canManageUsers ? confirmDeleteRecord : undefined}
+                    onAddSupplierOption={(material) => {
+                      setMaterialTypeOpen(false);
+                      setMaterialSupplierReturnKey(resource.key);
+                      setActiveKey("material-supplier-options");
+                      setSelected(null);
+                      setSearch("");
+                      setCreateDefaults({
+                        material: material.id,
+                        option_name: material.name || "",
+                        is_active: true,
+                      });
+                      setFormMode("create");
+                    }}
+                    onEditSupplierOption={(option) => {
+                      setMaterialTypeOpen(false);
+                      setMaterialSupplierReturnKey(resource.key);
+                      setActiveKey("material-supplier-options");
+                      setSelected(option);
+                      setSearch("");
+                      setCreateDefaults({});
+                      setFormMode("edit");
+                    }}
+                  />
                 ) : (
                   <ResourceTable
                     resource={resource}
                     rows={tableRows}
                     selectedId={selected?.id}
                     onSelect={(row) => {
+                      if (resource.key === "material-coated-stock") {
+                        openMaterialDetail(row, false);
+                        return;
+                      }
                       setSelected(row);
                       setFormMode(null);
-                      if (resource.key === "material-coated-stock") setFinishedMaterialOpen(true);
                       if (isMaterialTypePage) setMaterialTypeOpen(true);
                     }}
+                    rowActions={resource.key === "material-coated-stock" && materialOwnerTab === "tri_state"
+                      ? [{ label: "Schedule Material", className: "primary-btn xs", onClick: (row) => openMaterialDetail(row, true) }]
+                      : []}
                   />
                 )}
               </div>
 
-              {resource.key !== "customers" && resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && !isMaterialTypePage && !isToolingConfigPage && (
+              {resource.key !== "customers" && resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && resource.key !== "suppliers" && !isMaterialTypePage && !isToolingConfigPage && (
                 <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : toolingItemPageKeys.has(resource.key) && selected ? "tooling-item-detail-shell" : "detail-panel compact-card"}>
                   {selected ? (
                   resource.key === "flex-dies" ? (
@@ -2717,7 +2836,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 lookups={lookupQuery.data ?? {}}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
-                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
               />
             </div>
@@ -2734,7 +2853,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 lookups={lookupQuery.data ?? {}}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
-                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
               />
             </div>
@@ -2751,7 +2870,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 lookups={recordFormLookups}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
-                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
               />
             </div>
@@ -2835,7 +2954,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 lookups={lookupQuery.data ?? {}}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate({ ...payload, last_updated_by: currentUser.name })}
-                onCancel={() => { setFormMode(null); setCreateDefaults({}); }}
+                onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
               />
             </div>
@@ -2899,12 +3018,23 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             inventoryRows={selectedMaterialInventoryRows}
             presses={lookupQuery.data?.presses ?? []}
             scheduling={finishedScheduleMutation.isPending}
-            onClose={() => setFinishedMaterialOpen(false)}
+            canSchedule={isTriStateMaterial(selected)}
+            startScheduleOpen={finishedMaterialStartSchedule}
+            onClose={() => {
+              setFinishedMaterialOpen(false);
+              setFinishedMaterialStartSchedule(false);
+            }}
             onEdit={() => {
               setFinishedMaterialOpen(false);
+              setFinishedMaterialStartSchedule(false);
               setFormMode("edit");
             }}
             onSchedule={(schedule) => finishedScheduleMutation.mutate({ material: selected, schedule })}
+            onViewUsage={() => {
+              setFinishedMaterialOpen(false);
+              setFinishedMaterialStartSchedule(false);
+              setUsageOpen(true);
+            }}
           />
         )}
 
@@ -2924,12 +3054,12 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             onAddSupplierOption={() => {
               const material = selected;
               setMaterialTypeOpen(false);
+              setMaterialSupplierReturnKey(resource.key);
               setActiveKey("material-supplier-options");
               setSelected(null);
               setSearch("");
               setCreateDefaults({
                 material: material.id,
-                supplier_name: "",
                 option_name: material.name || "",
                 is_active: true,
               });
@@ -2937,6 +3067,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             }}
             onEditSupplierOption={(option) => {
               setMaterialTypeOpen(false);
+              setMaterialSupplierReturnKey(resource.key);
               setActiveKey("material-supplier-options");
               setSelected(option);
               setSearch("");

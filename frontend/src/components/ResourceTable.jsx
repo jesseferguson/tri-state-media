@@ -6,11 +6,12 @@ function columnLabel(resource, column) {
     recipe_name: "Label Layout",
     recipe_option: "Press Setup Option",
     recipe_option_name: "Press Setup Option",
-    allowed_face_material_summary: "Face Types",
-    allowed_liner_material_summary: "Liner Types",
-    allowed_adhesive_material_summary: "Adhesive Types",
-    allowed_silicone_material_summary: "Silicone Types",
-    allowed_coating_material_summary: "Coating Types",
+    master_type_code: "Material Type",
+    allowed_face_material_summary: "Face",
+    allowed_liner_material_summary: "Liner",
+    allowed_adhesive_material_summary: "Adhesive",
+    allowed_silicone_material_summary: "Silicone",
+    allowed_coating_material_summary: "Coating",
   };
   if (friendlyLabels[column]) return friendlyLabels[column];
   if (column === "inventory_total_feet") return "Inventory Feet";
@@ -18,8 +19,9 @@ function columnLabel(resource, column) {
   return field?.label ?? column.replace(/_/g, " ");
 }
 
-export default function ResourceTable({ resource, rows, selectedId, onSelect }) {
+export default function ResourceTable({ resource, rows, selectedId, onSelect, rowActions = [] }) {
   const columns = resource.columns ?? ["name"];
+  const hasActions = rowActions.length > 0;
 
   return (
     <div className="table-shell">
@@ -29,6 +31,7 @@ export default function ResourceTable({ resource, rows, selectedId, onSelect }) 
             {columns.map((column) => (
               <th key={column} className={`col-${column}`}>{columnLabel(resource, column)}</th>
             ))}
+            {hasActions && <th className="col-actions">Actions</th>}
           </tr>
         </thead>
         <tbody>
@@ -39,8 +42,27 @@ export default function ResourceTable({ resource, rows, selectedId, onSelect }) 
               onClick={() => onSelect(row)}
             >
               {columns.map((column) => (
-                <td key={column} className={`col-${column}`}>{formatCell(row, column) || "--"}</td>
+                <td key={column} className={`col-${column}`} data-label={columnLabel(resource, column)}>{formatCell(row, column) || "--"}</td>
               ))}
+              {hasActions && (
+                <td className="col-actions" data-label="Actions">
+                  <div className="table-row-actions">
+                    {rowActions.map((action) => (
+                      <button
+                        className={action.className || "ghost-btn xs"}
+                        type="button"
+                        key={action.label}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          action.onClick(row);
+                        }}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

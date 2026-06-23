@@ -56,7 +56,7 @@ export default function MaterialTypeManager({ rows = [], saving = false, deletin
       <div className="material-type-window compact-card">
         <header className="material-type-head">
           <div>
-            <p className="eyebrow">Finished Raw Material Setup</p>
+            <p className="eyebrow">Material Setup</p>
             <h2>Material Types</h2>
             <p>Broad families such as PM, PM/PET, PET, LPO, or LV.</p>
           </div>
@@ -72,7 +72,7 @@ export default function MaterialTypeManager({ rows = [], saving = false, deletin
             <em>PM, PM/PET, PET</em>
           </article>
           <article>
-            <strong>Finished Raw Material</strong>
+            <strong>Material</strong>
             <span>Actual coated construction with face, liner, adhesive, and silicone choices.</span>
             <em>PM 40# permanent coated stock</em>
           </article>

@@ -364,16 +364,12 @@ function finishedMaterialField(field) {
 }
 
 const finishedMaterialColumns = [
-  "code",
   "master_type_code",
-  "material_family",
   "inventory_total_feet",
-  "name",
   "allowed_face_material_summary",
   "allowed_liner_material_summary",
   "allowed_adhesive_material_summary",
   "gsm",
-  "is_active",
 ];
 
 function componentRelationFields() {
@@ -507,7 +503,7 @@ function materialFields(defaultType = "liner", hiddenType = false, namePlacehold
 
   return [
     { name: "material_type", label: "Material Type", type: "select", choices: choiceLists.rawMaterialType, required: true, defaultValue: defaultType, hidden: hiddenType },
-    { name: "code", label: "Code", type: "text", placeholder: "Auto-generated", hidden: true },
+    { name: "code", label: "Code", type: "text", placeholder: "Leave blank to auto-generate" },
     { name: "name", label: isFinishedRawMaterial ? "Description" : "Data Type", type: "text", required: true, placeholder: namePlaceholder },
     finishedMaterialField({
       name: "master_type",
@@ -547,8 +543,10 @@ function materialSupplierOptionFields() {
       searchFields: ["name", "material_type", "color", "notes"],
       maxResults: 500,
     },
-    supplierField("material"),
-    { name: "supplier_name", label: "Supplier Name", type: "text" },
+    supplierField("material", {
+      required: true,
+      helpText: "Choose the supplier record. The supplier name comes from the Suppliers page.",
+    }),
     { name: "option_name", label: "Option Description", type: "text", placeholder: "PM 3.5 mil coating" },
     { name: "supplier_item_number", label: "Supplier Item #", type: "text" },
     { name: "thickness_mil", label: "Thickness Mil", type: "number", step: "0.001" },
@@ -560,17 +558,16 @@ function materialSupplierOptionFields() {
 }
 
 const materialTypeResources = [
-  { key: "material-coated-stock", label: "Finished Raw Materials", singular: "Finished Raw Material", materialType: "coated_stock", accent: "#38bdf8", placeholder: "PM 40# perm coated stock" },
-  { key: "material-faces", label: "Face Data Types", singular: "Face Data Type", materialType: "face", accent: "#2dd4bf", placeholder: "PM, PMDT, PET, LPO, LV" },
-  { key: "material-liners", label: "Liner Data Types", singular: "Liner Data Type", materialType: "liner", accent: "#a3e635", placeholder: "40#, 80#, clear PET" },
-  { key: "material-adhesives", label: "Adhesive Data Types", singular: "Adhesive Data Type", materialType: "adhesive", accent: "#f97316", placeholder: "Permanent, removable, freezer" },
-  { key: "material-silicone", label: "Silicone Data Types", singular: "Silicone Data Type", materialType: "silicone", accent: "#e879f9", placeholder: "Easy release silicone" },
-  { key: "material-coatings", label: "Coatings / Varnishes", singular: "Coating / Varnish", materialType: "coating", accent: "#fbbf24", placeholder: "Varnish, ink coating, specialty coating" },
+  { key: "material-coated-stock", label: "Materials", singular: "Material", materialType: "coated_stock", accent: "#38bdf8", placeholder: "PM 40# perm coated stock" },
+  { key: "material-faces", label: "Face", singular: "Face Data Type", materialType: "face", accent: "#2dd4bf", placeholder: "PM, PMDT, PET, LPO, LV" },
+  { key: "material-liners", label: "Liner", singular: "Liner Data Type", materialType: "liner", accent: "#a3e635", placeholder: "40#, 80#, clear PET" },
+  { key: "material-adhesives", label: "Adhesive", singular: "Adhesive Data Type", materialType: "adhesive", accent: "#f97316", placeholder: "Permanent, removable, freezer" },
+  { key: "material-silicone", label: "Silicone", singular: "Silicone Data Type", materialType: "silicone", accent: "#e879f9", placeholder: "Easy release silicone" },
 ];
 
 export const resourceGroups = [
   { key: "production", label: "Production", defaultOpen: true },
-  { key: "production-material", label: "Material", parent: "production", defaultOpen: true },
+  { key: "production-material", label: "Material", defaultOpen: true },
   { key: "inventory", label: "Inventory", defaultOpen: true },
   { key: "tooling", label: "Tooling", defaultOpen: false },
   { key: "plant", label: "Plant", defaultOpen: false },
@@ -1110,7 +1107,7 @@ export const resources = [
     accent,
     defaultOrdering: "company,name,code",
     tagline: materialType === "coated_stock"
-      ? "Finished raw material master records. Link face, liner, adhesive, silicone, coating, cuts, target run length, and operator notes."
+      ? "Material records for coated constructions. Tri-State materials can be scheduled to the coater; outside materials stay reference-only."
       : `${label} reusable component list. Add supplier options to each data type, then inventory rolls can link back to the correct supplier and lot.`,
     columns: materialType === "coated_stock" ? finishedMaterialColumns : baseMaterialColumns,
     fields: materialFields(materialType, true, placeholder),
@@ -1124,6 +1121,7 @@ export const resources = [
     group: "production-material",
     icon: Store,
     accent: "#14b8a6",
+    hideFromNav: true,
     defaultOrdering: "material__material_type,material__name,supplier_name,option_name",
     tagline: "Supplier/order options linked to a face, liner, adhesive, silicone, or coating data type.",
     columns: [
