@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Image as ImageIcon, Layers3, Mail, MoreHorizontal, Pencil, Plus, Printer, Ruler, Search, SlidersHorizontal, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleDollarSign, Copy, Download, FileText, Image as ImageIcon, Layers3, Mail, MoreHorizontal, Pencil, Plus, Printer, Ruler, Search, SlidersHorizontal, Trash2, XCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
@@ -1263,8 +1263,9 @@ function quoteEmailBody(quote, quoteLink) {
     ``,
     `============================================================`,
     `CLICK THIS LINK TO OPEN THE QUOTE FOR APPROVAL:`,
-    `<${quoteLink}>`,
+    quoteLink,
     `============================================================`,
+    `If Outlook does not make the link clickable, paste the copied approval link into the browser.`,
     ``,
     `Quote: ${quote?.quoteNumber || "--"}`,
     `Customer: ${quote?.customerName || "No customer"}`,
@@ -1639,6 +1640,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const [quotePersonFilter, setQuotePersonFilter] = useState(() => currentUserQuoteKey(currentUser));
   const [approvalSavingId, setApprovalSavingId] = useState("");
   const [quoteActionError, setQuoteActionError] = useState("");
+  const [quoteActionNotice, setQuoteActionNotice] = useState("");
   const [quoteEditContext, setQuoteEditContext] = useState(null);
   const [quoteConfirm, setQuoteConfirm] = useState(null);
   const [rawForm, setRawForm] = useState(emptyRawForm);
@@ -2445,6 +2447,25 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     return url.toString();
   }
 
+  async function copyApprovalLink(quote, { quiet = false } = {}) {
+    if (!quote || typeof navigator === "undefined" || !navigator.clipboard) {
+      if (!quiet) setQuoteActionError("This browser could not copy the approval link automatically.");
+      return false;
+    }
+    const link = quoteLinkFor(quote);
+    try {
+      await navigator.clipboard.writeText(link);
+      if (!quiet) {
+        setQuoteActionError("");
+        setQuoteActionNotice("Approval link copied.");
+      }
+      return true;
+    } catch {
+      if (!quiet) setQuoteActionError("This browser blocked copying. Select the link in the email and copy it manually.");
+      return false;
+    }
+  }
+
   function requestQuoteAction(type, quote, target = "") {
     if (!quote) return;
     const workflowLabel = target === "processed" ? "Move to Processed" : "Reopen Active";
@@ -2624,6 +2645,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     setQuoteActionError("");
     if (typeof window === "undefined") return;
     const link = quoteLinkFor(quote);
+    await copyApprovalLink(quote, { quiet: true });
     const subject = encodeURIComponent(quoteEmailSubject(quote));
     const body = encodeURIComponent(quoteEmailBody(quote, link));
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
@@ -3689,6 +3711,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                   <button className={savedQuoteView === "customer" ? "active" : ""} type="button" onClick={() => setSavedQuoteView("customer")}>Customer View</button>
                   <button className={savedQuoteView === "internal" ? "active" : ""} type="button" onClick={() => setSavedQuoteView("internal")}>Internal Data</button>
                   <button type="button" onClick={() => requestQuoteAction("email", selectedQuote)} disabled={!selectedQuote}><Mail size={15} /> Request Approval Email</button>
+                  <button type="button" onClick={() => copyApprovalLink(selectedQuote)} disabled={!selectedQuote}><Copy size={15} /> Copy Approval Link</button>
                   <button type="button" onClick={() => loadQuoteForEdit(selectedQuote)} disabled={!selectedQuote}><Pencil size={15} /> Edit Quote</button>
                   <button type="button" onClick={() => requestQuoteAction("workflow", selectedQuote, selectedQuoteWorkflowStatus === "processed" ? "active" : "processed")} disabled={!selectedQuote || approvalSavingId === selectedQuote?.id}>
                     {selectedQuoteWorkflowStatus === "processed" ? "Reopen Active" : "Move to Processed"}
@@ -3723,6 +3746,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
               </details>
             )}
             {quoteActionError && <div className="error-box">{quoteActionError}</div>}
+            {quoteActionNotice && <div className="quote-action-notice">{quoteActionNotice}</div>}
             {savedQuoteView === "internal" ? <InternalQuoteBreakdown quote={selectedQuote} materialOptions={materialOptions} /> : <QuoteDocument quote={selectedQuote} />}
           </div>
         </section>

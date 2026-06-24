@@ -9127,6 +9127,19 @@ p, .muted { color: #7a7a7a; }
   font-weight: 900 !important;
 }
 
+.quote-action-notice {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #99c7bf;
+  border-radius: 8px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: .78rem;
+  font-weight: 900;
+}
+
 .quote-approval-card > div:last-child {
   display: flex;
   gap: 7px;
