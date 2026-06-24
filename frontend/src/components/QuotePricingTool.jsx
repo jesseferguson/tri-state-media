@@ -1265,7 +1265,6 @@ function quoteEmailBody(quote, quoteLink) {
     `CLICK THIS LINK TO OPEN THE QUOTE FOR APPROVAL:`,
     quoteLink,
     `============================================================`,
-    `If Outlook does not make the link clickable, paste the copied approval link into the browser.`,
     ``,
     `Quote: ${quote?.quoteNumber || "--"}`,
     `Customer: ${quote?.customerName || "No customer"}`,
@@ -1876,8 +1875,11 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   }, [filteredSavedQuotes]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !savedQuotes.length) return;
+    if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    const wantsSavedQuotes = window.location.hash === "#saved-quotes" || params.get("quoteView") === "savedQuotes";
+    if (wantsSavedQuotes) setActiveTab("quotes");
+    if (!savedQuotes.length) return;
     const linkedQuoteId = params.get("quoteId");
     if (!linkedQuoteId) return;
     const linkedQuote = savedQuotes.find((quote) => String(quote.id) === String(linkedQuoteId));
@@ -2440,10 +2442,11 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   }
 
   function quoteLinkFor(quote) {
-    if (typeof window === "undefined" || !quote?.id) return quote?.quoteNumber || "";
+    if (typeof window === "undefined") return quote?.quoteNumber || "Saved Quotes";
     const url = new URL(window.location.href);
-    url.searchParams.set("quoteId", quote.id);
-    url.hash = "";
+    url.searchParams.delete("quoteId");
+    url.searchParams.delete("quoteView");
+    url.hash = "saved-quotes";
     return url.toString();
   }
 
