@@ -18,6 +18,11 @@ QUOTE_APPROVAL_STATUS_CHOICES = [
     ("rejected", "Rejected"),
 ]
 
+QUOTE_WORKFLOW_STATUS_CHOICES = [
+    ("active", "Active"),
+    ("processed", "Processed"),
+]
+
 
 def job_ticket_image_upload_path(instance, filename):
     safe_ticket = str(instance.ticket_number or instance.pk or "job-ticket").replace("/", "-").replace("\\", "-")
@@ -177,6 +182,16 @@ class QuoteRecord(models.Model):
     approval_by_name = models.CharField(max_length=150, blank=True)
     approval_by_role = models.CharField(max_length=80, blank=True)
     approval_note = models.TextField(blank=True)
+    workflow_status = models.CharField(max_length=20, choices=QUOTE_WORKFLOW_STATUS_CHOICES, default="active", db_index=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    processed_by_user_id = models.CharField(max_length=120, blank=True)
+    processed_by_name = models.CharField(max_length=150, blank=True)
+    processed_by_role = models.CharField(max_length=80, blank=True)
+    last_edited_at = models.DateTimeField(null=True, blank=True)
+    last_edited_by_user_id = models.CharField(max_length=120, blank=True)
+    last_edited_by_name = models.CharField(max_length=150, blank=True)
+    last_edited_by_role = models.CharField(max_length=80, blank=True)
+    edit_count = models.PositiveIntegerField(default=0)
     notes = models.TextField(blank=True)
     material_name = models.CharField(max_length=180, blank=True)
     material_source = models.CharField(max_length=40, blank=True)

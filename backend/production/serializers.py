@@ -27,6 +27,7 @@ from .models import (
     QuoteRawMaterial,
     QuoteRecord,
     QUOTE_APPROVAL_STATUS_CHOICES,
+    QUOTE_WORKFLOW_STATUS_CHOICES,
 )
 
 
@@ -180,6 +181,16 @@ class QuoteRecordSerializer(serializers.ModelSerializer):
     approvalByName = serializers.CharField(source="approval_by_name", allow_blank=True, required=False)
     approvalByRole = serializers.CharField(source="approval_by_role", allow_blank=True, required=False)
     approvalNote = serializers.CharField(source="approval_note", allow_blank=True, required=False)
+    quoteWorkflowStatus = serializers.ChoiceField(source="workflow_status", choices=QUOTE_WORKFLOW_STATUS_CHOICES, required=False)
+    processedAt = serializers.DateTimeField(source="processed_at", allow_null=True, required=False)
+    processedByUserId = serializers.CharField(source="processed_by_user_id", allow_blank=True, required=False)
+    processedByName = serializers.CharField(source="processed_by_name", allow_blank=True, required=False)
+    processedByRole = serializers.CharField(source="processed_by_role", allow_blank=True, required=False)
+    lastEditedAt = serializers.DateTimeField(source="last_edited_at", allow_null=True, required=False)
+    lastEditedByUserId = serializers.CharField(source="last_edited_by_user_id", allow_blank=True, required=False)
+    lastEditedByName = serializers.CharField(source="last_edited_by_name", allow_blank=True, required=False)
+    lastEditedByRole = serializers.CharField(source="last_edited_by_role", allow_blank=True, required=False)
+    editCount = serializers.IntegerField(source="edit_count", required=False, min_value=0)
     materialName = serializers.CharField(source="material_name", allow_blank=True, required=False)
     materialSource = serializers.CharField(source="material_source", allow_blank=True, required=False)
     materialComponents = serializers.CharField(source="material_components", allow_blank=True, required=False)
@@ -211,6 +222,16 @@ class QuoteRecordSerializer(serializers.ModelSerializer):
             "approvalByName",
             "approvalByRole",
             "approvalNote",
+            "quoteWorkflowStatus",
+            "processedAt",
+            "processedByUserId",
+            "processedByName",
+            "processedByRole",
+            "lastEditedAt",
+            "lastEditedByUserId",
+            "lastEditedByName",
+            "lastEditedByRole",
+            "editCount",
             "notes",
             "materialName",
             "materialSource",

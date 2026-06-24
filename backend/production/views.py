@@ -229,17 +229,23 @@ class QuoteRecordViewSet(BaseProductionViewSet):
         "prepared_by_role",
         "approval_status",
         "approval_by_name",
+        "workflow_status",
+        "processed_by_name",
+        "last_edited_by_name",
         "quote_company",
         "material_name",
         "notes",
     ]
-    ordering_fields = ["created_at", "quote_number", "customer_name", "prepared_by_name", "approval_status", "approval_at", "quote_company", "material_name"]
+    ordering_fields = ["created_at", "quote_number", "customer_name", "prepared_by_name", "approval_status", "approval_at", "workflow_status", "processed_at", "last_edited_at", "quote_company", "material_name"]
 
     def get_queryset(self):
         qs = super().get_queryset()
         approval_status = self.request.query_params.get("approval_status")
         if approval_status:
             qs = qs.filter(approval_status=approval_status)
+        workflow_status = self.request.query_params.get("workflow_status")
+        if workflow_status:
+            qs = qs.filter(workflow_status=workflow_status)
         customer = self.request.query_params.get("customer")
         if customer:
             customer_value = str(customer).strip()

@@ -174,9 +174,9 @@ class CustomerOrderEventAdmin(admin.ModelAdmin):
 
 @admin.register(QuoteRecord)
 class QuoteRecordAdmin(admin.ModelAdmin):
-    list_display = ("quote_number", "customer_name", "prepared_by_name", "approval_status", "approval_by_name", "approval_at", "quote_company", "created_at")
-    list_filter = ("approval_status", "quote_company", "prepared_by_role", "created_at")
-    search_fields = ("quote_number", "customer_name", "job_name", "product_code", "prepared_by_name", "approval_by_name", "material_name", "notes")
+    list_display = ("quote_number", "customer_name", "prepared_by_name", "approval_status", "workflow_status", "last_edited_by_name", "processed_by_name", "quote_company", "created_at")
+    list_filter = ("approval_status", "workflow_status", "quote_company", "prepared_by_role", "created_at")
+    search_fields = ("quote_number", "customer_name", "job_name", "product_code", "prepared_by_name", "approval_by_name", "processed_by_name", "last_edited_by_name", "material_name", "notes")
     readonly_fields = ("created_at", "updated_at")
     date_hierarchy = "created_at"
 

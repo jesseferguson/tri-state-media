@@ -8461,26 +8461,157 @@ p, .muted { color: #7a7a7a; }
 
 .quote-record-page {
   display: grid;
-  grid-template-columns: minmax(260px, .38fr) minmax(520px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: 16px;
 }
 
 .quote-record-list,
 .quote-record-view {
+  min-width: 0;
   display: grid;
   gap: 12px;
 }
 
+.quote-record-list {
+  overflow: hidden;
+}
+
 .quote-record-rows {
+  min-width: 0;
   display: grid;
+  gap: 9px;
+}
+
+.quote-list-count {
+  margin-left: auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: .68rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.quote-filter-drawer {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  gap: 9px;
+  padding: 8px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.quote-filter-drawer summary {
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.quote-filter-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.quote-filter-drawer summary svg {
+  color: #0f766e;
+}
+
+.quote-filter-drawer summary strong {
+  color: #0f172a;
+  font-size: .8rem;
+}
+
+.quote-filter-drawer summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 850;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-filter-drawer > div {
+  animation: materialTypeBodyIn .16s ease both;
+}
+
+.quote-workflow-tabs {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
+  padding: 4px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.quote-workflow-tabs button {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #334155;
+  text-align: left;
+}
+
+.quote-workflow-tabs button:hover,
+.quote-workflow-tabs button.active {
+  border-color: #dce4ee;
+  background: #ffffff;
+  color: #0f766e;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .07);
+}
+
+.quote-workflow-tabs strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: .78rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-workflow-tabs span {
+  min-width: 26px;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.quote-workflow-tabs button.active span {
+  background: #ccfbf1;
+  color: #0f766e;
 }
 
 .quote-person-tabs {
-  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 7px;
-  overflow-x: auto;
+  overflow: hidden;
   padding: 4px;
   border: 1px solid #dfe5ec;
   border-radius: 8px;
@@ -8488,7 +8619,7 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-person-tabs button {
-  min-width: 190px;
+  min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -8569,19 +8700,21 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-status-tabs {
+  min-width: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 7px;
 }
 
 .quote-status-tabs button {
   min-width: 0;
-  min-height: 42px;
-  display: flex;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 9px;
+  gap: 7px;
+  padding: 8px;
   border: 1px solid #d9e1ea;
   border-radius: 8px;
   background: #ffffff;
@@ -8598,11 +8731,12 @@ p, .muted { color: #7a7a7a; }
 
 .quote-status-tabs strong {
   min-width: 0;
-  overflow: hidden;
-  font-size: .76rem;
+  overflow: visible;
+  font-size: .72rem;
   font-weight: 950;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.1;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .quote-status-tabs span {
@@ -8682,13 +8816,18 @@ p, .muted { color: #7a7a7a; }
 .quote-record-rows button {
   min-width: 0;
   display: grid;
-  gap: 2px;
-  padding: 9px;
+  gap: 6px;
+  padding: 12px;
   border: 1px solid #edf2f7;
   border-radius: 8px;
   background: #ffffff;
   color: #101828;
   text-align: left;
+}
+
+.quote-record-rows button.mine {
+  border-left: 4px solid #0f766e;
+  background: #fefffe;
 }
 
 .quote-row-head {
@@ -8727,6 +8866,24 @@ p, .muted { color: #7a7a7a; }
   color: #b91c1c;
 }
 
+.quote-workflow-pill {
+  flex: 0 0 auto;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: .64rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.quote-workflow-pill.processed {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
 .quote-record-rows button:hover,
 .quote-record-rows button.active {
   border-color: #bfdbfe;
@@ -8753,37 +8910,177 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-record-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.quote-record-actions > div:last-child {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+}
+
+.quote-record-actions .quote-section-head {
+  min-width: 0;
+}
+
+.quote-record-actions .quote-section-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-record-action-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.quote-record-action-line .ghost-btn,
+.quote-record-action-line .danger-btn {
+  min-height: 34px;
+  padding: 7px 9px;
+  font-size: .74rem;
 }
 
 .quote-view-switch {
-  width: min(280px, 100%);
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 218px;
 }
 
 .quote-view-switch button {
-  min-width: 118px;
+  min-width: 108px;
+}
+
+.quote-record-action-menu {
+  position: relative;
+  display: block;
+  justify-self: end;
+}
+
+.quote-record-action-menu summary {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: .76rem;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+
+.quote-record-action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.quote-record-action-menu > div {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 25;
+  min-width: 210px;
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, .14);
+}
+
+.quote-record-action-menu button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #334155;
+  font-size: .76rem;
+  font-weight: 900;
+  text-align: left;
+}
+
+.quote-record-action-menu button:hover,
+.quote-record-action-menu button.active {
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.quote-record-action-menu button.danger {
+  color: #b91c1c;
+}
+
+.quote-record-action-menu button.danger:hover {
+  background: #fff1f2;
+}
+
+.quote-email-action {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid #99c7bf;
+  border-radius: 8px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: .76rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.quote-email-action:hover {
+  background: #ccfbf1;
+}
+
+.quote-email-action:disabled {
+  cursor: not-allowed;
+  opacity: .55;
 }
 
 .quote-approval-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px;
   border: 1px solid #d9e1ea;
   border-radius: 8px;
   background: #f8fafc;
+}
+
+.quote-approval-drawer {
+  display: grid;
+  overflow: hidden;
+  padding: 0;
+}
+
+.quote-approval-drawer summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 9px 11px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.quote-approval-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.quote-approval-drawer summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .quote-approval-card.pending {
@@ -8801,10 +9098,10 @@ p, .muted { color: #7a7a7a; }
   background: #fff7f7;
 }
 
-.quote-approval-card > div:first-child {
-  min-width: 0;
+.quote-approval-drawer > div {
   display: grid;
-  gap: 4px;
+  gap: 9px;
+  padding: 0 11px 11px;
 }
 
 .quote-approval-card strong {
@@ -8819,13 +9116,149 @@ p, .muted { color: #7a7a7a; }
   font-weight: 800;
 }
 
+.quote-revision-meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .68);
+  color: #334155 !important;
+  font-weight: 900 !important;
+}
+
 .quote-approval-card > div:last-child {
   display: flex;
   gap: 7px;
   flex-wrap: wrap;
 }
 
+.quote-mine-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #ccfbf1 !important;
+  color: #0f766e !important;
+  font-size: .64rem !important;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.quote-edit-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #99c7bf;
+  border-radius: 8px;
+  background: #f0fdfa;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, .06);
+}
+
+.quote-edit-banner div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.quote-edit-banner span {
+  color: #0f766e;
+  font-size: .7rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.quote-edit-banner strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.quote-edit-banner em {
+  color: #475569;
+  font-size: .76rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.quote-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, .42);
+  backdrop-filter: blur(4px);
+}
+
+.quote-confirm-window {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #dce4ee;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .22);
+}
+
+.quote-confirm-window div {
+  display: grid;
+  gap: 5px;
+}
+
+.quote-confirm-window span {
+  color: #0f766e;
+  font-size: .68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.quote-confirm-window strong {
+  color: #0f172a;
+  font-size: 1.05rem;
+}
+
+.quote-confirm-window em {
+  color: #475569;
+  font-size: .82rem;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.quote-confirm-window.danger {
+  border-color: #fecaca;
+}
+
+.quote-confirm-window.danger span {
+  color: #b91c1c;
+}
+
+.quote-confirm-window.warning {
+  border-color: #fde68a;
+}
+
+.quote-confirm-window.warning span {
+  color: #92400e;
+}
+
+.quote-confirm-window footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .quote-document {
+  min-width: 0;
+  width: 100%;
   max-width: 816px;
   min-height: 960px;
   margin: 0 auto;
@@ -8834,6 +9267,8 @@ p, .muted { color: #7a7a7a; }
   border-radius: 8px;
   background: #ffffff;
   color: #111827;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .quote-doc-sales-head {
@@ -8901,7 +9336,7 @@ p, .muted { color: #7a7a7a; }
 
 .quote-doc-sales-meta {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, .88fr);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, .88fr);
   gap: 18px;
   margin-top: 18px;
 }
@@ -8966,8 +9401,14 @@ p, .muted { color: #7a7a7a; }
   margin-top: 18px;
 }
 
+.quote-doc-line-item {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .quote-doc-sales-table {
   width: 100%;
+  min-width: 540px;
   border: 1px solid #111827;
   border-collapse: collapse;
   table-layout: fixed;
@@ -9709,6 +10150,9 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-internal-breakdown {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   display: grid;
   gap: 12px;
   color: #101828;
@@ -10066,8 +10510,7 @@ p, .muted { color: #7a7a7a; }
 
 @media (max-width: 1180px) {
   .quote-layout,
-  .quote-material-library,
-  .quote-record-page {
+  .quote-material-library {
     grid-template-columns: 1fr;
   }
 }
@@ -17839,6 +18282,30 @@ textarea {
   }
 }
 
+@media (max-width: 1280px) {
+  .quote-record-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .quote-record-action-line {
+    display: none;
+  }
+
+  .quote-record-action-menu {
+    display: block;
+  }
+}
+
+@media (max-width: 900px) {
+  .quote-record-page {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-record-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
 @media (max-width: 760px) {
   .quote-tabs {
     top: 0;
@@ -17862,6 +18329,32 @@ textarea {
   .quote-row-foot {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .quote-filter-drawer summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .quote-filter-drawer summary span {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  .quote-record-action-menu {
+    align-self: start;
+  }
+
+  .quote-record-action-menu > div {
+    right: 0;
+    left: auto;
+  }
+
+  .quote-edit-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-edit-banner .ghost-btn {
+    width: 100%;
   }
 
   .quote-record-money {
