@@ -508,15 +508,22 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
   const activeUserCount = users.filter((user) => user.active !== false).length;
   const roleCount = roleDefinitions.length;
   const currentRole = roleDefinitions.find((role) => role.name === currentUser?.role);
-  const roleScreenGroups = useMemo(() => {
-    const groups = new Map();
-    resources.forEach((item) => {
-      const key = item.group || "other";
-      const label = groupLabelsByKey[key] || "Other";
-      if (!groups.has(key)) groups.set(key, { key, label, screens: [] });
-      groups.get(key).screens.push(item);
-    });
-    return Array.from(groups.values());
+  const selectedUserRole = roleDefinitions.find((role) => role.name === form.role);
+  const roleAccessGroups = useMemo(() => {
+    function groupResources(items, fallbackLabel = "Other") {
+      const groups = new Map();
+      items.forEach((item) => {
+        const key = item.group || "other";
+        const label = groupLabelsByKey[key] || fallbackLabel;
+        if (!groups.has(key)) groups.set(key, { key, label, screens: [] });
+        groups.get(key).screens.push(item);
+      });
+      return Array.from(groups.values());
+    }
+    return {
+      screens: groupResources(resources.filter((item) => !item.permissionOnly && !item.hideFromNav)),
+      abilities: groupResources(resources.filter((item) => item.permissionOnly), "Abilities"),
+    };
   }, []);
 
   function update(name, value) {
@@ -572,6 +579,13 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
       else current.add(key);
       return { ...prev, allowedResourceKeys: Array.from(current) };
     });
+  }
+
+  function roleAccessSummary(role) {
+    if (role.allowedResourceKeys.includes("*")) return "All screens + abilities";
+    const visibleCount = resources.filter((item) => !item.permissionOnly && !item.hideFromNav && role.allowedResourceKeys.includes(item.key)).length;
+    const abilityCount = resources.filter((item) => item.permissionOnly && role.allowedResourceKeys.includes(item.key)).length;
+    return `${visibleCount} tab${visibleCount === 1 ? "" : "s"}${abilityCount ? ` / ${abilityCount} permission${abilityCount === 1 ? "" : "s"}` : ""}`;
   }
 
   async function submitRole(event) {
@@ -705,7 +719,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
           <div className="admin-stat-card">
             <KeyRound size={18} />
             <span>Your Access</span>
-            <strong>{currentRole?.allowedResourceKeys.includes("*") ? "All Screens" : `${currentRole?.allowedResourceKeys.length ?? 0} Screens`}</strong>
+            <strong>{currentRole ? roleAccessSummary(currentRole) : "No Access"}</strong>
           </div>
         </section>
 
@@ -747,6 +761,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
                 {roleDefinitions.map((role) => <option value={role.name} key={role.id}>{role.name}</option>)}
               </select>
             </label>
+            {selectedUserRole && <p className="role-summary-note">Access: {roleAccessSummary(selectedUserRole)}</p>}
             <label className="field">
               <span>Quote Company</span>
               <select value={quoteCompanyKey(form.quoteCompany)} onChange={(event) => update("quoteCompany", event.target.value)}>
@@ -800,7 +815,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
             <div className="panel-head thin">
               <div>
                 <p className="eyebrow">Access</p>
-                <h2>Roles + Screens</h2>
+                <h2>Roles + Permissions</h2>
               </div>
             </div>
             <form className="role-admin-form" onSubmit={submitRole}>
@@ -812,23 +827,55 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
                 <span>Description</span>
                 <input value={roleForm.description} onChange={(event) => updateRoleForm("description", event.target.value)} placeholder="What this role is allowed to do" />
               </label>
-              <div className="role-screen-picker">
-                {roleScreenGroups.map((group) => (
-                  <section className="role-screen-group" key={group.key}>
-                    <header>
-                      <strong>{group.label}</strong>
-                      <span>{group.screens.filter((item) => roleForm.allowedResourceKeys.includes(item.key)).length} / {group.screens.length}</span>
-                    </header>
-                    <div>
-                      {group.screens.map((item) => (
-                        <label className="role-screen-check" key={item.key}>
-                          <input type="checkbox" checked={roleForm.allowedResourceKeys.includes(item.key)} onChange={() => toggleRoleScreen(item.key)} />
-                          <span>{item.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </section>
-                ))}
+              <div className="role-access-layout">
+                <section>
+                  <div className="role-access-title">
+                    <strong>Tabs People Can Open</strong>
+                    <span>Choose the actual menu tabs this role can see.</span>
+                  </div>
+                  <div className="role-screen-picker">
+                    {roleAccessGroups.screens.map((group) => (
+                      <section className="role-screen-group" key={group.key}>
+                        <header>
+                          <strong>{group.label}</strong>
+                          <span>{group.screens.filter((item) => roleForm.allowedResourceKeys.includes(item.key)).length} / {group.screens.length}</span>
+                        </header>
+                        <div>
+                          {group.screens.map((item) => (
+                            <label className="role-screen-check" key={item.key}>
+                              <input type="checkbox" checked={roleForm.allowedResourceKeys.includes(item.key)} onChange={() => toggleRoleScreen(item.key)} />
+                              <span>{item.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                </section>
+                <section>
+                  <div className="role-access-title">
+                    <strong>Extra Abilities</strong>
+                    <span>These do not add menu tabs; they unlock actions inside existing screens.</span>
+                  </div>
+                  <div className="role-screen-picker role-ability-picker">
+                    {roleAccessGroups.abilities.map((group) => (
+                      <section className="role-screen-group" key={group.key}>
+                        <header>
+                          <strong>{group.label}</strong>
+                          <span>{group.screens.filter((item) => roleForm.allowedResourceKeys.includes(item.key)).length} / {group.screens.length}</span>
+                        </header>
+                        <div>
+                          {group.screens.map((item) => (
+                            <label className="role-screen-check" key={item.key}>
+                              <input type="checkbox" checked={roleForm.allowedResourceKeys.includes(item.key)} onChange={() => toggleRoleScreen(item.key)} />
+                              <span>{item.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                </section>
               </div>
               {roleError && <div className="auth-error">{roleError}</div>}
               <div className="form-actions">
@@ -838,7 +885,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
             </form>
             <div className="role-list-rows">
               {roleDefinitions.map((role) => {
-                const accessCount = role.allowedResourceKeys.includes("*") ? "All screens" : `${role.allowedResourceKeys.length} screens`;
+                const accessCount = roleAccessSummary(role);
                 return (
                   <article className="role-list-row" key={role.id}>
                     <div className="role-list-main">
@@ -1375,6 +1422,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const canScheduleFromJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-schedule");
   const canQuoteJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-calculator");
   const canManageQuoteMaterials = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-material-admin");
+  const canApproveQuotes = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-approval");
   const jobTicketScheduleResource = useMemo(() => {
     const schedule = resourceMap["production-schedule"];
     const hiddenOnTicket = new Set([
@@ -2413,6 +2461,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             initialJobTicketId={quoteJobTicketId}
             initialCustomerId={quoteCustomerId}
             canManageQuoteMaterials={canManageQuoteMaterials}
+            canApproveQuotes={canApproveQuotes}
           />
         ) : resource.viewMode === "liveFootage" ? (
           <LiveFootageView tvMode={liveFootageTvMode} onTvModeChange={setLiveFootageTvMode} />

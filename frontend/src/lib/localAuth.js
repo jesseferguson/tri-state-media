@@ -20,6 +20,12 @@ export const defaultRoleDefinitions = [
     allowedResourceKeys: ["quote-calculator"],
   },
   {
+    id: "role-sales-manager",
+    name: "Sales Manager",
+    description: "Quote calculator access with saved quote approval",
+    allowedResourceKeys: ["quote-calculator", "quote-approval"],
+  },
+  {
     id: "role-csr",
     name: "CSR",
     description: "Customer service quoting, tickets, and scheduling",

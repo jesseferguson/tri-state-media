@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, JobTicketUsage, ProductionSchedule
+from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, JobTicketUsage, ProductionSchedule, QuoteRecord
 
 
 @admin.register(Customer)
@@ -170,6 +170,15 @@ class CustomerOrderEventAdmin(admin.ModelAdmin):
     search_fields = ("summary", "performed_by", "order__customer_name", "order__job_name", "order__job_ticket__ticket_number")
     autocomplete_fields = ("order",)
     readonly_fields = ("created_at",)
+
+
+@admin.register(QuoteRecord)
+class QuoteRecordAdmin(admin.ModelAdmin):
+    list_display = ("quote_number", "customer_name", "prepared_by_name", "approval_status", "approval_by_name", "approval_at", "quote_company", "created_at")
+    list_filter = ("approval_status", "quote_company", "prepared_by_role", "created_at")
+    search_fields = ("quote_number", "customer_name", "job_name", "product_code", "prepared_by_name", "approval_by_name", "material_name", "notes")
+    readonly_fields = ("created_at", "updated_at")
+    date_hierarchy = "created_at"
 
 
 @admin.register(FinishedInventory)

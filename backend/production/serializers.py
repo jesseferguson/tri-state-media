@@ -26,6 +26,7 @@ from .models import (
     QuoteFinishedMaterial,
     QuoteRawMaterial,
     QuoteRecord,
+    QUOTE_APPROVAL_STATUS_CHOICES,
 )
 
 
@@ -173,6 +174,12 @@ class QuoteRecordSerializer(serializers.ModelSerializer):
     contactName = serializers.CharField(source="contact_name", allow_blank=True, required=False)
     contactEmail = serializers.EmailField(source="contact_email", allow_blank=True, required=False)
     preparedBy = serializers.CharField(source="prepared_by", allow_blank=True, required=False)
+    approvalStatus = serializers.ChoiceField(source="approval_status", choices=QUOTE_APPROVAL_STATUS_CHOICES, required=False)
+    approvalAt = serializers.DateTimeField(source="approval_at", allow_null=True, required=False)
+    approvalByUserId = serializers.CharField(source="approval_by_user_id", allow_blank=True, required=False)
+    approvalByName = serializers.CharField(source="approval_by_name", allow_blank=True, required=False)
+    approvalByRole = serializers.CharField(source="approval_by_role", allow_blank=True, required=False)
+    approvalNote = serializers.CharField(source="approval_note", allow_blank=True, required=False)
     materialName = serializers.CharField(source="material_name", allow_blank=True, required=False)
     materialSource = serializers.CharField(source="material_source", allow_blank=True, required=False)
     materialComponents = serializers.CharField(source="material_components", allow_blank=True, required=False)
@@ -198,6 +205,12 @@ class QuoteRecordSerializer(serializers.ModelSerializer):
             "contactName",
             "contactEmail",
             "preparedBy",
+            "approvalStatus",
+            "approvalAt",
+            "approvalByUserId",
+            "approvalByName",
+            "approvalByRole",
+            "approvalNote",
             "notes",
             "materialName",
             "materialSource",

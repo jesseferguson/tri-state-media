@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Image as ImageIcon, Layers3, Pencil, Plus, Printer, Ruler, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleDollarSign, Download, FileText, Image as ImageIcon, Layers3, Pencil, Plus, Printer, Ruler, Search, Trash2, XCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
@@ -40,6 +40,12 @@ const quoteFinishingTypeChoices = [
   ["sheeted", "Sheeted"],
 ];
 const quoteCoreSizeChoices = ["", "0.75", "1", "3"];
+const quoteApprovalStates = [
+  ["pending", "Needs Approval"],
+  ["approved", "Approved"],
+  ["rejected", "Rejected"],
+];
+const quoteApprovalSortOrder = { pending: 0, rejected: 1, approved: 2 };
 
 const initialForm = {
   selectedMaterialId: "manual",
@@ -422,6 +428,36 @@ function percentInputValue(value) {
   return String(Number(numberValue.toFixed(2))).replace(/\.0+$/, "");
 }
 
+function quoteApprovalStatus(quote) {
+  const status = String(quote?.approvalStatus || quote?.approval_status || "pending").toLowerCase();
+  return quoteApprovalStates.some(([value]) => value === status) ? status : "pending";
+}
+
+function quoteApprovalLabel(quoteOrStatus) {
+  const status = typeof quoteOrStatus === "string" ? quoteOrStatus : quoteApprovalStatus(quoteOrStatus);
+  return quoteApprovalStates.find(([value]) => value === status)?.[1] || "Needs Approval";
+}
+
+function quoteApprovalSummary(quote) {
+  const status = quoteApprovalStatus(quote);
+  const reviewer = quote?.approvalByName || quote?.approval_by_name || "";
+  const reviewedAt = quote?.approvalAt || quote?.approval_at || "";
+  const parts = [quoteApprovalLabel(status)];
+  if (reviewer) parts.push(`by ${reviewer}`);
+  if (reviewedAt) parts.push(quoteDateLabel(reviewedAt));
+  return parts.join(" / ");
+}
+
+function sortQuotesForApproval(quotes = []) {
+  return [...quotes].sort((a, b) => {
+    const statusDelta = (quoteApprovalSortOrder[quoteApprovalStatus(a)] ?? 9) - (quoteApprovalSortOrder[quoteApprovalStatus(b)] ?? 9);
+    if (statusDelta) return statusDelta;
+    const bTime = quoteDateObject(b.createdAt).getTime();
+    const aTime = quoteDateObject(a.createdAt).getTime();
+    return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+  });
+}
+
 function rawMaterialPayload(raw) {
   return {
     id: raw.id || makeId("raw"),
@@ -472,6 +508,12 @@ function quoteRecordPayload(quote) {
     customerId: quote.customerId || null,
     jobTicketId: quote.jobTicketId || null,
     contactEmail: quote.contactEmail || "",
+    approvalStatus: quoteApprovalStatus(quote),
+    approvalAt: quote.approvalAt || quote.approval_at || null,
+    approvalByUserId: quote.approvalByUserId || quote.approval_by_user_id || "",
+    approvalByName: quote.approvalByName || quote.approval_by_name || "",
+    approvalByRole: quote.approvalByRole || quote.approval_by_role || "",
+    approvalNote: quote.approvalNote || quote.approval_note || "",
   };
 }
 
@@ -980,6 +1022,7 @@ function quoteInternalSections(quote) {
           ["Job Ticket", quote.jobTicketNumber || "Manual quote"],
           ["Contact", quote.contactName || quote.contactEmail || "--"],
           ["Prepared By", `${quotePreparedByName(quote)}${quotePreparedByRole(quote) ? ` / ${quotePreparedByRole(quote)}` : ""}`],
+          ["Approval", quoteApprovalSummary(quote)],
         ],
       },
       {
@@ -1008,6 +1051,7 @@ function quoteInternalSections(quote) {
         ["Job Ticket", quote.jobTicketNumber || "Manual quote"],
         ["Contact", quote.contactName || quote.contactEmail || "--"],
         ["Prepared By", `${quotePreparedByName(quote)}${quotePreparedByRole(quote) ? ` / ${quotePreparedByRole(quote)}` : ""}`],
+        ["Approval", quoteApprovalSummary(quote)],
       ],
     },
     {
@@ -1141,6 +1185,9 @@ function quoteSearchText(quote) {
     quoteItems(quote).map((item) => quoteFinishingLabel(item.form?.finishingType)).join(" "),
     quotePreparedByName(quote),
     quotePreparedByRole(quote),
+    quoteApprovalLabel(quote),
+    quote.approvalByName,
+    quote.approvalNote,
     quoteDateLabel(quote.createdAt),
     money(quote.pricing?.sellPrice),
   ].filter(Boolean).join(" ").toLowerCase();
@@ -1492,7 +1539,7 @@ function InternalQuoteBreakdown({ quote, materialOptions = [] }) {
   );
 }
 
-export default function QuotePricingTool({ currentUser, initialJobTicketId = "", initialCustomerId = "", canManageQuoteMaterials = false }) {
+export default function QuotePricingTool({ currentUser, initialJobTicketId = "", initialCustomerId = "", canManageQuoteMaterials = false, canApproveQuotes = false }) {
   const storedLibrary = useMemo(loadMaterialLibrary, []);
   const storedQuotes = useMemo(loadSavedQuotes, []);
   const [activeTab, setActiveTab] = useState("pricing");
@@ -1501,7 +1548,10 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const [wasteManuallyEdited, setWasteManuallyEdited] = useState(false);
   const [quoteInfo, setQuoteInfo] = useState(emptyQuoteInfo);
   const [quoteSearch, setQuoteSearch] = useState("");
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState("all");
   const [quotePersonFilter, setQuotePersonFilter] = useState(() => currentUserQuoteKey(currentUser));
+  const [approvalSavingId, setApprovalSavingId] = useState("");
+  const [quoteActionError, setQuoteActionError] = useState("");
   const [rawForm, setRawForm] = useState(emptyRawForm);
   const [finishedForm, setFinishedForm] = useState(emptyFinishedForm);
   const [editingRawId, setEditingRawId] = useState(null);
@@ -1591,6 +1641,15 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       .slice(0, 6)
       .join(", ");
   }, [activePrintStations]);
+  const sortedSavedQuotes = useMemo(() => sortQuotesForApproval(savedQuotes), [savedQuotes]);
+  const quoteStatusCounts = useMemo(() => {
+    return savedQuotes.reduce((acc, quote) => {
+      const status = quoteApprovalStatus(quote);
+      acc.all += 1;
+      acc[status] += 1;
+      return acc;
+    }, { all: 0, pending: 0, approved: 0, rejected: 0 });
+  }, [savedQuotes]);
   const quotePersonTabs = useMemo(() => {
     const groups = new Map();
     if (currentUser?.name) {
@@ -1627,33 +1686,24 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   }, [currentUser?.id, currentUser?.name, currentUser?.role, savedQuotes]);
   const searchedSavedQuotes = useMemo(() => {
     const search = quoteSearch.trim().toLowerCase();
-    if (!search) return savedQuotes;
-    return savedQuotes.filter((quote) => quoteSearchText(quote).includes(search));
-  }, [quoteSearch, savedQuotes]);
+    if (!search) return sortedSavedQuotes;
+    return sortedSavedQuotes.filter((quote) => quoteSearchText(quote).includes(search));
+  }, [quoteSearch, sortedSavedQuotes]);
+  const statusFilteredSavedQuotes = useMemo(() => {
+    if (quoteStatusFilter === "all") return searchedSavedQuotes;
+    return searchedSavedQuotes.filter((quote) => quoteApprovalStatus(quote) === quoteStatusFilter);
+  }, [quoteStatusFilter, searchedSavedQuotes]);
   const filteredSavedQuotes = useMemo(() => {
-    if (quotePersonFilter === "all") return searchedSavedQuotes;
-    return searchedSavedQuotes.filter((quote) => quoteBelongsToPerson(quote, quotePersonFilter, currentUser));
-  }, [quotePersonFilter, searchedSavedQuotes, currentUser?.id, currentUser?.name]);
+    if (quotePersonFilter === "all") return statusFilteredSavedQuotes;
+    return statusFilteredSavedQuotes.filter((quote) => quoteBelongsToPerson(quote, quotePersonFilter, currentUser));
+  }, [quotePersonFilter, statusFilteredSavedQuotes, currentUser?.id, currentUser?.name]);
   const groupedSavedQuotes = useMemo(() => {
-    const groups = new Map();
-    const currentKey = currentUserQuoteKey(currentUser);
-    const currentName = currentUser?.name?.toLowerCase();
+    const groups = new Map(quoteApprovalStates.map(([key, label]) => [key, { key, name: label, quotes: [] }]));
     filteredSavedQuotes.forEach((quote) => {
-      const preparedName = quotePreparedByName(quote).toLowerCase();
-      const rawKey = quotePersonKey(quote);
-      const key = rawKey === currentKey || (currentName && preparedName === currentName) ? currentKey : rawKey;
-      if (!groups.has(key)) {
-        groups.set(key, {
-          key,
-          name: key === currentKey && currentUser?.name ? currentUser.name : quotePreparedByName(quote),
-          role: key === currentKey && currentUser?.role ? currentUser.role : quotePreparedByRole(quote),
-          quotes: [],
-        });
-      }
-      groups.get(key).quotes.push(quote);
+      groups.get(quoteApprovalStatus(quote))?.quotes.push(quote);
     });
-    return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [currentUser?.id, currentUser?.name, currentUser?.role, filteredSavedQuotes]);
+    return Array.from(groups.values()).filter((group) => group.quotes.length);
+  }, [filteredSavedQuotes]);
   const selectedQuote = filteredSavedQuotes.find((quote) => quote.id === selectedQuoteId)
     ?? filteredSavedQuotes[0]
     ?? null;
@@ -1676,6 +1726,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
   const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
   const wasteMatchesRecommendation = Math.abs(toQuoteNumber(form.wastePercent) - toQuoteNumber(pricing.recommendedWastePercent)) < 0.01;
+  const activeQuoteCustomerLabel = selectedCustomer?.name || quoteInfo.customerName || "No customer";
+  const activeQuoteItemLabel = quoteInfo.itemName || quoteLinePartNumber(buildCurrentQuoteItem(), { jobName: quoteInfo.jobName }) || "Untitled item";
+  const activeQuoteMaterialLabel = selectedMaterial?.name || "Manual MSI Cost";
 
   useEffect(() => {
     if (visibleQuoteTabs.includes(activeTab)) return;
@@ -1710,8 +1763,8 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   useEffect(() => {
     if (activeTab !== "quotes") return;
-    setQuotePersonFilter(currentUserQuoteKey(currentUser));
-  }, [activeTab, currentUser?.id, currentUser?.name]);
+    setQuotePersonFilter(canApproveQuotes ? "all" : currentUserQuoteKey(currentUser));
+  }, [activeTab, canApproveQuotes, currentUser?.id, currentUser?.name]);
 
   useEffect(() => {
     if (!filteredSavedQuotes.length) {
@@ -2191,6 +2244,12 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       contactName: quoteInfo.contactName || recordCustomer?.contact_name || "",
       contactEmail: quoteInfo.contactEmail || recordCustomer?.email || "",
       preparedBy,
+      approvalStatus: "pending",
+      approvalAt: null,
+      approvalByUserId: "",
+      approvalByName: "",
+      approvalByRole: "",
+      approvalNote: "",
       notes: quoteInfo.notes,
       materialName: items.length === 1 ? items[0].materialName : "Multiple materials",
       materialSource: items.length === 1 ? items[0].materialSource : "multiple",
@@ -2209,6 +2268,31 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     setQuotePersonFilter(currentUserQuoteKey(currentUser));
     setQuoteItemsDraft([]);
     setActiveTab("quotes");
+  }
+
+  async function updateQuoteApproval(quote, approvalStatus) {
+    if (!quote || !canApproveQuotes || approvalSavingId) return;
+    setQuoteActionError("");
+    setApprovalSavingId(quote.id);
+    const actionLabel = approvalStatus === "approved" ? "Approved" : "Rejected";
+    const nextQuote = {
+      ...quote,
+      approvalStatus,
+      approvalAt: new Date().toISOString(),
+      approvalByUserId: currentUser?.id || "",
+      approvalByName: currentUser?.name || "",
+      approvalByRole: currentUser?.role || "",
+      approvalNote: `${actionLabel} by ${currentUser?.name || "authorized user"}.`,
+    };
+    try {
+      const saved = await updateRecord("quote-records", quote.id, quoteRecordPayload(nextQuote));
+      setSavedQuotes((prev) => prev.map((item) => String(item.id) === String(saved.id) ? saved : item));
+      setSelectedQuoteId(saved.id);
+    } catch (error) {
+      setQuoteActionError(error.message || "Could not update quote approval.");
+    } finally {
+      setApprovalSavingId("");
+    }
   }
 
   async function deleteQuote(id) {
@@ -2704,6 +2788,28 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
       </nav>
       {quoteDataState === "loading" && <p className="quote-sync-note">Loading shared quote data...</p>}
       {quoteDataError && <p className="quote-ticket-warning">{quoteDataError}</p>}
+      <section className="quote-summary-strip quote-command-strip" aria-label="Quote workspace summary">
+        <div className="quote-summary-card total">
+          <span>Current Quote</span>
+          <strong>{money(pricing.sellPrice)}</strong>
+          <em>{pricing.fits ? `${pricing.numberAcross || "--"} across / ${money(pricing.pricePerThousand)} per M` : "Needs layout review"}</em>
+        </div>
+        <div className="quote-summary-card customer">
+          <span>Customer</span>
+          <strong>{activeQuoteCustomerLabel}</strong>
+          <em>{quoteInfo.linkMode === "ticket" ? "Job ticket quote" : "Custom quote"}</em>
+        </div>
+        <div className="quote-summary-card material">
+          <span>Item + Material</span>
+          <strong>{activeQuoteItemLabel}</strong>
+          <em>{activeQuoteMaterialLabel}</em>
+        </div>
+        <div className="quote-summary-card approvals">
+          <span>Saved Quotes</span>
+          <strong>{quoteStatusCounts.pending} pending</strong>
+          <em>{quoteStatusCounts.approved} approved / {quoteStatusCounts.rejected} rejected</em>
+        </div>
+      </section>
 
       {activeTab === "pricing" && (
         <>
@@ -3125,6 +3231,35 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
               <FileText size={16} />
               <strong>Saved Quotes</strong>
             </div>
+            <div className="quote-review-dashboard">
+              <div>
+                <span>Approval Queue</span>
+                <strong>{quoteStatusCounts.pending}</strong>
+                <em>Pending</em>
+              </div>
+              <div>
+                <span>Approved</span>
+                <strong>{quoteStatusCounts.approved}</strong>
+                <em>Ready</em>
+              </div>
+              <div>
+                <span>Visible</span>
+                <strong>{filteredSavedQuotes.length}</strong>
+                <em>Filtered</em>
+              </div>
+            </div>
+            <div className="quote-status-tabs" aria-label="Quote approval status">
+              <button className={quoteStatusFilter === "all" ? "active" : ""} type="button" onClick={() => setQuoteStatusFilter("all")}>
+                <strong>All</strong>
+                <span>{quoteStatusCounts.all}</span>
+              </button>
+              {quoteApprovalStates.map(([status, label]) => (
+                <button className={quoteStatusFilter === status ? "active" : ""} type="button" key={status} onClick={() => setQuoteStatusFilter(status)}>
+                  <strong>{label}</strong>
+                  <span>{quoteStatusCounts[status]}</span>
+                </button>
+              ))}
+            </div>
             <div className="quote-person-tabs" aria-label="Saved quote people">
               <button className={quotePersonFilter === "all" ? "active" : ""} type="button" onClick={() => setQuotePersonFilter("all")}>
                 <i>All</i>
@@ -3155,15 +3290,29 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                 <section className="quote-record-group" key={group.key}>
                   <header>
                     <strong>{group.name}</strong>
-                    <em>{group.role ? `${group.role} / ${group.quotes.length}` : `${group.quotes.length} quote${group.quotes.length === 1 ? "" : "s"}`}</em>
+                    <em>{group.quotes.length} quote{group.quotes.length === 1 ? "" : "s"}</em>
                   </header>
-                  {group.quotes.map((quote) => (
-                    <button className={selectedQuote?.id === quote.id ? "active" : ""} type="button" key={quote.id} onClick={() => setSelectedQuoteId(quote.id)}>
-                      <strong>{quote.quoteNumber}</strong>
-                      <span>{quote.customerName || "No customer"} / {quote.jobName || "No job"}</span>
-                      <em>{quoteDateLabel(quote.createdAt)} / {money(quoteTotals(quote).sellPrice)} / {quoteCurrentMsiSummary(quote, materialOptions)}</em>
-                    </button>
-                  ))}
+                  {group.quotes.map((quote) => {
+                    const approvalStatus = quoteApprovalStatus(quote);
+                    return (
+                      <button className={selectedQuote?.id === quote.id ? "active" : ""} type="button" key={quote.id} onClick={() => setSelectedQuoteId(quote.id)}>
+                        <div className="quote-row-head">
+                          <strong>{quote.quoteNumber}</strong>
+                          <span className="quote-record-money">{money(quoteTotals(quote).sellPrice)}</span>
+                        </div>
+                        <span>{quote.customerName || "No customer"} / {quote.jobName || "No job"}</span>
+                        <div className="quote-row-meta">
+                          <em>{quoteDateLabel(quote.createdAt)}</em>
+                          <em>{quotePreparedByName(quote)}</em>
+                          <em>{quote.materialName || "Manual material"}</em>
+                        </div>
+                        <div className="quote-row-foot">
+                          <span className={`quote-status-pill ${approvalStatus}`}>{quoteApprovalLabel(approvalStatus)}</span>
+                          <em>{quoteCurrentMsiSummary(quote, materialOptions) || quoteApprovalSummary(quote)}</em>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </section>
               )) : (
                 <p className="quote-empty">{savedQuotes.length ? "No quotes match that search." : "No saved quotes yet. Generate one from the Pricing Tool tab."}</p>
@@ -3187,6 +3336,26 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                 <button className="danger-btn" type="button" onClick={() => selectedQuote && deleteQuote(selectedQuote.id)} disabled={!selectedQuote}><Trash2 size={15} /> Delete</button>
               </div>
             </div>
+            {selectedQuote && (
+              <div className={`quote-approval-card ${quoteApprovalStatus(selectedQuote)}`}>
+                <div>
+                  <span className={`quote-status-pill ${quoteApprovalStatus(selectedQuote)}`}>{quoteApprovalLabel(selectedQuote)}</span>
+                  <strong>{quoteApprovalSummary(selectedQuote)}</strong>
+                  <em>{canApproveQuotes ? "Sales manager approval controls are available for this quote." : "Approval is controlled by users with Quote Approval permission."}</em>
+                </div>
+                {canApproveQuotes && (
+                  <div>
+                    <button className="primary-btn" type="button" onClick={() => updateQuoteApproval(selectedQuote, "approved")} disabled={approvalSavingId === selectedQuote.id || quoteApprovalStatus(selectedQuote) === "approved"}>
+                      <CheckCircle2 size={15} /> Approve
+                    </button>
+                    <button className="ghost-btn" type="button" onClick={() => updateQuoteApproval(selectedQuote, "rejected")} disabled={approvalSavingId === selectedQuote.id || quoteApprovalStatus(selectedQuote) === "rejected"}>
+                      <XCircle size={15} /> Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {quoteActionError && <div className="error-box">{quoteActionError}</div>}
             {savedQuoteView === "internal" ? <InternalQuoteBreakdown quote={selectedQuote} materialOptions={materialOptions} /> : <QuoteDocument quote={selectedQuote} />}
           </div>
         </section>
