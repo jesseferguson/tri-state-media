@@ -3,7 +3,10 @@ import { Activity, AlertTriangle, CalendarDays, CheckCircle2, Gauge, Goal, Histo
 import { fetchCollection, requestApi } from "../api";
 
 const firebaseBase = "https://realtime2-94ff8-default-rtdb.firebaseio.com";
-const goalFootage = 400000;
+const baseGoalFootage = 400000;
+const wasteBufferPercent = 0.04;
+const wasteBufferFootage = Math.round(baseGoalFootage * wasteBufferPercent);
+const goalFootage = baseGoalFootage + wasteBufferFootage;
 const refreshMs = 30000;
 const dailyRefreshMs = 120000;
 const dailyLimit = 420;
@@ -404,6 +407,7 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
     [historyRows]
   );
   const goalHit = snapshot.companyTotal >= goalFootage;
+  const wasteBufferPercentLabel = `${Math.round(wasteBufferPercent * 100)}%`;
 
   async function loadArchiveRecords() {
     try {
@@ -624,15 +628,24 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
       {activeTab === "live" ? (
         <>
           <div className="live-footage-metrics">
-            <Metric icon={Goal} label="Shift Goal" value={formatInt(goalFootage)} note="5:00 AM -> 2:59 AM next day" tone={goalHit ? "hit" : ""} />
-            <Metric icon={goalHit ? CheckCircle2 : Gauge} label="Total So Far" value={formatInt(snapshot.companyTotal)} note={goalHit ? "Shift goal reached" : snapshot.paceText || "Waiting for Firebase data"} tone={goalHit ? "hit" : ""} />
-            <Metric icon={Timer} label="Remaining" value={formatInt(snapshot.remaining)} note="To hit the shift target" />
+            <Metric icon={Goal} label="Waste-Adjusted Goal" value={formatInt(goalFootage)} note={`Base ${formatInt(baseGoalFootage)} + ${wasteBufferPercentLabel} waste`} tone={goalHit ? "hit" : ""} />
+            <Metric icon={Activity} label="Waste Buffer" value={`+${formatInt(wasteBufferFootage)}`} note="Extra footage required before goal can hit" />
+            <Metric icon={goalHit ? CheckCircle2 : Gauge} label="Total So Far" value={formatInt(snapshot.companyTotal)} note={goalHit ? "Waste-adjusted target reached" : snapshot.paceText || "Waiting for Firebase data"} tone={goalHit ? "hit" : ""} />
+            <Metric icon={Timer} label="Remaining" value={formatInt(snapshot.remaining)} note="To hit the waste-adjusted target" />
+          </div>
+
+          <div className="live-footage-waste-buffer">
+            <AlertTriangle size={20} />
+            <div>
+              <strong>{wasteBufferPercentLabel} waste buffer is included before the goal turns green</strong>
+              <span>Base goal {formatInt(baseGoalFootage)} ft + waste buffer {formatInt(wasteBufferFootage)} ft = true target {formatInt(goalFootage)} ft.</span>
+            </div>
           </div>
 
           <div className={`live-footage-progress ${goalHit ? "goal-hit" : ""}`}>
             <div><span style={{ width: `${snapshot.percent}%` }} /></div>
             <p>
-              {goalHit ? "Goal hit" : `${snapshot.percent.toFixed(1)}% to goal`}
+              {goalHit ? "Waste-adjusted goal hit" : `${snapshot.percent.toFixed(1)}% to waste-adjusted goal`}
               <em>Updated {snapshot.updatedAt || "--"}{snapshot.archiveStatus ? ` - ${snapshot.archiveStatus}` : ""}</em>
             </p>
           </div>
@@ -641,8 +654,8 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
             <div className="live-footage-goal-hit">
               <CheckCircle2 size={22} />
               <div>
-                <strong>Shift goal hit</strong>
-                <span>{formatInt(snapshot.companyTotal)} ft against a {formatInt(goalFootage)} ft goal</span>
+                <strong>Waste-adjusted shift goal hit</strong>
+                <span>{formatInt(snapshot.companyTotal)} ft against a {formatInt(goalFootage)} ft target, including the {wasteBufferPercentLabel} waste buffer.</span>
               </div>
             </div>
           )}

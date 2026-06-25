@@ -128,6 +128,7 @@ const emptyFinishedForm = {
 const emptyQuoteInfo = {
   linkMode: "manual",
   jobTicketId: "",
+  customerCleared: false,
   customerId: "",
   customerCode: "",
   customerName: "",
@@ -1721,7 +1722,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   const selectedMaterial = materialOptions.find((material) => String(material.id) === String(form.selectedMaterialId));
   const selectedJobTicket = jobTickets.find((ticket) => String(ticket.id) === String(quoteInfo.jobTicketId));
-  const selectedCustomer = customers.find((customer) => String(customer.id) === String(quoteInfo.customerId || selectedJobTicket?.customer || ""));
+  const selectedCustomer = quoteInfo.customerCleared
+    ? null
+    : customers.find((customer) => String(customer.id) === String(quoteInfo.customerId || selectedJobTicket?.customer || ""));
   const matchingCustomers = useMemo(() => {
     const search = customerSearch.trim().toLowerCase();
     const activeCustomers = [...customers].filter((customer) => customer.is_active !== false);
@@ -2176,15 +2179,15 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       itemName: prev.itemName || jobTicketPartNumber(selectedJobTicket),
       jobName: selectedJobTicket.job_name || prev.jobName,
       productCode: selectedJobTicket.product_code || prev.productCode,
-      customerId: linkedCustomer?.id ? String(linkedCustomer.id) : prev.customerId,
-      customerCode: linkedCustomer?.customer_code || prev.customerCode,
-      customerName: customerName || prev.customerName,
-      contactName: linkedCustomer?.contact_name || prev.contactName,
-      contactEmail: linkedCustomer?.email || prev.contactEmail,
-      customerAddress: linkedCustomer ? customerQuoteAddress(linkedCustomer) : prev.customerAddress,
+      customerId: prev.customerCleared ? "" : linkedCustomer?.id ? String(linkedCustomer.id) : prev.customerId,
+      customerCode: prev.customerCleared ? "" : linkedCustomer?.customer_code || prev.customerCode,
+      customerName: prev.customerCleared ? "" : customerName || prev.customerName,
+      contactName: prev.customerCleared ? "" : linkedCustomer?.contact_name || prev.contactName,
+      contactEmail: prev.customerCleared ? "" : linkedCustomer?.email || prev.contactEmail,
+      customerAddress: prev.customerCleared ? "" : linkedCustomer ? customerQuoteAddress(linkedCustomer) : prev.customerAddress,
     }));
-    if (linkedCustomer) setCustomerSearch(customerPickerLabel(linkedCustomer));
-  }, [quoteInfo.linkMode, selectedJobTicket?.id, selectedJobTicket?.customer, customers.length]);
+    if (linkedCustomer && !quoteInfo.customerCleared) setCustomerSearch(customerPickerLabel(linkedCustomer));
+  }, [quoteInfo.linkMode, quoteInfo.customerCleared, selectedJobTicket?.id, selectedJobTicket?.customer, customers.length]);
 
   useEffect(() => {
     if (!selectedJobTicket || jobTicketPickerOpen || jobTicketSearch) return;
@@ -2224,6 +2227,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     if (!customer) return;
     setQuoteInfo((prev) => ({
       ...prev,
+      customerCleared: false,
       customerId: String(customer.id),
       customerCode: customer.customer_code || "",
       customerName: customer.name || prev.customerName,
@@ -2238,8 +2242,13 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   function clearCustomerSelection() {
     setQuoteInfo((prev) => ({
       ...prev,
+      customerCleared: true,
       customerId: "",
       customerCode: "",
+      customerName: "",
+      contactName: "",
+      contactEmail: "",
+      customerAddress: "",
     }));
     setCustomerSearch("");
     setCustomerPickerOpen(false);
@@ -2286,6 +2295,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     setWasteManuallyEdited(false);
     setQuoteInfo((prev) => ({
       ...prev,
+      customerCleared: false,
       jobTicketId: String(ticket.id),
       itemName: jobTicketPartNumber(ticket),
       jobName: ticket.job_name || ticket.product_name || "",
@@ -2373,8 +2383,11 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   function buildQuoteRecord() {
     const ticket = quoteInfo.linkMode === "ticket" ? selectedJobTicket : null;
-    const recordCustomer = selectedCustomer || customers.find((customer) => String(customer.id) === String(ticket?.customer || "")) || null;
-    const customerName = recordCustomer?.name || ticket?.customer_display || ticket?.customer_name || quoteInfo.customerName;
+    const ticketCustomer = quoteInfo.customerCleared
+      ? null
+      : customers.find((customer) => String(customer.id) === String(ticket?.customer || ""));
+    const recordCustomer = selectedCustomer || ticketCustomer || null;
+    const customerName = recordCustomer?.name || (quoteInfo.customerCleared ? "" : ticket?.customer_display || ticket?.customer_name) || quoteInfo.customerName;
     const jobName = quoteInfo.jobName || ticket?.job_name || ticket?.product_name || quoteInfo.itemName;
     const productCode = quoteInfo.productCode || ticket?.product_code || "";
     const preparedBy = currentUser?.name || quoteInfo.preparedBy;
