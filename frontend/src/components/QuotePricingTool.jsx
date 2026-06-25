@@ -39,7 +39,7 @@ const quoteFinishingTypeChoices = [
   ["fanfold", "Fanfold"],
   ["sheeted", "Sheeted"],
 ];
-const quoteCoreSizeChoices = ["", "0.75", "1", "3"];
+const quoteCoreSizeChoices = ["", "0.75", "1", "1.5", "3", "4", "5"];
 const quoteApprovalStates = [
   ["pending", "Needs Approval"],
   ["approved", "Approved"],
@@ -1168,6 +1168,9 @@ function quoteInternalSections(quote) {
       title: "Sell Price",
       rows: [
         ["Pricing Method", quotePricingModeLabel(quote)],
+        ...(Number(quote.pricing?.coreMarkupSurchargePercent || 0) > 0
+          ? [["Core Markup", `+${percent(Number(quote.pricing.coreMarkupSurchargePercent))} included for non-3" core`]]
+          : []),
         ["Sell Price", money(Number(quote.pricing?.sellPrice || 0))],
         ["Price / M", money(Number(quote.pricing?.pricePerThousand || 0))],
         [`Price / ${quoteItemUnitTitle(items[0], quote)}`, unitMoney(Number(quote.pricing?.pricePerLabel || 0))],
@@ -3516,6 +3519,9 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                         ? ` + ${percent(pricing.colorWastePercentPerColor)} per color (${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} = ${percent(pricing.colorWastePercent)})`
                         : ` + ${percent(pricing.colorWastePercentPerColor)} per color`}
                     </em>
+                    {pricing.coreMarkupSurchargePercent > 0 && (
+                      <em className="quote-core-surcharge-note">Core markup +15%: non-3" cores add 15% to markup.</em>
+                    )}
                   </div>
                   {!wasteMatchesRecommendation && (
                     <button type="button" onClick={applyRecommendedWaste}>Use</button>

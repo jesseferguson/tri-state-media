@@ -1,4 +1,5 @@
 const EPSILON = 0.000001;
+const nonStandardCoreMarkupSurchargePercent = 15;
 
 export const wasteRecommendationRules = [
   { minFootage: 90000, wastePercent: 6, label: "90,000+ ft" },
@@ -130,6 +131,22 @@ export function calculateSellPrice(totalCost, pricingMode, pricingPercent) {
   return cost;
 }
 
+function markupToMarginPercent(markupPercent) {
+  const markup = Math.max(0, toQuoteNumber(markupPercent));
+  return markup > 0 ? (markup / (100 + markup)) * 100 : 0;
+}
+
+function marginToMarkupPercent(marginPercent) {
+  const margin = Math.min(95, Math.max(0, toQuoteNumber(marginPercent)));
+  return margin > 0 ? margin / (1 - margin / 100) : 0;
+}
+
+function coreMarkupSurchargePercent(coreSizeValue) {
+  const coreSize = toQuoteNumber(coreSizeValue, 0);
+  if (coreSize <= 0) return 0;
+  return Math.abs(coreSize - 3) > EPSILON ? nonStandardCoreMarkupSurchargePercent : 0;
+}
+
 export function calculateQuotePricing(input) {
   const labelWidth = toQuoteNumber(input.labelWidth);
   const labelLength = toQuoteNumber(input.labelLength);
@@ -176,9 +193,17 @@ export function calculateQuotePricing(input) {
   );
   const totalCost = productionCost + extraCost;
   const rawPricingPercent = Math.max(0, toQuoteNumber(input.pricingPercent));
-  const pricingPercent = input.pricingMode === "markup"
+  const basePricingPercent = input.pricingMode === "markup"
     ? rawPricingPercent
     : Math.min(95, rawPricingPercent);
+  const baseMarkupPercent = input.pricingMode === "markup"
+    ? basePricingPercent
+    : marginToMarkupPercent(basePricingPercent);
+  const coreMarkupSurcharge = coreMarkupSurchargePercent(input.coreSize);
+  const effectiveMarkupPercent = baseMarkupPercent + coreMarkupSurcharge;
+  const pricingPercent = input.pricingMode === "markup"
+    ? effectiveMarkupPercent
+    : Math.min(95, markupToMarginPercent(effectiveMarkupPercent));
   const markedUpProductionSellPrice = calculateSellPrice(totalCost, input.pricingMode, pricingPercent);
   const sellPrice = markedUpProductionSellPrice;
   const profit = sellPrice - totalCost;
@@ -224,6 +249,10 @@ export function calculateQuotePricing(input) {
     productionCost,
     extraCost,
     totalCost,
+    basePricingPercent,
+    baseMarkupPercent,
+    coreMarkupSurchargePercent: coreMarkupSurcharge,
+    effectiveMarkupPercent,
     pricingPercent,
     markedUpProductionSellPrice,
     sellPrice,
