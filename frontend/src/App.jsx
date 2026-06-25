@@ -1469,6 +1469,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const canEditJobTicket = roleHasResourceAccess(roleDefinitions, viewRoleName, "job-ticket-editor");
   const canScheduleFromJobTicket = roleHasResourceAccess(roleDefinitions, viewRoleName, "job-ticket-schedule");
   const canQuoteJobTicket = roleHasResourceAccess(roleDefinitions, viewRoleName, "quote-calculator");
+  const canApproveJobTicketChanges = viewCanManageUsers
+    || /manager|admin/i.test(viewRoleName)
+    || roleHasResourceAccess(roleDefinitions, viewRoleName, "job-ticket-change-approval");
   const canManageQuoteMaterials = roleHasResourceAccess(roleDefinitions, viewRoleName, "quote-material-admin");
   const canApproveQuotes = roleHasResourceAccess(roleDefinitions, viewRoleName, "quote-approval");
   const jobTicketScheduleResource = useMemo(() => {
@@ -2057,6 +2060,22 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
     },
   });
 
+  const jobTicketChangeApprovalMutation = useMutation({
+    mutationFn: ({ event, status }) => postRecordAction(
+      "job-ticket-events",
+      event.id,
+      status === "approved" ? "approve" : "reject",
+      {
+        performed_by: currentUserForView?.name || "",
+        role: currentUserForView?.role || "",
+      }
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-ticket-events"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   const jobTicketScheduleCreateMutation = useMutation({
     mutationFn: (payload) => createRecord("production-schedule", {
       ...payload,
@@ -2494,6 +2513,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         {scheduleUpdateMutation.error && <div className="error-box">{scheduleUpdateMutation.error.message}</div>}
         {scheduleRemoveMutation.error && <div className="error-box">{scheduleRemoveMutation.error.message}</div>}
         {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
+        {jobTicketChangeApprovalMutation.error && <div className="error-box">{jobTicketChangeApprovalMutation.error.message}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {materialTypeSaveMutation.error && <div className="error-box">{materialTypeSaveMutation.error.message}</div>}
         {materialTypeDeleteMutation.error && <div className="error-box">{materialTypeDeleteMutation.error.message}</div>}
@@ -2893,6 +2913,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 canEdit={canEditJobTicket}
                 canSchedule={canScheduleFromJobTicket}
                 canQuote={canQuoteJobTicket}
+                canApproveChanges={canApproveJobTicketChanges}
+                approvingChangeId={jobTicketChangeApprovalMutation.isPending ? jobTicketChangeApprovalMutation.variables?.event?.id || "" : ""}
+                onApproveChange={(event, status) => jobTicketChangeApprovalMutation.mutate({ event, status })}
                 onQuoteJob={() => {
                   setQuoteJobTicketId(String(selected.id));
                   setQuoteCustomerId("");
@@ -2902,7 +2925,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   setSearch("");
                 }}
                 onReceiveFinishedInventory={(payload) => finishedInventoryReceiveMutation.mutateAsync(payload)}
-                renderEditorForm={({ onCancel }) => (
+                editorFields={resource.fields ?? []}
+                renderEditorForm={({ onCancel, onFormChange }) => (
                   <RecordForm
                     resource={resource}
                     record={selected}
@@ -2911,6 +2935,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onSubmit={(payload) => jobTicketEditMutation.mutate(payload)}
                     onCancel={onCancel}
                     canUseField={canUseRecordField}
+                    onFormChange={onFormChange}
                   />
                 )}
                 renderScheduleForm={({ onCancel }) => (

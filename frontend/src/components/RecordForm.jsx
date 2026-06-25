@@ -622,13 +622,15 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
   );
 }
 
-export default function RecordForm({ resource, record, defaults = {}, lookups = {}, onSubmit, onCancel, submitting, canUseField = () => true }) {
+export default function RecordForm({ resource, record, defaults = {}, lookups = {}, onSubmit, onCancel, submitting, canUseField = () => true, onFormChange }) {
   const fields = resource.fields ?? [];
   const [form, setForm] = useState(() => normalizeInitial(fields, record, defaults));
   const [activeFormTab, setActiveFormTab] = useState("");
 
   useEffect(() => {
-    setForm(normalizeInitial(fields, record, defaults));
+    const next = normalizeInitial(fields, record, defaults);
+    setForm(next);
+    onFormChange?.(next);
   }, [resource.key, record?.id, JSON.stringify(defaults)]);
 
   const title = record ? `Edit ${resource.singular}` : `Add ${resource.singular}`;
@@ -654,7 +656,11 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
   }, [activeFormTab, formTabsKey]);
 
   function update(name, value) {
-    setForm((prev) => clearHiddenFields(fields, { ...prev, [name]: value }));
+    setForm((prev) => {
+      const next = clearHiddenFields(fields, { ...prev, [name]: value });
+      onFormChange?.(next);
+      return next;
+    });
   }
 
   function cleanPayload() {

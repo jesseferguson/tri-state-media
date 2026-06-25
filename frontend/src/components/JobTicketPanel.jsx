@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
-import { CalendarPlus, FileText, History, Image as ImageIcon, PackageCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, ShieldCheck, XCircle } from "lucide-react";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
-import { formatInches, labelize } from "../lib/format";
+import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
 const tabs = [
   { key: "general", label: "General" },
@@ -742,18 +742,125 @@ function eventChanges(event) {
   });
 }
 
-function JobTicketEventList({ events, emptyText }) {
+function changeApproval(event) {
+  return event?.details?.approval || {};
+}
+
+function changeApprovalStatus(event) {
+  const status = String(changeApproval(event).status || "").toLowerCase();
+  if (["pending", "approved", "rejected"].includes(status)) return status;
+  return eventChanges(event).length && event.event_type === "updated" ? "unreviewed" : "none";
+}
+
+function changeApprovalLabel(status) {
+  return {
+    pending: "Needs Approval",
+    approved: "Approved",
+    rejected: "Rejected",
+    unreviewed: "Recorded",
+  }[status] || "";
+}
+
+function changeApprovalIcon(status) {
+  if (status === "approved") return CheckCircle2;
+  if (status === "rejected") return XCircle;
+  if (status === "pending") return Clock3;
+  return ShieldCheck;
+}
+
+function fieldLabelForReview(field, form) {
+  if (typeof field.dynamicLabel === "function") return field.dynamicLabel(form || {});
+  return field.label || labelize(field.name);
+}
+
+function comparableFieldValue(field, value) {
+  if (field.type === "imageUpload") return value instanceof File ? value.name : "";
+  if (field.type === "checkbox") return Boolean(value) ? "true" : "false";
+  if (["number", "relation", "searchRelation"].includes(field.type)) {
+    if (value === "" || value === null || value === undefined) return "";
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? String(numberValue) : String(value);
+  }
+  if (Array.isArray(value)) return value.map(String).sort().join("|");
+  return String(value ?? "").trim();
+}
+
+function lookupRowLabel(field, value, lookups) {
+  if (value === "" || value === null || value === undefined) return "";
+  const rows = lookups?.[field.relation] ?? [];
+  const row = rows.find((item) => String(item.id) === String(value));
+  if (!row) return String(value);
+  return getRecordTitle(row);
+}
+
+function displayFieldValue(field, value, lookups) {
+  if (field.type === "imageUpload") return value instanceof File ? `New file: ${value.name}` : "";
+  if (field.type === "checkbox") return value ? "Yes" : "No";
+  if (field.type === "select") {
+    const choice = (field.choices ?? []).find(([choiceValue]) => String(choiceValue) === String(value ?? ""));
+    return choice?.[1] || value || "";
+  }
+  if (field.type === "relation" || field.type === "searchRelation") return lookupRowLabel(field, value, lookups);
+  if (field.type === "multiRelation") {
+    return (Array.isArray(value) ? value : [])
+      .map((item) => lookupRowLabel(field, item, lookups))
+      .filter(Boolean)
+      .join(", ");
+  }
+  return value === null || value === undefined || value === "" ? "" : String(value);
+}
+
+function buildEditorPreviewChanges(ticket, draft, fields, lookups) {
+  if (!draft) return [];
+  return (fields ?? [])
+    .filter((field) => !field.readOnly && !field.hidden && field.name !== "performed_by")
+    .map((field) => {
+      const beforeRaw = field.type === "imageUpload" ? "" : ticket?.[field.name];
+      const afterRaw = draft[field.name];
+      const beforeCompare = comparableFieldValue(field, beforeRaw);
+      const afterCompare = comparableFieldValue(field, afterRaw);
+      if (beforeCompare === afterCompare) return null;
+      if (field.type === "imageUpload" && !afterCompare) return null;
+      return {
+        key: field.name,
+        label: fieldLabelForReview(field, draft),
+        from: displayFieldValue(field, beforeRaw, lookups) || "--",
+        to: displayFieldValue(field, afterRaw, lookups) || "--",
+      };
+    })
+    .filter(Boolean);
+}
+
+function JobTicketEventList({ events, emptyText, canApproveChanges = false, approvingChangeId = "", onApproveChange }) {
   if (!events.length) return <p className="muted">{emptyText}</p>;
   return (
     <div className="job-history-event-list">
       {events.map((event) => {
         const changes = eventChanges(event);
+        const approvalStatus = changeApprovalStatus(event);
+        const ApprovalIcon = changeApprovalIcon(approvalStatus);
+        const approval = changeApproval(event);
         return (
-          <article key={event.id}>
+          <article className={`job-change-event approval-${approvalStatus}`} key={event.id}>
             <div>
               <strong>{event.summary || labelize(event.event_type)}</strong>
               <span>{[eventDate(event.created_at), event.performed_by, labelize(event.event_type)].filter(Boolean).join(" / ")}</span>
             </div>
+            {approvalStatus !== "none" && (
+              <div className="job-change-approval-line">
+                <span className={`job-change-status ${approvalStatus}`}>
+                  <ApprovalIcon size={13} />
+                  {changeApprovalLabel(approvalStatus)}
+                </span>
+                {approval.reviewed_by && <em>Reviewed by {approval.reviewed_by} / {eventDate(approval.reviewed_at)}</em>}
+                {canApproveChanges && approvalStatus === "pending" && (
+                  <div>
+                    <button type="button" onClick={() => onApproveChange?.(event, "approved")} disabled={approvingChangeId === event.id}>Approve</button>
+                    <button type="button" onClick={() => onApproveChange?.(event, "rejected")} disabled={approvingChangeId === event.id}>Reject</button>
+                  </div>
+                )}
+              </div>
+            )}
             {changes.length ? (
               <ul>
                 {changes.map((change) => <li key={change.key}>{change.text}</li>)}
@@ -1074,16 +1181,21 @@ export default function JobTicketPanel({
   canEdit = false,
   canSchedule = false,
   canQuote = false,
+  canApproveChanges = false,
+  approvingChangeId = "",
   onQuoteJob,
+  onApproveChange,
   onReceiveFinishedInventory,
   renderEditorForm,
   renderScheduleForm,
+  editorFields = [],
 }) {
   const [activeTab, setActiveTab] = useState("general");
   const [historyTab, setHistoryTab] = useState("orders");
   const [chartRange, setChartRange] = useState("3mo");
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [orderHistorySearch, setOrderHistorySearch] = useState("");
+  const [editorDraft, setEditorDraft] = useState(null);
   const [receiveForm, setReceiveForm] = useState({
     order_number: "",
     quantity: "",
@@ -1152,6 +1264,11 @@ export default function JobTicketPanel({
   const sortedJobTicketEvents = [...jobTicketEvents].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   const ticketChangeEvents = sortedJobTicketEvents.filter((event) => !["scheduled", "schedule_updated", "schedule_removed"].includes(event.event_type));
   const scheduleJobTicketEvents = sortedJobTicketEvents.filter((event) => ["scheduled", "schedule_updated", "schedule_removed"].includes(event.event_type));
+  const pendingChangeEvents = ticketChangeEvents.filter((event) => changeApprovalStatus(event) === "pending");
+  const editorPreviewChanges = useMemo(
+    () => buildEditorPreviewChanges(ticket, editorDraft, editorFields, lookups),
+    [editorDraft, editorFields, lookups, ticket]
+  );
   const orderHistoryGroups = useMemo(
     () => buildOrderHistoryGroups({
       orders: customerOrders,
@@ -1172,6 +1289,10 @@ export default function JobTicketPanel({
     if (tab.key === "editor") return canEdit;
     return true;
   });
+
+  useEffect(() => {
+    setEditorDraft(null);
+  }, [ticket?.id]);
 
   function selectTab(key) {
     setActiveTab(key);
@@ -1368,8 +1489,15 @@ export default function JobTicketPanel({
               <div className="job-subsection-head">
                 <History size={15} />
                 <strong>Job Ticket Changes</strong>
+                <span>{pendingChangeEvents.length} pending approval</span>
               </div>
-              <JobTicketEventList events={ticketChangeEvents} emptyText="No job ticket changes have been recorded yet." />
+              <JobTicketEventList
+                events={ticketChangeEvents}
+                emptyText="No job ticket changes have been recorded yet."
+                canApproveChanges={canApproveChanges}
+                approvingChangeId={approvingChangeId}
+                onApproveChange={onApproveChange}
+              />
             </section>
           )}
 
@@ -1470,8 +1598,75 @@ export default function JobTicketPanel({
       )}
 
       {activeTab === "editor" && (
-        <div className="job-panel-section job-editor-form-only">
-          {renderEditorForm?.({ onCancel: () => setActiveTab("general") })}
+        <div className="job-panel-section job-editor-workspace">
+          <section className="job-editor-hero">
+            <div>
+              <p className="eyebrow">Controlled Editor</p>
+              <h3>{partNumber}</h3>
+              <span>Every saved change is recorded in the job ticket history and routed for manager/admin approval.</span>
+            </div>
+            <div className="job-editor-hero-stats">
+              <div>
+                <strong>{editorPreviewChanges.length}</strong>
+                <span>Unsaved change{editorPreviewChanges.length === 1 ? "" : "s"}</span>
+              </div>
+              <div className={pendingChangeEvents.length ? "needs-review" : "ready"}>
+                <strong>{pendingChangeEvents.length}</strong>
+                <span>Pending approval</span>
+              </div>
+            </div>
+          </section>
+
+          <div className="job-editor-layout">
+            <aside className="job-editor-review-panel">
+              <section>
+                <div className="job-editor-review-head">
+                  <AlertTriangle size={15} />
+                  <div>
+                    <strong>Before You Save</strong>
+                    <span>{editorPreviewChanges.length ? "These edits will be logged for approval." : "No fields have changed yet."}</span>
+                  </div>
+                </div>
+                {editorPreviewChanges.length ? (
+                  <div className="job-editor-preview-list">
+                    {editorPreviewChanges.map((change) => (
+                      <article key={change.key}>
+                        <strong>{change.label}</strong>
+                        <div>
+                          <span>{change.from}</span>
+                          <em>to</em>
+                          <span>{change.to}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">Change a field in the editor and it will appear here before saving.</p>
+                )}
+              </section>
+
+              <section>
+                <div className="job-editor-review-head">
+                  <Clock3 size={15} />
+                  <div>
+                    <strong>Manager Approval</strong>
+                    <span>{pendingChangeEvents.length ? `${pendingChangeEvents.length} saved change${pendingChangeEvents.length === 1 ? "" : "s"} need review.` : "No saved changes are waiting."}</span>
+                  </div>
+                </div>
+                <JobTicketEventList
+                  events={pendingChangeEvents.slice(0, 4)}
+                  emptyText="No pending job ticket changes."
+                  canApproveChanges={canApproveChanges}
+                  approvingChangeId={approvingChangeId}
+                  onApproveChange={onApproveChange}
+                />
+              </section>
+            </aside>
+
+            <div className="job-editor-form-column">
+              {renderEditorForm?.({ onCancel: () => setActiveTab("general"), onFormChange: setEditorDraft })}
+            </div>
+          </div>
         </div>
       )}
 

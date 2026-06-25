@@ -393,6 +393,12 @@ class JobTicketViewSet(BaseProductionViewSet):
         details = {"changes": changes or []}
         if extra_details:
             details.update(extra_details)
+        if changes and event_type == "updated":
+            details.setdefault("approval", {
+                "status": "pending",
+                "requested_by": actor or "system",
+                "requested_at": timezone.now().isoformat(),
+            })
         JobTicketEvent.objects.create(
             job_ticket=ticket,
             event_type=event_type,
@@ -618,6 +624,30 @@ class JobTicketEventViewSet(BaseProductionViewSet):
         if job_ticket:
             qs = qs.filter(job_ticket_id=job_ticket)
         return qs
+
+    def update_approval(self, request, status_value):
+        event = self.get_object()
+        details = dict(event.details or {})
+        approval = dict(details.get("approval") or {})
+        actor = str(request.data.get("performed_by") or request.data.get("approval_by") or "").strip() or "system"
+        approval.update({
+            "status": status_value,
+            "reviewed_by": actor,
+            "reviewed_at": timezone.now().isoformat(),
+            "note": str(request.data.get("note") or "").strip(),
+        })
+        details["approval"] = approval
+        event.details = details
+        event.save(update_fields=["details"])
+        return Response(self.get_serializer(event).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        return self.update_approval(request, "approved")
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        return self.update_approval(request, "rejected")
 
 
 class JobTicketUsageViewSet(BaseProductionViewSet):
