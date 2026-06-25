@@ -131,11 +131,6 @@ export function calculateSellPrice(totalCost, pricingMode, pricingPercent) {
   return cost;
 }
 
-function markupToMarginPercent(markupPercent) {
-  const markup = Math.max(0, toQuoteNumber(markupPercent));
-  return markup > 0 ? (markup / (100 + markup)) * 100 : 0;
-}
-
 function marginToMarkupPercent(marginPercent) {
   const margin = Math.min(95, Math.max(0, toQuoteNumber(marginPercent)));
   return margin > 0 ? margin / (1 - margin / 100) : 0;
@@ -200,10 +195,8 @@ export function calculateQuotePricing(input) {
     ? basePricingPercent
     : marginToMarkupPercent(basePricingPercent);
   const coreMarkupSurcharge = coreMarkupSurchargePercent(input.coreSize);
-  const effectiveMarkupPercent = baseMarkupPercent + coreMarkupSurcharge;
-  const pricingPercent = input.pricingMode === "markup"
-    ? effectiveMarkupPercent
-    : Math.min(95, markupToMarginPercent(effectiveMarkupPercent));
+  const effectiveMarkupPercent = baseMarkupPercent;
+  const pricingPercent = basePricingPercent;
   const markedUpProductionSellPrice = calculateSellPrice(totalCost, input.pricingMode, pricingPercent);
   const sellPrice = markedUpProductionSellPrice;
   const profit = sellPrice - totalCost;
@@ -252,6 +245,7 @@ export function calculateQuotePricing(input) {
     basePricingPercent,
     baseMarkupPercent,
     coreMarkupSurchargePercent: coreMarkupSurcharge,
+    coreMarkupSurchargeAppliedToInput: coreMarkupSurcharge > 0,
     effectiveMarkupPercent,
     pricingPercent,
     markedUpProductionSellPrice,

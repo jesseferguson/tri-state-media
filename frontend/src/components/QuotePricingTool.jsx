@@ -40,6 +40,7 @@ const quoteFinishingTypeChoices = [
   ["sheeted", "Sheeted"],
 ];
 const quoteCoreSizeChoices = ["", "0.75", "1", "1.5", "3", "4", "5"];
+const quoteCoreMarkupSurchargePercent = 15;
 const quoteApprovalStates = [
   ["pending", "Needs Approval"],
   ["approved", "Approved"],
@@ -828,6 +829,12 @@ function quoteTotals(quote) {
   };
 }
 
+function quoteCoreMarkupSurchargeForQuote(quote) {
+  const surcharges = quoteItems(quote).map((item) => Number(item.pricing?.coreMarkupSurchargePercent || 0));
+  surcharges.push(Number(quote?.pricing?.coreMarkupSurchargePercent || 0));
+  return Math.max(0, ...surcharges.filter(Number.isFinite));
+}
+
 function quoteItemDescription(item, quote) {
   const form = item.form || {};
   return item.itemName || quote.jobName || `${form.labelWidth || 0}" x ${form.labelLength || 0}" ${quoteItemUnitLabel(item, quote)}`;
@@ -1020,6 +1027,27 @@ function marginToMarkup(marginPercent) {
   return margin > 0 ? (margin / (1 - margin / 100)) : 0;
 }
 
+function quoteCoreHasMarkupSurcharge(value) {
+  const size = toQuoteNumber(value, NaN);
+  return Number.isFinite(size) && size > 0 && Math.abs(size - 3) > 0.000001;
+}
+
+function applyMarkupPointDelta(value, pricingMode, delta) {
+  if (!delta) return percentInputValue(value);
+  const currentMarkup = pricingMode === "margin" ? marginToMarkup(value) : Math.max(0, toQuoteNumber(value));
+  const nextMarkup = Math.max(0, currentMarkup + delta);
+  return percentInputValue(pricingMode === "margin" ? markupToMargin(nextMarkup) : nextMarkup);
+}
+
+function coreMarkupDelta(previousCoreSize, nextCoreSize) {
+  return (quoteCoreHasMarkupSurcharge(nextCoreSize) ? quoteCoreMarkupSurchargePercent : 0)
+    - (quoteCoreHasMarkupSurcharge(previousCoreSize) ? quoteCoreMarkupSurchargePercent : 0);
+}
+
+function pricingPercentWithCoreSurcharge(value, pricingMode, coreSize) {
+  return applyMarkupPointDelta(value, pricingMode, quoteCoreHasMarkupSurcharge(coreSize) ? quoteCoreMarkupSurchargePercent : 0);
+}
+
 function convertPricingPercent(value, fromMode, toMode) {
   if (fromMode === toMode) return percentInputValue(value);
   return percentInputValue(toMode === "margin" ? markupToMargin(value) : marginToMarkup(value));
@@ -1168,8 +1196,8 @@ function quoteInternalSections(quote) {
       title: "Sell Price",
       rows: [
         ["Pricing Method", quotePricingModeLabel(quote)],
-        ...(Number(quote.pricing?.coreMarkupSurchargePercent || 0) > 0
-          ? [["Core Markup", `+${percent(Number(quote.pricing.coreMarkupSurchargePercent))} included for non-3" core`]]
+        ...(quoteCoreMarkupSurchargeForQuote(quote) > 0
+          ? [["Core Markup", `+${percent(quoteCoreMarkupSurchargeForQuote(quote))} included for non-3" core`]]
           : []),
         ["Sell Price", money(Number(quote.pricing?.sellPrice || 0))],
         ["Price / M", money(Number(quote.pricing?.pricePerThousand || 0))],
@@ -2168,22 +2196,28 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const dimensions = jobTicketQuoteDimensions(selectedJobTicket);
     const quantity = jobTicketQuoteQuantity(selectedJobTicket);
     const material = jobTicketMaterialMatch;
-    setForm((prev) => ({
-      ...prev,
-      labelWidth: dimensions.width,
-      labelLength: dimensions.length,
-      gap: dimensions.gap,
-      quantity: quantity.quantity,
-      unitType: selectedJobTicket.unit_type || material?.unitType || prev.unitType,
-      finishingType: selectedJobTicket.finishing_type || prev.finishingType,
-      coreSize: dimensionInputValue(selectedJobTicket.core_size_inches) || prev.coreSize,
-      labelsPerUnit: quantityInputValue(selectedJobTicket.labels_per_unit) || prev.labelsPerUnit,
-      labelsPerCarton: quantityInputValue(selectedJobTicket.labels_per_carton || selectedJobTicket.units_per_carton) || prev.labelsPerCarton,
-      selectedMaterialId: material?.id || prev.selectedMaterialId,
-      msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
-      pricingPercent: material ? materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent : prev.pricingPercent,
-      colorCount: jobPrintState === "ready" ? String(jobPrintColorCount) : prev.colorCount,
-    }));
+    setForm((prev) => {
+      const nextCoreSize = dimensionInputValue(selectedJobTicket.core_size_inches) || prev.coreSize;
+      const materialTargetPercent = material ? materialTargetPricingPercent(material, prev.pricingMode) : "";
+      return {
+        ...prev,
+        labelWidth: dimensions.width,
+        labelLength: dimensions.length,
+        gap: dimensions.gap,
+        quantity: quantity.quantity,
+        unitType: selectedJobTicket.unit_type || material?.unitType || prev.unitType,
+        finishingType: selectedJobTicket.finishing_type || prev.finishingType,
+        coreSize: nextCoreSize,
+        labelsPerUnit: quantityInputValue(selectedJobTicket.labels_per_unit) || prev.labelsPerUnit,
+        labelsPerCarton: quantityInputValue(selectedJobTicket.labels_per_carton || selectedJobTicket.units_per_carton) || prev.labelsPerCarton,
+        selectedMaterialId: material?.id || prev.selectedMaterialId,
+        msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
+        pricingPercent: material && materialTargetPercent
+          ? pricingPercentWithCoreSurcharge(materialTargetPercent, prev.pricingMode, nextCoreSize)
+          : applyMarkupPointDelta(prev.pricingPercent, prev.pricingMode, coreMarkupDelta(prev.coreSize, nextCoreSize)),
+        colorCount: jobPrintState === "ready" ? String(jobPrintColorCount) : prev.colorCount,
+      };
+    });
   }, [
     quoteInfo.linkMode,
     selectedJobTicket?.id,
@@ -2233,6 +2267,13 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       const next = { ...prev, [name]: value };
       if (name === "pricingMode") {
         next.pricingPercent = convertPricingPercent(prev.pricingPercent, prev.pricingMode, value);
+      }
+      if (name === "coreSize") {
+        next.pricingPercent = applyMarkupPointDelta(
+          prev.pricingPercent,
+          prev.pricingMode,
+          coreMarkupDelta(prev.coreSize, value)
+        );
       }
       return next;
     });
@@ -2369,12 +2410,15 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 
   function updateMaterialSelection(value) {
     const material = materialOptions.find((item) => String(item.id) === String(value));
+    const materialTargetPercent = material ? materialTargetPricingPercent(material, form.pricingMode) : "";
     setForm((prev) => ({
       ...prev,
       selectedMaterialId: value,
       unitType: material?.unitType || prev.unitType,
       msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
-      pricingPercent: material ? materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent : prev.pricingPercent,
+      pricingPercent: material && materialTargetPercent
+        ? pricingPercentWithCoreSurcharge(materialTargetPercent, prev.pricingMode, prev.coreSize)
+        : prev.pricingPercent,
     }));
   }
 
@@ -2681,6 +2725,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const items = quoteItems(quote);
     const primaryItem = items[0] || null;
     const sourceForm = primaryItem?.form || quote.form || {};
+    const sourcePricing = primaryItem?.pricing || quote.pricing || {};
     const salesInfo = quoteSalesInfo(quote);
     const nextForm = {
       ...initialForm,
@@ -2688,6 +2733,13 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       selectedMaterialId: sourceForm.selectedMaterialId || primaryItem?.materialId || "manual",
       repeat: sourceForm.repeat || initialForm.repeat,
     };
+    if (
+      quoteCoreHasMarkupSurcharge(nextForm.coreSize) &&
+      Number(sourcePricing.coreMarkupSurchargePercent || 0) > 0 &&
+      !sourcePricing.coreMarkupSurchargeAppliedToInput
+    ) {
+      nextForm.pricingPercent = pricingPercentWithCoreSurcharge(nextForm.pricingPercent, nextForm.pricingMode, nextForm.coreSize);
+    }
     const linkMode = quote.jobTicketId ? "ticket" : "manual";
 
     setQuoteActionError("");
@@ -3034,13 +3086,18 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
       if (!editingFinishedId) return [saved, ...prev];
       return prev.map((material) => material.id === editingFinishedId ? saved : material);
     });
-    setForm((prev) => ({
-      ...prev,
-      selectedMaterialId: saved.id,
-      unitType: saved.unitType || prev.unitType,
-      msiCost: String(calculateFinishedMaterialMsiCost(saved, rawMaterials, quoteRates)),
-      pricingPercent: materialTargetPricingPercent(saved, prev.pricingMode) || prev.pricingPercent,
-    }));
+    setForm((prev) => {
+      const materialTargetPercent = materialTargetPricingPercent(saved, prev.pricingMode);
+      return {
+        ...prev,
+        selectedMaterialId: saved.id,
+        unitType: saved.unitType || prev.unitType,
+        msiCost: String(calculateFinishedMaterialMsiCost(saved, rawMaterials, quoteRates)),
+        pricingPercent: materialTargetPercent
+          ? pricingPercentWithCoreSurcharge(materialTargetPercent, prev.pricingMode, prev.coreSize)
+          : prev.pricingPercent,
+      };
+    });
     setFinishedForm(emptyFinishedForm);
     setEditingFinishedId(null);
     setActiveTab("pricing");
@@ -3075,13 +3132,18 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
   }
 
   function useFinishedMaterial(material) {
-    setForm((prev) => ({
-      ...prev,
-      selectedMaterialId: material.id,
-      unitType: material.unitType || prev.unitType,
-      msiCost: String(material.calculatedMsiCost),
-      pricingPercent: materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent,
-    }));
+    setForm((prev) => {
+      const materialTargetPercent = materialTargetPricingPercent(material, prev.pricingMode);
+      return {
+        ...prev,
+        selectedMaterialId: material.id,
+        unitType: material.unitType || prev.unitType,
+        msiCost: String(material.calculatedMsiCost),
+        pricingPercent: materialTargetPercent
+          ? pricingPercentWithCoreSurcharge(materialTargetPercent, prev.pricingMode, prev.coreSize)
+          : prev.pricingPercent,
+      };
+    });
     setActiveTab("pricing");
   }
 
