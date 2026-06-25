@@ -7609,6 +7609,7 @@ p, .muted { color: #7a7a7a; }
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   margin: 0;
   padding: 9px 10px;
@@ -7616,6 +7617,22 @@ p, .muted { color: #7a7a7a; }
   border-radius: 8px;
   background: #f0fdf4;
   color: #166534;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.quote-material-link-summary {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
   font-size: .78rem;
   font-weight: 850;
 }

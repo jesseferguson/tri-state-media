@@ -51,6 +51,17 @@ const quoteWorkflowStates = [
   ["processed", "Processed"],
 ];
 const quoteWorkflowSortOrder = { active: 0, processed: 1 };
+const wasteRecommendationFieldNames = new Set([
+  "quantity",
+  "labelWidth",
+  "labelLength",
+  "gap",
+  "materialWidth",
+  "sideTrim",
+  "acrossMode",
+  "numberAcross",
+  "colorCount",
+]);
 
 const initialForm = {
   selectedMaterialId: "manual",
@@ -198,6 +209,11 @@ function quoteCoreLabel(value) {
   return `${String(Number(size.toFixed(3)))}" core`;
 }
 
+function materialMasterTypeOptionLabel(type) {
+  if (!type) return "";
+  return [type.code, type.name].filter(Boolean).join(" - ") || `Material Type ${type.id}`;
+}
+
 function makeId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -285,13 +301,16 @@ function quoteLongDateLabel(value) {
 
 function quoteDateInputValue(value) {
   if (!value) return "";
-  const date = new Date(value);
+  const date = quoteDateObject(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function quoteFutureDateInput(value, days = quoteDefaultExpirationDays) {
-  const date = value ? new Date(value) : new Date();
+  const date = value ? quoteDateObject(value) : new Date();
   if (Number.isNaN(date.getTime())) return "";
   date.setDate(date.getDate() + days);
   return quoteDateInputValue(date);
@@ -1372,7 +1391,7 @@ function RawMaterialForm({ form, update, submit, editing = false, onCancel }) {
   );
 }
 
-function FinishedMaterialForm({ form, rawMaterials, update, submit, editing = false, onCancel }) {
+function FinishedMaterialForm({ form, rawMaterials, materialMasterTypes = [], update, submit, editing = false, onCancel }) {
   function rawOptionsFor(slot) {
     return rawMaterials.filter((raw) => raw.componentType === slot.type);
   }
@@ -1381,6 +1400,14 @@ function FinishedMaterialForm({ form, rawMaterials, update, submit, editing = fa
     <form className="quote-library-form" onSubmit={submit}>
       <Field label="Name">
         <input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="PM / 40# / Permanent" />
+      </Field>
+      <Field label="Material Type">
+        <select value={form.materialMasterTypeId || ""} onChange={(event) => update("materialMasterTypeId", event.target.value)}>
+          <option value="">No material type link</option>
+          {materialMasterTypes.map((type) => (
+            <option value={type.id} key={type.id}>{materialMasterTypeOptionLabel(type)}</option>
+          ))}
+        </select>
       </Field>
       <Field label="Material Unit">
         <select value={form.unitType} onChange={(event) => update("unitType", event.target.value)}>
@@ -1648,6 +1675,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const [editingFinishedId, setEditingFinishedId] = useState(null);
   const [rawMaterials, setRawMaterials] = useState(storedLibrary.rawMaterials);
   const [finishedMaterials, setFinishedMaterials] = useState(storedLibrary.finishedMaterials);
+  const [materialMasterTypes, setMaterialMasterTypes] = useState([]);
   const [quoteRates, setQuoteRates] = useState(quoteRateDefaults);
   const [quoteItemsDraft, setQuoteItemsDraft] = useState([]);
   const [savedQuotes, setSavedQuotes] = useState(storedQuotes);
@@ -1672,13 +1700,19 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const selectedJobTicketRequestRef = useRef("");
 
   const materialOptions = useMemo(() => {
-    return finishedMaterials.map((material) => ({
-      ...material,
-      calculatedMsiCost: calculateFinishedMaterialMsiCost(material, rawMaterials, quoteRates),
-      componentLabel: componentLabelForFinishedMaterial(material, rawMaterials),
-      masterTypeLabel: [material.materialMasterTypeCode, material.materialMasterTypeName].filter(Boolean).join(" / "),
-    }));
-  }, [finishedMaterials, rawMaterials, quoteRates]);
+    return finishedMaterials.map((material) => {
+      const masterType = materialMasterTypes.find((type) => String(type.id) === String(material.materialMasterTypeId || ""));
+      return {
+        ...material,
+        calculatedMsiCost: calculateFinishedMaterialMsiCost(material, rawMaterials, quoteRates),
+        componentLabel: componentLabelForFinishedMaterial(material, rawMaterials),
+        masterTypeLabel: [
+          material.materialMasterTypeCode || masterType?.code,
+          material.materialMasterTypeName || masterType?.name,
+        ].filter(Boolean).join(" / "),
+      };
+    });
+  }, [finishedMaterials, rawMaterials, quoteRates, materialMasterTypes]);
   const visibleQuoteTabs = useMemo(() => {
     const tabs = ["pricing", "quotes"];
     if (canManageQuoteMaterials) tabs.push("finished", "raw");
@@ -1829,6 +1863,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const wasteMatchesRecommendation = Math.abs(toQuoteNumber(form.wastePercent) - toQuoteNumber(pricing.recommendedWastePercent)) < 0.01;
   const selectedQuoteIsMine = selectedQuote ? quoteBelongsToPerson(selectedQuote, currentUserQuoteKey(currentUser), currentUser) : false;
   const selectedQuoteWorkflowStatus = selectedQuote ? quoteWorkflowStatus(selectedQuote) : "active";
+  const visibleQuoteExpirationDate = quoteInfo.quoteExpirationDate || quoteFutureDateInput(quoteEditContext?.createdAt);
 
   useEffect(() => {
     if (visibleQuoteTabs.includes(activeTab)) return;
@@ -1910,12 +1945,13 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
         setQuoteDataError("");
       }
       try {
-        let [rawPayload, finishedPayload, quotePayload, ratePayload, customerPayload] = await Promise.all([
+        let [rawPayload, finishedPayload, quotePayload, ratePayload, customerPayload, materialTypePayload] = await Promise.all([
           fetchCollection("quote-raw-materials", { pageSize: 1000, fetchAll: true }),
           fetchCollection("quote-finished-materials", { pageSize: 1000, fetchAll: true }),
           fetchCollection("quote-records", { ordering: "-created_at", pageSize: 1000, fetchAll: true }),
           fetchCollection("quote-cost-rates", { pageSize: 1000, fetchAll: true }),
           fetchCollection("customers", { ordering: "name", pageSize: 1000, fetchAll: true }),
+          fetchCollection("material-master-types", { ordering: "code,name", pageSize: 1000, fetchAll: true }),
         ]);
 
         let rawResults = rawPayload.results ?? [];
@@ -1923,6 +1959,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
         let quoteResults = quotePayload.results ?? [];
         let rateResults = ratePayload.results ?? [];
         let customerResults = customerPayload.results ?? [];
+        const materialTypeResults = materialTypePayload.results ?? [];
 
         if (!rawResults.length && storedLibrary.rawMaterials.length) {
           rawResults = await Promise.all(storedLibrary.rawMaterials.map((raw) => createRecord("quote-raw-materials", rawMaterialPayload(raw))));
@@ -1946,6 +1983,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
         setQuoteRates(rateResults);
         setSavedQuotes(quoteResults);
         setCustomers(customerResults);
+        setMaterialMasterTypes(materialTypeResults);
         setSelectedQuoteId((current) => current && quoteResults.some((quote) => quote.id === current) ? current : quoteResults[0]?.id ?? null);
         quoteDataReadyRef.current = true;
         setQuoteDataState("ready");
@@ -2100,7 +2138,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     if (quoteInfo.linkMode !== "ticket" || !selectedJobTicket) return;
     const dimensions = jobTicketQuoteDimensions(selectedJobTicket);
     const quantity = jobTicketQuoteQuantity(selectedJobTicket);
-    const material = materialOptions.find((item) => materialMatchesJobTicket(item, selectedJobTicket)) || null;
+    const material = jobTicketMaterialMatch;
     setForm((prev) => ({
       ...prev,
       labelWidth: dimensions.width,
@@ -2117,7 +2155,17 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       pricingPercent: material ? materialTargetPricingPercent(material, prev.pricingMode) || prev.pricingPercent : prev.pricingPercent,
       colorCount: jobPrintState === "ready" ? String(jobPrintColorCount) : prev.colorCount,
     }));
-  }, [quoteInfo.linkMode, selectedJobTicket?.id, materialOptions.length, jobPrintState, jobPrintColorCount]);
+  }, [
+    quoteInfo.linkMode,
+    selectedJobTicket?.id,
+    jobTicketMaterialMatch?.id,
+    jobTicketMaterialMatch?.calculatedMsiCost,
+    jobTicketMaterialMatch?.unitType,
+    jobTicketMaterialMatch?.baseMarkupPercent,
+    jobTicketMaterialMatch?.targetMarkupPercent,
+    jobPrintState,
+    jobPrintColorCount,
+  ]);
 
   useEffect(() => {
     if (quoteInfo.linkMode !== "ticket" || !selectedJobTicket) return;
@@ -2149,6 +2197,8 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     }
     if (name === "wastePercent") {
       setWasteManuallyEdited(true);
+    } else if (wasteRecommendationFieldNames.has(name)) {
+      setWasteManuallyEdited(false);
     }
     setForm((prev) => {
       const next = { ...prev, [name]: value };
@@ -2333,7 +2383,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       ? [buildCurrentQuoteItem(quoteEditContext.primaryItemId), ...quoteItemsDraft]
       : quoteItemsDraft.length ? quoteItemsDraft : [buildCurrentQuoteItem()];
     const totals = quoteTotals({ form: { items }, pricing: { items } });
-    const createdAt = new Date().toISOString();
+    const createdAt = quoteEditContext?.createdAt || new Date().toISOString();
     const salesQuote = {
       customerId: recordCustomer?.id ? String(recordCustomer.id) : quoteInfo.customerId,
       customerCode: recordCustomer?.customer_code || quoteInfo.customerCode,
@@ -2606,6 +2656,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       id: quote.id,
       quoteNumber: quote.quoteNumber,
       primaryItemId: primaryItem?.id || "",
+      createdAt: quote.createdAt || "",
       loadedAt: new Date().toISOString(),
       editCount: Number(quote.editCount || quote.edit_count || 0),
     });
@@ -2626,7 +2677,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       contactEmail: quote.contactEmail || "",
       clientPo: salesInfo.clientPo || "",
       customerAddress: salesInfo.customerAddress || "",
-      quoteExpirationDate: salesInfo.quoteExpirationDate || quoteFutureDateInput(),
+      quoteExpirationDate: salesInfo.quoteExpirationDate || quoteFutureDateInput(quote.createdAt),
       unitOfMeasure: salesInfo.unitOfMeasure || quoteDefaultUnitOfMeasure,
       preparedBy: currentUser?.name || quoteInfo.preparedBy,
       notes: quote.notes || "",
@@ -2997,7 +3048,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
 
   function editFinishedMaterial(material) {
     if (!canManageQuoteMaterials) return;
-    const { calculatedMsiCost, componentLabel, ...editable } = material;
+    const { calculatedMsiCost, componentLabel, masterTypeLabel, ...editable } = material;
     setEditingFinishedId(material.id);
     setFinishedForm({ ...emptyFinishedForm, ...editable });
     setActiveTab("finished");
@@ -3258,6 +3309,12 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                     {selectedJobTicket && selectedJobTicketMasterTypeLabel && !jobTicketMaterialMatch && (
                       <p className="quote-ticket-warning">No finished quote material matched this job. Pick a material below or link one in Finished Inventory.</p>
                     )}
+                    {selectedJobTicket && jobTicketMaterialMatch && (
+                      <p className="quote-material-link-summary">
+                        <CheckCircle2 size={14} />
+                        Matched {selectedJobTicketMasterTypeLabel || jobTicketMaterialMatch.masterTypeLabel || "job material"} to {jobTicketMaterialMatch.name} at {unitMoney(jobTicketMaterialMatch.calculatedMsiCost)} / MSI.
+                      </p>
+                    )}
                     {selectedJobTicket && jobPrintState === "loading" && (
                       <p className="quote-print-summary muted"><Printer size={14} /> Checking print plates...</p>
                     )}
@@ -3291,14 +3348,14 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                 <details className="quote-link-window quote-quote-options">
                   <summary className="quote-link-window-head">
                     <strong>Quote Options</strong>
-                    <span>{[quoteInfo.clientPo ? `PO ${quoteInfo.clientPo}` : "", quoteInfo.quoteExpirationDate ? `Expires ${quoteInfo.quoteExpirationDate}` : "", quoteInfo.unitOfMeasure || quoteDefaultUnitOfMeasure].filter(Boolean).join(" / ") || "PO, expiration, and UoM"}</span>
+                    <span>{[quoteInfo.clientPo ? `PO ${quoteInfo.clientPo}` : "", visibleQuoteExpirationDate ? `Expires ${visibleQuoteExpirationDate}` : "", quoteInfo.unitOfMeasure || quoteDefaultUnitOfMeasure].filter(Boolean).join(" / ") || "PO, expiration, and UoM"}</span>
                   </summary>
                   <div className="quote-simple-grid quote-info-grid quote-options-grid">
                     <Field label="Client P.O.">
                       <input value={quoteInfo.clientPo} onChange={(event) => updateQuoteInfo("clientPo", event.target.value)} />
                     </Field>
                     <Field label="Quote Expiration">
-                      <input type="date" value={quoteInfo.quoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
+                      <input type="date" value={visibleQuoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
                     </Field>
                     <Field label="UoM">
                       <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
@@ -3798,6 +3855,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
               <FinishedMaterialForm
                 form={finishedForm}
                 rawMaterials={rawMaterials}
+                materialMasterTypes={materialMasterTypes}
                 update={(name, value) => setFinishedForm((prev) => ({ ...prev, [name]: value }))}
                 submit={submitFinished}
                 editing={Boolean(editingFinishedId)}
