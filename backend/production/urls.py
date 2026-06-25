@@ -17,6 +17,8 @@ from .views import (
     JobTicketUsageViewSet,
     JobTicketViewSet,
     LiveFootageArchiveViewSet,
+    MessageThreadViewSet,
+    MessageViewSet,
     ProductionScheduleViewSet,
     QuoteCostRateViewSet,
     QuoteFinishedMaterialViewSet,
@@ -31,6 +33,8 @@ router = DefaultRouter()
 router.register("customers", CustomerViewSet, basename="customer")
 router.register("company-roles", CompanyRoleViewSet, basename="company-role")
 router.register("company-users", CompanyUserViewSet, basename="company-user")
+router.register("message-threads", MessageThreadViewSet, basename="message-thread")
+router.register("messages", MessageViewSet, basename="message")
 router.register("quote-raw-materials", QuoteRawMaterialViewSet, basename="quote-raw-material")
 router.register("quote-cost-rates", QuoteCostRateViewSet, basename="quote-cost-rate")
 router.register("quote-finished-materials", QuoteFinishedMaterialViewSet, basename="quote-finished-material")

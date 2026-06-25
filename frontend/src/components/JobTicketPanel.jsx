@@ -748,7 +748,7 @@ function changeApproval(event) {
 
 function changeApprovalStatus(event) {
   const status = String(changeApproval(event).status || "").toLowerCase();
-  if (["pending", "approved", "rejected"].includes(status)) return status;
+  if (["pending", "approved", "rejected", "retracted"].includes(status)) return status;
   return eventChanges(event).length && event.event_type === "updated" ? "unreviewed" : "none";
 }
 
@@ -757,6 +757,7 @@ function changeApprovalLabel(status) {
     pending: "Needs Approval",
     approved: "Approved",
     rejected: "Rejected",
+    retracted: "Taken Back",
     unreviewed: "Recorded",
   }[status] || "";
 }
@@ -765,6 +766,7 @@ function changeApprovalIcon(status) {
   if (status === "approved") return CheckCircle2;
   if (status === "rejected") return XCircle;
   if (status === "pending") return Clock3;
+  if (status === "retracted") return XCircle;
   return ShieldCheck;
 }
 
@@ -831,7 +833,56 @@ function buildEditorPreviewChanges(ticket, draft, fields, lookups) {
     .filter(Boolean);
 }
 
-function JobTicketEventList({ events, emptyText, canApproveChanges = false, approvingChangeId = "", onApproveChange }) {
+function PendingChangeControls({ event, canApproveChanges = false, canRetractChanges = false, approvingChangeId = "", onApproveChange }) {
+  const changes = eventChanges(event);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({});
+
+  useEffect(() => {
+    setDraft(Object.fromEntries(changes.map((change) => [change.label, change.to === "--" ? "" : change.to])));
+  }, [event?.id]);
+
+  function updateDraft(change, value) {
+    setDraft((current) => ({ ...current, [change.label]: value }));
+  }
+
+  function adjustedPayload() {
+    const out = {};
+    changes.forEach((change) => {
+      const raw = event?.details?.changes?.find?.((item) => item?.label === change.label || item?.field === change.label);
+      const fieldName = raw?.field;
+      if (!fieldName) return;
+      const next = draft[change.label];
+      if (next !== undefined && next !== change.to) out[fieldName] = next;
+    });
+    return out;
+  }
+
+  const busy = approvingChangeId === event.id;
+  return (
+    <div className="job-change-actions">
+      {canApproveChanges && <button className="approve" type="button" onClick={() => onApproveChange?.(event, "approved")} disabled={busy}>Approve</button>}
+      {canApproveChanges && <button className="adjust" type="button" onClick={() => setEditing((current) => !current)} disabled={busy}>Adjust</button>}
+      {canApproveChanges && <button className="reject" type="button" onClick={() => onApproveChange?.(event, "rejected")} disabled={busy}>Reject</button>}
+      {canRetractChanges && <button className="retract" type="button" onClick={() => onApproveChange?.(event, "retracted")} disabled={busy}>Take Back</button>}
+      {canApproveChanges && editing && (
+        <div className="job-change-adjust-panel">
+          {changes.map((change) => (
+            <label key={change.key}>
+              <span>{change.label}</span>
+              <input value={draft[change.label] ?? ""} onChange={(event) => updateDraft(change, event.target.value)} />
+            </label>
+          ))}
+          <button type="button" onClick={() => onApproveChange?.(event, "approved", adjustedPayload())} disabled={busy}>
+            Approve Edited Values
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JobTicketEventList({ events, emptyText, canApproveChanges = false, currentUserName = "", approvingChangeId = "", onApproveChange }) {
   if (!events.length) return <p className="muted">{emptyText}</p>;
   return (
     <div className="job-history-event-list">
@@ -840,6 +891,9 @@ function JobTicketEventList({ events, emptyText, canApproveChanges = false, appr
         const approvalStatus = changeApprovalStatus(event);
         const ApprovalIcon = changeApprovalIcon(approvalStatus);
         const approval = changeApproval(event);
+        const artwork = event?.details?.pending_artwork;
+        const requestedByUser = String(event.performed_by || "").trim().toLowerCase() === String(currentUserName || "").trim().toLowerCase();
+        const canRetractChanges = canApproveChanges || requestedByUser;
         return (
           <article className={`job-change-event approval-${approvalStatus}`} key={event.id}>
             <div>
@@ -853,12 +907,23 @@ function JobTicketEventList({ events, emptyText, canApproveChanges = false, appr
                   {changeApprovalLabel(approvalStatus)}
                 </span>
                 {approval.reviewed_by && <em>Reviewed by {approval.reviewed_by} / {eventDate(approval.reviewed_at)}</em>}
-                {canApproveChanges && approvalStatus === "pending" && (
-                  <div>
-                    <button type="button" onClick={() => onApproveChange?.(event, "approved")} disabled={approvingChangeId === event.id}>Approve</button>
-                    <button type="button" onClick={() => onApproveChange?.(event, "rejected")} disabled={approvingChangeId === event.id}>Reject</button>
-                  </div>
+                {(canApproveChanges || canRetractChanges) && approvalStatus === "pending" && (
+                  <PendingChangeControls
+                    event={event}
+                    canApproveChanges={canApproveChanges}
+                    canRetractChanges={canRetractChanges}
+                    approvingChangeId={approvingChangeId}
+                    onApproveChange={onApproveChange}
+                  />
                 )}
+              </div>
+            )}
+            {artwork && (
+              <div className="job-artwork-history-strip">
+                <span>Artwork history saved</span>
+                {artwork.previous?.url && <a href={artwork.previous.url} target="_blank" rel="noreferrer">Previous artwork</a>}
+                {artwork.next?.url && <a href={artwork.next.url} target="_blank" rel="noreferrer">Pending artwork</a>}
+                {artwork.change_description && <em>{artwork.change_description}</em>}
               </div>
             )}
             {changes.length ? (
@@ -1182,6 +1247,7 @@ export default function JobTicketPanel({
   canSchedule = false,
   canQuote = false,
   canApproveChanges = false,
+  currentUserName = "",
   approvingChangeId = "",
   onQuoteJob,
   onApproveChange,
@@ -1312,6 +1378,11 @@ export default function JobTicketPanel({
     setReceiveForm((current) => ({ ...current, quantity: "", order_number: "", location: "" }));
   }
 
+  function openPendingChanges() {
+    setHistoryTab("ticket");
+    setActiveTab("history");
+  }
+
   return (
     <div className="job-ticket-panel">
       <div className="job-packet-toolbar">
@@ -1344,7 +1415,13 @@ export default function JobTicketPanel({
           </div>
         )}
         {canSchedule && (
-          <button className="job-schedule-action" type="button" onClick={() => setScheduleOpen(true)}>
+          <button
+            className="job-schedule-action"
+            type="button"
+            onClick={() => setScheduleOpen(true)}
+            disabled={pendingChangeEvents.length > 0}
+            title={pendingChangeEvents.length ? "Approve, reject, or take back pending changes before scheduling." : "Schedule job"}
+          >
             <CalendarPlus size={15} /> Schedule Job
           </button>
         )}
@@ -1352,6 +1429,18 @@ export default function JobTicketPanel({
 
       {activeTab === "general" && (
         <div className="job-panel-section">
+          {pendingChangeEvents.length > 0 && (
+            <section className="job-pending-change-alert" role="alert">
+              <div>
+                <Clock3 size={18} />
+                <div>
+                  <strong>Approval Needed Before This Job Can Be Scheduled</strong>
+                  <span>{pendingChangeEvents.length} job ticket change request{pendingChangeEvents.length === 1 ? "" : "s"} waiting for manager/admin review. The live ticket has not changed yet.</span>
+                </div>
+              </div>
+              <button type="button" onClick={openPendingChanges}>Review Changes</button>
+            </section>
+          )}
           <section className="job-ticket-sheet-head">
             <div className="job-ticket-sheet-image">
               {image?.url && !imageIsDocument ? (
@@ -1495,6 +1584,7 @@ export default function JobTicketPanel({
                 events={ticketChangeEvents}
                 emptyText="No job ticket changes have been recorded yet."
                 canApproveChanges={canApproveChanges}
+                currentUserName={currentUserName}
                 approvingChangeId={approvingChangeId}
                 onApproveChange={onApproveChange}
               />
@@ -1657,6 +1747,7 @@ export default function JobTicketPanel({
                   events={pendingChangeEvents.slice(0, 4)}
                   emptyText="No pending job ticket changes."
                   canApproveChanges={canApproveChanges}
+                  currentUserName={currentUserName}
                   approvingChangeId={approvingChangeId}
                   onApproveChange={onApproveChange}
                 />

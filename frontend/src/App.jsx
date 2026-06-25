@@ -23,6 +23,7 @@ import MaterialTypeTable from "./components/MaterialTypeTable";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
 import MaterialTypeManager from "./components/MaterialTypeManager";
 import MaterialUsageWindow from "./components/MaterialUsageWindow";
+import MessagesCenter from "./components/MessagesCenter";
 import PackagingInventoryView from "./components/PackagingInventoryView";
 import PressSpeedSidebarWidget from "./components/PressSpeedSidebarWidget";
 import QuotePricingTool from "./components/QuotePricingTool";
@@ -1139,6 +1140,7 @@ export default function App() {
     <>
       <SignedInApp
         currentUser={currentUser}
+        users={users}
         roleDefinitions={roleDefinitions}
         canManageUsers={userIsAdmin(currentUser)}
         onOpenUserAdmin={() => setUserPanelOpen(true)}
@@ -1159,7 +1161,7 @@ export default function App() {
   );
 }
 
-function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
+function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
   const queryClient = useQueryClient();
   const [activeKey, setActiveKey] = useState(() => defaultResourceKeyForRole(roleDefinitions, currentUser?.role));
   const [previewRoleName, setPreviewRoleName] = useState("");
@@ -1530,6 +1532,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           formData.append("image", upload.file);
           formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
           formData.append("performed_by", currentUserForView?.name || "");
+          formData.append("change_description", upload.changeDescription || "");
+          if (cleanPayload?.[`${upload.slot}_image_description`]) {
+            formData.append("description", cleanPayload[`${upload.slot}_image_description`]);
+          }
           saved = await uploadRecordAction(resource.endpoint, saved.id, `images/${upload.slot}`, formData);
         }
       }
@@ -2048,6 +2054,10 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         formData.append("image", upload.file);
         formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
         formData.append("performed_by", currentUserForView?.name || "");
+        formData.append("change_description", upload.changeDescription || "");
+        if (cleanPayload?.[`${upload.slot}_image_description`]) {
+          formData.append("description", cleanPayload[`${upload.slot}_image_description`]);
+        }
         saved = await uploadRecordAction("job-tickets", saved.id, `images/${upload.slot}`, formData);
       }
       return saved;
@@ -2061,15 +2071,19 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   });
 
   const jobTicketChangeApprovalMutation = useMutation({
-    mutationFn: ({ event, status }) => postRecordAction(
-      "job-ticket-events",
-      event.id,
-      status === "approved" ? "approve" : "reject",
-      {
-        performed_by: currentUserForView?.name || "",
-        role: currentUserForView?.role || "",
-      }
-    ),
+    mutationFn: ({ event, status, pendingPayload = null }) => {
+      const action = status === "approved" ? "approve" : status === "retracted" ? "retract" : "reject";
+      return postRecordAction(
+        "job-ticket-events",
+        event.id,
+        action,
+        {
+          performed_by: currentUserForView?.name || "",
+          role: currentUserForView?.role || "",
+          ...(pendingPayload && Object.keys(pendingPayload).length ? { pending_payload: pendingPayload } : {}),
+        }
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["collection", "job-ticket-events"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
@@ -2399,6 +2413,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           onQuoteCompanyChange={onQuoteCompanyChange}
           onSignOut={onSignOut}
         />
+        <MessagesCenter currentUser={currentUser} users={users} compact showToast={false} />
         {!singleResourceMode && (
           <label>
             <span>Page</span>
@@ -2495,6 +2510,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             {!resource.disableCreate && !showingStaticView && (
               <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults(resource.key === "material-coated-stock" && materialOwnerTab === "tri_state" ? { company: "Tri-State Media" } : {}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : resource.key === "material-coated-stock" ? "Add Material" : "Add"}</button>
             )}
+            <MessagesCenter currentUser={currentUser} users={users} />
             <AccountMenu
               currentUser={currentUser}
               canManageUsers={canManageUsers}
@@ -2914,8 +2930,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 canSchedule={canScheduleFromJobTicket}
                 canQuote={canQuoteJobTicket}
                 canApproveChanges={canApproveJobTicketChanges}
+                currentUserName={currentUserForView?.name || currentUser?.name || ""}
                 approvingChangeId={jobTicketChangeApprovalMutation.isPending ? jobTicketChangeApprovalMutation.variables?.event?.id || "" : ""}
-                onApproveChange={(event, status) => jobTicketChangeApprovalMutation.mutate({ event, status })}
+                onApproveChange={(event, status, pendingPayload) => jobTicketChangeApprovalMutation.mutate({ event, status, pendingPayload })}
                 onQuoteJob={() => {
                   setQuoteJobTicketId(String(selected.id));
                   setQuoteCustomerId("");

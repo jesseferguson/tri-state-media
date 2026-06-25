@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle2, Gauge, Goal, Maximize2, Minimize2, Timer } from "lucide-react";
 import { requestApi } from "../api";
+import AnimatedNumber from "./AnimatedNumber";
 
 const firebaseBase = "https://realtime2-94ff8-default-rtdb.firebaseio.com";
 const goalFootage = 400000;
 const wasteBufferPercent = 0.04;
 const refreshMs = 30000;
 const dailyRefreshMs = 120000;
+const liveFootageAnimationMs = Math.max(30000, dailyRefreshMs - 4000);
 const dailyLimit = 420;
 const bucketMinutes = 10;
 const maxValidSpeedFpm = 700;
@@ -35,6 +37,19 @@ function formatInt(value) {
   return Math.round(number).toLocaleString();
 }
 
+function formatShortNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  const abs = Math.abs(number);
+  if (abs >= 1000000) return `${(number / 1000000).toFixed(abs >= 10000000 ? 0 : 1)}M`;
+  if (abs >= 1000) return `${(number / 1000).toFixed(abs >= 100000 ? 0 : 1)}k`;
+  return Math.round(number).toLocaleString();
+}
+
+function formatShortRate(value) {
+  return `${formatShortNumber(value)}/hr`;
+}
+
 function wasteAdjustedFootage(rawFootage) {
   const total = Math.max(0, Number(rawFootage) || 0);
   return total * (1 - wasteBufferPercent);
@@ -50,6 +65,47 @@ function addMinutes(date, minutes) {
 
 function formatLocalDateKey(date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function emptyPace() {
+  return {
+    averageRate: 0,
+    requiredRate: 0,
+    projected: 0,
+    liveRate: 0,
+    statusRate: 0,
+    elapsedHours: 0,
+    shiftHours: 0,
+    onPace: false,
+    hasFootage: false,
+    hasLiveRate: false,
+    hasData: false,
+  };
+}
+
+function paceFromFootage(adjustedFootage, start, effectiveNow, end, liveRate = 0) {
+  const elapsedHours = Math.max(0.1, (effectiveNow.getTime() - start.getTime()) / 3600000);
+  const shiftHours = Math.max(0.1, (end.getTime() - start.getTime()) / 3600000);
+  const averageRate = adjustedFootage / elapsedHours;
+  const requiredRate = goalFootage / shiftHours;
+  const cleanLiveRate = Math.max(0, Number(liveRate) || 0);
+  const hasFootage = adjustedFootage > 0;
+  const hasLiveRate = cleanLiveRate > 0;
+  const statusRate = hasFootage ? averageRate : cleanLiveRate;
+  const projected = statusRate * shiftHours;
+  return {
+    averageRate,
+    requiredRate,
+    projected,
+    liveRate: cleanLiveRate,
+    statusRate,
+    elapsedHours,
+    shiftHours,
+    onPace: statusRate >= requiredRate,
+    hasFootage,
+    hasLiveRate,
+    hasData: hasFootage || hasLiveRate,
+  };
 }
 
 function getShiftWindow(now = new Date()) {
@@ -217,26 +273,27 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 function drawTag(ctx, canvas, x, y, text, color) {
-  const padX = 10;
-  ctx.font = "700 13px ui-sans-serif, system-ui";
-  const width = ctx.measureText(text).width + padX * 2 + 12;
-  const clampedX = Math.min(canvas.width - width - 8, Math.max(8, x));
-  const clampedY = Math.min(canvas.height - 20, Math.max(14, y));
+  const dpr = window.devicePixelRatio || 1;
+  const padX = 13 * dpr;
+  ctx.font = `1000 ${18 * dpr}px ui-sans-serif, system-ui`;
+  const width = ctx.measureText(text).width + padX * 2 + 14 * dpr;
+  const clampedX = Math.min(canvas.width - width - 8 * dpr, Math.max(8 * dpr, x));
+  const clampedY = Math.min(canvas.height - 28 * dpr, Math.max(18 * dpr, y));
 
   ctx.save();
   ctx.fillStyle = "rgba(255,255,255,.92)";
-  roundRect(ctx, clampedX, clampedY - 13, width, 26, 8);
+  roundRect(ctx, clampedX, clampedY - 18 * dpr, width, 36 * dpr, 10 * dpr);
   ctx.fill();
   ctx.strokeStyle = "rgba(15,23,42,.12)";
   ctx.stroke();
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.arc(clampedX + 12, clampedY, 4.5, 0, Math.PI * 2);
+  ctx.arc(clampedX + 15 * dpr, clampedY, 5.5 * dpr, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#0f172a";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, clampedX + 22, clampedY);
+  ctx.fillText(text, clampedX + 28 * dpr, clampedY);
   ctx.restore();
 }
 
@@ -278,7 +335,7 @@ function drawChart(canvas, seriesList, labels) {
 
     const value = max - (max * i) / 5;
     ctx.fillStyle = "#64748b";
-    ctx.font = `${12 * dpr}px ui-sans-serif, system-ui`;
+    ctx.font = `900 ${16 * dpr}px ui-sans-serif, system-ui`;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(formatInt(value), padL - 10 * dpr, y);
@@ -289,7 +346,7 @@ function drawChart(canvas, seriesList, labels) {
     if (index % labelStep !== 0) return;
     const x = padL + plotW * (index / Math.max(1, labels.length - 1));
     ctx.fillStyle = "#64748b";
-    ctx.font = `${12 * dpr}px ui-sans-serif, system-ui`;
+    ctx.font = `900 ${16 * dpr}px ui-sans-serif, system-ui`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillText(label, x, padT + plotH + 12 * dpr);
@@ -297,7 +354,7 @@ function drawChart(canvas, seriesList, labels) {
 
   seriesList.forEach((series) => {
     ctx.strokeStyle = series.color;
-    ctx.lineWidth = 2.6 * dpr;
+    ctx.lineWidth = 3.6 * dpr;
     ctx.beginPath();
     let started = false;
     let lastX = padL;
@@ -319,7 +376,7 @@ function drawChart(canvas, seriesList, labels) {
     ctx.stroke();
     ctx.fillStyle = series.color;
     ctx.beginPath();
-    ctx.arc(lastX, lastY, 3.2 * dpr, 0, Math.PI * 2);
+    ctx.arc(lastX, lastY, 4.4 * dpr, 0, Math.PI * 2);
     ctx.fill();
 
     const total = series.points.length ? series.points[series.points.length - 1] || 0 : 0;
@@ -334,6 +391,32 @@ function Metric({ icon: Icon, label, value, note, tone = "" }) {
       <strong>{value}</strong>
       <em>{note}</em>
     </article>
+  );
+}
+
+function PaceNote({ pace, goalHit }) {
+  const safePace = pace || emptyPace();
+  const tone = goalHit ? "hit" : safePace.onPace ? "good" : "bad";
+  const label = goalHit ? "Goal hit" : safePace.onPace ? "On pace" : "Behind pace";
+  if (!safePace.hasFootage && safePace.hasLiveRate) {
+    return (
+      <span className={`live-footage-pace-note ${tone}`}>
+        <i />
+        <b>{label}</b>
+        <span><small>Live</small> {formatShortRate(safePace.liveRate)}</span>
+        <span><small>Need</small> {formatShortRate(safePace.requiredRate)}</span>
+        <span><small>Avg</small> Building</span>
+      </span>
+    );
+  }
+  return (
+    <span className={`live-footage-pace-note ${tone}`}>
+      <i />
+      <b>{label}</b>
+      <span><small>Avg</small> {formatShortRate(safePace.averageRate)}</span>
+      <span><small>Need</small> {formatShortRate(safePace.requiredRate)}</span>
+      <span><small>Projected</small> {formatShortNumber(safePace.projected)} ft</span>
+    </span>
   );
 }
 
@@ -357,15 +440,39 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
     remaining: goalFootage,
     percent: 0,
     updatedAt: "",
+    updatedAtMs: Date.now(),
+    shiftDate: "",
     paceText: "",
+    pace: emptyPace(),
     tiles: presses.map((press, index) => ({ ...press, color: pressColor(index), speed: 0, total: 0 })),
   });
 
-  const sortedTiles = useMemo(() => [...snapshot.tiles].sort((a, b) => b.total - a.total), [snapshot.tiles]);
-  const goalHit = snapshot.adjustedFootage >= goalFootage;
+  const animatedSnapshot = useMemo(() => {
+    const tiles = snapshot.tiles.map((tile) => ({
+      ...tile,
+      animatedTotal: Number(tile.total || 0),
+    }));
+    const companyTotal = tiles.reduce((sum, tile) => sum + tile.animatedTotal, 0);
+    const adjustedFootage = wasteAdjustedFootage(companyTotal);
+    const currentWasteFootage = Math.max(0, companyTotal - adjustedFootage);
+    const remaining = Math.max(0, goalFootage - adjustedFootage);
+    const percent = Math.max(0, Math.min(100, (adjustedFootage / goalFootage) * 100));
+    return {
+      ...snapshot,
+      tiles,
+      companyTotal,
+      adjustedFootage,
+      currentWasteFootage,
+      remaining,
+      percent,
+    };
+  }, [snapshot]);
+
+  const sortedTiles = useMemo(() => [...animatedSnapshot.tiles].sort((a, b) => b.animatedTotal - a.animatedTotal), [animatedSnapshot.tiles]);
+  const goalHit = animatedSnapshot.adjustedFootage >= goalFootage;
   const wasteBufferPercentLabel = `${Math.round(wasteBufferPercent * 100)}%`;
-  const countedProgressPercent = Math.max(0, Math.min(100, snapshot.percent));
-  const wasteProgressPercent = Math.max(0, Math.min(100 - countedProgressPercent, (snapshot.currentWasteFootage / goalFootage) * 100));
+  const countedProgressPercent = Math.max(0, Math.min(100, animatedSnapshot.percent));
+  const wasteProgressPercent = Math.max(0, Math.min(100 - countedProgressPercent, (animatedSnapshot.currentWasteFootage / goalFootage) * 100));
 
   async function commitArchiveRecord(record) {
     const archiveId = record.shift_date;
@@ -389,6 +496,7 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
       activeControllerRef.current = controller;
       const now = new Date();
       const { start, end } = getShiftWindow(now);
+      const shiftDate = formatLocalDateKey(start);
       const effectiveNow = now.getTime() > end.getTime() ? end : now;
       const rangeText = `Shift: ${start.toLocaleString()} -> ${end.toLocaleString()}`;
       const archiveWindowStart = end.getTime() - 60000;
@@ -466,36 +574,46 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
           }
         }
 
-        const companyTotal = dailyData?.companyTotal ?? 0;
-        const adjustedFootage = wasteAdjustedFootage(companyTotal);
-        const currentWasteFootage = Math.max(0, companyTotal - adjustedFootage);
-        const remaining = Math.max(0, goalFootage - adjustedFootage);
-        const percent = Math.max(0, Math.min(100, (adjustedFootage / goalFootage) * 100));
-        const elapsedHours = Math.max(0.1, (effectiveNow.getTime() - start.getTime()) / 3600000);
-        const shiftHours = (end.getTime() - start.getTime()) / 3600000;
-        const pacePerHour = adjustedFootage / elapsedHours;
-        const projected = pacePerHour * shiftHours;
-
-        setSnapshot((current) => ({
-          ...current,
-          state: "ready",
-          error: dailyData?.errors?.length ? dailyData.errors.join("\n") : "",
-          archiveStatus,
-          rangeText,
-          companyTotal,
-          adjustedFootage,
-          currentWasteFootage,
-          remaining,
-          percent,
-          updatedAt: new Date().toLocaleTimeString(),
-          paceText: `Elapsed ${elapsedHours.toFixed(1)}h / ${shiftHours.toFixed(1)}h - pace ${formatInt(pacePerHour)}/hr - projected ${formatInt(projected)}`,
-          tiles: presses.map((press, index) => ({
-            ...press,
-            color: pressColor(index),
-            speed: extractSpeed(speedResults[index]),
-            total: dailyData?.totalsByKey?.[press.key] ?? 0,
-          })),
-        }));
+        setSnapshot((current) => {
+          const sameShift = current.shiftDate === shiftDate;
+          const previousTotals = new Map((current.tiles || []).map((tile) => [tile.key, Number(tile.total || 0)]));
+          const rawTotals = dailyData?.totalsByKey || {};
+          const tiles = presses.map((press, index) => {
+            const confirmedTotal = Number(rawTotals[press.key] || 0);
+            const previousTotal = Number(previousTotals.get(press.key) || 0);
+            return {
+              ...press,
+              color: pressColor(index),
+              speed: extractSpeed(speedResults[index]),
+              total: sameShift ? Math.max(previousTotal, confirmedTotal) : confirmedTotal,
+            };
+          });
+          const companyTotal = tiles.reduce((sum, tile) => sum + Number(tile.total || 0), 0);
+          const liveRate = tiles.reduce((sum, tile) => sum + Number(tile.speed || 0), 0) * 60;
+          const adjustedFootage = wasteAdjustedFootage(companyTotal);
+          const currentWasteFootage = Math.max(0, companyTotal - adjustedFootage);
+          const remaining = Math.max(0, goalFootage - adjustedFootage);
+          const percent = Math.max(0, Math.min(100, (adjustedFootage / goalFootage) * 100));
+          const pace = paceFromFootage(adjustedFootage, start, effectiveNow, end, liveRate);
+          return {
+            ...current,
+            state: "ready",
+            error: dailyData?.errors?.length ? dailyData.errors.join("\n") : "",
+            archiveStatus,
+            rangeText,
+            companyTotal,
+            adjustedFootage,
+            currentWasteFootage,
+            remaining,
+            percent,
+            updatedAt: new Date().toLocaleTimeString(),
+            updatedAtMs: Date.now(),
+            shiftDate,
+            pace,
+            paceText: `Avg ${formatInt(pace.averageRate)}/hr / Need ${formatInt(pace.requiredRate)}/hr / Projected ${formatInt(pace.projected)}`,
+            tiles,
+          };
+        });
       } catch (error) {
         if (!mountedRef.current || error.name === "AbortError") return;
         setSnapshot((current) => ({ ...current, state: "error", error: error.message || "Could not load live footage." }));
@@ -564,9 +682,15 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
       </div>
 
       <div className="live-footage-metrics">
-        <Metric icon={goalHit ? CheckCircle2 : Gauge} label="Total Footage" value={formatInt(snapshot.adjustedFootage)} note={goalHit ? "Shift goal reached" : snapshot.paceText || "Waiting for Firebase data"} tone={goalHit ? "hit" : ""} />
+        <Metric
+          icon={goalHit ? CheckCircle2 : Gauge}
+          label="Total Footage"
+          value={<AnimatedNumber value={animatedSnapshot.adjustedFootage} className="live-footage-main-counter" durationMs={liveFootageAnimationMs} initialDurationMs={1200} easing="linear" />}
+          note={<PaceNote pace={animatedSnapshot.pace} goalHit={goalHit} />}
+          tone={goalHit ? "hit" : ""}
+        />
         <Metric icon={Goal} label="Shift Goal" value={formatInt(goalFootage)} note={`After ${wasteBufferPercentLabel} waste`} tone={goalHit ? "hit" : ""} />
-        <Metric icon={Timer} label="Remaining" value={formatInt(snapshot.remaining)} note="To hit the shift goal" />
+        <Metric icon={Timer} label="Remaining" value={formatInt(animatedSnapshot.remaining)} note="To hit the shift goal" />
       </div>
 
       <div className={`live-footage-progress ${goalHit ? "goal-hit" : ""}`}>
@@ -575,8 +699,8 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
           <span className="live-footage-progress-waste" style={{ left: `${countedProgressPercent}%`, width: `${wasteProgressPercent}%` }} />
         </div>
         <p>
-          {goalHit ? "Goal hit" : `${snapshot.percent.toFixed(1)}% to goal`}
-          <em>{wasteBufferPercentLabel} waste: {formatInt(snapshot.currentWasteFootage)} ft held / Updated {snapshot.updatedAt || "--"}{snapshot.archiveStatus ? ` - ${snapshot.archiveStatus}` : ""}</em>
+          {goalHit ? "Goal hit" : `${animatedSnapshot.percent.toFixed(1)}% to goal`}
+          <em>{wasteBufferPercentLabel} waste: {formatInt(animatedSnapshot.currentWasteFootage)} ft held / Updated {snapshot.updatedAt || "--"}{snapshot.archiveStatus ? ` - ${snapshot.archiveStatus}` : ""}</em>
         </p>
       </div>
 
@@ -585,7 +709,7 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
           <CheckCircle2 size={22} />
           <div>
             <strong>Shift goal hit</strong>
-            <span>{formatInt(snapshot.adjustedFootage)} ft total against a {formatInt(goalFootage)} ft goal. {wasteBufferPercentLabel} waste currently held: {formatInt(snapshot.currentWasteFootage)} ft.</span>
+            <span>{formatInt(animatedSnapshot.adjustedFootage)} ft total against a {formatInt(goalFootage)} ft goal. {wasteBufferPercentLabel} waste currently held: {formatInt(animatedSnapshot.currentWasteFootage)} ft.</span>
           </div>
         </div>
       )}
@@ -622,7 +746,7 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
                   </div>
                 </div>
                 <div className="live-footage-press-numbers">
-                  <strong>{formatInt(tile.total)} <small>ft</small></strong>
+                  <strong><AnimatedNumber value={tile.animatedTotal} suffix="ft" className="live-footage-press-counter" durationMs={liveFootageAnimationMs} initialDurationMs={1200} easing="linear" /></strong>
                   <em>{formatInt(tile.speed)} FPM</em>
                 </div>
               </div>

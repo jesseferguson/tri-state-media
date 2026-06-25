@@ -14,6 +14,7 @@ function normalizeInitial(fields, record, defaults = {}) {
     }
     if (field.type === "imageUpload") {
       out[field.name] = null;
+      out[`${field.name}__changeNote`] = "";
       return;
     }
     if (field.type === "multiRelation") {
@@ -673,7 +674,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
       const rawValue = visible ? form[field.name] : getEmptyValueForField(field);
       if (field.type === "imageUpload") {
         if (rawValue instanceof File) {
-          imageUploads.push({ slot: field.imageSlot, file: rawValue });
+          imageUploads.push({ slot: field.imageSlot, file: rawValue, changeDescription: form[`${field.name}__changeNote`] || "" });
         }
         return;
       }
@@ -771,6 +772,13 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
                     <input id={id} type="file" accept="image/*,application/pdf,.pdf" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
                     <strong>{value?.name || existingName || "Choose image"}</strong>
                     {existingSource && <small>{existingSource}</small>}
+                    {value instanceof File && (
+                      <textarea
+                        value={form[`${field.name}__changeNote`] || ""}
+                        placeholder="What changed in this artwork?"
+                        onChange={(event) => update(`${field.name}__changeNote`, event.target.value)}
+                      />
+                    )}
                   </div>
                 </label>
               </Fragment>

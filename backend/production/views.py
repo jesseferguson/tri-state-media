@@ -2,12 +2,13 @@ import logging
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.core.files.storage import default_storage
 from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
-from rest_framework import filters, status, viewsets
+from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -30,6 +31,8 @@ from .models import (
     JobTicket,
     JobTicketUsage,
     LiveFootageArchive,
+    Message,
+    MessageThread,
     ProductionSchedule,
     QuoteCostRate,
     QuoteFinishedMaterial,
@@ -51,6 +54,8 @@ from .serializers import (
     JobTicketSerializer,
     JobTicketUsageSerializer,
     LiveFootageArchiveSerializer,
+    MessageSerializer,
+    MessageThreadSerializer,
     ProductionScheduleSerializer,
     QuoteCostRateSerializer,
     QuoteFinishedMaterialSerializer,
@@ -143,6 +148,128 @@ def ticket_change_details(previous, current):
     return changes
 
 
+def json_safe_value(value):
+    if value in [None, ""]:
+        return None if value is None else ""
+    if isinstance(value, Decimal):
+        return str(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def pending_compare_value(field, value):
+    if getattr(field, "many_to_one", False):
+        return value.pk if value else None
+    return value
+
+
+def pending_display_value(field, value):
+    if getattr(field, "many_to_one", False):
+        return str(value) if value else ""
+    if value in [None, ""]:
+        return ""
+    if field.choices:
+        return str(dict(field.flatchoices).get(value, value))
+    return str(value)
+
+
+def pending_payload_value(field, value):
+    if getattr(field, "many_to_one", False):
+        return value.pk if value else None
+    return json_safe_value(value)
+
+
+def pending_ticket_change_details(ticket, validated_data):
+    changes = []
+    payload = {}
+    for field_name, label in JOB_TICKET_CHANGE_FIELDS:
+        if field_name not in validated_data:
+            continue
+        field = ticket._meta.get_field(field_name)
+        value = validated_data[field_name]
+        if ticket_compare_value(ticket, field_name) == pending_compare_value(field, value):
+            continue
+        payload[field_name] = pending_payload_value(field, value)
+        changes.append({
+            "field": field_name,
+            "label": label,
+            "from": ticket_display_value(ticket, field_name),
+            "to": pending_display_value(field, value),
+        })
+    return changes, payload
+
+
+def ticket_has_pending_changes(ticket):
+    if not ticket:
+        return False
+    return JobTicketEvent.objects.filter(
+        job_ticket=ticket,
+        event_type="updated",
+        details__approval__status="pending",
+    ).exists()
+
+
+def set_ticket_field_value(ticket, field_name, value):
+    field = ticket._meta.get_field(field_name)
+    if getattr(field, "many_to_one", False):
+        setattr(ticket, f"{field_name}_id", value or None)
+        return
+    setattr(ticket, field_name, value)
+
+
+def apply_pending_ticket_payload(ticket, payload):
+    for field_name, value in (payload or {}).items():
+        try:
+            ticket._meta.get_field(field_name)
+        except Exception:
+            continue
+        set_ticket_field_value(ticket, field_name, value)
+    ticket.save()
+
+
+def image_public_url(storage_name):
+    if not storage_name:
+        return ""
+    try:
+        return default_storage.url(storage_name)
+    except Exception:
+        return ""
+
+
+def apply_pending_artwork(ticket, artwork):
+    slot = artwork.get("slot")
+    if slot not in {"general", "spec", "finishing"}:
+        return
+    image_field = f"{slot}_image"
+    name_field = f"{slot}_image_name"
+    description_field = f"{slot}_image_description"
+    next_artwork = artwork.get("next") or {}
+    action_value = artwork.get("action")
+
+    if action_value == "deleted":
+        setattr(ticket, image_field, None)
+        setattr(ticket, name_field, "")
+        setattr(ticket, description_field, "")
+        if slot == "general":
+            ticket.external_image_url = ""
+            ticket.external_image_source = ""
+    else:
+        storage_name = next_artwork.get("storage_name")
+        if storage_name:
+            setattr(ticket, image_field, storage_name)
+        setattr(ticket, name_field, str(next_artwork.get("name") or "").strip())
+        setattr(ticket, description_field, str(next_artwork.get("description") or "").strip())
+        if slot == "general" and storage_name:
+            ticket.external_image_url = ""
+            ticket.external_image_source = "New System"
+
+    update_fields = [image_field, name_field, description_field, "updated_at"]
+    if slot == "general":
+        update_fields += ["external_image_url", "external_image_source"]
+    ticket.save(update_fields=update_fields)
+
+
 class BaseProductionViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     parser_classes = [JSONParser, FormParser, MultiPartParser]
@@ -181,6 +308,62 @@ class CompanyUserViewSet(BaseProductionViewSet):
     serializer_class = CompanyUserSerializer
     search_fields = ["name", "username", "role__name", "quote_company"]
     ordering_fields = ["name", "username", "quote_company", "active", "created_at"]
+
+
+class MessageThreadViewSet(BaseProductionViewSet):
+    serializer_class = MessageThreadSerializer
+    search_fields = ["title", "participant_names", "context_label", "created_by_name"]
+    ordering_fields = ["updated_at", "created_at", "title"]
+
+    def get_queryset(self):
+        qs = MessageThread.objects.prefetch_related("messages").all().order_by("-updated_at", "-id")
+        viewer = str(self.request.query_params.get("viewer") or "").strip()
+        if viewer:
+            ids = [
+                thread.id
+                for thread in qs
+                if viewer in [str(item) for item in (thread.participant_user_ids or [])]
+            ]
+            qs = MessageThread.objects.prefetch_related("messages").filter(id__in=ids).order_by("-updated_at", "-id")
+        return qs
+
+    @action(detail=True, methods=["post"], url_path="mark-read")
+    def mark_read(self, request, pk=None):
+        thread = self.get_object()
+        viewer = str(request.data.get("viewer") or request.data.get("viewer_id") or "").strip()
+        if not viewer:
+            return Response({"viewer": ["Viewer is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        for message in thread.messages.all():
+            read_by = [str(item) for item in (message.read_by_user_ids or [])]
+            if viewer not in read_by:
+                read_by.append(viewer)
+                message.read_by_user_ids = read_by
+                message.save(update_fields=["read_by_user_ids"])
+        return Response(self.get_serializer(thread).data)
+
+
+class MessageViewSet(BaseProductionViewSet):
+    serializer_class = MessageSerializer
+    search_fields = ["body", "sender_name", "thread__title", "thread__context_label"]
+    ordering_fields = ["created_at", "sender_name"]
+
+    def get_queryset(self):
+        qs = Message.objects.select_related("thread").all().order_by("created_at", "id")
+        thread = self.request.query_params.get("thread")
+        if thread:
+            qs = qs.filter(thread_id=thread)
+        return qs
+
+    def perform_create(self, serializer):
+        message = serializer.save()
+        read_by = [str(item) for item in (message.read_by_user_ids or [])]
+        sender = str(message.sender_user_id or "").strip()
+        if sender and sender not in read_by:
+            read_by.append(sender)
+            message.read_by_user_ids = read_by
+            message.save(update_fields=["read_by_user_ids"])
+        message.thread.updated_at = timezone.now()
+        message.thread.save(update_fields=["updated_at"])
 
 
 class QuoteRawMaterialViewSet(BaseProductionViewSet):
@@ -428,18 +611,21 @@ class JobTicketViewSet(BaseProductionViewSet):
             "core",
         ).get(pk=serializer.instance.pk)
         actor = self.history_actor()
-        ticket = serializer.save()
-        changes = ticket_change_details(previous, ticket)
+        changes, pending_payload = pending_ticket_change_details(previous, serializer.validated_data)
         if not changes:
             return
 
         labels = [change["label"] for change in changes]
         self.create_ticket_event(
-            ticket,
+            previous,
             "updated",
-            f"{actor} changed {', '.join(labels[:4])}{'...' if len(labels) > 4 else ''}.",
+            f"{actor} requested {', '.join(labels[:4])}{'...' if len(labels) > 4 else ''}.",
             actor,
             changes=changes,
+            extra_details={
+                "pending_payload": pending_payload,
+                "pending_action": "job_ticket_update",
+            },
         )
 
     def get_queryset(self):
@@ -530,74 +716,91 @@ class JobTicketViewSet(BaseProductionViewSet):
         actor = self.history_actor()
         changes = []
         previous_file = getattr(ticket, image_field)
+        previous_storage_name = previous_file.name if previous_file else ""
         previous_file_name = previous_file.name.split("/")[-1] if previous_file else ""
         previous_name = getattr(ticket, name_field, "")
         previous_description = getattr(ticket, description_field, "")
+        previous_url = image_public_url(previous_storage_name)
+        if slot == "general" and not previous_url:
+            previous_url = ticket.external_image_url or ""
+        previous_artwork = {
+            "storage_name": previous_storage_name,
+            "file_name": previous_file_name,
+            "url": previous_url,
+            "name": previous_name or (ticket.external_image_source if slot == "general" and previous_url else ""),
+            "description": previous_description,
+        }
+        change_description = str(request.data.get("change_description") or "").strip()
 
         if request.method == "DELETE":
-            try:
-                if previous_file:
-                    previous_file.delete(save=False)
-                setattr(ticket, image_field, None)
-                setattr(ticket, name_field, "")
-                setattr(ticket, description_field, "")
-                ticket.save(update_fields=[image_field, name_field, description_field, "updated_at"])
-                if previous_file_name or previous_name or previous_description:
-                    changes.append({"field": image_field, "label": slot_label, "from": previous_name or previous_file_name, "to": ""})
-                    self.create_ticket_event(
-                        ticket,
-                        "updated",
-                        f"{actor} removed {slot_label}.",
-                        actor,
-                        changes=changes,
-                        extra_details={"image_slot": slot, "action": "deleted"},
-                    )
-                return Response(self.get_serializer(ticket).data)
-            except Exception as error:
-                logger.exception("Could not delete job ticket image from storage.")
-                return Response({"error": f"Could not delete image from storage: {error}"}, status=status.HTTP_502_BAD_GATEWAY)
+            if previous_file_name or previous_name or previous_description or previous_url:
+                changes.append({"field": image_field, "label": slot_label, "from": previous_name or previous_file_name, "to": ""})
+                if change_description:
+                    changes.append({"field": f"{slot}_artwork_change_note", "label": f"{slot_label} Change Note", "from": "", "to": change_description})
+                self.create_ticket_event(
+                    ticket,
+                    "updated",
+                    f"{actor} requested removal of {slot_label}.",
+                    actor,
+                    changes=changes,
+                    extra_details={
+                        "image_slot": slot,
+                        "action": "deleted",
+                        "pending_action": "artwork_update",
+                        "pending_artwork": {
+                            "slot": slot,
+                            "action": "deleted",
+                            "previous": previous_artwork,
+                            "next": {},
+                            "change_description": change_description,
+                        },
+                    },
+                )
+            return Response(self.get_serializer(ticket).data)
 
         upload = request.FILES.get("image")
+        pending_storage_name = ""
         if upload:
-            current_file = getattr(ticket, image_field)
-            if current_file:
-                current_file.delete(save=False)
-            setattr(ticket, image_field, upload)
+            try:
+                pending_storage_name = default_storage.save(job_ticket_image_upload_path(ticket, upload.name), upload)
+            except Exception as error:
+                logger.exception("Could not save pending job ticket image to storage.")
+                return Response({"error": f"Could not save pending image: {error}"}, status=status.HTTP_502_BAD_GATEWAY)
             changes.append({"field": image_field, "label": slot_label, "from": previous_name or previous_file_name, "to": upload.name})
-            if not request.data.get("name"):
-                setattr(ticket, name_field, upload.name)
-            if slot == "general":
-                ticket.external_image_url = ""
-                ticket.external_image_source = "New System"
 
-        if "name" in request.data:
-            setattr(ticket, name_field, str(request.data.get("name") or "").strip())
-        if "description" in request.data:
-            setattr(ticket, description_field, str(request.data.get("description") or "").strip())
-
-        try:
-            update_fields = [image_field, name_field, description_field, "updated_at"]
-            if upload and slot == "general":
-                update_fields += ["external_image_url", "external_image_source"]
-            ticket.save(update_fields=update_fields)
-        except Exception as error:
-            logger.exception("Could not upload job ticket image to storage.")
-            return Response({"error": f"Could not upload image to storage: {error}"}, status=status.HTTP_502_BAD_GATEWAY)
-
-        new_name = getattr(ticket, name_field, "")
-        new_description = getattr(ticket, description_field, "")
+        new_name = str(request.data.get("name") or (upload.name if upload else previous_name) or "").strip()
+        new_description = str(request.data.get("description") if "description" in request.data else previous_description or "").strip()
         if previous_name != new_name:
             changes.append({"field": name_field, "label": f"{slot_label} Name", "from": previous_name, "to": new_name})
         if previous_description != new_description:
             changes.append({"field": description_field, "label": f"{slot_label} Description", "from": previous_description, "to": new_description})
+        if change_description:
+            changes.append({"field": f"{slot}_artwork_change_note", "label": f"{slot_label} Change Note", "from": "", "to": change_description})
         if changes:
             self.create_ticket_event(
                 ticket,
                 "updated",
-                f"{actor} updated {slot_label}.",
+                f"{actor} requested {slot_label} update.",
                 actor,
                 changes=changes,
-                extra_details={"image_slot": slot, "action": "uploaded" if upload else "updated"},
+                extra_details={
+                    "image_slot": slot,
+                    "action": "uploaded" if upload else "updated",
+                    "pending_action": "artwork_update",
+                    "pending_artwork": {
+                        "slot": slot,
+                        "action": "uploaded" if upload else "updated",
+                        "previous": previous_artwork,
+                        "next": {
+                            "storage_name": pending_storage_name or previous_storage_name,
+                            "file_name": upload.name if upload else previous_file_name,
+                            "url": image_public_url(pending_storage_name or previous_storage_name),
+                            "name": new_name,
+                            "description": new_description,
+                        },
+                        "change_description": change_description,
+                    },
+                },
             )
         return Response(self.get_serializer(ticket).data)
 
@@ -630,6 +833,19 @@ class JobTicketEventViewSet(BaseProductionViewSet):
         details = dict(event.details or {})
         approval = dict(details.get("approval") or {})
         actor = str(request.data.get("performed_by") or request.data.get("approval_by") or "").strip() or "system"
+        if status_value == "approved":
+            pending_action = details.get("pending_action")
+            if pending_action == "job_ticket_update":
+                payload = dict(details.get("pending_payload") or {})
+                overrides = request.data.get("pending_payload") or request.data.get("payload") or {}
+                if isinstance(overrides, dict):
+                    payload.update(overrides)
+                    details["manager_adjusted_payload"] = overrides
+                apply_pending_ticket_payload(event.job_ticket, payload)
+                details["applied_payload"] = payload
+            elif pending_action == "artwork_update":
+                apply_pending_artwork(event.job_ticket, details.get("pending_artwork") or {})
+
         approval.update({
             "status": status_value,
             "reviewed_by": actor,
@@ -648,6 +864,10 @@ class JobTicketEventViewSet(BaseProductionViewSet):
     @action(detail=True, methods=["post"])
     def reject(self, request, pk=None):
         return self.update_approval(request, "rejected")
+
+    @action(detail=True, methods=["post"])
+    def retract(self, request, pk=None):
+        return self.update_approval(request, "retracted")
 
 
 class JobTicketUsageViewSet(BaseProductionViewSet):
@@ -732,6 +952,14 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
         "press_sequence",
         "operator",
     ]
+
+    def perform_create(self, serializer):
+        ticket = serializer.validated_data.get("job_ticket")
+        if ticket_has_pending_changes(ticket):
+            raise serializers.ValidationError({
+                "job_ticket": "This job ticket has a pending change request. Approve, reject, or retract the change before scheduling."
+            })
+        serializer.save()
 
     @action(detail=True, methods=["post"], url_path="remove-from-schedule")
     def remove_from_schedule(self, request, pk=None):

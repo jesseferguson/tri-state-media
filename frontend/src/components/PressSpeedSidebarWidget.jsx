@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Gauge, RefreshCcw } from "lucide-react";
+import AnimatedNumber from "./AnimatedNumber";
 
 const firebaseBase = "https://realtime2-94ff8-default-rtdb.firebaseio.com";
 const maxValidSpeedFpm = 700;
 const refreshMs = 180000;
+const sidebarFootageAnimationMs = Math.max(30000, refreshMs - 5000);
 const cacheMaxAgeMs = 120000;
 const cacheKey = "tsm_sidebar_press_speeds_v1";
 const dailyLimit = 420;
@@ -22,6 +24,14 @@ const presses = [
   { key: "17NIL", name: "17 Nilpeter", speedNode: "/17Nilpeter_CURRENT_SPEED", dailyNode: "/17Nilpeter_SPEED", color: "#eab308" },
   { key: "13AZT", name: "13 Aztech", speedNode: "/13Aztech_CURRENT_SPEED", dailyNode: "/13Aztech_DAILY_SPEED", color: "#f97316" },
 ];
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function formatLocalDateKey(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
 
 function speedUrl(node) {
   return `${firebaseBase}${node}.json`;
@@ -96,12 +106,6 @@ function dailyFootageTotal(payload, start, end) {
     .reduce((sum, row) => sum + row.footage, 0);
 }
 
-function formatFootage(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "--";
-  return Math.round(number).toLocaleString();
-}
-
 function readCache() {
   if (typeof window === "undefined" || !window.localStorage) return null;
   try {
@@ -125,30 +129,57 @@ function toneForSpeed(speed) {
   return "steady";
 }
 
+function mergePressFootage(previousRows = [], nextRows = [], sameShift = true) {
+  const previousByKey = new Map(previousRows.map((row) => [row.key, Number(row.total || 0)]));
+  return nextRows.map((row) => ({
+    ...row,
+    total: sameShift ? Math.max(Number(previousByKey.get(row.key) || 0), Number(row.total || 0)) : Number(row.total || 0),
+  }));
+}
+
 export default function PressSpeedSidebarWidget({ onOpenLiveFootage }) {
   const cached = useMemo(readCache, []);
   const [speeds, setSpeeds] = useState(() => cached?.speeds || presses.map((press) => ({ key: press.key, speed: 0 })));
+  const [pressFootage, setPressFootage] = useState(() => cached?.pressFootage || presses.map((press) => ({ key: press.key, total: 0 })));
   const [totalFootage, setTotalFootage] = useState(() => Number(cached?.totalFootage || 0));
+  const [shiftDate, setShiftDate] = useState(() => cached?.shiftDate || "");
   const [state, setState] = useState(() => cached ? "ready" : "loading");
   const loadingRef = useRef(false);
+  const pressFootageRef = useRef(pressFootage);
+  const shiftDateRef = useRef(shiftDate);
+
+  useEffect(() => {
+    pressFootageRef.current = pressFootage;
+  }, [pressFootage]);
+
+  useEffect(() => {
+    shiftDateRef.current = shiftDate;
+  }, [shiftDate]);
 
   const rows = useMemo(() => {
     const byKey = new Map(speeds.map((row) => [row.key, row.speed]));
+    const footageByKey = new Map(pressFootage.map((row) => [row.key, row.total]));
     return presses.map((press) => ({
       ...press,
       speed: Number(byKey.get(press.key) || 0),
+      total: Number(footageByKey.get(press.key) || 0),
     }));
-  }, [speeds]);
+  }, [pressFootage, speeds]);
+  const animatedTotalFootage = useMemo(() => rows.reduce((sum, row) => sum + Number(row.total || 0), 0), [rows]);
 
   async function loadSpeeds({ force = false } = {}) {
     if (loadingRef.current) return;
     if (!force && typeof document !== "undefined" && document.visibilityState === "hidden") return;
 
-    const cache = readCache();
     const now = Date.now();
-    if (!force && cache && Number.isFinite(Number(cache.totalFootage)) && now - Number(cache.updatedAt || 0) < cacheMaxAgeMs) {
+    const { start, end } = getShiftWindow();
+    const currentShiftDate = formatLocalDateKey(start);
+    const cache = readCache();
+    if (!force && cache && cache.shiftDate === currentShiftDate && Number.isFinite(Number(cache.totalFootage)) && now - Number(cache.updatedAt || 0) < cacheMaxAgeMs) {
       setSpeeds(cache.speeds);
+      setPressFootage(cache.pressFootage || presses.map((press) => ({ key: press.key, total: 0 })));
       setTotalFootage(Number(cache.totalFootage || 0));
+      setShiftDate(currentShiftDate);
       setState("ready");
       return;
     }
@@ -156,7 +187,6 @@ export default function PressSpeedSidebarWidget({ onOpenLiveFootage }) {
     loadingRef.current = true;
     setState((current) => current === "ready" ? "refreshing" : "loading");
     try {
-      const { start, end } = getShiftWindow();
       const [speedResults, dailyResults] = await Promise.all([
         Promise.all(
           presses.map((press) =>
@@ -175,14 +205,19 @@ export default function PressSpeedSidebarWidget({ onOpenLiveFootage }) {
           )
         ),
       ]);
+      const mergedFootage = mergePressFootage(pressFootageRef.current, dailyResults, shiftDateRef.current === currentShiftDate);
       const payload = {
         speeds: speedResults,
-        totalFootage: dailyResults.reduce((sum, press) => sum + press.total, 0),
+        pressFootage: mergedFootage,
+        totalFootage: mergedFootage.reduce((sum, press) => sum + press.total, 0),
+        shiftDate: currentShiftDate,
         updatedAt: Date.now(),
       };
       saveCache(payload);
       setSpeeds(speedResults);
+      setPressFootage(mergedFootage);
       setTotalFootage(payload.totalFootage);
+      setShiftDate(currentShiftDate);
       setState("ready");
     } catch {
       setState("ready");
@@ -232,7 +267,11 @@ export default function PressSpeedSidebarWidget({ onOpenLiveFootage }) {
       <header>
         <div>
           <span><Gauge size={14} /> Total Footage</span>
-          <strong>{state === "loading" && !totalFootage ? "Loading" : `${formatFootage(totalFootage)} ft`}</strong>
+          <strong>
+            {state === "loading" && !totalFootage
+              ? "Loading"
+              : <AnimatedNumber value={animatedTotalFootage} suffix="ft" className="press-speed-total-counter" durationMs={sidebarFootageAnimationMs} initialDurationMs={1200} easing="linear" />}
+          </strong>
         </div>
         <button type="button" onClick={refreshSpeeds} disabled={state === "loading" || state === "refreshing"} title="Refresh press speeds and footage">
           <RefreshCcw size={13} />
@@ -245,7 +284,10 @@ export default function PressSpeedSidebarWidget({ onOpenLiveFootage }) {
             <div className={`press-speed-row ${toneForSpeed(press.speed)}`} key={press.key}>
               <i style={{ background: press.color }} />
               <strong>{press.name}</strong>
-              <span>{Math.round(press.speed).toLocaleString()} FPM</span>
+              <span className="press-speed-row-metrics">
+                <em>{Math.round(press.speed).toLocaleString()} FPM</em>
+                <AnimatedNumber value={press.total} suffix="ft" className="press-speed-row-counter" durationMs={sidebarFootageAnimationMs} initialDurationMs={1200} easing="linear" />
+              </span>
               <b><small style={{ width: `${percent}%`, background: press.color }} /></b>
             </div>
           );

@@ -20,6 +20,8 @@ from .models import (
     JobTicket,
     JobTicketUsage,
     LiveFootageArchive,
+    Message,
+    MessageThread,
     ProductionSchedule,
     QUOTE_COMPANY_CHOICES,
     QuoteCostRate,
@@ -89,6 +91,41 @@ class CompanyUserSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+class MessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Message
+        fields = "__all__"
+
+
+class MessageThreadSerializer(serializers.ModelSerializer):
+    unreadCount = serializers.SerializerMethodField()
+    lastMessage = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MessageThread
+        fields = "__all__"
+
+    def viewer_id(self):
+        request = self.context.get("request")
+        return str(request.query_params.get("viewer") or request.query_params.get("viewer_id") or "") if request else ""
+
+    def get_unreadCount(self, obj):
+        viewer = self.viewer_id()
+        if not viewer:
+            return 0
+        return sum(
+            1
+            for message in obj.messages.all()
+            if str(message.sender_user_id or "") != viewer and viewer not in [str(item) for item in (message.read_by_user_ids or [])]
+        )
+
+    def get_lastMessage(self, obj):
+        message = obj.messages.order_by("-created_at", "-id").first()
+        if not message:
+            return ""
+        return message.body[:140]
 
 
 class QuoteRawMaterialSerializer(serializers.ModelSerializer):

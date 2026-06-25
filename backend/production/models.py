@@ -90,6 +90,40 @@ class CompanyUser(models.Model):
         return check_password(raw_password, self.password_hash)
 
 
+class MessageThread(models.Model):
+    title = models.CharField(max_length=180)
+    participant_user_ids = models.JSONField(default=list, blank=True)
+    participant_names = models.JSONField(default=list, blank=True)
+    context_type = models.CharField(max_length=60, blank=True)
+    context_id = models.CharField(max_length=120, blank=True)
+    context_label = models.CharField(max_length=220, blank=True)
+    created_by_user_id = models.CharField(max_length=120, blank=True)
+    created_by_name = models.CharField(max_length=150, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self):
+        return self.title
+
+
+class Message(models.Model):
+    thread = models.ForeignKey(MessageThread, on_delete=models.CASCADE, related_name="messages")
+    sender_user_id = models.CharField(max_length=120, blank=True)
+    sender_name = models.CharField(max_length=150, blank=True)
+    body = models.TextField()
+    read_by_user_ids = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.thread_id} / {self.sender_name or 'Message'}"
+
+
 class QuoteRawMaterial(models.Model):
     external_id = models.CharField(max_length=120, unique=True)
     name = models.CharField(max_length=180)

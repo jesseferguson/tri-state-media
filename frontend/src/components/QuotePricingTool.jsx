@@ -2819,11 +2819,11 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .page{width:8.5in;min-height:11in;margin:0 auto;background:#fff;padding:.34in;box-sizing:border-box}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
-.brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:11px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:9px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
-.meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:10px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:11px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:92px 1fr;border-top:1px solid #111827;min-height:24px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{padding:6px 7px;font-size:10px}
-.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:9px;text-align:left;padding:7px 6px}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:7px 6px;font-size:10px}.sales-table td:first-child{border-left:0}.sales-table th:nth-child(1){width:50%}.sales-table th:nth-child(2){width:10%}.sales-table th:nth-child(3){width:9%}.sales-table th:nth-child(4){width:15%}.sales-table th:nth-child(5){width:16%}.sales-table strong{display:block;font-size:10px}.sales-table span{display:block;margin-top:4px;font-size:9px;line-height:1.25}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
-.signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-box p{margin:0 0 10px;font-size:10px}.sig-box strong{display:block;margin-top:6px;font-size:10px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px}.contact span{margin-top:16px;font-size:11px;font-weight:700}.contact em{margin-top:8px;font-size:10px;font-style:normal}
-.terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:10px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:8.5px;line-height:1.32}
+.brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:12px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:12px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:92px 1fr;border-top:1px solid #111827;min-height:24px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{padding:6px 7px;font-size:12px}
+.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:12px;text-align:left;padding:7px 6px}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:7px 6px;font-size:12px}.sales-table td:first-child{border-left:0}.sales-table th:nth-child(1){width:50%}.sales-table th:nth-child(2){width:10%}.sales-table th:nth-child(3){width:9%}.sales-table th:nth-child(4){width:15%}.sales-table th:nth-child(5){width:16%}.sales-table strong{display:block;font-size:12px}.sales-table span{display:block;margin-top:4px;font-size:12px;line-height:1.25}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
+.signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-box p{margin:0 0 10px;font-size:12px}.sig-box strong{display:block;margin-top:6px;font-size:12px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px}.contact span{margin-top:16px;font-size:12px;font-weight:700}.contact em{margin-top:8px;font-size:12px;font-style:normal}
+.terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}
 @media print{body{background:white}.page{margin:0;width:auto;min-height:auto;padding:0}.no-print{display:none}}
 </style>
 </head>
@@ -2865,7 +2865,8 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     const commands = [];
 
     function text(x, y, size, value, font = "F1", gray = 0) {
-      commands.push(`BT /${font} ${size} Tf ${gray} g ${x} ${y} Td (${pdfEscape(value)}) Tj ET`);
+      const readableSize = Math.max(12, size);
+      commands.push(`BT /${font} ${readableSize} Tf ${gray} g ${x} ${y} Td (${pdfEscape(value)}) Tj ET`);
     }
 
     function line(x1, y1, x2, y2) {
@@ -2913,9 +2914,9 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
 
     const tableX = 42;
     const tableTop = 542;
-    const headerHeight = 18;
-    const rowHeight = 60;
-    const visibleItems = items.slice(0, 4);
+    const headerHeight = 22;
+    const rowHeight = 76;
+    const visibleItems = items.slice(0, 3);
     const columns = [42, 312, 366, 410, 492, 570];
     const tableBottom = tableTop - headerHeight - visibleItems.length * rowHeight - 20;
     fillBox(tableX, tableTop - headerHeight, 528, headerHeight, 0);
@@ -2933,7 +2934,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
       const yBase = yTop - 16;
       text(50, yBase, 8, clipText(quoteLinePartNumber(item, quote), 46), "F2");
       quoteLineDescriptionRows(item, quote).slice(0, 4).forEach((lineText, rowIndex) => {
-        text(50, yBase - 11 - rowIndex * 10, 7, clipText(lineText, 60));
+        text(50, yBase - 13 - rowIndex * 13, 7, clipText(lineText, 60));
       });
       text(326, yBase, 8, quoteTableQuantity(item, salesInfo.unitOfMeasure));
       text(382, yBase, 8, quoteTableUomLabel(salesInfo.unitOfMeasure));
@@ -2968,7 +2969,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     }
     terms.slice(0, 4).forEach((term) => {
       text(42, termsY, 6, `* ${clipText(term, 145)}`);
-      termsY -= 11;
+      termsY -= 14;
     });
 
     text(42, 42, 7, `Generated from the ${quoteCompany.label} quoting tool.`);

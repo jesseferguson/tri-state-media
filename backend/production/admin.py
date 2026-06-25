@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, JobTicketUsage, ProductionSchedule, QuoteRecord
+from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, JobTicketUsage, Message, MessageThread, ProductionSchedule, QuoteRecord
 
 
 @admin.register(Customer)
@@ -103,6 +103,21 @@ class JobTicketUsageAdmin(admin.ModelAdmin):
     list_filter = ("source", "used_at")
     search_fields = ("job_ticket__ticket_number", "job_ticket__job_name", "legacy_job_ticket_id", "notes")
     autocomplete_fields = ("job_ticket",)
+    readonly_fields = ("created_at",)
+
+
+@admin.register(MessageThread)
+class MessageThreadAdmin(admin.ModelAdmin):
+    list_display = ("title", "context_label", "created_by_name", "updated_at")
+    search_fields = ("title", "context_label", "created_by_name", "participant_names")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(Message)
+class MessageAdmin(admin.ModelAdmin):
+    list_display = ("thread", "sender_name", "created_at")
+    search_fields = ("body", "sender_name", "thread__title")
+    autocomplete_fields = ("thread",)
     readonly_fields = ("created_at",)
 
 
