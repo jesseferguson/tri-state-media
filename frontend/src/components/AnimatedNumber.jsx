@@ -35,12 +35,12 @@ export default function AnimatedNumber({
   const [displayValue, setDisplayValue] = useState(initial);
   const displayRef = useRef(initial);
   const frameRef = useRef(null);
-  const hasAnimatedRef = useRef(false);
+  const initialCatchupDoneRef = useRef(false);
 
   useEffect(() => {
     const target = numberValue(value);
     const from = displayRef.current;
-    const activeDurationMs = hasAnimatedRef.current ? durationMs : initialDurationMs;
+    const activeDurationMs = initialCatchupDoneRef.current ? durationMs : initialDurationMs;
 
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
 
@@ -53,10 +53,10 @@ export default function AnimatedNumber({
     if (Math.abs(target - from) < 0.001 || activeDurationMs <= 0) {
       displayRef.current = target;
       setDisplayValue(target);
+      if (target > 0 || activeDurationMs <= 0) initialCatchupDoneRef.current = true;
       return undefined;
     }
 
-    hasAnimatedRef.current = true;
     const startedAt = performance.now();
     const step = (now) => {
       const progress = Math.min(1, (now - startedAt) / activeDurationMs);
@@ -65,6 +65,8 @@ export default function AnimatedNumber({
       setDisplayValue(next);
       if (progress < 1) {
         frameRef.current = requestAnimationFrame(step);
+      } else if (!initialCatchupDoneRef.current) {
+        initialCatchupDoneRef.current = true;
       }
     };
 
