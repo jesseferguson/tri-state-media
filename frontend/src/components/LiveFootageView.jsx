@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertTriangle, CalendarDays, CheckCircle2, Gauge, Goal, History, Maximize2, Minimize2, Save, Timer } from "lucide-react";
-import { fetchCollection, requestApi } from "../api";
+import { Activity, AlertTriangle, CheckCircle2, Gauge, Goal, Maximize2, Minimize2, Timer } from "lucide-react";
+import { requestApi } from "../api";
 
 const firebaseBase = "https://realtime2-94ff8-default-rtdb.firebaseio.com";
-const baseGoalFootage = 400000;
+const goalFootage = 400000;
 const wasteBufferPercent = 0.04;
-const wasteBufferFootage = Math.round(baseGoalFootage * wasteBufferPercent);
-const goalFootage = baseGoalFootage + wasteBufferFootage;
 const refreshMs = 30000;
 const dailyRefreshMs = 120000;
 const dailyLimit = 420;
@@ -35,6 +33,11 @@ function formatInt(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "--";
   return Math.round(number).toLocaleString();
+}
+
+function wasteAdjustedFootage(rawFootage) {
+  const total = Math.max(0, Number(rawFootage) || 0);
+  return total * (1 - wasteBufferPercent);
 }
 
 function pad2(value) {
@@ -202,33 +205,6 @@ function normalizeArchiveRecord(record) {
   };
 }
 
-function upsertArchiveRecord(records, rawRecord) {
-  const record = normalizeArchiveRecord(rawRecord);
-  const existing = records.find((item) => item.shiftDate === record.shiftDate);
-  if (existing && Number(existing.totalFootage || 0) > Number(record.totalFootage || 0)) return records;
-  const next = records.filter((item) => item.shiftDate !== record.shiftDate);
-  next.push(record);
-  return next.sort((a, b) => String(b.shiftDate).localeCompare(String(a.shiftDate)));
-}
-
-function recordPressTotal(record, pressKey) {
-  if (pressKey === "total") return Number(record.totalFootage || 0);
-  return Number(record.pressTotals?.find((press) => press.key === pressKey)?.total || 0);
-}
-
-function filterArchive(records, range) {
-  const now = new Date();
-  const ytdStart = new Date(now.getFullYear(), 0, 1);
-  const last30Start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
-
-  return records.filter((record) => {
-    const date = new Date(`${record.shiftDate}T00:00:00`);
-    if (range === "ytd") return date >= ytdStart;
-    if (range === "last30") return date >= last30Start;
-    return true;
-  });
-}
-
 function roundRect(ctx, x, y, width, height, radius) {
   const rr = Math.min(radius, height / 2, width / 2);
   ctx.beginPath();
@@ -369,18 +345,15 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
   const activeControllerRef = useRef(null);
   const refreshRef = useRef(null);
   const chartDrawnRef = useRef(false);
-  const [activeTab, setActiveTab] = useState("live");
-  const [historyRange, setHistoryRange] = useState("ytd");
-  const [historyPress, setHistoryPress] = useState("total");
   const savedArchiveIdsRef = useRef(new Set());
-  const [archiveRecords, setArchiveRecords] = useState([]);
   const [snapshot, setSnapshot] = useState({
     state: "loading",
     error: "",
     archiveStatus: "",
-    historyError: "",
     rangeText: "",
     companyTotal: 0,
+    adjustedFootage: 0,
+    currentWasteFootage: 0,
     remaining: goalFootage,
     percent: 0,
     updatedAt: "",
@@ -389,35 +362,10 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
   });
 
   const sortedTiles = useMemo(() => [...snapshot.tiles].sort((a, b) => b.total - a.total), [snapshot.tiles]);
-  const historyRows = useMemo(() => filterArchive(archiveRecords, historyRange), [archiveRecords, historyRange]);
-  const historySelectedTotal = useMemo(
-    () => historyRows.reduce((sum, record) => sum + recordPressTotal(record, historyPress), 0),
-    [historyRows, historyPress]
-  );
-  const historyYtdTotal = useMemo(
-    () => filterArchive(archiveRecords, "ytd").reduce((sum, record) => sum + Number(record.totalFootage || 0), 0),
-    [archiveRecords]
-  );
-  const historyByPress = useMemo(
-    () => presses.map((press) => ({
-      ...press,
-      color: pressColor(presses.findIndex((item) => item.key === press.key)),
-      total: historyRows.reduce((sum, record) => sum + recordPressTotal(record, press.key), 0),
-    })),
-    [historyRows]
-  );
-  const goalHit = snapshot.companyTotal >= goalFootage;
+  const goalHit = snapshot.adjustedFootage >= goalFootage;
   const wasteBufferPercentLabel = `${Math.round(wasteBufferPercent * 100)}%`;
-
-  async function loadArchiveRecords() {
-    try {
-      const payload = await fetchCollection(archiveEndpoint, { fetchAll: true, pageSize: 1000, ordering: "-shift_date" });
-      setArchiveRecords((payload.results ?? []).map(normalizeArchiveRecord));
-      setSnapshot((current) => ({ ...current, historyError: "" }));
-    } catch (error) {
-      setSnapshot((current) => ({ ...current, historyError: error.message || "Could not load saved footage history." }));
-    }
-  }
+  const countedProgressPercent = Math.max(0, Math.min(100, snapshot.percent));
+  const wasteProgressPercent = Math.max(0, Math.min(100 - countedProgressPercent, (snapshot.currentWasteFootage / goalFootage) * 100));
 
   async function commitArchiveRecord(record) {
     const archiveId = record.shift_date;
@@ -429,13 +377,11 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
     });
 
     savedArchiveIdsRef.current.add(archiveId);
-    setArchiveRecords((current) => upsertArchiveRecord(current, saved));
     return normalizeArchiveRecord(saved);
   }
 
   useEffect(() => {
     mountedRef.current = true;
-    loadArchiveRecords();
 
     async function refresh({ forceDaily = false } = {}) {
       activeControllerRef.current?.abort();
@@ -516,17 +462,18 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
                 : "Saved to database";
             } catch (error) {
               archiveStatus = "Database archive failed";
-              setSnapshot((current) => ({ ...current, historyError: error.message || "Could not save live footage archive." }));
             }
           }
         }
 
         const companyTotal = dailyData?.companyTotal ?? 0;
-        const remaining = Math.max(0, goalFootage - companyTotal);
-        const percent = Math.max(0, Math.min(100, (companyTotal / goalFootage) * 100));
+        const adjustedFootage = wasteAdjustedFootage(companyTotal);
+        const currentWasteFootage = Math.max(0, companyTotal - adjustedFootage);
+        const remaining = Math.max(0, goalFootage - adjustedFootage);
+        const percent = Math.max(0, Math.min(100, (adjustedFootage / goalFootage) * 100));
         const elapsedHours = Math.max(0.1, (effectiveNow.getTime() - start.getTime()) / 3600000);
         const shiftHours = (end.getTime() - start.getTime()) / 3600000;
-        const pacePerHour = companyTotal / elapsedHours;
+        const pacePerHour = adjustedFootage / elapsedHours;
         const projected = pacePerHour * shiftHours;
 
         setSnapshot((current) => ({
@@ -536,6 +483,8 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
           archiveStatus,
           rangeText,
           companyTotal,
+          adjustedFootage,
+          currentWasteFootage,
           remaining,
           percent,
           updatedAt: new Date().toLocaleTimeString(),
@@ -577,8 +526,6 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
   }, []);
 
   useEffect(() => {
-    if (activeTab !== "live") return undefined;
-
     const frameId = window.requestAnimationFrame(() => {
       if (canvasRef.current && dailyCacheRef.current) {
         drawChart(canvasRef.current, dailyCacheRef.current.seriesList, dailyCacheRef.current.labels);
@@ -589,7 +536,7 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [activeTab, tvMode]);
+  }, [tvMode]);
 
   return (
     <section className="live-footage-view">
@@ -616,188 +563,74 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
         </div>
       </div>
 
-      <div className="live-footage-tabs">
-        <button type="button" className={activeTab === "live" ? "active" : ""} onClick={() => setActiveTab("live")}>
-          <Gauge size={15} /> Live Shift
-        </button>
-        <button type="button" className={activeTab === "history" ? "active" : ""} onClick={() => setActiveTab("history")}>
-          <History size={15} /> Footage History
-        </button>
+      <div className="live-footage-metrics">
+        <Metric icon={goalHit ? CheckCircle2 : Gauge} label="Total Footage" value={formatInt(snapshot.adjustedFootage)} note={goalHit ? "Shift goal reached" : snapshot.paceText || "Waiting for Firebase data"} tone={goalHit ? "hit" : ""} />
+        <Metric icon={Goal} label="Shift Goal" value={formatInt(goalFootage)} note={`After ${wasteBufferPercentLabel} waste`} tone={goalHit ? "hit" : ""} />
+        <Metric icon={Timer} label="Remaining" value={formatInt(snapshot.remaining)} note="To hit the shift goal" />
       </div>
 
-      {activeTab === "live" ? (
-        <>
-          <div className="live-footage-metrics">
-            <Metric icon={Goal} label="Waste-Adjusted Goal" value={formatInt(goalFootage)} note={`Base ${formatInt(baseGoalFootage)} + ${wasteBufferPercentLabel} waste`} tone={goalHit ? "hit" : ""} />
-            <Metric icon={Activity} label="Waste Buffer" value={`+${formatInt(wasteBufferFootage)}`} note="Extra footage required before goal can hit" />
-            <Metric icon={goalHit ? CheckCircle2 : Gauge} label="Total So Far" value={formatInt(snapshot.companyTotal)} note={goalHit ? "Waste-adjusted target reached" : snapshot.paceText || "Waiting for Firebase data"} tone={goalHit ? "hit" : ""} />
-            <Metric icon={Timer} label="Remaining" value={formatInt(snapshot.remaining)} note="To hit the waste-adjusted target" />
-          </div>
+      <div className={`live-footage-progress ${goalHit ? "goal-hit" : ""}`}>
+        <div className="live-footage-progress-track">
+          <span className="live-footage-progress-counted" style={{ width: `${countedProgressPercent}%` }} />
+          <span className="live-footage-progress-waste" style={{ left: `${countedProgressPercent}%`, width: `${wasteProgressPercent}%` }} />
+        </div>
+        <p>
+          {goalHit ? "Goal hit" : `${snapshot.percent.toFixed(1)}% to goal`}
+          <em>{wasteBufferPercentLabel} waste: {formatInt(snapshot.currentWasteFootage)} ft held / Updated {snapshot.updatedAt || "--"}{snapshot.archiveStatus ? ` - ${snapshot.archiveStatus}` : ""}</em>
+        </p>
+      </div>
 
-          <div className="live-footage-waste-buffer">
-            <AlertTriangle size={20} />
-            <div>
-              <strong>{wasteBufferPercentLabel} waste buffer is included before the goal turns green</strong>
-              <span>Base goal {formatInt(baseGoalFootage)} ft + waste buffer {formatInt(wasteBufferFootage)} ft = true target {formatInt(goalFootage)} ft.</span>
-            </div>
-          </div>
-
-          <div className={`live-footage-progress ${goalHit ? "goal-hit" : ""}`}>
-            <div><span style={{ width: `${snapshot.percent}%` }} /></div>
-            <p>
-              {goalHit ? "Waste-adjusted goal hit" : `${snapshot.percent.toFixed(1)}% to waste-adjusted goal`}
-              <em>Updated {snapshot.updatedAt || "--"}{snapshot.archiveStatus ? ` - ${snapshot.archiveStatus}` : ""}</em>
-            </p>
-          </div>
-
-          {goalHit && (
-            <div className="live-footage-goal-hit">
-              <CheckCircle2 size={22} />
-              <div>
-                <strong>Waste-adjusted shift goal hit</strong>
-                <span>{formatInt(snapshot.companyTotal)} ft against a {formatInt(goalFootage)} ft target, including the {wasteBufferPercentLabel} waste buffer.</span>
-              </div>
-            </div>
-          )}
-
-          {snapshot.error && (
-            <div className="live-footage-error">
-              <AlertTriangle size={15} />
-              <span>{snapshot.error}</span>
-            </div>
-          )}
-
-          <div className="live-footage-grid">
-            <article className="live-footage-card live-footage-chart-card">
-              <header>
-                <strong>All Presses</strong>
-                <span>Cumulative footage - full shift - {bucketMinutes}-minute buckets</span>
-              </header>
-              <canvas ref={canvasRef} aria-label="Cumulative press footage chart" />
-            </article>
-
-            <article className="live-footage-card">
-              <header>
-                <strong>Press Status</strong>
-                <span>Speed + total footage</span>
-              </header>
-              <div className="live-footage-tiles">
-                {sortedTiles.map((tile) => (
-                  <div className={`live-footage-tile ${speedTone(tile.speed)}`} key={tile.key}>
-                    <div>
-                      <span style={{ background: tile.color }} />
-                      <div>
-                        <strong>{tile.name}</strong>
-                        <em>{tile.key}</em>
-                      </div>
-                    </div>
-                    <div className="live-footage-press-numbers">
-                      <strong>{formatInt(tile.total)} <small>ft</small></strong>
-                      <em>{formatInt(tile.speed)} FPM</em>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="live-footage-note">Speeds and daily rows over {maxValidSpeedFpm} FPM are ignored. The browser saves the finished shift locally once it reaches 2:59 AM.</p>
-            </article>
-          </div>
-        </>
-      ) : (
-        <div className="live-footage-history">
-          <div className="live-footage-history-controls">
-            <label>
-              Range
-              <select value={historyRange} onChange={(event) => setHistoryRange(event.target.value)}>
-                <option value="ytd">YTD</option>
-                <option value="last30">Last 30 days</option>
-                <option value="all">All saved</option>
-              </select>
-            </label>
-            <label>
-              Press
-              <select value={historyPress} onChange={(event) => setHistoryPress(event.target.value)}>
-                <option value="total">Company Total</option>
-                {presses.map((press) => <option value={press.key} key={press.key}>{press.name}</option>)}
-              </select>
-            </label>
-            <button type="button" onClick={loadArchiveRecords}>
-              <Activity size={15} /> Refresh History
-            </button>
-          </div>
-
-          {snapshot.historyError && (
-            <div className="live-footage-error">
-              <AlertTriangle size={15} />
-              <span>{snapshot.historyError}</span>
-            </div>
-          )}
-
-          <div className="live-footage-metrics">
-            <Metric icon={CalendarDays} label="Saved Shifts" value={formatInt(historyRows.length)} note="Stored in Django database" />
-            <Metric icon={History} label="Selected Total" value={formatInt(historySelectedTotal)} note={`${historyRange.toUpperCase()} - ${historyPress === "total" ? "Company Total" : presses.find((press) => press.key === historyPress)?.name}`} />
-            <Metric icon={Save} label="YTD Company Total" value={formatInt(historyYtdTotal)} note="All saved shifts this year" />
-          </div>
-
-          <div className="live-footage-history-grid">
-            <article className="live-footage-card">
-              <header>
-                <strong>Press Totals</strong>
-                <span>{historyRange === "ytd" ? "Year to date" : historyRange === "last30" ? "Last 30 days" : "All saved shifts"}</span>
-              </header>
-              <div className="live-footage-tiles">
-                {historyByPress.map((press) => (
-                  <div className="live-footage-tile" key={press.key}>
-                    <div>
-                      <span style={{ background: press.color }} />
-                      <div>
-                        <strong>{press.name}</strong>
-                        <em>{press.key}</em>
-                      </div>
-                    </div>
-                    <div>
-                      <strong>{formatInt(press.total)}</strong>
-                      <em>ft</em>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="live-footage-card">
-              <header>
-                <strong>Saved Shifts</strong>
-                <span>Daily archive</span>
-              </header>
-              <div className="live-footage-table-wrap">
-                <table className="live-footage-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>{historyPress === "total" ? "Selected Total" : presses.find((press) => press.key === historyPress)?.name}</th>
-                      <th>Company Total</th>
-                      <th>Saved</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyRows.length ? historyRows.map((record) => (
-                      <tr key={record.id}>
-                        <td>{record.shiftDate}</td>
-                        <td>{formatInt(recordPressTotal(record, historyPress))}</td>
-                        <td>{formatInt(record.totalFootage)}</td>
-                        <td>{record.savedAt ? new Date(record.savedAt).toLocaleString() : "--"}</td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan="4">No saved footage yet. The live page will archive the completed shift to Django at 2:59 AM.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </article>
+      {goalHit && (
+        <div className="live-footage-goal-hit">
+          <CheckCircle2 size={22} />
+          <div>
+            <strong>Shift goal hit</strong>
+            <span>{formatInt(snapshot.adjustedFootage)} ft total against a {formatInt(goalFootage)} ft goal. {wasteBufferPercentLabel} waste currently held: {formatInt(snapshot.currentWasteFootage)} ft.</span>
           </div>
         </div>
       )}
+
+      {snapshot.error && (
+        <div className="live-footage-error">
+          <AlertTriangle size={15} />
+          <span>{snapshot.error}</span>
+        </div>
+      )}
+
+      <div className="live-footage-grid">
+        <article className="live-footage-card live-footage-chart-card">
+          <header>
+            <strong>All Presses</strong>
+            <span>Cumulative footage - full shift - {bucketMinutes}-minute buckets</span>
+          </header>
+          <canvas ref={canvasRef} aria-label="Cumulative press footage chart" />
+        </article>
+
+        <article className="live-footage-card">
+          <header>
+            <strong>Press Status</strong>
+            <span>Speed + total footage</span>
+          </header>
+          <div className="live-footage-tiles">
+            {sortedTiles.map((tile) => (
+              <div className={`live-footage-tile ${speedTone(tile.speed)}`} key={tile.key}>
+                <div>
+                  <span style={{ background: tile.color }} />
+                  <div>
+                    <strong>{tile.name}</strong>
+                    <em>{tile.key}</em>
+                  </div>
+                </div>
+                <div className="live-footage-press-numbers">
+                  <strong>{formatInt(tile.total)} <small>ft</small></strong>
+                  <em>{formatInt(tile.speed)} FPM</em>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="live-footage-note">Speeds and daily rows over {maxValidSpeedFpm} FPM are ignored. The browser saves the finished shift locally once it reaches 2:59 AM.</p>
+        </article>
+      </div>
     </section>
   );
 }
