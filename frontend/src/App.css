@@ -638,17 +638,19 @@ p { margin: 4px 0 0; color: #aebed3; line-height: 1.35; }
 .press-speed-widget header {
   min-width: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
 .press-speed-widget header div {
   min-width: 0;
+  display: grid;
+  gap: 2px;
 }
 
 .press-speed-widget header span,
-.press-speed-widget header em {
+.press-speed-widget header strong {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -656,21 +658,21 @@ p { margin: 4px 0 0; color: #aebed3; line-height: 1.35; }
 }
 
 .press-speed-widget header span {
-  color: #0f172a;
-  font-size: .72rem;
+  color: #64748b;
+  font-size: .64rem;
   font-weight: 950;
   text-transform: uppercase;
 }
 
-.press-speed-widget header em {
-  margin-top: 2px;
+.press-speed-widget header strong {
   overflow: hidden;
-  color: #64748b;
-  font-size: .64rem;
-  font-style: normal;
-  font-weight: 800;
+  color: #0f172a;
+  font-size: 1.18rem;
+  font-weight: 950;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .press-speed-widget header button {
@@ -910,6 +912,14 @@ p { margin: 4px 0 0; color: #aebed3; line-height: 1.35; }
   color: #667085;
   font-size: .74rem;
 }
+.account-menu-panel em {
+  display: block;
+  margin-top: 3px;
+  color: #175cd3;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 900;
+}
 .account-menu-panel button {
   min-height: 36px;
   display: flex;
@@ -931,12 +941,45 @@ p { margin: 4px 0 0; color: #aebed3; line-height: 1.35; }
   padding: 8px;
   border-bottom: 1px solid #eef2f7;
 }
+.account-role-preview-card {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+}
+.account-menu-panel .account-role-preview-card > span,
 .account-menu-panel .account-company-card > span {
   color: #667085;
   font-size: .68rem;
   font-weight: 900;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+.account-role-preview-card select {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #101828;
+  font-size: .8rem;
+  font-weight: 850;
+}
+.account-menu-panel .account-role-preview-card button {
+  min-height: 32px;
+  justify-content: center;
+  border: 1px solid #bfdbfe;
+  background: #ffffff;
+  color: #175cd3;
+  font-weight: 900;
+}
+.account-role-preview-card small {
+  color: #175cd3;
+  font-size: .68rem;
+  font-weight: 850;
 }
 .account-company-options {
   display: grid;

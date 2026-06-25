@@ -1697,6 +1697,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const [quoteDataState, setQuoteDataState] = useState("loading");
   const [quoteDataError, setQuoteDataError] = useState("");
   const quoteDataReadyRef = useRef(false);
+  const quoteRouteAppliedRef = useRef("");
+  const initialJobTicketAppliedRef = useRef("");
+  const initialCustomerAppliedRef = useRef("");
   const jobTicketRequestRef = useRef(0);
   const selectedJobTicketRequestRef = useRef("");
 
@@ -1915,16 +1918,24 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    const wantsSavedQuotes = window.location.hash === "#saved-quotes" || params.get("quoteView") === "savedQuotes";
-    if (wantsSavedQuotes) setActiveTab("quotes");
-    if (!savedQuotes.length) return;
     const linkedQuoteId = params.get("quoteId");
-    if (!linkedQuoteId) return;
+    const wantsSavedQuotes = window.location.hash === "#saved-quotes" || params.get("quoteView") === "savedQuotes";
+    const routeKey = linkedQuoteId ? `quote:${linkedQuoteId}` : wantsSavedQuotes ? "saved-quotes" : "";
+    if (!routeKey || quoteRouteAppliedRef.current === routeKey) return;
+
+    if (!linkedQuoteId) {
+      setActiveTab("quotes");
+      quoteRouteAppliedRef.current = routeKey;
+      return;
+    }
+
+    if (!savedQuotes.length) return;
     const linkedQuote = savedQuotes.find((quote) => String(quote.id) === String(linkedQuoteId));
     if (!linkedQuote) return;
     setActiveTab("quotes");
     setQuoteWorkflowFilter(quoteWorkflowStatus(linkedQuote));
     setSelectedQuoteId(linkedQuote.id);
+    quoteRouteAppliedRef.current = routeKey;
   }, [savedQuotes]);
 
   useEffect(() => {
@@ -2011,21 +2022,33 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   }, []);
 
   useEffect(() => {
-    if (!initialJobTicketId) return;
+    if (!initialJobTicketId) {
+      initialJobTicketAppliedRef.current = "";
+      return;
+    }
+    const nextJobTicketId = String(initialJobTicketId);
+    if (initialJobTicketAppliedRef.current === nextJobTicketId) return;
+    initialJobTicketAppliedRef.current = nextJobTicketId;
     setActiveTab("pricing");
     setWasteManuallyEdited(false);
     setQuoteInfo((prev) => ({
       ...prev,
       linkMode: "ticket",
-      jobTicketId: String(initialJobTicketId),
+      jobTicketId: nextJobTicketId,
     }));
     setJobTicketPickerOpen(false);
   }, [initialJobTicketId]);
 
   useEffect(() => {
-    if (!initialCustomerId || !customers.length) return;
-    const customer = customers.find((item) => String(item.id) === String(initialCustomerId));
+    if (!initialCustomerId) {
+      initialCustomerAppliedRef.current = "";
+      return;
+    }
+    const nextCustomerId = String(initialCustomerId);
+    if (initialCustomerAppliedRef.current === nextCustomerId || !customers.length) return;
+    const customer = customers.find((item) => String(item.id) === nextCustomerId);
     if (!customer) return;
+    initialCustomerAppliedRef.current = nextCustomerId;
     setActiveTab("pricing");
     setQuoteInfo((prev) => ({
       ...prev,

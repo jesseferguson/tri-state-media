@@ -911,9 +911,19 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
   );
 }
 
-function AccountMenu({ currentUser, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
+function AccountMenu({
+  currentUser,
+  canManageUsers,
+  roleDefinitions = [],
+  previewRoleName = "",
+  onPreviewRoleChange,
+  onOpenUserAdmin,
+  onQuoteCompanyChange,
+  onSignOut,
+}) {
   const [open, setOpen] = useState(false);
   const activeQuoteCompany = quoteCompanyKey(currentUser?.quoteCompany);
+  const activeRoleLabel = previewRoleName || currentUser?.role || "";
 
   function openUsers() {
     setOpen(false);
@@ -927,7 +937,7 @@ function AccountMenu({ currentUser, canManageUsers, onOpenUserAdmin, onQuoteComp
       <button className="account-menu-trigger" type="button" onClick={() => setOpen((prev) => !prev)}>
         <ShieldCheck size={16} />
         <span>{currentUser.name}</span>
-        <em>{currentUser.role}</em>
+        <em>{previewRoleName ? `View: ${previewRoleName}` : currentUser.role}</em>
         <ChevronDown size={14} />
       </button>
       {open && (
@@ -935,7 +945,26 @@ function AccountMenu({ currentUser, canManageUsers, onOpenUserAdmin, onQuoteComp
           <div>
             <strong>{currentUser.name}</strong>
             <span>{currentUser.username} / {currentUser.role}</span>
+            {previewRoleName && <em>Development view: {previewRoleName}</em>}
           </div>
+          {canManageUsers && (
+            <div className="account-role-preview-card">
+              <span>View As Role</span>
+              <select value={previewRoleName} onChange={(event) => onPreviewRoleChange?.(event.target.value)}>
+                <option value="">Actual role ({currentUser.role})</option>
+                {roleDefinitions.map((role) => (
+                  <option value={role.name} key={role.id}>{role.name}</option>
+                ))}
+              </select>
+              {previewRoleName && (
+                <button type="button" onClick={() => onPreviewRoleChange?.("")}>
+                  <Shield size={14} />
+                  Back to {currentUser.role}
+                </button>
+              )}
+              <small>Current screen access: {activeRoleLabel}</small>
+            </div>
+          )}
           <div className="account-company-card">
             <span>Quote Company</span>
             <div className="account-company-options">
@@ -1133,6 +1162,7 @@ export default function App() {
 function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
   const queryClient = useQueryClient();
   const [activeKey, setActiveKey] = useState(() => defaultResourceKeyForRole(roleDefinitions, currentUser?.role));
+  const [previewRoleName, setPreviewRoleName] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [formMode, setFormMode] = useState(null); // null | create | edit
@@ -1156,16 +1186,34 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   const [toolingWorkspaceForm, setToolingWorkspaceForm] = useState(null);
   const [toolingItemForm, setToolingItemForm] = useState(null);
   const [toolingItemOverrides, setToolingItemOverrides] = useState({});
+  const canPreviewRoles = canManageUsers;
+  const activePreviewRoleName = canPreviewRoles ? previewRoleName : "";
+  const currentUserForView = useMemo(
+    () => activePreviewRoleName ? { ...currentUser, role: activePreviewRoleName, previewRole: activePreviewRoleName } : currentUser,
+    [activePreviewRoleName, currentUser]
+  );
+  const viewCanManageUsers = userIsAdmin(currentUserForView);
+  const viewRoleName = currentUserForView?.role || currentUser?.role || "";
+
+  useEffect(() => {
+    if (!canPreviewRoles) {
+      setPreviewRoleName("");
+      return;
+    }
+    if (!previewRoleName) return;
+    const roleExists = roleDefinitions.some((role) => role.name === previewRoleName);
+    if (!roleExists) setPreviewRoleName("");
+  }, [canPreviewRoles, previewRoleName, roleDefinitions]);
 
   const allowedResources = useMemo(
-    () => visibleResourcesForRole(roleDefinitions, currentUser?.role),
-    [roleDefinitions, currentUser?.role]
+    () => visibleResourcesForRole(roleDefinitions, viewRoleName),
+    [roleDefinitions, viewRoleName]
   );
-  const activeKeyAllowed = resourceAvailableForRole(roleDefinitions, currentUser?.role, activeKey);
+  const activeKeyAllowed = resourceAvailableForRole(roleDefinitions, viewRoleName, activeKey);
   const resource = activeKeyAllowed
     ? resourceMap[activeKey]
     : allowedResources[0] ?? resourceMap["quote-calculator"] ?? resources[0];
-  const singleResourceMode = allowedResources.length === 1 && !canManageUsers;
+  const singleResourceMode = allowedResources.length === 1 && !viewCanManageUsers;
   const showingStaticView = Boolean(resource.staticView);
   const showingJobTicketOverlay = resource.key === "job-tickets" && selected;
   const isMaterialTypePage = materialTypePageKeys.has(resource.key);
@@ -1180,8 +1228,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
 
   useEffect(() => {
     if (activeKeyAllowed) return;
-    setActiveKey(defaultResourceKeyForRole(roleDefinitions, currentUser?.role));
-  }, [activeKeyAllowed, currentUser?.role, roleDefinitions]);
+    setActiveKey(defaultResourceKeyForRole(roleDefinitions, viewRoleName));
+  }, [activeKeyAllowed, viewRoleName, roleDefinitions]);
 
   const listQuery = useQuery({
     queryKey: collectionQueryKey,
@@ -1399,7 +1447,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       return {
         ...dataPayload,
         ticket_number: generatedJobTicketNumber(dataPayload, formMode === "edit" ? selected : null),
-        performed_by: currentUser?.name || "",
+        performed_by: currentUserForView?.name || "",
       };
     }
     if (resource.key !== "raw-materials") return payload;
@@ -1415,14 +1463,14 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
 
   function canUseRecordField(field) {
     if (!field.requiresResourceAccess) return true;
-    return roleHasResourceAccess(roleDefinitions, currentUser?.role, field.requiresResourceAccess);
+    return roleHasResourceAccess(roleDefinitions, viewRoleName, field.requiresResourceAccess);
   }
 
-  const canEditJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-editor");
-  const canScheduleFromJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "job-ticket-schedule");
-  const canQuoteJobTicket = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-calculator");
-  const canManageQuoteMaterials = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-material-admin");
-  const canApproveQuotes = roleHasResourceAccess(roleDefinitions, currentUser?.role, "quote-approval");
+  const canEditJobTicket = roleHasResourceAccess(roleDefinitions, viewRoleName, "job-ticket-editor");
+  const canScheduleFromJobTicket = roleHasResourceAccess(roleDefinitions, viewRoleName, "job-ticket-schedule");
+  const canQuoteJobTicket = roleHasResourceAccess(roleDefinitions, viewRoleName, "quote-calculator");
+  const canManageQuoteMaterials = roleHasResourceAccess(roleDefinitions, viewRoleName, "quote-material-admin");
+  const canApproveQuotes = roleHasResourceAccess(roleDefinitions, viewRoleName, "quote-approval");
   const jobTicketScheduleResource = useMemo(() => {
     const schedule = resourceMap["production-schedule"];
     const hiddenOnTicket = new Set([
@@ -1478,7 +1526,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
           const formData = new FormData();
           formData.append("image", upload.file);
           formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
-          formData.append("performed_by", currentUser?.name || "");
+          formData.append("performed_by", currentUserForView?.name || "");
           saved = await uploadRecordAction(resource.endpoint, saved.id, `images/${upload.slot}`, formData);
         }
       }
@@ -1906,7 +1954,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         name: material.name || material.material_family || material.code,
         status: "scheduled",
         print_status: "not_printed",
-        scheduled_by: currentUser?.name || "",
+        scheduled_by: currentUserForView?.name || "",
         scheduled_material: material.id,
         produced_material: material.id,
         liner,
@@ -1987,7 +2035,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       const cleanPayload = {
         ...payload,
         ticket_number: generatedJobTicketNumber(payload, selected),
-        performed_by: currentUser?.name || "",
+        performed_by: currentUserForView?.name || "",
       };
       delete cleanPayload.__imageUploads;
       let saved = await updateRecord("job-tickets", selected.id, cleanPayload);
@@ -1996,7 +2044,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         const formData = new FormData();
         formData.append("image", upload.file);
         formData.append("name", autoImageName(upload.slot, saved || cleanPayload));
-        formData.append("performed_by", currentUser?.name || "");
+        formData.append("performed_by", currentUserForView?.name || "");
         saved = await uploadRecordAction("job-tickets", saved.id, `images/${upload.slot}`, formData);
       }
       return saved;
@@ -2015,8 +2063,8 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
       job_ticket: selected.id,
       customer: selected.customer || null,
       status: "unscheduled",
-      scheduled_by: currentUser.name,
-      last_updated_by: currentUser.name,
+      scheduled_by: currentUserForView.name,
+      last_updated_by: currentUserForView.name,
       scheduled_date: payload.order_date || new Date().toISOString().slice(0, 10),
       press: null,
       press_sequence: null,
@@ -2038,7 +2086,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   async function requestFlexDieReorder(dieOrId, note = "") {
     const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
     const saved = await postRecordAction("flex-dies", id, "request-reorder", {
-      requested_by: currentUser.name,
+      requested_by: currentUserForView.name,
       notes: note,
     });
     await refreshFlexDie(saved);
@@ -2047,7 +2095,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   async function markFlexDieOrdered(dieOrId, note = "") {
     const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
     const saved = await postRecordAction("flex-dies", id, "mark-ordered", {
-      performed_by: currentUser.name,
+      performed_by: currentUserForView.name,
       notes: note,
     });
     await refreshFlexDie(saved);
@@ -2056,7 +2104,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   async function receiveFlexDie(dieOrId, { serialNumber = "", quantity = 1, notes = "" } = {}) {
     const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
     const saved = await postRecordAction("flex-dies", id, "receive-die", {
-      received_by: currentUser.name,
+      received_by: currentUserForView.name,
       serial_number: serialNumber,
       quantity,
       notes,
@@ -2067,7 +2115,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
   async function adjustFlexDieCount(dieOrId, { activeCount = 0, notes = "" } = {}) {
     const id = typeof dieOrId === "object" ? dieOrId.id : dieOrId;
     const saved = await postRecordAction("flex-dies", id, "adjust-count", {
-      performed_by: currentUser.name,
+      performed_by: currentUserForView.name,
       active_die_count: activeCount,
       notes,
     });
@@ -2320,11 +2368,14 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         <div>
           <p className="eyebrow">Tri-State Media</p>
           <strong>{resource.label}</strong>
-          <span>{currentUser.name} / {currentUser.role}</span>
+          <span>{currentUser.name} / {activePreviewRoleName ? `Viewing ${activePreviewRoleName}` : currentUser.role}</span>
         </div>
         <AccountMenu
           currentUser={currentUser}
           canManageUsers={canManageUsers}
+          roleDefinitions={roleDefinitions}
+          previewRoleName={activePreviewRoleName}
+          onPreviewRoleChange={setPreviewRoleName}
           onOpenUserAdmin={onOpenUserAdmin}
           onQuoteCompanyChange={onQuoteCompanyChange}
           onSignOut={onSignOut}
@@ -2428,6 +2479,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
             <AccountMenu
               currentUser={currentUser}
               canManageUsers={canManageUsers}
+              roleDefinitions={roleDefinitions}
+              previewRoleName={activePreviewRoleName}
+              onPreviewRoleChange={setPreviewRoleName}
               onOpenUserAdmin={onOpenUserAdmin}
               onQuoteCompanyChange={onQuoteCompanyChange}
               onSignOut={onSignOut}
@@ -2457,7 +2511,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
 
         {resource.viewMode === "quoteCalculator" ? (
           <QuotePricingTool
-            currentUser={currentUser}
+            currentUser={currentUserForView}
             initialJobTicketId={quoteJobTicketId}
             initialCustomerId={quoteCustomerId}
             canManageQuoteMaterials={canManageQuoteMaterials}
@@ -2466,9 +2520,9 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
         ) : resource.viewMode === "liveFootage" ? (
           <LiveFootageView tvMode={liveFootageTvMode} onTvModeChange={setLiveFootageTvMode} />
         ) : resource.viewMode === "coaterOperator" ? (
-          <CoaterOperatorView currentUser={currentUser} />
+          <CoaterOperatorView currentUser={currentUserForView} />
         ) : resource.viewMode === "dataImport" ? (
-          <DataImportTool currentUser={currentUser} />
+          <DataImportTool currentUser={currentUserForView} />
         ) : (
           <>
             {resource.searchMode === "flexDie" ? (
@@ -2567,7 +2621,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     rows={tableRows}
                     selected={selected}
                     presses={lookupQuery.data?.presses ?? []}
-                    currentUser={currentUser}
+                    currentUser={currentUserForView}
                     lookups={lookupQuery.data ?? {}}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onClose={() => setSelected(null)}
@@ -2578,7 +2632,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     onUpdate={(id, payload) => scheduleUpdateMutation.mutate({ id, payload })}
                     onRemove={(row, reason) => scheduleRemoveMutation.mutateAsync({
                       id: row.id,
-                      payload: { reason, performed_by: currentUser.name },
+                      payload: { reason, performed_by: currentUserForView.name },
                     })}
                     onFlexDieReorder={(die, note) => requestFlexDieReorder(die, note)}
                     onFlexDieCountUpdate={(die, payload) => adjustFlexDieCount(die, payload)}
@@ -2604,7 +2658,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                       locations={lookupQuery.data?.locations ?? []}
                       submitting={scanRollMutation.isPending}
                       error={scanRollMutation.error?.message}
-                      currentUser={currentUser}
+                      currentUser={currentUserForView}
                       onSubmit={(payload) => scanRollMutation.mutate(payload)}
                       onSelect={(row) => { setSelected(row); setFormMode(null); setUsageOpen(false); setRollOpen(true); }}
                     />
@@ -2683,7 +2737,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                   <SupplierTable
                     rows={visibleRows}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
-                    onDelete={canManageUsers ? confirmDeleteRecord : undefined}
+                    onDelete={viewCanManageUsers ? confirmDeleteRecord : undefined}
                   />
                 ) : isMaterialTypePage ? (
                   <MaterialTypeTable
@@ -2692,7 +2746,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                     selectedId={selected?.id}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
-                    onDelete={canManageUsers ? confirmDeleteRecord : undefined}
+                    onDelete={viewCanManageUsers ? confirmDeleteRecord : undefined}
                     onAddSupplierOption={(material) => {
                       setMaterialTypeOpen(false);
                       setMaterialSupplierReturnKey(resource.key);
@@ -2862,7 +2916,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 renderScheduleForm={({ onCancel }) => (
                   <RecordForm
                     resource={jobTicketScheduleResource}
-                    defaults={scheduleDefaultsForTicket(selected, currentUser)}
+                    defaults={scheduleDefaultsForTicket(selected, currentUserForView)}
                     lookups={{ ...(lookupQuery.data ?? {}), "job-tickets": selected ? [selected] : [] }}
                     submitting={jobTicketScheduleCreateMutation.isPending}
                     onSubmit={(payload) => jobTicketScheduleCreateMutation.mutate(payload)}
@@ -3002,7 +3056,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={lookupQuery.data ?? {}}
                 submitting={saveMutation.isPending}
-                onSubmit={(payload) => saveMutation.mutate({ ...payload, last_updated_by: currentUser.name })}
+                onSubmit={(payload) => saveMutation.mutate({ ...payload, last_updated_by: currentUserForView.name })}
                 onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
               />
@@ -3096,7 +3150,7 @@ function SignedInApp({ currentUser, roleDefinitions, canManageUsers, onOpenUserA
               setMaterialTypeOpen(false);
               setFormMode("edit");
             }}
-            onDelete={canManageUsers ? () => {
+            onDelete={viewCanManageUsers ? () => {
               setMaterialTypeOpen(false);
               confirmDeleteRecord(selected);
             } : undefined}
