@@ -1242,6 +1242,10 @@ function quotePreparedByRole(quote) {
   return quote?.preparedByRole || quote?.preparedByTitle || "";
 }
 
+function quoteCompanyTeamName(quoteCompany) {
+  return quoteCompany?.teamName || quoteCompany?.label || "Team Tri-State";
+}
+
 function quotePersonKey(quote) {
   if (quote?.preparedByUserId) return `user:${quote.preparedByUserId}`;
   return `name:${quotePreparedByName(quote).toLowerCase()}`;
@@ -1577,8 +1581,8 @@ function QuoteDocument({ quote }) {
         </div>
         <div className="quote-doc-contact-card">
           <strong>{quoteThankYouMessage}</strong>
-          <span>{quotePreparedByName(quote)}</span>
-          <em>{quotePreparedByRole(quote) || quoteCompany.label}</em>
+          <span>{quoteCompanyTeamName(quoteCompany)}</span>
+          <em>{quoteCompany.label}</em>
           {quote.contactEmail && <em>{quote.contactEmail}</em>}
         </div>
       </section>
@@ -2816,15 +2820,16 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
 <title>${escapeHtml(quote.quoteNumber)}</title>
 <style>
 @page{size:letter;margin:.35in}
+*{box-sizing:border-box}
 body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .page{width:8.5in;min-height:11in;margin:0 auto;background:#fff;padding:.34in;box-sizing:border-box}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
 .brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:12px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:12px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
-.meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:92px 1fr;border-top:1px solid #111827;min-height:24px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{padding:6px 7px;font-size:12px}
-.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:12px;text-align:left;padding:7px 6px}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:7px 6px;font-size:12px}.sales-table td:first-child{border-left:0}.sales-table th:nth-child(1){width:50%}.sales-table th:nth-child(2){width:10%}.sales-table th:nth-child(3){width:9%}.sales-table th:nth-child(4){width:15%}.sales-table th:nth-child(5){width:16%}.sales-table strong{display:block;font-size:12px}.sales-table span{display:block;margin-top:4px;font-size:12px;line-height:1.25}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
+.meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:14px;margin-top:18px}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:128px minmax(0,1fr);border-top:1px solid #111827;min-height:28px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{min-width:0;padding:6px 7px;font-size:12px;overflow-wrap:anywhere}
+.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:12px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:12px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:11%}.sales-table th:nth-child(3){width:8%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:12px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:12px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
 .signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-box p{margin:0 0 10px;font-size:12px}.sig-box strong{display:block;margin-top:6px;font-size:12px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px}.contact span{margin-top:16px;font-size:12px;font-weight:700}.contact em{margin-top:8px;font-size:12px;font-style:normal}
 .terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}
-@media print{body{background:white}.page{margin:0;width:auto;min-height:auto;padding:0}.no-print{display:none}}
+@media print{body{background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{width:auto;max-width:7.8in;min-height:auto;margin:0 auto;padding:0}.no-print{display:none}}
 </style>
 </head>
 <body>
@@ -2838,7 +2843,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr>`).join("")}
 </tbody><tfoot><tr><td colspan="4">Total in US$</td><td>${escapeHtml(money(totals.sellPrice))}</td></tr></tfoot></table>
 </section>
-<section class="signature"><div class="sig-box"><p>Client P.O. ${escapeHtml(salesInfo.clientPo || "_______________________")}</p><p>Authorized Signature: _______________________</p><p>Printed Name: _____________________________</p><p>Title: ____________________________________</p><p>Date: _________________________</p><strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong></div><div class="contact"><strong>${escapeHtml(quoteThankYouMessage)}</strong><span>${escapeHtml(quotePreparedByName(quote))}</span><em>${escapeHtml(quotePreparedByRole(quote) || quoteCompany.label)}</em>${quote.contactEmail ? `<em>${escapeHtml(quote.contactEmail)}</em>` : ""}</div></section>
+<section class="signature"><div class="sig-box"><p>Client P.O. ${escapeHtml(salesInfo.clientPo || "_______________________")}</p><p>Authorized Signature: _______________________</p><p>Printed Name: _____________________________</p><p>Title: ____________________________________</p><p>Date: _________________________</p><strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong></div><div class="contact"><strong>${escapeHtml(quoteThankYouMessage)}</strong><span>${escapeHtml(quoteCompanyTeamName(quoteCompany))}</span><em>${escapeHtml(quoteCompany.label)}</em>${quote.contactEmail ? `<em>${escapeHtml(quote.contactEmail)}</em>` : ""}</div></section>
 <section class="terms">${quote.notes ? `<p>${escapeHtml(quote.notes)}</p>` : ""}<ul>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ul></section>
 </main>
 <script>window.print();</script>
@@ -2864,9 +2869,64 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     const logoImage = await loadQuoteLogoForPdf(quoteCompany.logo);
     const commands = [];
 
-    function text(x, y, size, value, font = "F1", gray = 0) {
-      const readableSize = Math.max(12, size);
-      commands.push(`BT /${font} ${readableSize} Tf ${gray} g ${x} ${y} Td (${pdfEscape(value)}) Tj ET`);
+    function pdfTextSize(size) {
+      return Math.max(12, size);
+    }
+
+    function estimatePdfTextWidth(value, size, font = "F1") {
+      const readableSize = pdfTextSize(size);
+      const weight = font === "F2" ? 0.57 : 0.53;
+      return String(value ?? "").length * readableSize * weight;
+    }
+
+    function fitPdfText(value, maxWidth, size, font = "F1") {
+      const textValue = String(value ?? "").replace(/\s+/g, " ").trim();
+      if (!maxWidth || estimatePdfTextWidth(textValue, size, font) <= maxWidth) return textValue;
+      const ellipsis = "...";
+      let next = textValue;
+      while (next.length > 0 && estimatePdfTextWidth(`${next}${ellipsis}`, size, font) > maxWidth) {
+        next = next.slice(0, -1);
+      }
+      return next ? `${next.trimEnd()}${ellipsis}` : "";
+    }
+
+    function wrapPdfText(value, maxWidth, size, font = "F1", maxLines = 2) {
+      const words = String(value ?? "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+      if (!words.length) return [];
+      const lines = [];
+      let current = "";
+      words.forEach((word) => {
+        const candidate = current ? `${current} ${word}` : word;
+        if (estimatePdfTextWidth(candidate, size, font) <= maxWidth) {
+          current = candidate;
+          return;
+        }
+        if (current) lines.push(current);
+        current = word;
+      });
+      if (current) lines.push(current);
+      if (lines.length <= maxLines) return lines.map((lineText) => fitPdfText(lineText, maxWidth, size, font));
+      const kept = lines.slice(0, maxLines);
+      kept[maxLines - 1] = fitPdfText(lines.slice(maxLines - 1).join(" "), maxWidth, size, font);
+      return kept;
+    }
+
+    function text(x, y, size, value, font = "F1", gray = 0, options = {}) {
+      const readableSize = pdfTextSize(size);
+      const textValue = options.maxWidth ? fitPdfText(value, options.maxWidth, size, font) : String(value ?? "");
+      commands.push(`BT /${font} ${readableSize} Tf ${gray} g ${x} ${y} Td (${pdfEscape(textValue)}) Tj ET`);
+    }
+
+    function textRight(xRight, y, size, value, font = "F1", gray = 0, maxWidth = 80) {
+      const fitted = fitPdfText(value, maxWidth, size, font);
+      const width = estimatePdfTextWidth(fitted, size, font);
+      text(Math.max(42, xRight - width), y, size, fitted, font, gray);
+    }
+
+    function textLines(x, y, size, lines, font = "F1", gray = 0, lineHeight = 15) {
+      lines.forEach((lineText, index) => {
+        text(x, y - index * lineHeight, size, lineText, font, gray);
+      });
     }
 
     function line(x1, y1, x2, y2) {
@@ -2898,53 +2958,60 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
 
     text(42, 642, 10, "Quotation for:", "F2");
     quoteLines.slice(0, 5).forEach((lineText, index) => {
-      text(42, 624 - index * 13, index === 0 ? 10 : 8, clipText(lineText, 46), index === 0 ? "F2" : "F1");
+      text(42, 624 - index * 15, index === 0 ? 10 : 8, lineText, index === 0 ? "F2" : "F1", 0, { maxWidth: 260 });
     });
 
     box(330, 570, 240, 76);
     line(330, 621, 570, 621);
     line(330, 596, 570, 596);
-    line(420, 570, 420, 646);
+    line(462, 570, 462, 646);
     text(340, 630, 8, "Date:", "F2");
-    text(428, 630, 8, quoteLongDateLabel(quote.createdAt));
+    text(470, 630, 8, quoteLongDateLabel(quote.createdAt), "F1", 0, { maxWidth: 92 });
     text(340, 605, 8, "Customer ID:", "F2");
-    text(428, 605, 8, clipText(salesInfo.customerCode || salesInfo.customerId || "--", 26));
-    text(340, 580, 8, "Quote Expiration Date:", "F2");
-    text(428, 580, 8, quoteLongDateLabel(salesInfo.quoteExpirationDate));
+    text(470, 605, 8, salesInfo.customerCode || salesInfo.customerId || "--", "F1", 0, { maxWidth: 92 });
+    text(340, 580, 8, "Quote Expiration:", "F2", 0, { maxWidth: 112 });
+    text(470, 580, 8, quoteLongDateLabel(salesInfo.quoteExpirationDate), "F1", 0, { maxWidth: 92 });
 
     const tableX = 42;
     const tableTop = 542;
-    const headerHeight = 22;
-    const rowHeight = 76;
-    const visibleItems = items.slice(0, 3);
-    const columns = [42, 312, 366, 410, 492, 570];
-    const tableBottom = tableTop - headerHeight - visibleItems.length * rowHeight - 20;
+    const tableWidth = 528;
+    const headerHeight = 28;
+    const rowHeight = 92;
+    const totalRowHeight = 28;
+    const visibleItems = items.slice(0, 2);
+    const columns = [42, 302, 358, 404, 488, 570];
+    const tableBottom = tableTop - headerHeight - visibleItems.length * rowHeight - totalRowHeight;
     fillBox(tableX, tableTop - headerHeight, 528, headerHeight, 0);
-    text(50, tableTop - 12, 8, "Part Number & Description", "F2", 1);
-    text(326, tableTop - 12, 8, "Qty", "F2", 1);
-    text(378, tableTop - 12, 8, "UoM", "F2", 1);
-    text(426, tableTop - 12, 8, "Per Unit US$", "F2", 1);
-    text(506, tableTop - 12, 8, "Extended US$", "F2", 1);
-    box(tableX, tableBottom, 528, tableTop - tableBottom);
+    fillBox(tableX, tableBottom, tableWidth, totalRowHeight, 0.93);
+    text(50, tableTop - 18, 8, "Part Number & Description", "F2", 1, { maxWidth: 238 });
+    textRight(columns[2] - 8, tableTop - 18, 8, "Qty", "F2", 1, columns[2] - columns[1] - 12);
+    textRight(columns[3] - 8, tableTop - 18, 8, "UoM", "F2", 1, columns[3] - columns[2] - 12);
+    textRight(columns[4] - 8, tableTop - 18, 8, "Per Unit", "F2", 1, columns[4] - columns[3] - 12);
+    textRight(columns[5] - 8, tableTop - 18, 8, "Extended", "F2", 1, columns[5] - columns[4] - 12);
+    box(tableX, tableBottom, tableWidth, tableTop - tableBottom);
     columns.slice(1, -1).forEach((x) => line(x, tableBottom, x, tableTop));
     line(tableX, tableTop - headerHeight, 570, tableTop - headerHeight);
 
     visibleItems.forEach((item, index) => {
       const yTop = tableTop - headerHeight - index * rowHeight;
       const yBase = yTop - 16;
-      text(50, yBase, 8, clipText(quoteLinePartNumber(item, quote), 46), "F2");
-      quoteLineDescriptionRows(item, quote).slice(0, 4).forEach((lineText, rowIndex) => {
-        text(50, yBase - 13 - rowIndex * 13, 7, clipText(lineText, 60));
-      });
-      text(326, yBase, 8, quoteTableQuantity(item, salesInfo.unitOfMeasure));
-      text(382, yBase, 8, quoteTableUomLabel(salesInfo.unitOfMeasure));
-      text(424, yBase, 8, quoteTableUnitPrice(item, salesInfo.unitOfMeasure));
-      text(505, yBase, 8, money(Number(item.pricing?.sellPrice || 0)));
+      const descriptionLines = [
+        ...wrapPdfText(quoteLinePartNumber(item, quote), columns[1] - columns[0] - 16, 8, "F2", 1),
+        ...quoteLineDescriptionRows(item, quote)
+          .slice(0, 4)
+          .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, 7, "F1", 1)),
+      ].slice(0, 5);
+      textLines(50, yBase, 8, descriptionLines.slice(0, 1), "F2", 0, 15);
+      textLines(50, yBase - 15, 7, descriptionLines.slice(1), "F1", 0, 15);
+      textRight(columns[2] - 8, yBase, 8, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12);
+      textRight(columns[3] - 8, yBase, 8, quoteTableUomLabel(salesInfo.unitOfMeasure), "F1", 0, columns[3] - columns[2] - 12);
+      textRight(columns[4] - 8, yBase, 8, quoteTableUnitPrice(item, salesInfo.unitOfMeasure), "F1", 0, columns[4] - columns[3] - 12);
+      textRight(columns[5] - 8, yBase, 8, money(Number(item.pricing?.sellPrice || 0)), "F1", 0, columns[5] - columns[4] - 12);
       line(tableX, yTop - rowHeight, 570, yTop - rowHeight);
     });
-    if (items.length > visibleItems.length) text(50, tableBottom + 8, 7, `${items.length - visibleItems.length} additional item(s) included in quote total.`);
-    text(424, tableBottom + 7, 8, "Total in US$", "F2");
-    text(505, tableBottom + 7, 8, money(totals.sellPrice), "F2");
+    if (items.length > visibleItems.length) text(50, tableBottom + 9, 7, `${items.length - visibleItems.length} additional item(s) included in quote total.`, "F1", 0, { maxWidth: 300 });
+    textRight(columns[4] - 8, tableBottom + 9, 8, "Total in US$", "F2", 0, columns[4] - columns[3] - 12);
+    textRight(columns[5] - 8, tableBottom + 9, 8, money(totals.sellPrice), "F2", 0, columns[5] - columns[4] - 12);
 
     const signatureTop = tableBottom - 34;
     text(54, signatureTop, 8, `Client P.O. ${salesInfo.clientPo || "_______________________"}`);
@@ -2957,18 +3024,21 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
 
     fillBox(330, signatureTop - 122, 240, 128, 0.92);
     box(330, signatureTop - 122, 240, 128);
-    text(348, signatureTop - 24, 10, quoteThankYouMessage, "F2");
-    text(470, signatureTop - 54, 8, quotePreparedByName(quote), "F2");
-    text(438, signatureTop - 76, 8, quotePreparedByRole(quote) || quoteCompany.label);
-    if (quote.contactEmail) text(414, signatureTop - 98, 8, quote.contactEmail);
+    text(348, signatureTop - 24, 10, quoteThankYouMessage, "F2", 0, { maxWidth: 204 });
+    textRight(552, signatureTop - 54, 8, quoteCompanyTeamName(quoteCompany), "F2", 0, 204);
+    textRight(552, signatureTop - 76, 8, quoteCompany.label, "F1", 0, 204);
+    if (quote.contactEmail) textRight(552, signatureTop - 98, 8, quote.contactEmail, "F1", 0, 204);
 
-    let termsY = 122;
+    let termsY = Math.max(60, signatureTop - 154);
     if (quote.notes) {
-      text(42, termsY, 8, clipText(quote.notes.replace(/\s+/g, " "), 110));
-      termsY -= 14;
+      wrapPdfText(quote.notes, 520, 8, "F1", 2).forEach((lineText) => {
+        text(42, termsY, 8, lineText);
+        termsY -= 14;
+      });
+      termsY -= 2;
     }
-    terms.slice(0, 4).forEach((term) => {
-      text(42, termsY, 6, `* ${clipText(term, 145)}`);
+    terms.slice(0, 3).forEach((term) => {
+      text(42, termsY, 6, `* ${term}`, "F1", 0, { maxWidth: 520 });
       termsY -= 14;
     });
 

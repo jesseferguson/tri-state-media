@@ -9,6 +9,7 @@ const quoteBrandOverrides = {
     printLogoWidth: "5.45in",
     pdfLogoWidth: 330,
     pdfFallbackSubtitle: "Labels and media solutions",
+    teamName: "Team Tri-State",
   },
   barcode_labels: {
     logo: barcodeLabelsQuoteLogo,
@@ -16,6 +17,7 @@ const quoteBrandOverrides = {
     printLogoWidth: "2.75in",
     pdfLogoWidth: 190,
     pdfFallbackSubtitle: "BarcodeLabels.com",
+    teamName: "Barcode Labels",
   },
 };
 
