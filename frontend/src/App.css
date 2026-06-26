@@ -10471,9 +10471,10 @@ p, .muted { color: #7a7a7a; }
   padding: 8px 7px;
   background: #111827;
   color: #ffffff;
-  font-size: .7rem;
+  font-size: .66rem;
   font-weight: 850;
   text-align: left;
+  line-height: 1.15;
 }
 
 .quote-doc-sales-table th:nth-child(n+2),
@@ -10487,7 +10488,8 @@ p, .muted { color: #7a7a7a; }
   border-top: 1px solid #111827;
   border-left: 1px solid #d1d5db;
   color: #111827;
-  font-size: .76rem;
+  font-size: .69rem;
+  line-height: 1.28;
   vertical-align: top;
   overflow-wrap: anywhere;
 }
@@ -10497,23 +10499,23 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-doc-sales-table th:nth-child(1) {
-  width: 50%;
+  width: 47%;
 }
 
 .quote-doc-sales-table th:nth-child(2) {
-  width: 10%;
+  width: 11%;
 }
 
 .quote-doc-sales-table th:nth-child(3) {
-  width: 9%;
+  width: 7%;
 }
 
 .quote-doc-sales-table th:nth-child(4) {
-  width: 15%;
+  width: 17%;
 }
 
 .quote-doc-sales-table th:nth-child(5) {
-  width: 16%;
+  width: 18%;
 }
 
 .quote-doc-sales-table td strong,
@@ -10523,14 +10525,14 @@ p, .muted { color: #7a7a7a; }
 
 .quote-doc-sales-table td strong {
   color: #111827;
-  font-size: .8rem;
+  font-size: .72rem;
   line-height: 1.25;
 }
 
 .quote-doc-sales-table td span {
   margin-top: 4px;
   color: #344054;
-  font-size: .7rem;
+  font-size: .66rem;
   line-height: 1.32;
 }
 

@@ -2854,7 +2854,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
 .brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:12px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:12px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
 .meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:14px;margin-top:18px}.meta.date-only{grid-template-columns:minmax(280px,.62fr);justify-content:end}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:104px minmax(0,1fr);border-top:1px solid #111827;min-height:28px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{min-width:0;padding:6px 7px;font-size:12px;overflow-wrap:anywhere}
-.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:12px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:12px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:11%}.sales-table th:nth-child(3){width:8%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:12px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:12px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
+.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:47%}.sales-table th:nth-child(2){width:11%}.sales-table th:nth-child(3){width:7%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
 .signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-row{display:grid;grid-template-columns:128px 1fr;align-items:end;gap:10px;min-height:26px;margin-bottom:8px;font-size:12px}.sig-row span{font-weight:700;white-space:nowrap}.sig-row b{display:block;min-height:18px;border-bottom:1.2px solid #111827;font-size:12px}.sig-box strong{display:block;margin-top:8px;font-size:12px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px;line-height:1.35}.contact span{margin-top:16px;font-size:12px;font-weight:700}.contact em{margin-top:8px;font-size:12px;font-style:normal}
 .terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}
 @media print{body{background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{width:auto;max-width:7.8in;min-height:auto;margin:0 auto;padding:0}.no-print{display:none}}
@@ -2898,35 +2898,35 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     const logoImage = await loadQuoteLogoForPdf(quoteCompany.logo);
     const commands = [];
 
-    function pdfTextSize(size) {
-      return Math.max(12, size);
+    function pdfTextSize(size, minSize = 12) {
+      return Math.max(minSize, size);
     }
 
-    function estimatePdfTextWidth(value, size, font = "F1") {
-      const readableSize = pdfTextSize(size);
+    function estimatePdfTextWidth(value, size, font = "F1", minSize = 12) {
+      const readableSize = pdfTextSize(size, minSize);
       const weight = font === "F2" ? 0.57 : 0.53;
       return String(value ?? "").length * readableSize * weight;
     }
 
-    function fitPdfText(value, maxWidth, size, font = "F1") {
+    function fitPdfText(value, maxWidth, size, font = "F1", minSize = 12) {
       const textValue = String(value ?? "").replace(/\s+/g, " ").trim();
-      if (!maxWidth || estimatePdfTextWidth(textValue, size, font) <= maxWidth) return textValue;
+      if (!maxWidth || estimatePdfTextWidth(textValue, size, font, minSize) <= maxWidth) return textValue;
       const ellipsis = "...";
       let next = textValue;
-      while (next.length > 0 && estimatePdfTextWidth(`${next}${ellipsis}`, size, font) > maxWidth) {
+      while (next.length > 0 && estimatePdfTextWidth(`${next}${ellipsis}`, size, font, minSize) > maxWidth) {
         next = next.slice(0, -1);
       }
       return next ? `${next.trimEnd()}${ellipsis}` : "";
     }
 
-    function wrapPdfText(value, maxWidth, size, font = "F1", maxLines = 2) {
+    function wrapPdfText(value, maxWidth, size, font = "F1", maxLines = 2, minSize = 12) {
       const words = String(value ?? "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
       if (!words.length) return [];
       const lines = [];
       let current = "";
       words.forEach((word) => {
         const candidate = current ? `${current} ${word}` : word;
-        if (estimatePdfTextWidth(candidate, size, font) <= maxWidth) {
+        if (estimatePdfTextWidth(candidate, size, font, minSize) <= maxWidth) {
           current = candidate;
           return;
         }
@@ -2934,27 +2934,27 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
         current = word;
       });
       if (current) lines.push(current);
-      if (lines.length <= maxLines) return lines.map((lineText) => fitPdfText(lineText, maxWidth, size, font));
+      if (lines.length <= maxLines) return lines.map((lineText) => fitPdfText(lineText, maxWidth, size, font, minSize));
       const kept = lines.slice(0, maxLines);
-      kept[maxLines - 1] = fitPdfText(lines.slice(maxLines - 1).join(" "), maxWidth, size, font);
+      kept[maxLines - 1] = fitPdfText(lines.slice(maxLines - 1).join(" "), maxWidth, size, font, minSize);
       return kept;
     }
 
     function text(x, y, size, value, font = "F1", gray = 0, options = {}) {
-      const readableSize = pdfTextSize(size);
-      const textValue = options.maxWidth ? fitPdfText(value, options.maxWidth, size, font) : String(value ?? "");
+      const readableSize = pdfTextSize(size, options.minSize ?? 12);
+      const textValue = options.maxWidth ? fitPdfText(value, options.maxWidth, size, font, options.minSize ?? 12) : String(value ?? "");
       commands.push(`BT /${font} ${readableSize} Tf ${gray} g ${x} ${y} Td (${pdfEscape(textValue)}) Tj ET`);
     }
 
-    function textRight(xRight, y, size, value, font = "F1", gray = 0, maxWidth = 80) {
-      const fitted = fitPdfText(value, maxWidth, size, font);
-      const width = estimatePdfTextWidth(fitted, size, font);
-      text(Math.max(42, xRight - width), y, size, fitted, font, gray);
+    function textRight(xRight, y, size, value, font = "F1", gray = 0, maxWidth = 80, minSize = 12) {
+      const fitted = fitPdfText(value, maxWidth, size, font, minSize);
+      const width = estimatePdfTextWidth(fitted, size, font, minSize);
+      text(Math.max(42, xRight - width), y, size, fitted, font, gray, { minSize });
     }
 
-    function textLines(x, y, size, lines, font = "F1", gray = 0, lineHeight = 15) {
+    function textLines(x, y, size, lines, font = "F1", gray = 0, lineHeight = 15, minSize = 12) {
       lines.forEach((lineText, index) => {
-        text(x, y - index * lineHeight, size, lineText, font, gray);
+        text(x, y - index * lineHeight, size, lineText, font, gray, { minSize });
       });
     }
 
@@ -3015,15 +3015,19 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     const rowHeight = 92;
     const totalRowHeight = 28;
     const visibleItems = items.slice(0, 1);
-    const columns = [42, 302, 358, 404, 488, 570];
+    const columns = [42, 308, 366, 404, 488, 570];
+    const tableHeaderFontSize = 10;
+    const tablePartFontSize = 11;
+    const tableBodyFontSize = 10;
+    const tableMinFontSize = 10;
     const tableBottom = tableTop - headerHeight - visibleItems.length * rowHeight - totalRowHeight;
     fillBox(tableX, tableTop - headerHeight, 528, headerHeight, 0);
     fillBox(tableX, tableBottom, tableWidth, totalRowHeight, 0.93);
-    text(50, tableTop - 18, 8, "Part Number & Description", "F2", 1, { maxWidth: 238 });
-    textRight(columns[2] - 8, tableTop - 18, 8, "Qty", "F2", 1, columns[2] - columns[1] - 12);
-    textRight(columns[3] - 8, tableTop - 18, 8, "UoM", "F2", 1, columns[3] - columns[2] - 12);
-    textRight(columns[4] - 8, tableTop - 18, 8, "Per Unit", "F2", 1, columns[4] - columns[3] - 12);
-    textRight(columns[5] - 8, tableTop - 18, 8, "Extended", "F2", 1, columns[5] - columns[4] - 12);
+    text(50, tableTop - 18, tableHeaderFontSize, "Part Number & Description", "F2", 1, { maxWidth: 246, minSize: tableMinFontSize });
+    textRight(columns[2] - 8, tableTop - 18, tableHeaderFontSize, "Qty", "F2", 1, columns[2] - columns[1] - 12, tableMinFontSize);
+    textRight(columns[3] - 8, tableTop - 18, tableHeaderFontSize, "UoM", "F2", 1, columns[3] - columns[2] - 12, tableMinFontSize);
+    textRight(columns[4] - 8, tableTop - 18, tableHeaderFontSize, "Per Unit", "F2", 1, columns[4] - columns[3] - 12, tableMinFontSize);
+    textRight(columns[5] - 8, tableTop - 18, tableHeaderFontSize, "Extended", "F2", 1, columns[5] - columns[4] - 12, tableMinFontSize);
     box(tableX, tableBottom, tableWidth, tableTop - tableBottom);
     columns.slice(1, -1).forEach((x) => line(x, tableBottom, x, tableTop));
     line(tableX, tableTop - headerHeight, 570, tableTop - headerHeight);
@@ -3032,22 +3036,22 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
       const yTop = tableTop - headerHeight - index * rowHeight;
       const yBase = yTop - 16;
       const descriptionLines = [
-        ...wrapPdfText(quoteLinePartNumber(item, quote), columns[1] - columns[0] - 16, 8, "F2", 1),
+        ...wrapPdfText(quoteLinePartNumber(item, quote), columns[1] - columns[0] - 16, tablePartFontSize, "F2", 1, tableMinFontSize),
         ...quoteLineDescriptionRows(item, quote)
           .slice(0, 4)
-          .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, 7, "F1", 1)),
+          .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, tableBodyFontSize, "F1", 1, tableMinFontSize)),
       ].slice(0, 5);
-      textLines(50, yBase, 8, descriptionLines.slice(0, 1), "F2", 0, 15);
-      textLines(50, yBase - 15, 7, descriptionLines.slice(1), "F1", 0, 15);
-      textRight(columns[2] - 8, yBase, 8, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12);
-      textRight(columns[3] - 8, yBase, 8, quoteTableUomLabel(salesInfo.unitOfMeasure), "F1", 0, columns[3] - columns[2] - 12);
-      textRight(columns[4] - 8, yBase, 8, quoteTableUnitPrice(item, salesInfo.unitOfMeasure), "F1", 0, columns[4] - columns[3] - 12);
-      textRight(columns[5] - 8, yBase, 8, money(Number(item.pricing?.sellPrice || 0)), "F1", 0, columns[5] - columns[4] - 12);
+      textLines(50, yBase, tablePartFontSize, descriptionLines.slice(0, 1), "F2", 0, 13, tableMinFontSize);
+      textLines(50, yBase - 13, tableBodyFontSize, descriptionLines.slice(1), "F1", 0, 13, tableMinFontSize);
+      textRight(columns[2] - 8, yBase, tableBodyFontSize, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12, tableMinFontSize);
+      textRight(columns[3] - 8, yBase, tableBodyFontSize, quoteTableUomLabel(salesInfo.unitOfMeasure), "F1", 0, columns[3] - columns[2] - 12, tableMinFontSize);
+      textRight(columns[4] - 8, yBase, tableBodyFontSize, quoteTableUnitPrice(item, salesInfo.unitOfMeasure), "F1", 0, columns[4] - columns[3] - 12, tableMinFontSize);
+      textRight(columns[5] - 8, yBase, tableBodyFontSize, money(Number(item.pricing?.sellPrice || 0)), "F1", 0, columns[5] - columns[4] - 12, tableMinFontSize);
       line(tableX, yTop - rowHeight, 570, yTop - rowHeight);
     });
-    if (items.length > visibleItems.length) text(50, tableBottom + 9, 7, `${items.length - visibleItems.length} additional item(s) included in quote total.`, "F1", 0, { maxWidth: 300 });
-    textRight(columns[4] - 8, tableBottom + 9, 8, "Total in US$", "F2", 0, columns[4] - columns[3] - 12);
-    textRight(columns[5] - 8, tableBottom + 9, 8, money(totals.sellPrice), "F2", 0, columns[5] - columns[4] - 12);
+    if (items.length > visibleItems.length) text(50, tableBottom + 9, tableBodyFontSize, `${items.length - visibleItems.length} additional item(s) included in quote total.`, "F1", 0, { maxWidth: 300, minSize: tableMinFontSize });
+    textRight(columns[4] - 8, tableBottom + 9, tableBodyFontSize, "Total in US$", "F2", 0, columns[4] - columns[3] - 12, tableMinFontSize);
+    textRight(columns[5] - 8, tableBottom + 9, tableBodyFontSize, money(totals.sellPrice), "F2", 0, columns[5] - columns[4] - 12, tableMinFontSize);
 
     const signatureTop = tableBottom - 28;
     const signatureLeftX = 54;
