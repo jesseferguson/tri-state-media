@@ -140,11 +140,13 @@ function addLookupSpec(specs, spec) {
 
 function addFieldLookups(specs, fields = []) {
   fields.forEach((field) => {
+    const lookupPageSize = field.lookupPageSize ?? field.maxResults ?? 250;
+    const lookupFetchAll = Boolean(field.lookupFetchAll ?? field.fetchAll ?? false);
     if (field.lookupRelation) {
-      addLookupSpec(specs, relationLookupSpec(field.lookupRelation, field.lookupFilters, field.maxResults ?? 250));
+      addLookupSpec(specs, relationLookupSpec(field.lookupRelation, field.lookupFilters, lookupPageSize, lookupFetchAll));
     }
     if (!field.relation || !["relation", "searchRelation", "multiRelation"].includes(field.type)) return;
-    addLookupSpec(specs, relationLookupSpec(field.relation, field.lookupFilters, field.maxResults ?? 250));
+    addLookupSpec(specs, relationLookupSpec(field.relation, field.lookupFilters, lookupPageSize, lookupFetchAll));
   });
 }
 

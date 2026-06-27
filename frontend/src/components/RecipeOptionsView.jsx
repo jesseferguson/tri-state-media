@@ -105,9 +105,26 @@ function statusText(tool) {
 
 function tooth(tool) {
   const d = details(tool);
-  const value = d.tooth_count ?? d.gear ?? d.gear_tooth_count ?? d.cylinder_teeth ?? tool?.tooth_count ?? tool?.gear;
+  const value = d.tooth_count ?? d.gear ?? d.gear_tooth_count ?? d.perf_cylinder_gear ?? d.cylinder_teeth ?? tool?.tooth_count ?? tool?.gear;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function bladeTypes(tool) {
+  const d = details(tool);
+  const values = Array.isArray(d.blade_types) ? d.blade_types : Array.isArray(tool?.blade_types) ? tool.blade_types : [];
+  return values.map(key).filter(Boolean);
+}
+
+function hasSheeterBlade(tool) {
+  const d = details(tool);
+  return d.has_sheeter_blade === true || tool?.has_sheeter_blade === true || bladeTypes(tool).includes("sheeter");
+}
+
+function hasPerfBlade(tool) {
+  const types = bladeTypes(tool);
+  if (!types.length) return true;
+  return types.some((type) => type !== "sheeter");
 }
 
 function cleanPath(value) {
@@ -163,8 +180,50 @@ function press(option) {
 }
 
 function needsExternalPerf(option) {
+  return externalOperation(option) !== "none";
+}
+
+function externalOperation(option) {
   const r = recipe(option);
-  return key(r.perf_option ?? option.perf_option ?? "none") === "perf" || r.requires_external_perf === true;
+  const value = key(r.perf_option ?? option.perf_option ?? "none");
+  if (value === "sheeted" || value === "sheet" || r.requires_sheeting === true) return "sheeted";
+  if (value === "perf" || r.requires_external_perf === true) return "perf";
+  return "none";
+}
+
+function externalOperationTitle(operation) {
+  if (operation === "sheeted") return "Sheeter cut";
+  if (operation === "perf") return "External perf";
+  return "No between-label cut";
+}
+
+function externalToolSupports(tool, operation) {
+  if (!tool || operation === "none") return false;
+  const type = toolType(tool);
+  if (operation === "sheeted") return type.includes("perf_blade_setup") && hasSheeterBlade(tool);
+  if (operation === "perf") return !type.includes("perf_blade_setup") || hasPerfBlade(tool);
+  return false;
+}
+
+function externalToolOperationProblem(tool, operation) {
+  if (!tool || operation === "none") return "";
+  const type = toolType(tool);
+  if (operation === "sheeted") {
+    if (!type.includes("perf_blade_setup")) return "Sheeted jobs need a blade setup, not just a cylinder";
+    if (!hasSheeterBlade(tool)) return "Blade setup does not include a sheeter blade";
+  }
+  if (operation === "perf" && type.includes("perf_blade_setup") && !hasPerfBlade(tool)) {
+    return "Blade setup is sheeter-only, not a perf setup";
+  }
+  return "";
+}
+
+function externalToolGearProblem(tool, main) {
+  if (!tool || !main?.dieTooth) return "";
+  const gear = tooth(tool);
+  if (gear === null) return "Perf/sheeter gear is missing";
+  if (gear !== main.dieTooth) return `Perf/sheeter gear ${gear}T does not match main ${main.dieTooth}T`;
+  return "";
 }
 
 function needsInternalPerf(option) {
@@ -187,8 +246,11 @@ function pressCanUndercut(option) {
 
 function perfLabel(option) {
   const r = recipe(option);
-  if (needsExternalPerf(option) && needsInternalPerf(option)) return "External + Internal Perf";
-  if (needsExternalPerf(option)) return "External Perf";
+  const operation = externalOperation(option);
+  if (operation === "sheeted" && needsInternalPerf(option)) return "Sheeted + Internal Perf";
+  if (operation === "perf" && needsInternalPerf(option)) return "External + Internal Perf";
+  if (operation === "sheeted") return "Sheeted";
+  if (operation === "perf") return "External Perf";
   if (needsInternalPerf(option)) return `Internal Perf${r.internal_perf_cutting_type ? ` - ${title(r.internal_perf_cutting_type)}` : ""}`;
   return "No Perf";
 }
@@ -263,15 +325,22 @@ function buildCombos(option) {
 
   return mainChains.map((main) => {
     const problems = [...main.problems];
-    const externalPerf = needsExternalPerf(option);
+    const operation = externalOperation(option);
+    const externalPerf = operation !== "none";
     const undercutRequired = needsUndercut(option);
 
-    const displayPerf = externalPerf ? usablePerfTools[0] ?? perfTools[0] ?? null : null;
+    const operationTools = usablePerfTools.filter((perf) => externalToolSupports(perf, operation));
+    const displayPerf = externalPerf ? operationTools[0] ?? usablePerfTools[0] ?? perfTools[0] ?? null : null;
     const runnablePerf = externalPerf && main.die && main.runnableMag
-      ? usablePerfTools.find((perf) => sameParent(main.die, main.runnableMag, perf)) ?? null
+      ? operationTools.find((perf) => !externalToolGearProblem(perf, main)) ?? null
       : null;
 
-    if (externalPerf && !runnablePerf) problems.push(perfTools.length ? "External perf not usable or wrong location" : "External perf required");
+    if (externalPerf && !runnablePerf) {
+      if (!perfTools.length) problems.push(`${externalOperationTitle(operation)} tooling required`);
+      else if (!usablePerfTools.length) problems.push(`${externalOperationTitle(operation)} tooling is not usable`);
+      else if (!operationTools.length) problems.push(externalToolOperationProblem(usablePerfTools[0], operation) || `${externalOperationTitle(operation)} tooling does not match the job`);
+      else problems.push(externalToolGearProblem(operationTools[0], main) || `${externalOperationTitle(operation)} tooling is not ready`);
+    }
 
     let undercutChain = null;
     let undercutLinked = false;
@@ -293,18 +362,68 @@ function buildCombos(option) {
       (!externalPerf || Boolean(runnablePerf)) &&
       (!undercutRequired || (pressCanUndercut(option) && undercutChain?.canRun && undercutLinked));
 
-    return {
+    const notices = [];
+    if (externalPerf && runnablePerf && main.die && main.runnableMag && !sameParent(main.die, main.runnableMag, runnablePerf)) {
+      notices.push(`${externalOperationTitle(operation)} is ready, but stored separately from the main tools`);
+    }
+
+    const combo = {
       main,
       undercutChain,
       undercutRequired,
+      externalOperation: operation,
       runnablePerf,
       displayPerf,
       spec: main.spec,
       severity: canRun ? "ready" : "bad",
       label: canRun ? "Can Run" : "No Run",
       problems: uniq(problems),
+      notices,
     };
+    combo.checks = buildReadinessChecks(option, combo);
+    return combo;
   });
+}
+
+function toolReadyCheck(label, tool, missing, fail = "") {
+  if (!tool) return { label, state: "bad", text: missing };
+  if (!canUseTool(tool)) return { label, state: "bad", text: `${toolName(tool)} is ${statusText(tool)}` };
+  if (fail) return { label, state: "bad", text: fail };
+  return { label, state: "ready", text: toolName(tool) };
+}
+
+function buildReadinessChecks(option, combo) {
+  const checks = [
+    toolReadyCheck("Main die", combo.main.die, "Flex die missing"),
+    toolReadyCheck("Mag", combo.main.runnableMag ?? combo.main.displayMag, combo.main.dieTooth ? `${combo.main.dieTooth}T mag missing` : "Mag missing", combo.main.runnableMag ? "" : combo.main.problems.find((problem) => problem.toLowerCase().includes("mag")) || ""),
+  ];
+
+  if (combo.externalOperation !== "none") {
+    const operationLabel = externalOperationTitle(combo.externalOperation);
+    checks.push(
+      toolReadyCheck(
+        operationLabel,
+        combo.runnablePerf ?? combo.displayPerf,
+        `${operationLabel} tooling missing`,
+        combo.runnablePerf ? "" : combo.problems.find((problem) => problem.toLowerCase().includes("perf") || problem.toLowerCase().includes("sheet")) || ""
+      )
+    );
+  } else {
+    checks.push({ label: "Between labels", state: "ready", text: "No perf or sheeter cut needed" });
+  }
+
+  if (combo.undercutRequired) {
+    checks.push(
+      toolReadyCheck("Undercut die", combo.undercutChain?.die, "Undercut flex die missing"),
+      toolReadyCheck("Undercut mag", combo.undercutChain?.runnableMag ?? combo.undercutChain?.displayMag, combo.undercutChain?.dieTooth ? `${combo.undercutChain.dieTooth}T undercut mag missing` : "Undercut mag missing", combo.undercutChain?.runnableMag ? "" : combo.undercutChain?.problems?.find((problem) => problem.toLowerCase().includes("mag")) || "")
+    );
+  }
+
+  if (combo.notices?.length) {
+    checks.push(...combo.notices.map((notice) => ({ label: "Setup note", state: "warn", text: notice })));
+  }
+
+  return checks;
 }
 
 export function evaluateOption(option) {
@@ -314,12 +433,14 @@ export function evaluateOption(option) {
   const review = option.is_approved === false || option.requires_manual_review === true;
 
   if (readyCombos.length && option.is_active !== false) {
-    return { severity: review ? "warn" : "ready", label: review ? "Review" : "Can Run", readyCombos, problemCombos, combos, problems: review ? ["Review required"] : [] };
+    const displayCombo = readyCombos[0] ?? combos[0] ?? null;
+    return { severity: review ? "warn" : "ready", label: review ? "Review" : "Can Run", readyCombos, problemCombos, combos, problems: review ? ["Review required"] : [], checks: displayCombo?.checks ?? [], notices: displayCombo?.notices ?? [] };
   }
 
   const problems = uniq(problemCombos.flatMap((c) => c.problems));
   if (option.is_active === false) problems.unshift("Inactive option");
-  return { severity: "bad", label: "No Run", readyCombos, problemCombos, combos, problems };
+  const displayCombo = problemCombos[0] ?? combos[0] ?? null;
+  return { severity: "bad", label: "No Run", readyCombos, problemCombos, combos, problems, checks: displayCombo?.checks ?? [], notices: displayCombo?.notices ?? [] };
 }
 
 function aggregate(options) {
@@ -378,6 +499,8 @@ function ToolDetails({ title, tool, onClose, onFlexDieReorder, onFlexDieCountUpd
         <Detail label="Face" value={labelize(d.face_type)} />
         <Detail label="Liner" value={labelize(d.liner_type)} />
         <Detail label="Cut" value={labelize(d.cutting_type)} />
+        <Detail label="Blade Types" value={bladeTypes(tool).map(title).join(", ")} />
+        <Detail label="Sheeter" value={hasSheeterBlade(tool) ? "Yes" : ""} />
         <Detail label="Repeat" value={d.repeat ?? d.repeat_inches} />
         <Detail label="Width" value={d.width ?? d.label_width_inches ?? d.face_width_inches ?? d.cylinder_width_inches} />
         <Detail label="Gap" value={d.gap_across} />
@@ -423,10 +546,29 @@ function ToolChip({ label, tool, missing, onOpen, active }) {
   );
 }
 
+function ReadinessChecks({ checks = [] }) {
+  if (!checks.length) return null;
+  return (
+    <div className="run-check-list" aria-label="Run readiness checks">
+      {checks.map((check, index) => (
+        <span key={`${check.label}-${index}`} className={check.state}>
+          <i />
+          <strong>{check.label}</strong>
+          <em>{check.text}</em>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function PerfChip({ option, combo, open, active }) {
   const r = recipe(option);
   if (needsExternalPerf(option)) {
-    return <ToolChip label="PERF" tool={combo.runnablePerf ?? combo.displayPerf} missing="External perf missing" onOpen={() => open("perf", combo.runnablePerf ?? combo.displayPerf, "Perf")} active={active === "perf"} />;
+    const operation = externalOperation(option);
+    const label = operation === "sheeted" ? "SHEET" : "PERF";
+    const missing = operation === "sheeted" ? "Sheeter setup missing" : "External perf missing";
+    const title = operation === "sheeted" ? "Sheeter Setup" : "Perf";
+    return <ToolChip label={label} tool={combo.runnablePerf ?? combo.displayPerf} missing={missing} onOpen={() => open("perf", combo.runnablePerf ?? combo.displayPerf, title)} active={active === "perf"} />;
   }
   if (needsInternalPerf(option)) {
     const cut = title(r.internal_perf_cutting_type ?? option.internal_perf_cutting_type);
@@ -500,6 +642,7 @@ function Combo({ option, combo, muted = false, onFlexDieReorder, onFlexDieCountU
   return (
     <article className={`combo-card ${combo.severity} ${muted ? "muted" : ""}`}>
       <SpecChart combo={combo} />
+      <ReadinessChecks checks={combo.checks} />
       <div className="chain-stack">
         <Chain name="MAIN" die={combo.main.die} mag={combo.main.runnableMag ?? combo.main.displayMag} missingDie="Main die missing" missingMag={mainMagMissing} open={open} active={openTool?.id}>
           <span className="arrow">-&gt;</span><PerfChip option={option} combo={combo} open={open} active={openTool?.id} />

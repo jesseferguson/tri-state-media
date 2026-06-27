@@ -86,10 +86,34 @@ class PerfCylinderSerializer(serializers.ModelSerializer):
 
 class PerfBladeSetupSerializer(serializers.ModelSerializer):
     perf_cylinder_name = serializers.CharField(source="perf_cylinder.name", read_only=True)
+    perf_cylinder_status = serializers.CharField(source="perf_cylinder.status", read_only=True)
+    perf_cylinder_gear = serializers.IntegerField(source="perf_cylinder.gear_tooth_count", read_only=True)
+    perf_cylinder_location_name = serializers.CharField(source="perf_cylinder.current_location.name", read_only=True)
+    perf_cylinder_location_full_path = serializers.SerializerMethodField()
+    blade_types = serializers.SerializerMethodField()
+    active_blade_count = serializers.SerializerMethodField()
+    has_sheeter_blade = serializers.SerializerMethodField()
 
     class Meta:
         model = PerfBladeSetup
         fields = "__all__"
+
+    def get_perf_cylinder_location_full_path(self, obj):
+        if obj.perf_cylinder and obj.perf_cylinder.current_location:
+            return obj.perf_cylinder.current_location.full_path()
+        return ""
+
+    def active_blades(self, obj):
+        return [blade for blade in obj.blades.all() if blade.is_active]
+
+    def get_blade_types(self, obj):
+        return sorted({blade.blade_type for blade in self.active_blades(obj) if blade.blade_type})
+
+    def get_active_blade_count(self, obj):
+        return len(self.active_blades(obj))
+
+    def get_has_sheeter_blade(self, obj):
+        return any(blade.blade_type == "sheeter" for blade in self.active_blades(obj))
 
 class PerfBladeSerializer(serializers.ModelSerializer):
     setup_name = serializers.CharField(source="setup.name", read_only=True)
@@ -102,6 +126,7 @@ class PerfBladeSerializer(serializers.ModelSerializer):
 class ToolingRecipeSerializer(serializers.ModelSerializer):
     requires_external_perf = serializers.BooleanField(read_only=True)
     requires_internal_perf = serializers.BooleanField(read_only=True)
+    requires_sheeting = serializers.BooleanField(read_only=True)
     requires_perf = serializers.BooleanField(read_only=True)
     is_no_perf = serializers.BooleanField(read_only=True)
     external_perf_cutting_type = serializers.CharField(read_only=True)
@@ -231,14 +256,22 @@ class ToolingRecipeToolNestedSerializer(serializers.ModelSerializer):
         if obj.perf_blade_setup:
             setup = obj.perf_blade_setup
             cylinder = setup.perf_cylinder
+            active_blades = [blade for blade in setup.blades.all() if blade.is_active]
+            blade_types = sorted({blade.blade_type for blade in active_blades if blade.blade_type})
             return {
                 "type": "Perf Blade Setup",
                 "name": setup.name,
                 "perf_cylinder": cylinder.name,
+                "gear": cylinder.gear_tooth_count,
+                "width": cylinder.cylinder_width_inches,
                 "blade_count": setup.blade_count,
+                "active_blade_count": len(active_blades),
+                "blade_types": blade_types,
+                "has_sheeter_blade": any(blade.blade_type == "sheeter" for blade in active_blades),
                 "repeat": setup.standard_repeat_inches,
                 "offset_blades": setup.has_offset_blades,
                 "is_active": setup.is_active,
+                "status": cylinder.status if setup.is_active else "inactive",
                 "location": self.get_location_path(cylinder.current_location),
                 "location_id": cylinder.current_location_id,
             }

@@ -304,7 +304,12 @@ class PerfCylinderViewSet(BaseToolingViewSet):
 
 
 class PerfBladeSetupViewSet(BaseToolingViewSet):
-    queryset = PerfBladeSetup.objects.select_related("perf_cylinder").all().order_by("perf_cylinder__name", "name")
+    queryset = (
+        PerfBladeSetup.objects.select_related("perf_cylinder", "perf_cylinder__current_location")
+        .prefetch_related("blades")
+        .all()
+        .order_by("perf_cylinder__name", "name")
+    )
     serializer_class = PerfBladeSetupSerializer
     search_fields = ["name", "notes", "perf_cylinder__name"]
     ordering_fields = ["name", "blade_count", "standard_repeat_inches", "is_active"]
@@ -394,6 +399,7 @@ class ToolingRecipeOptionViewSet(BaseToolingViewSet):
         "tools__perf_cylinder",
         "tools__perf_cylinder__current_location",
         "tools__perf_blade_setup",
+        "tools__perf_blade_setup__blades",
         "tools__perf_blade_setup__perf_cylinder",
         "tools__perf_blade_setup__perf_cylinder__current_location",
     )
@@ -452,7 +458,10 @@ class ToolingRecipeToolViewSet(BaseToolingViewSet):
                 "flex_die",
                 "perf_cylinder",
                 "perf_blade_setup",
+                "perf_blade_setup__perf_cylinder",
+                "perf_blade_setup__perf_cylinder__current_location",
             )
+            .prefetch_related("perf_blade_setup__blades")
             .all()
             .order_by("recipe_option__recipe__name", "recipe_option__name", "station_number", "tool_type")
         )

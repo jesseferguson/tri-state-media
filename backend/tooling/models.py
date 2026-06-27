@@ -385,6 +385,7 @@ class PerfBlade(models.Model):
         ("standard", "Standard"),
         ("offset", "Offset"),
         ("skip", "Skip"),
+        ("sheeter", "Sheeter"),
         ("custom", "Custom"),
     ]
 
@@ -421,6 +422,12 @@ class ToolingRecipe(models.Model):
     PERF_OPTION_CHOICES = [
         ("none", "No Perf"),
         ("perf", "Perf"),
+        ("sheeted", "Sheeted / Sheeter Cut"),
+    ]
+
+    INTERNAL_PERF_OPTION_CHOICES = [
+        ("none", "No Perf"),
+        ("perf", "Perf"),
     ]
 
     INTERNAL_PERF_CUTTING_TYPE_CHOICES = [
@@ -442,7 +449,7 @@ class ToolingRecipe(models.Model):
         choices=PERF_OPTION_CHOICES,
         default="none",
         blank=True,
-        help_text="External perf between labels. Defaults to No Perf.",
+        help_text="External perf or sheeter cut between labels. Defaults to No Perf.",
     )
 
     # External perf TPI. Only used when perf_option = perf.
@@ -463,7 +470,7 @@ class ToolingRecipe(models.Model):
     # Internal perf inside the label. Does not automatically require an external perf cylinder.
     internal_perf_option = models.CharField(
         max_length=20,
-        choices=PERF_OPTION_CHOICES,
+        choices=INTERNAL_PERF_OPTION_CHOICES,
         default="none",
         blank=True,
         help_text="Internal perf inside the label. Defaults to No Perf.",
@@ -511,7 +518,11 @@ class ToolingRecipe(models.Model):
 
     @property
     def requires_external_perf(self):
-        return self.perf_option == "perf"
+        return self.perf_option in ["perf", "sheeted"]
+
+    @property
+    def requires_sheeting(self):
+        return self.perf_option == "sheeted"
 
     @property
     def requires_internal_perf(self):
@@ -527,7 +538,9 @@ class ToolingRecipe(models.Model):
 
     @property
     def external_perf_cutting_type(self):
-        if self.requires_external_perf:
+        if self.perf_option == "sheeted":
+            return "sheeted"
+        if self.perf_option == "perf":
             return "through_liner"
         return ""
 
@@ -540,9 +553,12 @@ class ToolingRecipe(models.Model):
         if not self.internal_perf_option:
             self.internal_perf_option = "none"
 
-        # If external perf is off, clear its hidden fields.
+        # TPI only applies to perforating blades.
         if self.perf_option != "perf":
             self.tpi = None
+
+        # If the between-label operation is off, clear its note fields.
+        if self.perf_option == "none":
             self.perf_notes = ""
 
         # If internal perf is off, clear its hidden fields.

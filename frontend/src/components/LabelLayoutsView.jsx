@@ -8,7 +8,7 @@ const GOOD_STATUSES = new Set(["active", "available", "in_stock", "in_use"]);
 const BAD_STATUSES = new Set(["inactive", "missing", "needs_ordered", "needs_repair", "ordered", "out_for_repair", "out_for_retool", "out_of_stock", "retired"]);
 
 const choiceLookup = Object.fromEntries(
-  ["faceType", "linerType", "shapeType", "layoutShapeType", "cuttingType", "labelCutType", "toolRole", "toolType", "toolStatus", "printColorType"].flatMap((listKey) =>
+  ["faceType", "linerType", "shapeType", "layoutShapeType", "cuttingType", "labelCutType", "toolRole", "toolType", "toolStatus", "bladeType", "printColorType"].flatMap((listKey) =>
     (choiceLists[listKey] ?? []).map(([value, label]) => [`${listKey}:${value}`, label])
   )
 );
@@ -77,9 +77,12 @@ function buildGroups(rows, optionsByRecipe) {
 }
 
 function perfText(row) {
-  const external = row.perf_option === "perf"
+  const operation = externalOperation(row);
+  const external = operation === "sheeted"
+    ? "Sheeted / sheeter cut"
+    : operation === "perf"
     ? `External ${row.tpi ? `${row.tpi} TPI` : "Perf"}`
-    : "No External Perf";
+    : "No between-label cut";
   const internal = row.internal_perf_option === "perf"
     ? `Internal ${row.internal_perf_tpi ? `${row.internal_perf_tpi} TPI` : "Perf"}`
     : "";
@@ -87,7 +90,10 @@ function perfText(row) {
 }
 
 function perfShortLabel(row) {
-  return recipeNeedsPerf(row, null) ? "Perf" : "NP";
+  const operation = externalOperation(row);
+  if (operation === "sheeted") return "Sheeted";
+  if (operation === "perf" || recipeNeedsPerf(row, null)) return "Perf";
+  return "NP";
 }
 
 function toolDetails(tool) {
@@ -102,13 +108,24 @@ function toolTypeKey(tool) {
   return normalized(toolType(tool)).replaceAll(" ", "_").replaceAll("-", "_");
 }
 
+function bladeTypes(tool) {
+  const details = toolDetails(tool);
+  const values = Array.isArray(details.blade_types) ? details.blade_types : Array.isArray(tool?.blade_types) ? tool.blade_types : [];
+  return values.map((value) => normalized(value).replaceAll(" ", "_").replaceAll("-", "_")).filter(Boolean);
+}
+
+function hasSheeterBlade(tool) {
+  const details = toolDetails(tool);
+  return details.has_sheeter_blade === true || tool?.has_sheeter_blade === true || bladeTypes(tool).includes("sheeter");
+}
+
 function toolRoleKey(tool) {
   return normalized(tool?.tool_role ?? tool?.role ?? "top").replaceAll(" ", "_").replaceAll("-", "_");
 }
 
 function toothText(tool) {
   const details = toolDetails(tool);
-  const value = details.tooth_count ?? details.gear ?? details.gear_tooth_count ?? tool?.tooth_count ?? tool?.gear;
+  const value = details.tooth_count ?? details.gear ?? details.gear_tooth_count ?? details.perf_cylinder_gear ?? tool?.tooth_count ?? tool?.gear;
   return value || value === 0 ? `${value}T` : "";
 }
 
@@ -138,7 +155,16 @@ function toolMeta(tool) {
     ].filter(Boolean).join(" / ");
   }
   if (type.includes("perf_cylinder")) return [details.gear ? `${details.gear}T` : "", details.max_blades ? `${details.max_blades} blades` : ""].filter(Boolean).join(" / ");
-  if (type.includes("perf_blade_setup")) return [details.perf_cylinder, details.blade_count ? `${details.blade_count} blades` : ""].filter(Boolean).join(" / ");
+  if (type.includes("perf_blade_setup")) {
+    const blades = bladeTypes(tool).map((value) => choiceLabel("bladeType", value, value)).filter(Boolean);
+    return [
+      details.perf_cylinder,
+      details.gear || details.perf_cylinder_gear ? `${details.gear ?? details.perf_cylinder_gear}T` : "",
+      hasSheeterBlade(tool) ? "Sheeter" : "",
+      blades.length ? blades.join(", ") : "",
+      details.blade_count ? `${details.blade_count} blades` : "",
+    ].filter(Boolean).join(" / ");
+  }
   return tool?.manual_description || "";
 }
 
@@ -237,13 +263,16 @@ function recipeNeedsPerf(recipe, option) {
   );
 }
 
-function recipeNeedsExternalPerf(recipe, option) {
+function externalOperation(recipe, option) {
   const source = recipe ?? option?.recipe_details ?? {};
-  return (
-    source.requires_perf === true ||
-    source.requires_external_perf === true ||
-    normalized(source.perf_option ?? option?.perf_option) === "perf"
-  );
+  const value = normalized(source.perf_option ?? option?.perf_option).replaceAll(" ", "_").replaceAll("-", "_");
+  if (value === "sheeted" || value === "sheet" || source.requires_sheeting === true) return "sheeted";
+  if (value === "perf" || source.requires_external_perf === true) return "perf";
+  return "none";
+}
+
+function recipeNeedsExternalPerf(recipe, option) {
+  return externalOperation(recipe, option) !== "none";
 }
 
 function optionNeedsUndercut(option, tools) {
@@ -282,7 +311,14 @@ function buildToolSlots(recipe, option, tools) {
   }
 
   if (needsPerf) {
-    slots.push({ key: "perf", label: "Perf", missing: "Perf tooling missing", requestGroup: "PERF", tool: perf });
+    const operation = externalOperation(recipe, option);
+    slots.push({
+      key: "perf",
+      label: operation === "sheeted" ? "Sheet" : "Perf",
+      missing: operation === "sheeted" ? "Sheeter setup missing" : "Perf tooling missing",
+      requestGroup: "PERF",
+      tool: perf,
+    });
   }
 
   return { slots, needsUndercut, needsPerf };
@@ -382,7 +418,10 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen })
 }
 
 function perfSummary(recipe, option, plan) {
-  return plan.needsPerf || recipeNeedsPerf(recipe, option) ? "Perf" : "No Perf";
+  const operation = externalOperation(recipe, option);
+  if (operation === "sheeted") return "Sheeted";
+  if (plan.needsPerf || operation === "perf" || recipeNeedsPerf(recipe, option)) return "Perf";
+  return "No Perf";
 }
 
 function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDeletePressOption, onAddTooling, onEditTooling, onDeleteTooling, renderToolDetail }) {
@@ -394,10 +433,12 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
     tone: sharedReadiness.severity,
     label: sharedReadiness.label === "Can Run" ? "Ready" : sharedReadiness.label,
     problems: sharedReadiness.problems ?? [],
+    checks: sharedReadiness.checks ?? [],
   };
   const plan = buildToolSlots(recipe, option, tools);
   const { slots } = plan;
   const perfLabel = perfSummary(recipe, option, plan);
+  const perfTone = perfLabel === "No Perf" ? "none" : perfLabel === "Sheeted" ? "sheeted" : "perf";
 
   return (
     <article className={`layout-press-card ${readiness.tone} ${open ? "open" : ""}`}>
@@ -409,7 +450,7 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
             <span>{option.name || "Auto setup name"}</span>
           </div>
         </button>
-        <span className={`layout-perf-pill ${perfLabel === "Perf" ? "perf" : "none"}`}>{perfLabel}</span>
+        <span className={`layout-perf-pill ${perfTone}`}>{perfLabel}</span>
         <span className={`layout-ready-pill ${readiness.tone}`}>
           {readiness.tone === "ready" ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
           {readiness.label}
@@ -424,6 +465,18 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
       {open && readiness.problems.length > 0 && (
         <div className="layout-helper-line">
           {readiness.problems.slice(0, 4).map((problem) => <span key={problem}>{problem}</span>)}
+        </div>
+      )}
+
+      {open && readiness.checks.length > 0 && (
+        <div className="layout-readiness-checks">
+          {readiness.checks.map((check, index) => (
+            <span key={`${check.label}-${index}`} className={check.state}>
+              <i />
+              <strong>{check.label}</strong>
+              <em>{check.text}</em>
+            </span>
+          ))}
         </div>
       )}
 
@@ -629,7 +682,7 @@ function LayoutGroup({
       <button type="button" className="layout-group-head combined" onClick={() => toggleOpen(group.key)}>
         <span className="layout-group-toggle">{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
         <span className="layout-group-title">
-          <em>Face - Liner - Width - Repeat - Perf</em>
+          <em>Face - Liner - Width - Repeat - Finish</em>
           <strong>{group.label}</strong>
         </span>
         <span className="layout-group-count">{group.rows.length} layout{group.rows.length === 1 ? "" : "s"} / {group.optionCount} setup{group.optionCount === 1 ? "" : "s"}</span>

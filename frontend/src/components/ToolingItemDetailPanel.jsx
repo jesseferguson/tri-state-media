@@ -88,9 +88,14 @@ function detailRows(resourceKey, item) {
 
   return [
     ["Perf Cylinder", pick(item, "perf_cylinder_name", "perf_cylinder")],
+    ["Cylinder Gear", pick(item, "perf_cylinder_gear", "gear") ? `${pick(item, "perf_cylinder_gear", "gear")}T` : ""],
     ["Blade Count", pick(item, "blade_count")],
+    ["Active Blades", pick(item, "active_blade_count")],
+    ["Blade Types", pick(item, "blade_types")],
+    ["Sheeter Blade", pick(item, "has_sheeter_blade")],
     ["Repeat", inches(item, "standard_repeat_inches", "repeat")],
     ["Offset Blades", pick(item, "has_offset_blades")],
+    ["Cylinder Location", pick(item, "perf_cylinder_location_full_path", "location")],
     ["Active", pick(item, "is_active")],
     ["Notes", pick(item, "notes")],
   ];

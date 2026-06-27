@@ -904,7 +904,11 @@ function quoteLineDescriptionRows(item, quote) {
 
 function quoteTableQuantity(item, unitOfMeasure = quoteDefaultUnitOfMeasure) {
   const quantity = Number(item.form?.quantity || item.pricing?.quantity || 0);
-  if (unitOfMeasure === "M") return Number.isFinite(quantity) ? (quantity / 1000).toFixed(3) : "0.000";
+  if (unitOfMeasure === "M") {
+    return Number.isFinite(quantity)
+      ? (quantity / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })
+      : "0";
+  }
   return Number.isFinite(quantity) ? Math.round(quantity).toLocaleString() : "0";
 }
 
@@ -2854,7 +2858,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
 .brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:12px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:12px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
 .meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:14px;margin-top:18px}.meta.date-only{grid-template-columns:minmax(280px,.62fr);justify-content:end}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:104px minmax(0,1fr);border-top:1px solid #111827;min-height:28px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{min-width:0;padding:6px 7px;font-size:12px;overflow-wrap:anywhere}
-.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:47%}.sales-table th:nth-child(2){width:11%}.sales-table th:nth-child(3){width:7%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
+.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:13%}.sales-table th:nth-child(3){width:6%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
 .signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-row{display:grid;grid-template-columns:128px 1fr;align-items:end;gap:10px;min-height:26px;margin-bottom:8px;font-size:12px}.sig-row span{font-weight:700;white-space:nowrap}.sig-row b{display:block;min-height:18px;border-bottom:1.2px solid #111827;font-size:12px}.sig-box strong{display:block;margin-top:8px;font-size:12px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px;line-height:1.35}.contact span{margin-top:16px;font-size:12px;font-weight:700}.contact em{margin-top:8px;font-size:12px;font-style:normal}
 .terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}
 @media print{body{background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{width:auto;max-width:7.8in;min-height:auto;margin:0 auto;padding:0}.no-print{display:none}}
@@ -3015,7 +3019,7 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     const rowHeight = 92;
     const totalRowHeight = 28;
     const visibleItems = items.slice(0, 1);
-    const columns = [42, 308, 366, 404, 488, 570];
+    const columns = [42, 302, 372, 404, 488, 570];
     const tableHeaderFontSize = 10;
     const tablePartFontSize = 11;
     const tableBodyFontSize = 10;

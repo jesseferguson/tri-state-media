@@ -10499,15 +10499,15 @@ p, .muted { color: #7a7a7a; }
 }
 
 .quote-doc-sales-table th:nth-child(1) {
-  width: 47%;
+  width: 46%;
 }
 
 .quote-doc-sales-table th:nth-child(2) {
-  width: 11%;
+  width: 13%;
 }
 
 .quote-doc-sales-table th:nth-child(3) {
-  width: 7%;
+  width: 6%;
 }
 
 .quote-doc-sales-table th:nth-child(4) {
@@ -13479,6 +13479,11 @@ p, .muted { color: #7a7a7a; }
   background: #e0f2fe;
 }
 
+.layout-perf-pill.sheeted {
+  color: #7c2d12;
+  background: #ffedd5;
+}
+
 .layout-perf-pill.none {
   color: #475467;
   background: #eef2f7;
@@ -13527,6 +13532,89 @@ p, .muted { color: #7a7a7a; }
   border-radius: 999px;
   background: #ffffff;
   color: #92400e;
+}
+
+.layout-readiness-checks,
+.run-check-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px;
+  padding: 7px 8px;
+  border-bottom: 1px solid #edf2f7;
+  background: #f8fafc;
+}
+
+.layout-readiness-checks span,
+.run-check-list span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, .55fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 6px 7px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.layout-readiness-checks i,
+.run-check-list i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.layout-readiness-checks strong,
+.layout-readiness-checks em,
+.run-check-list strong,
+.run-check-list em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-readiness-checks strong,
+.run-check-list strong {
+  color: #101828;
+  font-size: .62rem;
+  font-weight: 950;
+}
+
+.layout-readiness-checks em,
+.run-check-list em {
+  color: #667085;
+  font-size: .6rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.layout-readiness-checks .ready i,
+.run-check-list .ready i {
+  background: #16a34a;
+}
+
+.layout-readiness-checks .bad,
+.run-check-list .bad {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.layout-readiness-checks .bad i,
+.run-check-list .bad i {
+  background: #dc2626;
+}
+
+.layout-readiness-checks .warn,
+.run-check-list .warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.layout-readiness-checks .warn i,
+.run-check-list .warn i {
+  background: #f59e0b;
 }
 
 .layout-tool-chain {

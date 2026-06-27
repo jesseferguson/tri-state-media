@@ -171,6 +171,7 @@ export const choiceLists = {
     ["standard", "Standard"],
     ["offset", "Offset"],
     ["skip", "Skip"],
+    ["sheeter", "Sheeter"],
     ["custom", "Custom"],
   ],
 
@@ -230,6 +231,7 @@ export const choiceLists = {
   perfOption: [
     ["none", "No Perf"],
     ["perf", "Perf"],
+    ["sheeted", "Sheeted / Sheeter Cut"],
   ],
 
   internalPerfCuttingType: [
@@ -827,6 +829,8 @@ export const resources = [
         relation: "customers",
         searchable: true,
         displayMode: "nameOnly",
+        lookupPageSize: 1000,
+        lookupFetchAll: true,
         searchFields: ["name", "customer_code", "contact_name", "phone", "email"],
       },
       { name: "customer_name", label: "Customer Name Override", type: "text", hidden: true },
@@ -984,6 +988,8 @@ export const resources = [
         type: "searchRelation",
         relation: "customers",
         searchable: true,
+        lookupPageSize: 1000,
+        lookupFetchAll: true,
         searchFields: ["name", "customer_code", "contact_name", "phone", "email"],
       },
       { name: "customer_po", label: "Customer PO", type: "text" },
@@ -1895,14 +1901,14 @@ export const resources = [
       { ...linerDataTypeField, label: "Liner Type" },
       {
         name: "perf_option",
-        label: "External Perf",
+        label: "Between Labels",
         type: "select",
         choices: choiceLists.perfOption,
         defaultValue: "none",
       },
       {
         name: "tpi",
-        label: "External Perf TPI",
+        label: "Perf TPI",
         type: "number",
         step: "0.0001",
         showWhen: { perf_option: "perf" },
@@ -1910,9 +1916,9 @@ export const resources = [
       },
       {
         name: "perf_notes",
-        label: "External Perf Notes",
+        label: "Between-label Notes",
         type: "textarea",
-        showWhen: { perf_option: "perf" },
+        showWhen: { perf_option: ["perf", "sheeted"] },
         clearWhenHidden: "",
       },
       {
@@ -2591,8 +2597,11 @@ export const resources = [
     columns: [
       "name",
       "perf_cylinder_name",
+      "blade_types",
       "blade_count",
+      "active_blade_count",
       "standard_repeat_inches",
+      "has_sheeter_blade",
       "has_offset_blades",
       "is_active",
     ],
