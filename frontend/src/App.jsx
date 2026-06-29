@@ -7,6 +7,7 @@ import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
 import FlexDieSearch from "./components/FlexDieSearch";
 import FlexDieDetailPanel from "./components/FlexDieDetailPanel";
+import FlexDieTable from "./components/FlexDieTable";
 import FinishedInventoryView, { FinishedInventoryWindow } from "./components/FinishedInventoryView";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
 import CustomerWorkspace from "./components/CustomerWorkspace";
@@ -1172,6 +1173,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const [formMode, setFormMode] = useState(null); // null | create | edit
   const [createDefaults, setCreateDefaults] = useState({});
   const [flexFilters, setFlexFilters] = useState(emptyFlexDieFilters);
+  const [flexDieDetailOpen, setFlexDieDetailOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState(initialOpenGroups);
   const [usageOpen, setUsageOpen] = useState(false);
   const [rollOpen, setRollOpen] = useState(false);
@@ -1661,6 +1663,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
       setSelected(null);
       setFormMode(null);
+      setFlexDieDetailOpen(false);
       setCreateDefaults({});
     },
   });
@@ -2168,6 +2171,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     setActiveKey(key);
     setSelected(null);
     setFormMode(null);
+    setFlexDieDetailOpen(false);
     setCreateDefaults({});
     setMaterialSupplierReturnKey("");
     setUsageOpen(false);
@@ -2210,6 +2214,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     setFinishedMaterialOpen(true);
   }
 
+  function openFlexDieFolder(row) {
+    setSelected(row);
+    setFormMode(null);
+    setFlexDieDetailOpen(true);
+  }
+
   function confirmDeleteRecord(row) {
     const title = getRecordTitle(row);
     if (!window.confirm(`Delete ${title}? This cannot be undone.`)) return;
@@ -2220,6 +2230,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         queryClient.invalidateQueries({ queryKey: ["lookups"] });
         setSelected(null);
         setFormMode(null);
+        setFlexDieDetailOpen(false);
       })
       .catch((error) => {
         window.alert(`Could not delete ${title}: ${error.message}`);
@@ -2453,7 +2464,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               <button className="ghost-btn" type="button" onClick={() => setMaterialTypeManagerOpen(true)}>Material Types</button>
             )}
             {!resource.disableCreate && !showingStaticView && (
-              <button className="primary-btn" type="button" onClick={() => { setSelected(null); setCreateDefaults(resource.key === "material-coated-stock" && materialOwnerTab === "tri_state" ? { company: "Tri-State Media" } : {}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : resource.key === "material-coated-stock" ? "Add Material" : "Add"}</button>
+              <button className="primary-btn" type="button" onClick={() => { setSelected(null); setFlexDieDetailOpen(false); setCreateDefaults(resource.key === "material-coated-stock" && materialOwnerTab === "tri_state" ? { company: "Tri-State Media" } : {}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : resource.key === "material-coated-stock" ? "Add Material" : "Add"}</button>
             )}
             <MessagesCenter currentUser={currentUser} users={users} />
             <AccountMenu
@@ -2507,7 +2518,13 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         ) : (
           <>
             {resource.searchMode === "flexDie" ? (
-              <FlexDieSearch filters={flexFilters} setFilters={setFlexFilters} liners={lookupQuery.data?.materials ?? []} />
+              <FlexDieSearch
+                filters={flexFilters}
+                setFilters={setFlexFilters}
+                liners={lookupQuery.data?.materials ?? []}
+                resultCount={visibleRows.length}
+                totalCount={rows.length}
+              />
             ) : (
               <section className="search-line compact-card">
                 <Search size={16} />
@@ -2568,7 +2585,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               />
             )}
 
-            <section className={`content-grid ${["customers", "job-tickets", "production-schedule", "material-coated-stock", "suppliers"].includes(resource.key) || isMaterialTypePage || isToolingConfigPage ? "wide-list" : ""}`}>
+            <section className={`content-grid ${["customers", "job-tickets", "production-schedule", "material-coated-stock", "suppliers", "flex-dies"].includes(resource.key) || isMaterialTypePage || isToolingConfigPage ? "wide-list" : ""}`}>
               <div className="list-panel compact-card">
                 <div className="panel-head thin">
                   <div>
@@ -2712,6 +2729,14 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
                     onDelete={viewCanManageUsers ? confirmDeleteRecord : undefined}
                   />
+                ) : resource.key === "flex-dies" ? (
+                  <FlexDieTable
+                    rows={tableRows}
+                    selectedId={selected?.id}
+                    onOpen={openFlexDieFolder}
+                    onEdit={(row) => { setSelected(row); setFlexDieDetailOpen(false); setFormMode("edit"); }}
+                    onDelete={confirmDeleteRecord}
+                  />
                 ) : isMaterialTypePage ? (
                   <MaterialTypeTable
                     rows={visibleRows}
@@ -2764,7 +2789,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 )}
               </div>
 
-              {resource.key !== "customers" && resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && resource.key !== "suppliers" && !isMaterialTypePage && !isToolingConfigPage && (
+              {resource.key !== "customers" && resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && resource.key !== "suppliers" && resource.key !== "flex-dies" && !isMaterialTypePage && !isToolingConfigPage && (
                 <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : toolingItemPageKeys.has(resource.key) && selected ? "tooling-item-detail-shell" : "detail-panel compact-card"}>
                   {selected ? (
                   resource.key === "flex-dies" ? (
@@ -2954,6 +2979,36 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
+              />
+            </div>
+          </section>
+        )}
+
+        {flexDieDetailOpen && resource.key === "flex-dies" && selectedToolingItem && !showingFlexDieFormOverlay && (
+          <section className="flex-die-folder-overlay" role="dialog" aria-modal="true" aria-label={`${getRecordTitle(selectedToolingItem)} flex die folder`}>
+            <div className="flex-die-folder-window">
+              <header className="flex-die-folder-window-head">
+                <button className="ghost-btn" type="button" onClick={() => setFlexDieDetailOpen(false)}>
+                  <X size={16} /> Close
+                </button>
+              </header>
+
+              <FlexDieDetailPanel
+                die={selectedToolingItem}
+                historyRows={selectedFlexDieHistory}
+                usageRows={selectedFlexDieUsageRows}
+                onEdit={() => setFormMode("edit")}
+                onDelete={() => deleteMutation.mutate()}
+                onRequestReorder={(note) => requestFlexDieReorder(selectedToolingItem, note)}
+                onMarkOrdered={(note) => markFlexDieOrdered(selectedToolingItem, note)}
+                onReceiveDie={(payload) => receiveFlexDie(selectedToolingItem, payload)}
+                onAdjustCount={(payload) => adjustFlexDieCount(selectedToolingItem, payload)}
+                onDeleteDieline={() => deleteFlexDieDieline(selectedToolingItem)}
+                onUpdateStatus={(payload) => toolingItemStatusMutation.mutateAsync({
+                  resourceKey: "flex-dies",
+                  record: selectedToolingItem,
+                  payload,
+                })}
               />
             </div>
           </section>
