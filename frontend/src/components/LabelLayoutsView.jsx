@@ -50,6 +50,25 @@ function layoutGroupKey(row) {
   ].join("|");
 }
 
+function layoutRootTitle(row) {
+  const face = choiceLabel("faceType", row.face_type, "");
+  const liner = choiceLabel("linerType", row.liner_type, "");
+  const material = [face, liner].filter(Boolean).join(" / ");
+  return [
+    `${formatInches(row.label_width_inches)} x ${formatInches(row.label_length_inches)}`,
+    material,
+  ].filter(Boolean).join(" ");
+}
+
+function layoutRootChips(row) {
+  return [
+    `Repeat ${formatInches(row.repeat_inches)}`,
+    choiceLabel("layoutShapeType", row.shape_type, "Shape"),
+    choiceLabel("labelCutType", row.cutting_type, "Cut"),
+    perfShortLabel(row) === "NP" ? "No Perf" : perfShortLabel(row),
+  ].filter(Boolean);
+}
+
 function buildGroups(rows, optionsByRecipe) {
   const groups = new Map();
 
@@ -381,9 +400,11 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen })
   if (!slot.tool) {
     return (
       <button type="button" className="layout-chain-card missing" onClick={() => onAddTooling(option, slot.requestGroup)}>
-        <span className="layout-chain-type">{slot.label}</span>
-        <strong>{slot.missing}</strong>
-        <em><Plus size={11} /> Add</em>
+        <div className="layout-chain-main">
+          <span className="layout-chain-type">{slot.label}</span>
+          <strong>{slot.missing}</strong>
+        </div>
+        <em className="layout-chain-add"><Plus size={11} /> Add</em>
       </button>
     );
   }
@@ -403,13 +424,19 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen })
         if (event.key === "Enter" || event.key === " ") onOpen?.(slot.tool);
       }}
     >
-      <div>
-        <span className="layout-chain-type">{slot.label}</span>
+      <div className="layout-chain-main">
+        <div className="layout-chain-title-row">
+          <span className="layout-chain-type">{slot.label}</span>
+          <small className={`layout-chain-state ${status}`}>{toolStateText(slot.tool)}</small>
+        </div>
         <strong>{toolName(slot.tool)}</strong>
-        {dieAcross && <em className="layout-die-across">{dieAcross}</em>}
-        {meta && <small className="layout-chain-meta">{meta}</small>}
+        {(dieAcross || meta) && (
+          <div className="layout-chain-tags">
+            {dieAcross && <em className="layout-die-across">{dieAcross}</em>}
+            {meta && <small className="layout-chain-meta">{meta}</small>}
+          </div>
+        )}
         {location && <small className="layout-chain-location">{location}</small>}
-        <small className={`layout-chain-state ${status}`}>{toolStateText(slot.tool)}</small>
       </div>
       <div className="layout-tool-actions">
         <button type="button" onClick={(event) => { event.stopPropagation(); onEdit(slot.tool); }}><Edit3 size={12} /> Edit</button>
@@ -417,13 +444,6 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen })
       </div>
     </div>
   );
-}
-
-function perfSummary(recipe, option, plan) {
-  const operation = externalOperation(recipe, option);
-  if (operation === "sheeted") return "Sheeted";
-  if (plan.needsPerf || operation === "perf" || recipeNeedsPerf(recipe, option)) return "Perf";
-  return "No Perf";
 }
 
 function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDeletePressOption, onAddTooling, onEditTooling, onDeleteTooling, renderToolDetail }) {
@@ -438,8 +458,6 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
   };
   const plan = buildToolSlots(recipe, option, tools);
   const { slots } = plan;
-  const perfLabel = perfSummary(recipe, option, plan);
-  const perfTone = perfLabel === "No Perf" ? "none" : perfLabel === "Sheeted" ? "sheeted" : "perf";
 
   return (
     <article className={`layout-press-card ${readiness.tone} ${open ? "open" : ""}`}>
@@ -451,7 +469,6 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
             <span>{option.name || "Auto setup name"}</span>
           </div>
         </button>
-        <span className={`layout-perf-pill ${perfTone}`}>{perfLabel}</span>
         <span className={`layout-ready-pill ${readiness.tone}`}>
           {readiness.tone === "ready" ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
           {readiness.label}
@@ -511,32 +528,30 @@ function LayoutCard({
   onEditTooling,
   onDeleteTooling,
   renderToolDetail,
+  showHeader = true,
 }) {
   return (
-    <article className={`layout-design-card ${selected ? "selected" : ""} ${row.is_active === false ? "inactive" : ""}`} onClick={() => onSelect(row)}>
-      <header className="layout-design-head">
-        <div>
-          <strong>{row.name || "Unnamed label layout"}</strong>
-          <span>{perfText(row)}</span>
-        </div>
-        <div className="layout-design-metrics">
-          <span>{formatInches(row.label_width_inches)} x {formatInches(row.label_length_inches)}</span>
-          <span>Repeat {formatInches(row.repeat_inches)}</span>
-          <span>{choiceLabel("layoutShapeType", row.shape_type, "Shape")} / {choiceLabel("labelCutType", row.cutting_type, "Cut")}</span>
-        </div>
-        <div className="layout-inline-actions" onClick={(event) => event.stopPropagation()}>
-          <button type="button" onClick={() => onEdit(row)}><Edit3 size={12} /> Edit</button>
-          <button type="button" onClick={() => onAddPressOption(row)}><Plus size={12} /> Add Press Option</button>
-          <button type="button" className="danger-text" onClick={() => onDelete(row)}><Trash2 size={12} /> Delete</button>
-        </div>
-      </header>
+    <article className={`layout-design-card ${showHeader ? "" : "root-panel"} ${selected ? "selected" : ""} ${row.is_active === false ? "inactive" : ""}`} onClick={() => onSelect(row)}>
+      {showHeader && (
+        <header className="layout-design-head">
+          <div>
+            <strong>{row.name || "Unnamed label layout"}</strong>
+            <span>{perfText(row)}</span>
+          </div>
+          <div className="layout-design-metrics">
+            <span>{formatInches(row.label_width_inches)} x {formatInches(row.label_length_inches)}</span>
+            <span>Repeat {formatInches(row.repeat_inches)}</span>
+            <span>{choiceLabel("layoutShapeType", row.shape_type, "Shape")} / {choiceLabel("labelCutType", row.cutting_type, "Cut")}</span>
+          </div>
+          <div className="layout-inline-actions" onClick={(event) => event.stopPropagation()}>
+            <button type="button" onClick={() => onEdit(row)}><Edit3 size={12} /> Edit</button>
+            <button type="button" onClick={() => onAddPressOption(row)}><Plus size={12} /> Add Press Option</button>
+            <button type="button" className="danger-text" onClick={() => onDelete(row)}><Trash2 size={12} /> Delete</button>
+          </div>
+        </header>
+      )}
 
-      <div className="layout-press-section" onClick={(event) => event.stopPropagation()}>
-        <div className="layout-tooling-section-head">
-          <span><Wrench size={15} /> Press Tooling</span>
-          <strong>{options.length} setup{options.length === 1 ? "" : "s"}</strong>
-        </div>
-
+      <div className={`layout-press-section ${showHeader ? "" : "root-options"}`} onClick={(event) => event.stopPropagation()}>
         {options.length ? (
           <div className="layout-press-list">
             {options.map((option) => (
@@ -575,17 +590,43 @@ function LayoutGroup({
   actions,
 }) {
   const open = openKeys.has(group.key);
+  const primaryRow = group.rows[0] ?? {};
+  const singleLayout = group.rows.length === 1;
+  const selected = group.rows.some((row) => selectedId === row.id);
+  const setupLabel = `${group.optionCount} setup${group.optionCount === 1 ? "" : "s"}`;
+  const countLabel = singleLayout ? setupLabel : `${group.rows.length} layouts / ${setupLabel}`;
+
+  function toggleGroup() {
+    if (primaryRow?.id) actions.onSelect?.(primaryRow);
+    toggleOpen(group.key);
+  }
 
   return (
-    <section className="layout-group combined">
-      <button type="button" className="layout-group-head combined" onClick={() => toggleOpen(group.key)}>
-        <span className="layout-group-toggle">{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
-        <span className="layout-group-title">
-          <em>Face - Liner - Width - Repeat - Finish</em>
-          <strong>{group.label}</strong>
-        </span>
-        <span className="layout-group-count">{group.rows.length} layout{group.rows.length === 1 ? "" : "s"} / {group.optionCount} setup{group.optionCount === 1 ? "" : "s"}</span>
-      </button>
+    <section className={`layout-group combined roll-root ${open ? "open" : ""} ${selected ? "selected" : ""}`}>
+      <div className="layout-group-head combined layout-root-head">
+        <button type="button" className="layout-root-toggle" onClick={toggleGroup}>
+          <span className="layout-group-toggle">{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
+          <span className="layout-root-stripe" aria-hidden="true" />
+          <span className="layout-group-title layout-root-title">
+            <strong>{singleLayout ? layoutRootTitle(primaryRow) : group.label}</strong>
+            <em>{singleLayout ? (primaryRow.name || perfText(primaryRow)) : "Grouped label layouts"}</em>
+          </span>
+          {singleLayout && (
+            <span className="layout-root-specs">
+              {layoutRootChips(primaryRow).map((chip) => <small key={chip}>{chip}</small>)}
+            </span>
+          )}
+          <span className="layout-group-count layout-root-count">{countLabel}</span>
+        </button>
+
+        {singleLayout && (
+          <div className="layout-inline-actions layout-root-actions">
+            <button type="button" onClick={() => actions.onEdit(primaryRow)}><Edit3 size={12} /> Edit</button>
+            <button type="button" onClick={() => actions.onAddPressOption(primaryRow)}><Plus size={12} /> Add Press Option</button>
+            <button type="button" className="danger-text" onClick={() => actions.onDelete(primaryRow)}><Trash2 size={12} /> Delete</button>
+          </div>
+        )}
+      </div>
 
       {open && (
         <div className="layout-group-body combined">
@@ -596,6 +637,7 @@ function LayoutGroup({
               options={optionsByRecipe.get(String(row.id)) ?? []}
               toolRows={toolRows}
               selected={selectedId === row.id}
+              showHeader={!singleLayout}
               {...actions}
             />
           ))}
