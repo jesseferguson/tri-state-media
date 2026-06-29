@@ -13224,6 +13224,34 @@ p, .muted { color: #7a7a7a; }
   background: #fbfcfe;
 }
 
+.layout-tooling-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+  padding: 4px 2px;
+  color: #344054;
+}
+
+.layout-tooling-section-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #101828;
+  font-size: .82rem;
+  font-weight: 950;
+}
+
+.layout-tooling-section-head > strong {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e9eef5;
+  color: #344054;
+  font-size: .7rem;
+  white-space: nowrap;
+}
+
 .layout-card-tabs {
   display: inline-flex;
   flex-wrap: wrap;
@@ -13620,31 +13648,30 @@ p, .muted { color: #7a7a7a; }
 .layout-tool-chain {
   display: flex;
   align-items: stretch;
-  gap: 6px;
-  padding: 7px;
+  gap: 10px;
+  padding: 10px;
   overflow-x: auto;
-  background: #ffffff;
+  background: #f8fafc;
 }
 
 .layout-chain-arrow {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  color: #98a2b3;
-  font-size: .72rem;
-  font-weight: 950;
+  justify-content: center;
+  color: #64748b;
 }
 
 .layout-chain-card {
-  min-width: 150px;
-  max-width: 220px;
-  flex: 1 1 150px;
+  min-width: 190px;
+  max-width: 280px;
+  flex: 1 1 190px;
   display: grid;
-  gap: 5px;
+  gap: 10px;
   align-content: space-between;
-  padding: 7px;
+  padding: 11px;
   border: 1px solid #e5e7eb;
-  border-left-width: 3px;
+  border-left-width: 4px;
   border-radius: 7px;
   background: #ffffff;
   color: #101828;
@@ -13680,7 +13707,7 @@ p, .muted { color: #7a7a7a; }
 .layout-chain-card > div:first-child {
   min-width: 0;
   display: grid;
-  gap: 1px;
+  gap: 5px;
 }
 
 .layout-chain-card span,
@@ -13689,44 +13716,53 @@ p, .muted { color: #7a7a7a; }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #667085;
-  font-size: .58rem;
+  color: #475467;
+  font-size: .76rem;
+  line-height: 1.35;
   font-style: normal;
-  font-weight: 850;
+  font-weight: 800;
 }
 
 .layout-chain-card small {
   display: block;
+  overflow-wrap: anywhere;
 }
 
 .layout-chain-card strong {
   min-width: 0;
-  overflow: hidden;
   color: #101828;
-  font-size: .74rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: .98rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.layout-chain-card .layout-chain-type {
+  color: #475467;
+  font-size: .68rem;
+  line-height: 1.2;
+  font-weight: 950;
+  text-transform: uppercase;
 }
 
 .layout-chain-card .layout-die-across {
   width: fit-content;
   margin-top: 2px;
-  padding: 2px 6px;
+  padding: 3px 7px;
   border-radius: 6px;
   background: #fff1f2;
-  color: #dc2626;
-  font-size: 1.22rem;
-  line-height: 1.05;
-  font-weight: 1000;
+  color: #be123c;
+  font-size: .82rem;
+  line-height: 1.2;
+  font-weight: 950;
 }
 
 .layout-chain-meta {
-  color: #667085;
+  color: #344054;
 }
 
 .layout-chain-location {
-  color: #344054;
-  font-weight: 950;
+  color: #475467;
+  font-weight: 850;
 }
 
 .finished-inventory-view {
@@ -14149,14 +14185,26 @@ p, .muted { color: #7a7a7a; }
 }
 
 .layout-chain-state.ready {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #dcfce7;
   color: #166534;
 }
 
 .layout-chain-state.bad {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fee2e2;
   color: #b91c1c;
 }
 
 .layout-chain-state.neutral {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e9eef5;
   color: #475467;
 }
 
@@ -14165,9 +14213,9 @@ p, .muted { color: #7a7a7a; }
 }
 
 .layout-chain-card .layout-tool-actions button {
-  min-height: 22px;
-  padding: 3px 5px;
-  font-size: .58rem;
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: .7rem;
 }
 
 .layout-inline-tool-detail {
@@ -14300,7 +14348,7 @@ p, .muted { color: #7a7a7a; }
 
   .layout-chain-card {
     max-width: none;
-    flex-basis: 170px;
+    flex-basis: 100%;
   }
 
   .layout-tool-table-row,

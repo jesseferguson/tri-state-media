@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Edit3, Plus, Printer, Trash2, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Edit3, Plus, Trash2, Wrench } from "lucide-react";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { evaluateOption } from "./RecipeOptionsView";
@@ -8,7 +8,7 @@ const GOOD_STATUSES = new Set(["active", "available", "in_stock", "in_use"]);
 const BAD_STATUSES = new Set(["inactive", "missing", "needs_ordered", "needs_repair", "ordered", "out_for_repair", "out_for_retool", "out_of_stock", "retired"]);
 
 const choiceLookup = Object.fromEntries(
-  ["faceType", "linerType", "shapeType", "layoutShapeType", "cuttingType", "labelCutType", "toolRole", "toolType", "toolStatus", "bladeType", "printColorType"].flatMap((listKey) =>
+  ["faceType", "linerType", "shapeType", "layoutShapeType", "cuttingType", "labelCutType", "toolRole", "toolType", "toolStatus", "bladeType"].flatMap((listKey) =>
     (choiceLists[listKey] ?? []).map(([value, label]) => [`${listKey}:${value}`, label])
   )
 );
@@ -299,14 +299,14 @@ function buildToolSlots(recipe, option, tools) {
   const perf = needsPerf ? (perfTools[0] ?? null) : null;
 
   const slots = [
-    { key: "mag1", label: "MAG1", missing: "Mag missing", requestGroup: "MAG1", tool: mag1 },
-    { key: "die1", label: "Die1", missing: "Flex die missing", requestGroup: "DIE1", tool: die1 },
+    { key: "mag1", label: "Magnetic Cylinder", missing: "Magnetic cylinder missing", requestGroup: "MAG1", tool: mag1 },
+    { key: "die1", label: "Flex Die", missing: "Flex die missing", requestGroup: "DIE1", tool: die1 },
   ];
 
   if (needsUndercut) {
     slots.push(
-      { key: "mag2", label: "MAG2", missing: "Undercut mag missing", requestGroup: "MAG2", tool: mag2 },
-      { key: "die2", label: "Die2", missing: "Undercut die missing", requestGroup: "DIE2", tool: die2 }
+      { key: "mag2", label: "Undercut Magnetic Cylinder", missing: "Undercut magnetic cylinder missing", requestGroup: "MAG2", tool: mag2 },
+      { key: "die2", label: "Undercut Flex Die", missing: "Undercut flex die missing", requestGroup: "DIE2", tool: die2 }
     );
   }
 
@@ -314,7 +314,7 @@ function buildToolSlots(recipe, option, tools) {
     const operation = externalOperation(recipe, option);
     slots.push({
       key: "perf",
-      label: operation === "sheeted" ? "Sheet" : "Perf",
+      label: operation === "sheeted" ? "Sheeter Setup" : "Perf Setup",
       missing: operation === "sheeted" ? "Sheeter setup missing" : "Perf tooling missing",
       requestGroup: "PERF",
       tool: perf,
@@ -381,6 +381,7 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen })
   if (!slot.tool) {
     return (
       <button type="button" className="layout-chain-card missing" onClick={() => onAddTooling(option, slot.requestGroup)}>
+        <span className="layout-chain-type">{slot.label}</span>
         <strong>{slot.missing}</strong>
         <em><Plus size={11} /> Add</em>
       </button>
@@ -403,6 +404,7 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen })
       }}
     >
       <div>
+        <span className="layout-chain-type">{slot.label}</span>
         <strong>{toolName(slot.tool)}</strong>
         {dieAcross && <em className="layout-die-across">{dieAcross}</em>}
         {meta && <small className="layout-chain-meta">{meta}</small>}
@@ -471,7 +473,7 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
         <div className="layout-tool-chain">
           {slots.map((slot, index) => (
             <Fragment key={slot.key}>
-              {index > 0 && <span className="layout-chain-arrow">-&gt;</span>}
+              {index > 0 && <span className="layout-chain-arrow"><ArrowRight size={18} aria-hidden="true" /></span>}
               <ChainToolCard
                 slot={slot}
                 option={option}
@@ -498,8 +500,6 @@ function LayoutCard({
   row,
   options,
   toolRows,
-  printPlates,
-  printStations,
   selected,
   onSelect,
   onEdit,
@@ -510,31 +510,8 @@ function LayoutCard({
   onAddTooling,
   onEditTooling,
   onDeleteTooling,
-  onAddPrintPlate,
-  onEditPrintPlate,
-  onDeletePrintPlate,
-  onAddPrintStation,
-  onEditPrintStation,
-  onDeletePrintStation,
   renderToolDetail,
 }) {
-  const [activeTab, setActiveTab] = useState("press");
-  const printPlateIds = useMemo(() => new Set((printPlates ?? []).map((plate) => String(plate.id))), [printPlates]);
-  const stationsByPlate = useMemo(() => {
-    const map = new Map();
-    (printStations ?? []).forEach((station) => {
-      const plateId = String(station.print_plate ?? "");
-      if (!plateId || !printPlateIds.has(plateId)) return;
-      if (!map.has(plateId)) map.set(plateId, []);
-      map.get(plateId).push(station);
-    });
-    map.forEach((list) => list.sort((a, b) => Number(a.station_number ?? 0) - Number(b.station_number ?? 0)));
-    return map;
-  }, [printPlateIds, printStations]);
-  const printStationCount = useMemo(() => {
-    return Array.from(stationsByPlate.values()).reduce((total, stations) => total + stations.length, 0);
-  }, [stationsByPlate]);
-
   return (
     <article className={`layout-design-card ${selected ? "selected" : ""} ${row.is_active === false ? "inactive" : ""}`} onClick={() => onSelect(row)}>
       <header className="layout-design-head">
@@ -555,95 +532,32 @@ function LayoutCard({
       </header>
 
       <div className="layout-press-section" onClick={(event) => event.stopPropagation()}>
-        <div className="layout-card-tabs" role="tablist" aria-label="Label layout details">
-          <button type="button" className={activeTab === "press" ? "active" : ""} onClick={() => setActiveTab("press")}>
-            <Wrench size={13} /> Press Options <span>{options.length}</span>
-          </button>
-          <button type="button" className={activeTab === "plates" ? "active" : ""} onClick={() => setActiveTab("plates")}>
-            <Printer size={13} /> Print Plate <span>{printPlates.length}</span>
-          </button>
+        <div className="layout-tooling-section-head">
+          <span><Wrench size={15} /> Press Tooling</span>
+          <strong>{options.length} setup{options.length === 1 ? "" : "s"}</strong>
         </div>
 
-        {activeTab === "press" && (
-          options.length ? (
-            <div className="layout-press-list">
-              {options.map((option) => (
-                <PressOptionCard
-                  key={option.id}
-                  recipe={row}
-                  option={option}
-                  toolRows={toolRows}
-                  onEditPressOption={onEditPressOption}
-                  onDeletePressOption={onDeletePressOption}
-                  onAddTooling={onAddTooling}
-                  onEditTooling={onEditTooling}
-                  onDeleteTooling={onDeleteTooling}
-                  renderToolDetail={renderToolDetail}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="layout-no-options">
-              <span>No press setup options yet.</span>
-              <button type="button" onClick={() => onAddPressOption(row)}><Plus size={12} /> Add Press Option</button>
-            </div>
-          )
-        )}
-
-        {activeTab === "plates" && (
-          <div className="layout-print-panel">
-            <div className="layout-print-head">
-              <div>
-                <strong>{printPlates.length} print plate{printPlates.length === 1 ? "" : "s"}</strong>
-                <span>{printStationCount} color station{printStationCount === 1 ? "" : "s"}</span>
-              </div>
-              <button type="button" onClick={() => onAddPrintPlate(row)}><Plus size={12} /> Add Print Plate</button>
-            </div>
-            {printPlates.length ? (
-              <div className="layout-print-list">
-                {printPlates.map((plate) => {
-                  const stations = stationsByPlate.get(String(plate.id)) ?? [];
-                  return (
-                    <article className="layout-print-card" key={plate.id}>
-                      <header>
-                        <div>
-                          <strong>{plate.plate_number}</strong>
-                          <span>{[plate.description, plate.customer_plate_number ? `Customer ${plate.customer_plate_number}` : "", plate.serial_number ? `SN ${plate.serial_number}` : ""].filter(Boolean).join(" / ")}</span>
-                        </div>
-                        <em>{[plate.number_across ? `${plate.number_across} across` : "", plate.number_around ? `${plate.number_around} around` : ""].filter(Boolean).join(" / ") || "No layout count"}</em>
-                        <div className="layout-inline-actions">
-                          <button type="button" onClick={() => onEditPrintPlate(plate)}><Edit3 size={12} /> Edit</button>
-                          <button type="button" onClick={() => onAddPrintStation(plate)}><Plus size={12} /> Add Station</button>
-                          <button type="button" className="danger-text" onClick={() => onDeletePrintPlate(plate)}><Trash2 size={12} /> Delete</button>
-                        </div>
-                      </header>
-                      {stations.length ? (
-                        <div className="layout-print-stations">
-                          {stations.map((station) => (
-                            <div className="layout-print-station" key={station.id}>
-                              <strong>Station {station.station_number}</strong>
-                              <span>{[station.pms_color || "No color", choiceLabel("printColorType", station.color_type, ""), station.anilox_gear_number ? `Anilox ${station.anilox_gear_number}` : "", station.print_cylinder_tooth_count ? `${station.print_cylinder_tooth_count}T` : ""].filter(Boolean).join(" / ")}</span>
-                              <em>{station.station_plate_number || plate.plate_number}</em>
-                              <div className="layout-inline-actions">
-                                <button type="button" onClick={() => onEditPrintStation(station)}><Edit3 size={12} /> Edit</button>
-                                <button type="button" className="danger-text" onClick={() => onDeletePrintStation(station)}><Trash2 size={12} /> Delete</button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="layout-print-empty">No stations yet. Add one station per print color.</p>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="layout-no-options">
-                <span>No print plates linked to this label layout.</span>
-                <button type="button" onClick={() => onAddPrintPlate(row)}><Plus size={12} /> Add Print Plate</button>
-              </div>
-            )}
+        {options.length ? (
+          <div className="layout-press-list">
+            {options.map((option) => (
+              <PressOptionCard
+                key={option.id}
+                recipe={row}
+                option={option}
+                toolRows={toolRows}
+                onEditPressOption={onEditPressOption}
+                onDeletePressOption={onDeletePressOption}
+                onAddTooling={onAddTooling}
+                onEditTooling={onEditTooling}
+                onDeleteTooling={onDeleteTooling}
+                renderToolDetail={renderToolDetail}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="layout-no-options">
+            <span>No press tooling setups yet.</span>
+            <button type="button" onClick={() => onAddPressOption(row)}><Plus size={12} /> Add Press Setup</button>
           </div>
         )}
       </div>
@@ -655,8 +569,6 @@ function LayoutGroup({
   group,
   optionsByRecipe,
   toolRows,
-  printPlatesByRecipe,
-  printStations,
   selectedId,
   openKeys,
   toggleOpen,
@@ -683,8 +595,6 @@ function LayoutGroup({
               row={row}
               options={optionsByRecipe.get(String(row.id)) ?? []}
               toolRows={toolRows}
-              printPlates={printPlatesByRecipe.get(String(row.id)) ?? []}
-              printStations={printStations}
               selected={selectedId === row.id}
               {...actions}
             />
@@ -699,8 +609,6 @@ export default function LabelLayoutsView({
   rows,
   recipeOptions = [],
   recipeTools = [],
-  printPlates = [],
-  printStations = [],
   selectedId,
   onSelect,
   onEdit,
@@ -711,12 +619,6 @@ export default function LabelLayoutsView({
   onAddTooling,
   onEditTooling,
   onDeleteTooling,
-  onAddPrintPlate,
-  onEditPrintPlate,
-  onDeletePrintPlate,
-  onAddPrintStation,
-  onEditPrintStation,
-  onDeletePrintStation,
   renderToolDetail,
 }) {
   const [openKeys, setOpenKeys] = useState(() => new Set());
@@ -734,18 +636,6 @@ export default function LabelLayoutsView({
   }, [recipeOptions]);
 
   const groups = useMemo(() => buildGroups(rows ?? [], optionsByRecipe), [rows, optionsByRecipe]);
-  const printPlatesByRecipe = useMemo(() => {
-    const map = new Map();
-    (printPlates ?? []).forEach((plate) => {
-      const recipeId = String(plate.recipe ?? "");
-      if (!recipeId) return;
-      if (!map.has(recipeId)) map.set(recipeId, []);
-      map.get(recipeId).push(plate);
-    });
-    map.forEach((list) => list.sort((a, b) => String(a.plate_number ?? "").localeCompare(String(b.plate_number ?? ""), undefined, { numeric: true })));
-    return map;
-  }, [printPlates]);
-
   function toggleOpen(id) {
     setOpenKeys((current) => {
       const next = new Set(current);
@@ -765,8 +655,6 @@ export default function LabelLayoutsView({
           group={group}
           optionsByRecipe={optionsByRecipe}
           toolRows={recipeTools}
-          printPlatesByRecipe={printPlatesByRecipe}
-          printStations={printStations}
           selectedId={selectedId}
           openKeys={openKeys}
           toggleOpen={toggleOpen}
@@ -780,12 +668,6 @@ export default function LabelLayoutsView({
             onAddTooling,
             onEditTooling,
             onDeleteTooling,
-            onAddPrintPlate,
-            onEditPrintPlate,
-            onDeletePrintPlate,
-            onAddPrintStation,
-            onEditPrintStation,
-            onDeletePrintStation,
             renderToolDetail,
           }}
         />

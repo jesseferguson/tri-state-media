@@ -2293,63 +2293,6 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     });
   }
 
-  function openPrintPlateForm(recipe) {
-    setSelected(recipe);
-    setFormMode(null);
-    setToolingWorkspaceForm({
-      resourceKey: "print-plates",
-      mode: "create",
-      record: null,
-      defaults: {
-        recipe: recipe.id,
-        plate_number: "",
-        customer_plate_number: "",
-        serial_number: "",
-        description: "",
-        number_across: "",
-        number_around: "",
-        is_active: true,
-      },
-    });
-  }
-
-  function editPrintPlate(plate) {
-    setFormMode(null);
-    setToolingWorkspaceForm({
-      resourceKey: "print-plates",
-      mode: "edit",
-      record: plate,
-      defaults: {},
-    });
-  }
-
-  function openPrintStationForm(plate) {
-    const stationCount = Number(plate.station_count ?? plate.stations?.length ?? 0);
-    setFormMode(null);
-    setToolingWorkspaceForm({
-      resourceKey: "print-stations",
-      mode: "create",
-      record: null,
-      defaults: {
-        print_plate: plate.id,
-        station_number: stationCount + 1,
-        station_plate_number: plate.plate_number || "",
-        color_type: "spot",
-        is_active: true,
-      },
-    });
-  }
-
-  function editPrintStation(station) {
-    setFormMode(null);
-    setToolingWorkspaceForm({
-      resourceKey: "print-stations",
-      mode: "edit",
-      record: station,
-      defaults: {},
-    });
-  }
-
   async function deleteToolingWorkspaceRecord(resourceKey, row) {
     const targetResource = resourceMap[resourceKey];
     if (!targetResource || !row?.id) return;
@@ -2738,8 +2681,6 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     rows={visibleRows}
                     recipeOptions={lookupQuery.data?.["recipe-options"] ?? []}
                     recipeTools={lookupQuery.data?.["recipe-tools"] ?? []}
-                    printPlates={lookupQuery.data?.["print-plates"] ?? []}
-                    printStations={lookupQuery.data?.["print-stations"] ?? []}
                     selectedId={selected?.id}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
@@ -2750,12 +2691,6 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     onAddTooling={openToolAssignmentForm}
                     onEditTooling={editToolAssignment}
                     onDeleteTooling={(tool) => deleteToolingWorkspaceRecord("recipe-tools", tool)}
-                    onAddPrintPlate={openPrintPlateForm}
-                    onEditPrintPlate={editPrintPlate}
-                    onDeletePrintPlate={(plate) => deleteToolingWorkspaceRecord("print-plates", plate)}
-                    onAddPrintStation={openPrintStationForm}
-                    onEditPrintStation={editPrintStation}
-                    onDeletePrintStation={(station) => deleteToolingWorkspaceRecord("print-stations", station)}
                     renderToolDetail={renderToolingItemDetail}
                   />
                 ) : resource.key === "recipe-options" ? (
