@@ -433,7 +433,6 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
     tone: sharedReadiness.severity,
     label: sharedReadiness.label === "Can Run" ? "Ready" : sharedReadiness.label,
     problems: sharedReadiness.problems ?? [],
-    checks: sharedReadiness.checks ?? [],
   };
   const plan = buildToolSlots(recipe, option, tools);
   const { slots } = plan;
@@ -465,18 +464,6 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
       {open && readiness.problems.length > 0 && (
         <div className="layout-helper-line">
           {readiness.problems.slice(0, 4).map((problem) => <span key={problem}>{problem}</span>)}
-        </div>
-      )}
-
-      {open && readiness.checks.length > 0 && (
-        <div className="layout-readiness-checks">
-          {readiness.checks.map((check, index) => (
-            <span key={`${check.label}-${index}`} className={check.state}>
-              <i />
-              <strong>{check.label}</strong>
-              <em>{check.text}</em>
-            </span>
-          ))}
         </div>
       )}
 

@@ -362,11 +362,6 @@ function buildCombos(option) {
       (!externalPerf || Boolean(runnablePerf)) &&
       (!undercutRequired || (pressCanUndercut(option) && undercutChain?.canRun && undercutLinked));
 
-    const notices = [];
-    if (externalPerf && runnablePerf && main.die && main.runnableMag && !sameParent(main.die, main.runnableMag, runnablePerf)) {
-      notices.push(`${externalOperationTitle(operation)} is ready, but stored separately from the main tools`);
-    }
-
     const combo = {
       main,
       undercutChain,
@@ -378,52 +373,9 @@ function buildCombos(option) {
       severity: canRun ? "ready" : "bad",
       label: canRun ? "Can Run" : "No Run",
       problems: uniq(problems),
-      notices,
     };
-    combo.checks = buildReadinessChecks(option, combo);
     return combo;
   });
-}
-
-function toolReadyCheck(label, tool, missing, fail = "") {
-  if (!tool) return { label, state: "bad", text: missing };
-  if (!canUseTool(tool)) return { label, state: "bad", text: `${toolName(tool)} is ${statusText(tool)}` };
-  if (fail) return { label, state: "bad", text: fail };
-  return { label, state: "ready", text: toolName(tool) };
-}
-
-function buildReadinessChecks(option, combo) {
-  const checks = [
-    toolReadyCheck("Main die", combo.main.die, "Flex die missing"),
-    toolReadyCheck("Mag", combo.main.runnableMag ?? combo.main.displayMag, combo.main.dieTooth ? `${combo.main.dieTooth}T mag missing` : "Mag missing", combo.main.runnableMag ? "" : combo.main.problems.find((problem) => problem.toLowerCase().includes("mag")) || ""),
-  ];
-
-  if (combo.externalOperation !== "none") {
-    const operationLabel = externalOperationTitle(combo.externalOperation);
-    checks.push(
-      toolReadyCheck(
-        operationLabel,
-        combo.runnablePerf ?? combo.displayPerf,
-        `${operationLabel} tooling missing`,
-        combo.runnablePerf ? "" : combo.problems.find((problem) => problem.toLowerCase().includes("perf") || problem.toLowerCase().includes("sheet")) || ""
-      )
-    );
-  } else {
-    checks.push({ label: "Between labels", state: "ready", text: "No perf or sheeter cut needed" });
-  }
-
-  if (combo.undercutRequired) {
-    checks.push(
-      toolReadyCheck("Undercut die", combo.undercutChain?.die, "Undercut flex die missing"),
-      toolReadyCheck("Undercut mag", combo.undercutChain?.runnableMag ?? combo.undercutChain?.displayMag, combo.undercutChain?.dieTooth ? `${combo.undercutChain.dieTooth}T undercut mag missing` : "Undercut mag missing", combo.undercutChain?.runnableMag ? "" : combo.undercutChain?.problems?.find((problem) => problem.toLowerCase().includes("mag")) || "")
-    );
-  }
-
-  if (combo.notices?.length) {
-    checks.push(...combo.notices.map((notice) => ({ label: "Setup note", state: "warn", text: notice })));
-  }
-
-  return checks;
 }
 
 export function evaluateOption(option) {
@@ -433,14 +385,12 @@ export function evaluateOption(option) {
   const review = option.is_approved === false || option.requires_manual_review === true;
 
   if (readyCombos.length && option.is_active !== false) {
-    const displayCombo = readyCombos[0] ?? combos[0] ?? null;
-    return { severity: review ? "warn" : "ready", label: review ? "Review" : "Can Run", readyCombos, problemCombos, combos, problems: review ? ["Review required"] : [], checks: displayCombo?.checks ?? [], notices: displayCombo?.notices ?? [] };
+    return { severity: review ? "warn" : "ready", label: review ? "Review" : "Can Run", readyCombos, problemCombos, combos, problems: review ? ["Review required"] : [] };
   }
 
   const problems = uniq(problemCombos.flatMap((c) => c.problems));
   if (option.is_active === false) problems.unshift("Inactive option");
-  const displayCombo = problemCombos[0] ?? combos[0] ?? null;
-  return { severity: "bad", label: "No Run", readyCombos, problemCombos, combos, problems, checks: displayCombo?.checks ?? [], notices: displayCombo?.notices ?? [] };
+  return { severity: "bad", label: "No Run", readyCombos, problemCombos, combos, problems };
 }
 
 function aggregate(options) {
@@ -546,21 +496,6 @@ function ToolChip({ label, tool, missing, onOpen, active }) {
   );
 }
 
-function ReadinessChecks({ checks = [] }) {
-  if (!checks.length) return null;
-  return (
-    <div className="run-check-list" aria-label="Run readiness checks">
-      {checks.map((check, index) => (
-        <span key={`${check.label}-${index}`} className={check.state}>
-          <i />
-          <strong>{check.label}</strong>
-          <em>{check.text}</em>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function PerfChip({ option, combo, open, active }) {
   const r = recipe(option);
   if (needsExternalPerf(option)) {
@@ -642,7 +577,6 @@ function Combo({ option, combo, muted = false, onFlexDieReorder, onFlexDieCountU
   return (
     <article className={`combo-card ${combo.severity} ${muted ? "muted" : ""}`}>
       <SpecChart combo={combo} />
-      <ReadinessChecks checks={combo.checks} />
       <div className="chain-stack">
         <Chain name="MAIN" die={combo.main.die} mag={combo.main.runnableMag ?? combo.main.displayMag} missingDie="Main die missing" missingMag={mainMagMissing} open={open} active={openTool?.id}>
           <span className="arrow">-&gt;</span><PerfChip option={option} combo={combo} open={open} active={openTool?.id} />
