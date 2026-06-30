@@ -11,6 +11,15 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-only-for-local")
 
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
+FIREBASE_PRINT_QUEUE_BASE = os.environ.get(
+    "FIREBASE_PRINT_QUEUE_BASE",
+    "https://realtime-database-8bbe2-default-rtdb.firebaseio.com",
+).rstrip("/")
+FIREBASE_PRINT_QUEUE_ROOT = os.environ.get(
+    "FIREBASE_PRINT_QUEUE_ROOT",
+    "TEST_PRINT_SERVER_JOBS",
+).strip("/")
+
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",

@@ -74,8 +74,8 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 FIREBASE_LIVE_FOOTAGE_BASE = "https://realtime2-94ff8-default-rtdb.firebaseio.com"
-FIREBASE_PRINT_QUEUE_BASE = getattr(settings, "FIREBASE_PRINT_QUEUE_BASE", FIREBASE_LIVE_FOOTAGE_BASE)
-FIREBASE_PRINT_QUEUE_ROOT = getattr(settings, "FIREBASE_PRINT_QUEUE_ROOT", "PRINT_JOBS")
+FIREBASE_PRINT_QUEUE_BASE = settings.FIREBASE_PRINT_QUEUE_BASE
+FIREBASE_PRINT_QUEUE_ROOT = settings.FIREBASE_PRINT_QUEUE_ROOT
 LIVE_FOOTAGE_RELAY_NODES = {
     "eti": {
         "speed": ("PUT", "/ETI_CURRENT_SPEED.json?print=silent"),
@@ -169,7 +169,7 @@ def _firebase_safe_key(value, default="default"):
 def _firebase_post_json(base_url, path_parts, payload, timeout=8):
     clean_base = str(base_url or "").rstrip("/")
     clean_parts = [str(part).strip("/") for part in path_parts if str(part).strip("/")]
-    url = f"{clean_base}/{'/'.join(clean_parts)}.json?print=silent"
+    url = f"{clean_base}/{'/'.join(clean_parts)}.json"
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     firebase_request = Request(
         url,
@@ -1139,6 +1139,7 @@ class JobTicketViewSet(BaseProductionViewSet):
             "queueKey": queue_key,
             "firebaseKey": firebase_key,
             "firebaseStatus": firebase_status,
+            "firebasePath": f"/{FIREBASE_PRINT_QUEUE_ROOT}/{queue_key}/{firebase_key}" if firebase_key else f"/{FIREBASE_PRINT_QUEUE_ROOT}/{queue_key}",
             "printerIp": printer_ip,
             "printerPort": payload.get("Printer Port"),
             "template": payload.get("TYPE"),

@@ -1496,7 +1496,8 @@ export default function JobTicketPanel({
       press: printForm.press || null,
     });
     if (result?.queueKey) {
-      setPrintNotice(`Queued ${printForm.template || "label"} label to ${result.queueKey}.`);
+      const path = result.firebasePath ? ` at ${result.firebasePath}` : "";
+      setPrintNotice(`Queued ${printForm.template || "label"} label to ${result.queueKey}${path}.`);
     } else {
       setPrintNotice("Print job queued.");
     }
