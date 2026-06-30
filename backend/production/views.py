@@ -76,6 +76,7 @@ logger = logging.getLogger(__name__)
 FIREBASE_LIVE_FOOTAGE_BASE = "https://realtime2-94ff8-default-rtdb.firebaseio.com"
 FIREBASE_PRINT_QUEUE_BASE = settings.FIREBASE_PRINT_QUEUE_BASE
 FIREBASE_PRINT_QUEUE_ROOT = settings.FIREBASE_PRINT_QUEUE_ROOT
+FIREBASE_PRINT_QUEUE_NAME = settings.FIREBASE_PRINT_QUEUE_NAME
 LIVE_FOOTAGE_RELAY_NODES = {
     "eti": {
         "speed": ("PUT", "/ETI_CURRENT_SPEED.json?print=silent"),
@@ -1105,7 +1106,7 @@ class JobTicketViewSet(BaseProductionViewSet):
         try:
             firebase_status, firebase_payload = _firebase_post_json(
                 FIREBASE_PRINT_QUEUE_BASE,
-                [FIREBASE_PRINT_QUEUE_ROOT, queue_key],
+                [FIREBASE_PRINT_QUEUE_ROOT, FIREBASE_PRINT_QUEUE_NAME],
                 payload,
             )
         except HTTPError as error:
@@ -1139,7 +1140,11 @@ class JobTicketViewSet(BaseProductionViewSet):
             "queueKey": queue_key,
             "firebaseKey": firebase_key,
             "firebaseStatus": firebase_status,
-            "firebasePath": f"/{FIREBASE_PRINT_QUEUE_ROOT}/{queue_key}/{firebase_key}" if firebase_key else f"/{FIREBASE_PRINT_QUEUE_ROOT}/{queue_key}",
+            "firebasePath": (
+                f"/{FIREBASE_PRINT_QUEUE_ROOT}/{FIREBASE_PRINT_QUEUE_NAME}/{firebase_key}"
+                if firebase_key
+                else f"/{FIREBASE_PRINT_QUEUE_ROOT}/{FIREBASE_PRINT_QUEUE_NAME}"
+            ),
             "printerIp": printer_ip,
             "printerPort": payload.get("Printer Port"),
             "template": payload.get("TYPE"),

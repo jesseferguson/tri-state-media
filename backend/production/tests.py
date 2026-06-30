@@ -331,12 +331,12 @@ class JobTicketPrintQueueTests(TestCase):
         self.assertEqual(response.status_code, 201, response.content)
         firebase_request = mocked_urlopen.call_args.args[0]
         self.assertIn(
-            "https://realtime-database-8bbe2-default-rtdb.firebaseio.com/TEST_PRINT_SERVER_JOBS/ETI.json",
+            "https://realtime-database-8bbe2-default-rtdb.firebaseio.com/TEST_PRINT_SERVER_JOBS/SHARED.json",
             firebase_request.full_url,
         )
         self.assertEqual(
             response.json()["firebasePath"],
-            "/TEST_PRINT_SERVER_JOBS/ETI/firebase-job-1",
+            "/TEST_PRINT_SERVER_JOBS/SHARED/firebase-job-1",
         )
         body = json.loads(firebase_request.data.decode("utf-8"))
         self.assertEqual(body["TYPE"], "BARCODE")

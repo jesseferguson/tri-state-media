@@ -19,6 +19,10 @@ FIREBASE_PRINT_QUEUE_ROOT = os.environ.get(
     "FIREBASE_PRINT_QUEUE_ROOT",
     "TEST_PRINT_SERVER_JOBS",
 ).strip("/")
+FIREBASE_PRINT_QUEUE_NAME = os.environ.get(
+    "FIREBASE_PRINT_QUEUE_NAME",
+    "SHARED",
+).strip("/")
 
 ALLOWED_HOSTS = [
     "localhost",
