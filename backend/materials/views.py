@@ -1,4 +1,5 @@
 from decimal import Decimal
+from urllib.error import HTTPError, URLError
 
 from django.db import transaction
 from django.db.models import DecimalField, Q, Sum
@@ -7,6 +8,7 @@ from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from tooling.models import Press
 
 from .models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
 from .serializers import (
@@ -452,3 +454,120 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         "press__name",
         "operator",
     ]
+
+    @staticmethod
+    def component_print_text(material, inventory):
+        parts = []
+        if material:
+            parts.append(material.material_family or material.name or material.code)
+        if inventory:
+            if inventory.supplier:
+                parts.append(inventory.supplier.name)
+            if inventory.lot_number:
+                parts.append(f"Lot {inventory.lot_number}")
+            if inventory.serial_number:
+                parts.append(inventory.serial_number)
+        return " / ".join(str(part).strip() for part in parts if str(part).strip())
+
+    @action(detail=True, methods=["post"], url_path="queue-print-label")
+    def queue_print_label(self, request, pk=None):
+        from production.views import (
+            FIREBASE_PRINT_QUEUE_BASE,
+            FIREBASE_PRINT_QUEUE_NAME,
+            FIREBASE_PRINT_QUEUE_ROOT,
+            _firebase_post_json,
+            _firebase_safe_key,
+            _positive_int,
+            _print_text,
+        )
+
+        tag = self.get_object()
+        press_id = request.data.get("press") or tag.press_id
+        press = Press.objects.filter(pk=press_id).first() if press_id else None
+        if not press:
+            return Response({"press": ["Select the press printer for this roll tag."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        printer_ip = _print_text(request.data, "printer_ip", press.printer_ip)
+        if not printer_ip:
+            return Response(
+                {"printer": [f"Add a printer IP for {press.name} before printing this roll tag."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        face_text = self.component_print_text(tag.face, tag.face_inventory)
+        liner_text = self.component_print_text(tag.liner, tag.liner_inventory)
+        adhesive_text = self.component_print_text(tag.adhesive, tag.adhesive_inventory)
+        silicone_text = self.component_print_text(tag.silicone, tag.silicone_inventory)
+        coating_text = self.component_print_text(tag.coating, tag.coating_inventory)
+        manufacturing_note = " / ".join(
+            part for part in [
+                f"Silicone: {silicone_text}" if silicone_text else "",
+                f"Coating: {coating_text}" if coating_text else "",
+                tag.cut_description,
+            ]
+            if part
+        )
+        material = tag.produced_material or tag.scheduled_material
+        part_number = tag.result_code or getattr(material, "code", "") or tag.name
+        queue_key = _firebase_safe_key(press.printer_queue_key or press.name or printer_ip)
+        payload = {
+            "TYPE": "COATER",
+            "Printer": printer_ip,
+            "Printer Port": _positive_int(request.data.get("printer_port") or press.printer_port, 9100),
+            "SPEED": _print_text(request.data, "speed", press.printer_speed or "5"),
+            "DARKNESS": _print_text(request.data, "darkness", press.printer_darkness or "11"),
+            "Total Ship Stock": _positive_int(request.data.get("copies"), 1),
+            "Operator": _print_text(request.data, "operator", tag.operator),
+            "Part Number List Logic": part_number,
+            "Face": face_text,
+            "Liner ": liner_text,
+            "Liner": liner_text,
+            "Adhesive": adhesive_text,
+            "Silicone": silicone_text,
+            "Coating": coating_text,
+            "Adhesive Width ": f'{tag.width_inches}"' if tag.width_inches is not None else "",
+            "Adhesive Width": f'{tag.width_inches}"' if tag.width_inches is not None else "",
+            "Length": f"{tag.length_feet} ft" if tag.length_feet is not None else "",
+            "Lot Number": tag.result_lot_number,
+            "Note": manufacturing_note,
+            "ID": tag.result_serial_number or tag.tag_number,
+            "Roll Tag": tag.tag_number,
+            "Queue Key": queue_key,
+            "Queued By": _print_text(request.data, "performed_by", tag.operator),
+            "Queued At": timezone.now().isoformat(),
+        }
+        payload = {key: value for key, value in payload.items() if value not in [None, ""]}
+
+        try:
+            firebase_status, firebase_payload = _firebase_post_json(
+                FIREBASE_PRINT_QUEUE_BASE,
+                [FIREBASE_PRINT_QUEUE_ROOT, FIREBASE_PRINT_QUEUE_NAME],
+                payload,
+            )
+        except HTTPError as error:
+            return Response(
+                {"detail": "Firebase rejected the roll-tag print job.", "firebase_status": error.code},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except URLError as error:
+            return Response(
+                {"detail": "Could not reach Firebase to queue the roll tag.", "error": str(error.reason)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        tag.print_status = "queued"
+        tag.save(update_fields=["print_status", "updated_at"])
+        firebase_key = str(firebase_payload.get("name") or "")
+        return Response(
+            {
+                "ok": True,
+                "tagNumber": tag.tag_number,
+                "queueKey": queue_key,
+                "firebaseKey": firebase_key,
+                "firebaseStatus": firebase_status,
+                "printerIp": printer_ip,
+                "printerPort": payload.get("Printer Port"),
+                "copies": payload.get("Total Ship Stock"),
+            },
+            status=status.HTTP_201_CREATED,
+        )

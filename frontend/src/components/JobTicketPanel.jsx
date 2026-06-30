@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, XCircle } from "lucide-react";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
@@ -29,10 +29,22 @@ const printTemplates = [
   { value: "CL", label: "Customer Label" },
   { value: "BCL", label: "BCL" },
   { value: "ABE", label: "ABE" },
-  { value: "DOWCARTONLABEL", label: "Dow Carton" },
-  { value: "DOWCLOSURELABEL", label: "Dow Closure" },
+  { value: "DOWCARTONLABEL", label: "DOW Carton" },
+  { value: "DOWCLOSURELABEL", label: "DOW Closure" },
+  { value: "CAM", label: "Camslide" },
   { value: "COATER", label: "Material Tag" },
 ];
+
+const savedCartonLabelTemplates = {
+  dow_carton: "DOWCARTONLABEL",
+  dow_closure: "DOWCLOSURELABEL",
+  customer_label: "CL",
+  bcl: "BCL",
+  abe: "ABE",
+  clopay: "CS",
+  variable_barcode: "BARCODE",
+  camslide: "CAM",
+};
 
 function sameId(a, b) {
   if (a === null || a === undefined || b === null || b === undefined) return false;
@@ -97,18 +109,18 @@ function defaultCartonLineB(ticket) {
 
 function printPressLabel(press) {
   if (!press) return "";
-  const queue = press.printer_queue_key ? ` / ${press.printer_queue_key}` : "";
-  const ip = press.printer_ip ? ` / ${press.printer_ip}` : " / no printer IP";
-  return `${press.name || "Press"}${queue}${ip}`;
+  const ip = press.printer_ip ? ` / ${press.printer_ip}` : " / printer setup needed";
+  return `${press.name || "Press"}${ip}`;
 }
 
 function buildDefaultPrintForm(ticket, presses = [], currentUserName = "") {
   const suggestedPress = presses.find((press) => press?.is_active !== false && press?.printer_ip) || presses.find((press) => press?.is_active !== false) || presses[0] || null;
   const clopay = isClopayTicket(ticket);
+  const savedTemplate = ticket?.carton_label_is_unique ? savedCartonLabelTemplates[ticket?.carton_label_format] : "";
   const partNumber = ticket?.carton_label_part_number || ticket?.product_code || ticket?.job_name || ticket?.ticket_number || "";
   return {
     press: suggestedPress?.id ? String(suggestedPress.id) : "",
-    template: clopay ? "CS" : "Standard",
+    template: savedTemplate || (clopay ? "CS" : "Standard"),
     total: "1",
     part_number: partNumber,
     text1: ticket?.carton_label_description_a || ticket?.description || "",
@@ -140,6 +152,11 @@ function buildDefaultPrintForm(ticket, presses = [], currentUserName = "") {
     length: "",
     note: "",
     roll_id: "",
+    printer_ip: suggestedPress?.printer_ip || "",
+    printer_port: String(suggestedPress?.printer_port || 9100),
+    speed: String(suggestedPress?.printer_speed || 5),
+    darkness: String(suggestedPress?.printer_darkness || 11),
+    save_printer_settings: true,
   };
 }
 
@@ -1419,6 +1436,14 @@ export default function JobTicketPanel({
     [lookups]
   );
   const selectedPrintPress = pressOptions.find((press) => sameId(press.id, printForm.press)) || null;
+  const activePrinterIp = String(printForm.printer_ip || "").trim();
+  const activePrinterPort = String(printForm.printer_port || 9100).trim();
+  const printerSettingsEdited = Boolean(selectedPrintPress) && (
+    activePrinterIp !== String(selectedPrintPress.printer_ip || "").trim()
+    || activePrinterPort !== String(selectedPrintPress.printer_port || 9100)
+    || String(printForm.speed || "") !== String(selectedPrintPress.printer_speed || 5)
+    || String(printForm.darkness || "") !== String(selectedPrintPress.printer_darkness || 11)
+  );
   const selectedPrintTemplate = printForm.template || "Standard";
   const showVariablePrintFields = selectedPrintTemplate === "BARCODE";
   const showClopayPrintFields = selectedPrintTemplate === "CS" || isClopayTicket(ticket);
@@ -1457,7 +1482,16 @@ export default function JobTicketPanel({
   useEffect(() => {
     if (printForm.press || !pressOptions.length) return;
     const suggestedPress = pressOptions.find((press) => press.printer_ip) || pressOptions[0];
-    if (suggestedPress?.id) setPrintForm((current) => ({ ...current, press: String(suggestedPress.id) }));
+    if (suggestedPress?.id) {
+      setPrintForm((current) => ({
+        ...current,
+        press: String(suggestedPress.id),
+        printer_ip: suggestedPress.printer_ip || "",
+        printer_port: String(suggestedPress.printer_port || 9100),
+        speed: String(suggestedPress.printer_speed || 5),
+        darkness: String(suggestedPress.printer_darkness || 11),
+      }));
+    }
   }, [pressOptions, printForm.press]);
 
   function selectTab(key) {
@@ -1483,6 +1517,19 @@ export default function JobTicketPanel({
     setPrintForm((current) => ({ ...current, [name]: value }));
   }
 
+  function selectPrintPress(pressId) {
+    setPrintNotice("");
+    const press = pressOptions.find((option) => sameId(option.id, pressId));
+    setPrintForm((current) => ({
+      ...current,
+      press: pressId,
+      printer_ip: press?.printer_ip || "",
+      printer_port: String(press?.printer_port || 9100),
+      speed: String(press?.printer_speed || 5),
+      darkness: String(press?.printer_darkness || 11),
+    }));
+  }
+
   function resetPrintForm() {
     setPrintNotice("");
     setPrintForm(buildDefaultPrintForm(ticket, pressOptions, currentUserName));
@@ -1496,8 +1543,8 @@ export default function JobTicketPanel({
       press: printForm.press || null,
     });
     if (result?.queueKey) {
-      const path = result.firebasePath ? ` at ${result.firebasePath}` : "";
-      setPrintNotice(`Queued ${printForm.template || "label"} label to ${result.queueKey}${path}.`);
+      const saved = result.printerSettingsSaved ? " Printer settings saved for this press." : "";
+      setPrintNotice(`${printForm.template || "Label"} queued for ${selectedPrintPress?.name || result.queueKey}.${saved}`);
     } else {
       setPrintNotice("Print job queued.");
     }
@@ -1661,11 +1708,11 @@ export default function JobTicketPanel({
                 <h3>{showCoaterPrintFields ? "Material Tag" : "Carton Label"}</h3>
                 <span>{showCoaterPrintFields ? "Queue a roll tag for the coater/material flow." : "Queue carton labels from the ticket specs and shipment details."}</span>
               </div>
-              <div className={`job-printer-status ${selectedPrintPress?.printer_ip ? "ready" : "needs-setup"}`}>
+              <div className={`job-printer-status ${activePrinterIp ? "ready" : "needs-setup"}`}>
                 <Printer size={18} />
                 <div>
                   <strong>{selectedPrintPress?.name || "No press selected"}</strong>
-                  <span>{selectedPrintPress?.printer_ip ? `${selectedPrintPress.printer_ip}:${selectedPrintPress.printer_port || 9100}` : "Add printer IP on the Presses page"}</span>
+                  <span>{activePrinterIp ? `${activePrinterIp}:${activePrinterPort} / Speed ${printForm.speed} / Darkness ${printForm.darkness}` : "Open Printer Settings below"}</span>
                 </div>
               </div>
             </div>
@@ -1674,7 +1721,7 @@ export default function JobTicketPanel({
               <div className="job-print-grid">
                 <label>
                   <span>Press Printer</span>
-                  <select value={printForm.press} onChange={(event) => updatePrintField("press", event.target.value)} required>
+                  <select value={printForm.press} onChange={(event) => selectPrintPress(event.target.value)} required>
                     <option value="">Select press printer</option>
                     {pressOptions.map((press) => (
                       <option value={press.id} key={press.id}>{printPressLabel(press)}</option>
@@ -1730,6 +1777,84 @@ export default function JobTicketPanel({
                   <input value={printForm.label_type} onChange={(event) => updatePrintField("label_type", event.target.value)} placeholder="Optional" />
                 </label>
               </div>
+
+              <details className={`job-printer-settings ${printerSettingsEdited ? "edited" : ""}`} defaultOpen={!activePrinterIp}>
+                <summary>
+                  <span className="job-printer-settings-title">
+                    <Settings2 size={17} />
+                    <span>
+                      <strong>Printer Settings</strong>
+                      <small>{activePrinterIp ? `${activePrinterIp}:${activePrinterPort}` : "IP address required"}</small>
+                    </span>
+                  </span>
+                  <span className={`job-printer-settings-state ${printerSettingsEdited ? "edited" : ""}`}>
+                    {printerSettingsEdited ? "Edited" : "Press Default"}
+                  </span>
+                </summary>
+                <div className="job-printer-settings-body">
+                  <div className="job-printer-settings-grid">
+                    <label className="ip">
+                      <span>Printer IP Address</span>
+                      <input
+                        value={printForm.printer_ip}
+                        onChange={(event) => updatePrintField("printer_ip", event.target.value)}
+                        placeholder="192.168.1.128"
+                        inputMode="decimal"
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Port</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="65535"
+                        value={printForm.printer_port}
+                        onChange={(event) => updatePrintField("printer_port", event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>Speed</span>
+                      <div className="job-printer-number-control">
+                        <input
+                          type="range"
+                          min="1"
+                          max="14"
+                          step="1"
+                          value={printForm.speed}
+                          onChange={(event) => updatePrintField("speed", event.target.value)}
+                        />
+                        <output>{printForm.speed}</output>
+                      </div>
+                    </label>
+                    <label>
+                      <span>Darkness</span>
+                      <div className="job-printer-number-control">
+                        <input
+                          type="range"
+                          min="0"
+                          max="30"
+                          step="1"
+                          value={printForm.darkness}
+                          onChange={(event) => updatePrintField("darkness", event.target.value)}
+                        />
+                        <output>{printForm.darkness}</output>
+                      </div>
+                    </label>
+                  </div>
+                  <label className="job-printer-save-toggle">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(printForm.save_printer_settings)}
+                      onChange={(event) => updatePrintField("save_printer_settings", event.target.checked)}
+                    />
+                    <span>
+                      <strong>Remember for {selectedPrintPress?.name || "this press"}</strong>
+                      <small>Use these settings automatically the next time this printer is selected.</small>
+                    </span>
+                  </label>
+                </div>
+              </details>
 
               {(showVariablePrintFields || showClopayPrintFields || showCoaterPrintFields) && (
                 <div className="job-print-options">
@@ -1849,10 +1974,10 @@ export default function JobTicketPanel({
                 <textarea value={printForm.rework_message} onChange={(event) => updatePrintField("rework_message", event.target.value)} rows={2} />
               </label>
 
-              {!selectedPrintPress?.printer_ip && (
+              {!activePrinterIp && (
                 <div className="job-print-warning">
                   <AlertTriangle size={16} />
-                  <span>Select a press with a printer IP. Add printer setup on the Presses page.</span>
+                  <span>Enter the printer IP address in Printer Settings before queueing this label.</span>
                 </div>
               )}
               {printLabelError && <div className="job-print-warning error"><AlertTriangle size={16} /><span>{printLabelError}</span></div>}
@@ -1862,7 +1987,7 @@ export default function JobTicketPanel({
                 <button className="ghost-btn" type="button" onClick={resetPrintForm}>
                   <RotateCcw size={15} /> Reset
                 </button>
-                <button className="primary-btn" type="submit" disabled={printingLabel || !selectedPrintPress?.printer_ip}>
+                <button className="primary-btn" type="submit" disabled={printingLabel || !activePrinterIp}>
                   <Send size={15} /> {printingLabel ? "Queueing..." : "Queue Print Job"}
                 </button>
               </div>

@@ -119,6 +119,18 @@ export const choiceLists = {
     ["bagged", "Bagged"],
   ],
 
+  cartonLabelFormat: [
+    ["standard", "Standard Carton"],
+    ["dow_carton", "DOW Carton"],
+    ["dow_closure", "DOW Closure"],
+    ["customer_label", "Customer Label"],
+    ["bcl", "BCL"],
+    ["abe", "ABE"],
+    ["clopay", "Clopay"],
+    ["variable_barcode", "Variable Barcode"],
+    ["camslide", "Camslide"],
+  ],
+
   coaterStatus: [
     ["scheduled", "Scheduled"],
     ["running", "Running"],
@@ -938,6 +950,24 @@ export const resources = [
       { name: "carton_label_description_c", label: "Carton Label Description C", type: "text", tab: "Carton Label" },
       { name: "carton_label_finishing_1", label: "Carton Label Finishing 1", type: "text", tab: "Carton Label" },
       { name: "carton_label_finishing_2", label: "Carton Label Finishing 2", type: "text", tab: "Carton Label" },
+      {
+        name: "carton_label_is_unique",
+        label: "Unique Carton Label",
+        type: "checkbox",
+        tab: "Carton Label",
+        helpText: "Turn this on when the customer requires a special carton label format.",
+      },
+      {
+        name: "carton_label_format",
+        label: "Carton Label Format",
+        type: "select",
+        choices: choiceLists.cartonLabelFormat,
+        defaultValue: "standard",
+        tab: "Carton Label",
+        showWhen: { carton_label_is_unique: true },
+        clearWhenHidden: "standard",
+        helpText: "The Labels tab will automatically use this format.",
+      },
       { name: "job_notes", label: "Job Notes", type: "textarea" },
     ],
   },

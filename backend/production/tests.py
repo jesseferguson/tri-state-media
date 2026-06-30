@@ -323,6 +323,11 @@ class JobTicketPrintQueueTests(TestCase):
                     "starting_number": "100",
                     "ending_number": "199",
                     "po": "PO-77",
+                    "printer_ip": "192.168.1.88",
+                    "printer_port": 9101,
+                    "speed": "8",
+                    "darkness": "14",
+                    "save_printer_settings": True,
                     "performed_by": "Shipping",
                 },
                 content_type="application/json",
@@ -340,10 +345,51 @@ class JobTicketPrintQueueTests(TestCase):
         )
         body = json.loads(firebase_request.data.decode("utf-8"))
         self.assertEqual(body["TYPE"], "BARCODE")
-        self.assertEqual(body["Printer"], "192.168.1.55")
-        self.assertEqual(body["SPEED"], "7")
-        self.assertEqual(body["DARKNESS"], "12")
+        self.assertEqual(body["Printer"], "192.168.1.88")
+        self.assertEqual(body["Printer Port"], 9101)
+        self.assertEqual(body["SPEED"], "8")
+        self.assertEqual(body["DARKNESS"], "14")
         self.assertEqual(body["line"], "PM-2-1-R")
         self.assertEqual(body["Starting Number"], "100")
         self.assertEqual(body["Ending Number"], "199")
+        press.refresh_from_db()
+        self.assertEqual(press.printer_ip, "192.168.1.88")
+        self.assertEqual(press.printer_port, 9101)
+        self.assertEqual(press.printer_speed, "8")
+        self.assertEqual(press.printer_darkness, "14")
+        self.assertTrue(response.json()["printerSettingsSaved"])
         self.assertTrue(JobTicketEvent.objects.filter(job_ticket=ticket, event_type="print_queued").exists())
+
+    def test_unique_dow_carton_label_uses_saved_ticket_format(self):
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-DOW",
+            job_name="DOW-ROLL",
+            product_code="DOW-100",
+            customer_name="DOW",
+            description="DOW carton product",
+            carton_label_is_unique=True,
+            carton_label_format="dow_carton",
+        )
+        press = Press.objects.create(
+            name="13 Aztech",
+            printer_ip="192.168.1.90",
+            printer_queue_key="13_Aztech",
+        )
+
+        with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
+            response = self.client.post(
+                reverse("job-ticket-queue-print-label", args=[ticket.id]),
+                {
+                    "press": press.id,
+                    "lot_number": "LOT-DOW-42",
+                    "po": "PO-88110",
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        firebase_request = mocked_urlopen.call_args.args[0]
+        body = json.loads(firebase_request.data.decode("utf-8"))
+        self.assertEqual(body["TYPE"], "DOWCARTONLABEL")
+        self.assertEqual(body["Lot Number"], "LOT-DOW-42")
+        self.assertEqual(body["PO"], "PO-88110")

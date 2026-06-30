@@ -380,6 +380,18 @@ class JobTicket(models.Model):
         ("bagged", "Bagged"),
     ]
 
+    CARTON_LABEL_FORMAT_CHOICES = [
+        ("standard", "Standard Carton"),
+        ("dow_carton", "DOW Carton"),
+        ("dow_closure", "DOW Closure"),
+        ("customer_label", "Customer Label"),
+        ("bcl", "BCL"),
+        ("abe", "ABE"),
+        ("clopay", "Clopay"),
+        ("variable_barcode", "Variable Barcode"),
+        ("camslide", "Camslide"),
+    ]
+
     WIND_DIRECTION_CHOICES = [
         ("", "Not Set"),
         ("1", "Wind 1"),
@@ -488,6 +500,12 @@ class JobTicket(models.Model):
     carton_label_description_c = models.CharField(max_length=255, blank=True)
     carton_label_finishing_1 = models.CharField(max_length=150, blank=True)
     carton_label_finishing_2 = models.CharField(max_length=150, blank=True)
+    carton_label_is_unique = models.BooleanField(default=False)
+    carton_label_format = models.CharField(
+        max_length=30,
+        choices=CARTON_LABEL_FORMAT_CHOICES,
+        default="standard",
+    )
 
     job_notes = models.TextField(blank=True)
 

@@ -134,6 +134,8 @@ JOB_TICKET_CHANGE_FIELDS = [
     ("carton_label_description_c", "Carton Label Description C"),
     ("carton_label_finishing_1", "Carton Label Finishing 1"),
     ("carton_label_finishing_2", "Carton Label Finishing 2"),
+    ("carton_label_is_unique", "Unique Carton Label"),
+    ("carton_label_format", "Carton Label Format"),
     ("job_notes", "Job Notes"),
 ]
 
@@ -158,6 +160,12 @@ def _positive_int(value, default=1):
     except (TypeError, ValueError):
         return default
     return max(1, parsed)
+
+
+def _request_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _firebase_safe_key(value, default="default"):
@@ -188,7 +196,17 @@ def _firebase_post_json(base_url, path_parts, payload, timeout=8):
 
 
 def _job_ticket_carton_payload(ticket, request_data, press=None):
-    template = _print_text(request_data, "template", "Standard").upper()
+    saved_template = {
+        "dow_carton": "DOWCARTONLABEL",
+        "dow_closure": "DOWCLOSURELABEL",
+        "customer_label": "CL",
+        "bcl": "BCL",
+        "abe": "ABE",
+        "clopay": "CS",
+        "variable_barcode": "BARCODE",
+        "camslide": "CAM",
+    }.get(ticket.carton_label_format, "Standard") if ticket.carton_label_is_unique else "Standard"
+    template = _print_text(request_data, "template", saved_template).upper()
     if template in {"STANDARD", "STD"}:
         template = "Standard"
 
@@ -1120,6 +1138,15 @@ class JobTicketViewSet(BaseProductionViewSet):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
+        printer_settings_saved = False
+        if press and _request_bool(request.data.get("save_printer_settings")):
+            press.printer_ip = printer_ip
+            press.printer_port = payload.get("Printer Port") or 9100
+            press.printer_speed = str(payload.get("SPEED") or "5")
+            press.printer_darkness = str(payload.get("DARKNESS") or "11")
+            press.save(update_fields=["printer_ip", "printer_port", "printer_speed", "printer_darkness"])
+            printer_settings_saved = True
+
         firebase_key = str(firebase_payload.get("name") or "")
         self.create_ticket_event(
             ticket,
@@ -1147,6 +1174,7 @@ class JobTicketViewSet(BaseProductionViewSet):
             ),
             "printerIp": printer_ip,
             "printerPort": payload.get("Printer Port"),
+            "printerSettingsSaved": printer_settings_saved,
             "template": payload.get("TYPE"),
         }, status=status.HTTP_201_CREATED)
 

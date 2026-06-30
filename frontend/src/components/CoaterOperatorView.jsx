@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Factory, PackageCheck, Play, RefreshCcw, Ruler } from "lucide-react";
-import { fetchCollection, updateRecord } from "../api";
+import { CheckCircle2, Factory, PackageCheck, Play, Printer, RefreshCcw, Ruler } from "lucide-react";
+import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
 const activeMaterialStatuses = new Set(["scheduled", "running", "on_hold"]);
@@ -134,6 +134,9 @@ function noteBlock(tag, form, inventoryRows) {
 function defaultRollForm(tag, data, currentUser) {
   const material = (data.materials ?? []).find((row) => sameId(row.id, tag?.scheduled_material));
   const location = tag?.location || plantFloorLocation(data.locations)?.id || "";
+  const printerPress = (data.presses ?? []).find((press) => sameId(press.id, tag?.press))
+    || (data.presses ?? []).find((press) => press.printer_ip)
+    || (data.presses ?? [])[0];
   const form = {
     liner: defaultComponentId(material, tag, componentSlots[0]),
     face: defaultComponentId(material, tag, componentSlots[1]),
@@ -152,11 +155,14 @@ function defaultRollForm(tag, data, currentUser) {
     location,
     operator_notes: tag?.operator_notes || "",
     operator: currentUser?.name || tag?.operator || "",
+    print_roll_tag: true,
+    printer_press: printerPress?.id ? String(printerPress.id) : "",
+    print_copies: "1",
   };
   return { ...form, result_lot_number: form.result_lot_number || generatedLot(tag, form, data.inventory) };
 }
 
-function validateRollForm(form) {
+function validateRollForm(form, data = {}) {
   const missing = [];
   componentSlots.forEach((slot) => {
     if (slot.optional) return;
@@ -165,6 +171,12 @@ function validateRollForm(form) {
   });
   if (!numberOrNull(form.length_feet) || numberOrNull(form.length_feet) <= 0) missing.push("Run feet");
   if (!form.result_lot_number) missing.push("Lot number");
+  if (form.print_roll_tag && !form.printer_press) {
+    missing.push("Roll tag printer");
+  } else if (form.print_roll_tag) {
+    const printer = (data.presses ?? []).find((press) => sameId(press.id, form.printer_press));
+    if (!printer?.printer_ip) missing.push("Printer IP setup");
+  }
   return missing;
 }
 
@@ -272,8 +284,9 @@ function ComponentPicker({ slot, form, setForm, materials, inventory, supplierOp
 
 function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
   const [form, setForm] = useState(() => defaultRollForm(tag, data, currentUser));
-  const missing = validateRollForm(form);
+  const missing = validateRollForm(form, data);
   const scheduledMaterial = (data.materials ?? []).find((row) => sameId(row.id, tag?.scheduled_material));
+  const selectedPrinter = (data.presses ?? []).find((press) => sameId(press.id, form.printer_press));
 
   useEffect(() => {
     setForm(defaultRollForm(tag, data, currentUser));
@@ -285,7 +298,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
 
   function submit(event) {
     event.preventDefault();
-    const requiredMissing = validateRollForm(form);
+    const requiredMissing = validateRollForm(form, data);
     if (requiredMissing.length) return;
     onSave(form);
   }
@@ -356,12 +369,68 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
         </label>
       </div>
 
+      <section className={`coater-print-setup ${form.print_roll_tag ? "active" : ""}`}>
+        <header>
+          <span className="coater-print-icon"><Printer size={18} /></span>
+          <div>
+            <strong>Print New Roll Tag</strong>
+            <span>The roll ID and manufacturing selections above will be printed automatically.</span>
+          </div>
+          <label className="coater-print-toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(form.print_roll_tag)}
+              onChange={(event) => update("print_roll_tag", event.target.checked)}
+            />
+            <span>{form.print_roll_tag ? "Print" : "Save Only"}</span>
+          </label>
+        </header>
+        {form.print_roll_tag && (
+          <div className="coater-print-controls">
+            <label>
+              <span>Roll Tag Printer</span>
+              <select value={form.printer_press} onChange={(event) => update("printer_press", event.target.value)} required>
+                <option value="">Select printer</option>
+                {(data.presses ?? []).map((press) => (
+                  <option value={press.id} key={press.id}>
+                    {press.name}{press.printer_ip ? ` / ${press.printer_ip}` : " / setup needed"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Copies</span>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                step="1"
+                value={form.print_copies}
+                onChange={(event) => update("print_copies", event.target.value)}
+              />
+            </label>
+            <div className={`coater-printer-ready ${selectedPrinter?.printer_ip ? "ready" : "needs-setup"}`}>
+              <Printer size={16} />
+              <span>
+                <strong>{selectedPrinter?.name || "No printer selected"}</strong>
+                <small>
+                  {selectedPrinter?.printer_ip
+                    ? `${selectedPrinter.printer_ip}:${selectedPrinter.printer_port || 9100} / Speed ${selectedPrinter.printer_speed || 5} / Darkness ${selectedPrinter.printer_darkness || 11}`
+                    : "Add the printer IP in Press settings"}
+                </small>
+              </span>
+            </div>
+          </div>
+        )}
+      </section>
+
       {error && <p className="coater-error">{error}</p>}
       {missing.length ? <p className="coater-form-note">Missing: {missing.join(", ")}</p> : null}
 
       <div className="coater-roll-actions">
         <button className="primary-btn" type="submit" disabled={saving || missing.length > 0}>
-          <CheckCircle2 size={16} /> {saving ? "Creating..." : "Create Roll Tag"}
+          {form.print_roll_tag ? <Printer size={16} /> : <CheckCircle2 size={16} />}
+          {saving ? "Creating..." : form.print_roll_tag ? "Create & Print Roll Tag" : "Create Roll Tag"}
         </button>
       </div>
     </form>
@@ -406,6 +475,7 @@ export default function CoaterOperatorView({ currentUser }) {
   const [selectedPress, setSelectedPress] = useState("all");
   const [selectedTagId, setSelectedTagId] = useState("");
   const [productForms, setProductForms] = useState({});
+  const [rollTagNotice, setRollTagNotice] = useState("");
 
   const dataQuery = useQuery({
     queryKey: ["coater-operator-data"],
@@ -475,12 +545,12 @@ export default function CoaterOperatorView({ currentUser }) {
 
   const completeTagMutation = useMutation({
     mutationFn: async ({ tag, form }) => {
-      const missing = validateRollForm(form);
+      const missing = validateRollForm(form, data);
       if (missing.length) throw new Error(`Missing: ${missing.join(", ")}`);
       const material = data.materials.find((row) => sameId(row.id, tag.scheduled_material || tag.produced_material));
-      return updateRecord("coater-roll-tags", tag.id, {
+      const saved = await updateRecord("coater-roll-tags", tag.id, {
         status: "complete",
-        print_status: tag.print_status === "printed" ? "printed" : "queued",
+        print_status: tag.print_status === "printed" ? "printed" : "not_printed",
         liner: numberOrNull(form.liner),
         face: numberOrNull(form.face),
         adhesive: numberOrNull(form.adhesive),
@@ -505,9 +575,27 @@ export default function CoaterOperatorView({ currentUser }) {
         operator_notes: form.operator_notes || tag.operator_notes || "",
         notes: noteBlock(tag, form, data.inventory),
       });
+      if (!form.print_roll_tag) return { saved, printResult: null };
+
+      try {
+        const printResult = await postRecordAction("coater-roll-tags", saved.id, "queue-print-label", {
+          press: numberOrNull(form.printer_press),
+          copies: numberOrNull(form.print_copies) || 1,
+          operator: form.operator || operatorName,
+          performed_by: form.operator || operatorName,
+        });
+        return { saved, printResult };
+      } catch (printError) {
+        throw new Error(`Roll ${saved.tag_number} was created, but the print job could not be queued. ${printError.message || ""}`.trim());
+      }
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, printResult }) => {
       setSelectedTagId(String(saved.id));
+      setRollTagNotice(
+        printResult
+          ? `${saved.tag_number} created and queued to ${printResult.queueKey}.`
+          : `${saved.tag_number} created without printing.`
+      );
       queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
@@ -590,6 +678,7 @@ export default function CoaterOperatorView({ currentUser }) {
               <strong>{selectedTag?.tag_number || "No run selected"}</strong>
             </div>
           </header>
+          {rollTagNotice && <div className="coater-print-success"><CheckCircle2 size={16} /><span>{rollTagNotice}</span></div>}
           {selectedTag ? (
             <RollRunForm
               tag={selectedTag}
@@ -597,7 +686,7 @@ export default function CoaterOperatorView({ currentUser }) {
               currentUser={currentUser}
               saving={completeTagMutation.isPending}
               error={completeTagMutation.error?.message}
-              onSave={(form) => completeTagMutation.mutate({ tag: selectedTag, form })}
+              onSave={(form) => { setRollTagNotice(""); completeTagMutation.mutate({ tag: selectedTag, form }); }}
             />
           ) : (
             <p className="coater-empty">Select a scheduled material run.</p>

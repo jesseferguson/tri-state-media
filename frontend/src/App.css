@@ -16494,6 +16494,202 @@ textarea {
   resize: vertical;
 }
 
+.job-printer-settings {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.job-printer-settings.edited {
+  border-color: rgba(37, 99, 235, .42);
+  background: #f8fbff;
+}
+
+.job-printer-settings > summary {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.job-printer-settings > summary::-webkit-details-marker {
+  display: none;
+}
+
+.job-printer-settings > summary:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, .24);
+  outline-offset: -3px;
+}
+
+.job-printer-settings-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.job-printer-settings-title > svg {
+  flex: 0 0 auto;
+  color: #2563eb;
+}
+
+.job-printer-settings-title > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.job-printer-settings-title strong,
+.job-printer-settings-title small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.job-printer-settings-title strong {
+  color: #0f172a;
+  font-size: .88rem;
+  font-weight: 950;
+}
+
+.job-printer-settings-title small {
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 750;
+}
+
+.job-printer-settings-state {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid #d7dee8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  font-size: .68rem;
+  font-weight: 900;
+}
+
+.job-printer-settings-state.edited {
+  border-color: rgba(37, 99, 235, .28);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.job-printer-settings-body {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.job-printer-settings-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(190px, 1.35fr) minmax(90px, .55fr) minmax(160px, 1fr) minmax(160px, 1fr);
+  gap: 10px;
+}
+
+.job-printer-settings-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.job-printer-settings-grid label > span {
+  color: #475569;
+  font-size: .68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.job-printer-settings-grid input:not([type="range"]) {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 800;
+}
+
+.job-printer-number-control {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 8px;
+  align-items: center;
+}
+
+.job-printer-number-control input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  accent-color: #2563eb;
+}
+
+.job-printer-number-control output {
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: .84rem;
+  font-weight: 950;
+}
+
+.job-printer-save-toggle {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.job-printer-save-toggle > input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: #2563eb;
+}
+
+.job-printer-save-toggle > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.job-printer-save-toggle strong {
+  color: #0f172a;
+  font-size: .8rem;
+  font-weight: 900;
+}
+
+.job-printer-save-toggle small {
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .job-print-options {
   display: grid;
   gap: 10px;
@@ -17125,8 +17321,13 @@ textarea {
   }
 
   .job-print-grid,
-  .job-print-grid.compact {
+  .job-print-grid.compact,
+  .job-printer-settings-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .job-printer-settings-grid label.ip {
+    grid-column: span 2;
   }
 }
 
@@ -17159,12 +17360,18 @@ textarea {
   }
 
   .job-print-grid,
-  .job-print-grid.compact {
+  .job-print-grid.compact,
+  .job-printer-settings-grid {
     grid-template-columns: 1fr;
   }
 
-  .job-print-grid label.wide {
+  .job-print-grid label.wide,
+  .job-printer-settings-grid label.ip {
     grid-column: auto;
+  }
+
+  .job-printer-settings > summary {
+    align-items: flex-start;
   }
 
   .job-print-section-head {
@@ -18203,6 +18410,171 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.coater-print-setup {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dbe4ee;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.coater-print-setup.active {
+  border-color: rgba(15, 118, 110, .34);
+  background: #f2fbf8;
+}
+
+.coater-print-setup > header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+}
+
+.coater-print-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f766e !important;
+  box-shadow: inset 0 0 0 1px #dbe7e4;
+}
+
+.coater-print-setup > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.coater-print-setup > header strong {
+  color: #0f172a;
+  font-size: .88rem;
+  font-weight: 950;
+}
+
+.coater-print-setup > header > div > span {
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.coater-print-toggle {
+  min-width: 96px !important;
+  min-height: 34px;
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  justify-content: center;
+  gap: 7px !important;
+  padding: 6px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.coater-print-toggle input {
+  width: 17px;
+  height: 17px;
+  min-height: 0;
+  padding: 0;
+  accent-color: #0f766e;
+}
+
+.coater-print-toggle span {
+  color: #334155 !important;
+  font-size: .74rem !important;
+  font-weight: 950 !important;
+}
+
+.coater-print-controls {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(80px, .28fr) minmax(220px, 1fr);
+  gap: 9px;
+  align-items: end;
+  padding: 11px;
+  border-top: 1px solid #dce9e5;
+  background: #ffffff;
+}
+
+.coater-printer-ready {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.coater-printer-ready > svg {
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
+.coater-printer-ready > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.coater-printer-ready strong,
+.coater-printer-ready small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.coater-printer-ready strong {
+  color: #0f172a;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.coater-printer-ready small {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.coater-printer-ready.ready {
+  border-color: rgba(22, 163, 74, .28);
+  background: #f0fdf4;
+}
+
+.coater-printer-ready.ready > svg {
+  color: #16a34a;
+}
+
+.coater-printer-ready.needs-setup {
+  border-color: rgba(217, 119, 6, .28);
+  background: #fffbeb;
+}
+
+.coater-printer-ready.needs-setup > svg {
+  color: #d97706;
+}
+
+.coater-print-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(22, 163, 74, .28);
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
 .coater-roll-actions {
   display: flex;
   justify-content: flex-end;
@@ -18270,6 +18642,14 @@ textarea {
   .coater-product-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .coater-print-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .coater-printer-ready {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 640px) {
@@ -18277,6 +18657,23 @@ textarea {
   .coater-roll-form > header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .coater-print-setup > header,
+  .coater-print-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-print-icon {
+    display: none;
+  }
+
+  .coater-print-toggle {
+    width: 100%;
+  }
+
+  .coater-printer-ready {
+    grid-column: auto;
   }
 
   .coater-hero .ghost-btn,
