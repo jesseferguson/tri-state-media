@@ -137,6 +137,16 @@ class Press(models.Model):
     has_undercut_capability = models.BooleanField(default=False)
     has_perf_capability = models.BooleanField(default=True)
 
+    printer_ip = models.CharField(max_length=120, blank=True)
+    printer_port = models.PositiveIntegerField(default=9100)
+    printer_speed = models.CharField(max_length=20, default="5", blank=True)
+    printer_darkness = models.CharField(max_length=20, default="11", blank=True)
+    printer_queue_key = models.CharField(
+        max_length=80,
+        blank=True,
+        help_text="Firebase print queue key used by the ESP32 print server for this press.",
+    )
+
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
 

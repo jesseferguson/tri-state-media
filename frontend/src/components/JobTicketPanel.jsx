@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, ShieldCheck, XCircle } from "lucide-react";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
 const tabs = [
   { key: "general", label: "General" },
+  { key: "labels", label: "Labels" },
   { key: "history", label: "History" },
   { key: "editor", label: "Editor" },
 ];
@@ -19,6 +20,18 @@ const chartRangeOptions = [
   { key: "all", label: "All" },
   { key: "9mo", label: "9 Months" },
   { key: "3mo", label: "3 Months", featured: true },
+];
+
+const printTemplates = [
+  { value: "Standard", label: "Standard Carton" },
+  { value: "BARCODE", label: "Variable Barcode" },
+  { value: "CS", label: "Clopay" },
+  { value: "CL", label: "Customer Label" },
+  { value: "BCL", label: "BCL" },
+  { value: "ABE", label: "ABE" },
+  { value: "DOWCARTONLABEL", label: "Dow Carton" },
+  { value: "DOWCLOSURELABEL", label: "Dow Closure" },
+  { value: "COATER", label: "Material Tag" },
 ];
 
 function sameId(a, b) {
@@ -63,6 +76,71 @@ function unitsPerCartonLabel(ticket) {
 
 function labelsPerFoldLabel(ticket) {
   return `${unitNoun(ticket)} / Fold`;
+}
+
+function isClopayTicket(ticket) {
+  const text = [ticket?.customer_display, ticket?.customer_name, ticket?.job_name, ticket?.description].filter(Boolean).join(" ").toLowerCase();
+  return text.includes("clopay");
+}
+
+function defaultCartonLineA(ticket) {
+  const count = ticket?.labels_per_unit;
+  if (!count) return "";
+  return `${formatNumber(count)} ${String(ticket?.unit_type || "label").toLowerCase()}${Number(count) === 1 ? "" : "s"} / ${ticket?.finishing_type === "rolls" ? "roll" : "unit"}`;
+}
+
+function defaultCartonLineB(ticket) {
+  const count = ticket?.units_per_carton || ticket?.labels_per_carton;
+  if (!count) return "";
+  return `${formatNumber(count)} ${String(ticket?.unit_type || "label").toLowerCase()}${Number(count) === 1 ? "" : "s"} / carton`;
+}
+
+function printPressLabel(press) {
+  if (!press) return "";
+  const queue = press.printer_queue_key ? ` / ${press.printer_queue_key}` : "";
+  const ip = press.printer_ip ? ` / ${press.printer_ip}` : " / no printer IP";
+  return `${press.name || "Press"}${queue}${ip}`;
+}
+
+function buildDefaultPrintForm(ticket, presses = [], currentUserName = "") {
+  const suggestedPress = presses.find((press) => press?.is_active !== false && press?.printer_ip) || presses.find((press) => press?.is_active !== false) || presses[0] || null;
+  const clopay = isClopayTicket(ticket);
+  const partNumber = ticket?.carton_label_part_number || ticket?.product_code || ticket?.job_name || ticket?.ticket_number || "";
+  return {
+    press: suggestedPress?.id ? String(suggestedPress.id) : "",
+    template: clopay ? "CS" : "Standard",
+    total: "1",
+    part_number: partNumber,
+    text1: ticket?.carton_label_description_a || ticket?.description || "",
+    text2: ticket?.carton_label_description_b || "",
+    text3: ticket?.carton_label_description_c || "",
+    labela: ticket?.carton_label_finishing_1 || defaultCartonLineA(ticket),
+    labelb: ticket?.carton_label_finishing_2 || defaultCartonLineB(ticket),
+    lot_number: "",
+    label_type: "",
+    blackout: "",
+    po: "",
+    starting_number: "",
+    ending_number: "",
+    ref_number: "",
+    rework_message: "",
+    clopay_shipping_header: clopay ? "CLOPAY" : "",
+    clopay_ship_date: "",
+    clopay_part_number: partNumber,
+    clopay_po: "",
+    clopay_po_line: "",
+    clopay_quantity: "",
+    clopay_uom: "EA",
+    operator: currentUserName,
+    material_part_number: partNumber,
+    face: ticket?.face_type || "",
+    liner: ticket?.liner_type || "",
+    adhesive: "",
+    adhesive_width: "",
+    length: "",
+    note: "",
+    roll_id: "",
+  };
 }
 
 function inventoryRollName(row) {
@@ -1248,8 +1326,11 @@ export default function JobTicketPanel({
   canQuote = false,
   canApproveChanges = false,
   currentUserName = "",
+  printingLabel = false,
+  printLabelError = "",
   approvingChangeId = "",
   onQuoteJob,
+  onQueuePrintLabel,
   onApproveChange,
   onReceiveFinishedInventory,
   renderEditorForm,
@@ -1262,6 +1343,8 @@ export default function JobTicketPanel({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [orderHistorySearch, setOrderHistorySearch] = useState("");
   const [editorDraft, setEditorDraft] = useState(null);
+  const [printNotice, setPrintNotice] = useState("");
+  const [printForm, setPrintForm] = useState(() => buildDefaultPrintForm(ticket, lookups?.presses ?? [], currentUserName));
   const [receiveForm, setReceiveForm] = useState({
     order_number: "",
     quantity: "",
@@ -1331,6 +1414,15 @@ export default function JobTicketPanel({
   const ticketChangeEvents = sortedJobTicketEvents.filter((event) => !["scheduled", "schedule_updated", "schedule_removed"].includes(event.event_type));
   const scheduleJobTicketEvents = sortedJobTicketEvents.filter((event) => ["scheduled", "schedule_updated", "schedule_removed"].includes(event.event_type));
   const pendingChangeEvents = ticketChangeEvents.filter((event) => changeApprovalStatus(event) === "pending");
+  const pressOptions = useMemo(
+    () => [...(lookups?.presses ?? [])].filter((press) => press?.is_active !== false).sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { numeric: true })),
+    [lookups]
+  );
+  const selectedPrintPress = pressOptions.find((press) => sameId(press.id, printForm.press)) || null;
+  const selectedPrintTemplate = printForm.template || "Standard";
+  const showVariablePrintFields = selectedPrintTemplate === "BARCODE";
+  const showClopayPrintFields = selectedPrintTemplate === "CS" || isClopayTicket(ticket);
+  const showCoaterPrintFields = selectedPrintTemplate === "COATER";
   const editorPreviewChanges = useMemo(
     () => buildEditorPreviewChanges(ticket, editorDraft, editorFields, lookups),
     [editorDraft, editorFields, lookups, ticket]
@@ -1358,7 +1450,15 @@ export default function JobTicketPanel({
 
   useEffect(() => {
     setEditorDraft(null);
+    setPrintNotice("");
+    setPrintForm(buildDefaultPrintForm(ticket, lookups?.presses ?? [], currentUserName));
   }, [ticket?.id]);
+
+  useEffect(() => {
+    if (printForm.press || !pressOptions.length) return;
+    const suggestedPress = pressOptions.find((press) => press.printer_ip) || pressOptions[0];
+    if (suggestedPress?.id) setPrintForm((current) => ({ ...current, press: String(suggestedPress.id) }));
+  }, [pressOptions, printForm.press]);
 
   function selectTab(key) {
     setActiveTab(key);
@@ -1376,6 +1476,30 @@ export default function JobTicketPanel({
       job_ticket: receiveForm.order_number ? "" : ticket.id,
     });
     setReceiveForm((current) => ({ ...current, quantity: "", order_number: "", location: "" }));
+  }
+
+  function updatePrintField(name, value) {
+    setPrintNotice("");
+    setPrintForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function resetPrintForm() {
+    setPrintNotice("");
+    setPrintForm(buildDefaultPrintForm(ticket, pressOptions, currentUserName));
+  }
+
+  async function submitPrintJob(event) {
+    event.preventDefault();
+    setPrintNotice("");
+    const result = await onQueuePrintLabel?.({
+      ...printForm,
+      press: printForm.press || null,
+    });
+    if (result?.queueKey) {
+      setPrintNotice(`Queued ${printForm.template || "label"} label to ${result.queueKey}.`);
+    } else {
+      setPrintNotice("Print job queued.");
+    }
   }
 
   function openPendingChanges() {
@@ -1523,6 +1647,225 @@ export default function JobTicketPanel({
               <span>{formatNumber(materialFeet, " ft")} available</span>
             </div>
             <RawMaterialInventoryTable rows={availableInventoryWithFeet} />
+          </section>
+        </div>
+      )}
+
+      {activeTab === "labels" && (
+        <div className="job-panel-section">
+          <section className="job-print-workspace">
+            <div className="job-print-hero">
+              <div>
+                <p className="eyebrow">Print Labels</p>
+                <h3>{showCoaterPrintFields ? "Material Tag" : "Carton Label"}</h3>
+                <span>{showCoaterPrintFields ? "Queue a roll tag for the coater/material flow." : "Queue carton labels from the ticket specs and shipment details."}</span>
+              </div>
+              <div className={`job-printer-status ${selectedPrintPress?.printer_ip ? "ready" : "needs-setup"}`}>
+                <Printer size={18} />
+                <div>
+                  <strong>{selectedPrintPress?.name || "No press selected"}</strong>
+                  <span>{selectedPrintPress?.printer_ip ? `${selectedPrintPress.printer_ip}:${selectedPrintPress.printer_port || 9100}` : "Add printer IP on the Presses page"}</span>
+                </div>
+              </div>
+            </div>
+
+            <form className="job-print-form" onSubmit={submitPrintJob}>
+              <div className="job-print-grid">
+                <label>
+                  <span>Press Printer</span>
+                  <select value={printForm.press} onChange={(event) => updatePrintField("press", event.target.value)} required>
+                    <option value="">Select press printer</option>
+                    {pressOptions.map((press) => (
+                      <option value={press.id} key={press.id}>{printPressLabel(press)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Label Type</span>
+                  <select value={printForm.template} onChange={(event) => updatePrintField("template", event.target.value)}>
+                    {printTemplates.map((template) => (
+                      <option value={template.value} key={template.value}>{template.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Labels to Print</span>
+                  <input type="number" min="1" step="1" value={printForm.total} onChange={(event) => updatePrintField("total", event.target.value)} />
+                </label>
+                <label>
+                  <span>Lot Number</span>
+                  <input value={printForm.lot_number} onChange={(event) => updatePrintField("lot_number", event.target.value)} placeholder="Lot / batch" />
+                </label>
+                <label>
+                  <span>Part Number</span>
+                  <input value={printForm.part_number} onChange={(event) => updatePrintField("part_number", event.target.value)} />
+                </label>
+                <label>
+                  <span>PO</span>
+                  <input value={printForm.po} onChange={(event) => updatePrintField("po", event.target.value)} placeholder="Customer PO" />
+                </label>
+                <label>
+                  <span>Description 1</span>
+                  <input value={printForm.text1} onChange={(event) => updatePrintField("text1", event.target.value)} />
+                </label>
+                <label>
+                  <span>Description 2</span>
+                  <input value={printForm.text2} onChange={(event) => updatePrintField("text2", event.target.value)} />
+                </label>
+                <label>
+                  <span>Description 3</span>
+                  <input value={printForm.text3} onChange={(event) => updatePrintField("text3", event.target.value)} />
+                </label>
+                <label>
+                  <span>Finish Line A</span>
+                  <input value={printForm.labela} onChange={(event) => updatePrintField("labela", event.target.value)} />
+                </label>
+                <label>
+                  <span>Finish Line B</span>
+                  <input value={printForm.labelb} onChange={(event) => updatePrintField("labelb", event.target.value)} />
+                </label>
+                <label>
+                  <span>Label Style</span>
+                  <input value={printForm.label_type} onChange={(event) => updatePrintField("label_type", event.target.value)} placeholder="Optional" />
+                </label>
+              </div>
+
+              {(showVariablePrintFields || showClopayPrintFields || showCoaterPrintFields) && (
+                <div className="job-print-options">
+                  {showVariablePrintFields && (
+                    <section>
+                      <div className="job-print-section-head">
+                        <strong>Variable Numbers</strong>
+                        <span>Use one print request per PO/range.</span>
+                      </div>
+                      <div className="job-print-grid compact">
+                        <label>
+                          <span>Starting Number</span>
+                          <input value={printForm.starting_number} onChange={(event) => updatePrintField("starting_number", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Ending Number</span>
+                          <input value={printForm.ending_number} onChange={(event) => updatePrintField("ending_number", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Reference</span>
+                          <input value={printForm.ref_number} onChange={(event) => updatePrintField("ref_number", event.target.value)} />
+                        </label>
+                      </div>
+                    </section>
+                  )}
+
+                  {showClopayPrintFields && (
+                    <section>
+                      <div className="job-print-section-head">
+                        <strong>Clopay Shipping</strong>
+                        <span>Only fill what needs to appear on this label.</span>
+                      </div>
+                      <div className="job-print-grid compact">
+                        <label>
+                          <span>Header</span>
+                          <input value={printForm.clopay_shipping_header} onChange={(event) => updatePrintField("clopay_shipping_header", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Ship Date</span>
+                          <input value={printForm.clopay_ship_date} onChange={(event) => updatePrintField("clopay_ship_date", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Part Number</span>
+                          <input value={printForm.clopay_part_number} onChange={(event) => updatePrintField("clopay_part_number", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>PO</span>
+                          <input value={printForm.clopay_po} onChange={(event) => updatePrintField("clopay_po", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>PO Line</span>
+                          <input value={printForm.clopay_po_line} onChange={(event) => updatePrintField("clopay_po_line", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Quantity</span>
+                          <input value={printForm.clopay_quantity} onChange={(event) => updatePrintField("clopay_quantity", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>UoM</span>
+                          <input value={printForm.clopay_uom} onChange={(event) => updatePrintField("clopay_uom", event.target.value)} />
+                        </label>
+                      </div>
+                    </section>
+                  )}
+
+                  {showCoaterPrintFields && (
+                    <section>
+                      <div className="job-print-section-head">
+                        <strong>Material Tag</strong>
+                        <span>These fields feed the coater roll-tag ZPL.</span>
+                      </div>
+                      <div className="job-print-grid compact">
+                        <label>
+                          <span>Operator</span>
+                          <input value={printForm.operator} onChange={(event) => updatePrintField("operator", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Material Part</span>
+                          <input value={printForm.material_part_number} onChange={(event) => updatePrintField("material_part_number", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Face</span>
+                          <input value={printForm.face} onChange={(event) => updatePrintField("face", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Liner</span>
+                          <input value={printForm.liner} onChange={(event) => updatePrintField("liner", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Adhesive</span>
+                          <input value={printForm.adhesive} onChange={(event) => updatePrintField("adhesive", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Adhesive Width</span>
+                          <input value={printForm.adhesive_width} onChange={(event) => updatePrintField("adhesive_width", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Length</span>
+                          <input value={printForm.length} onChange={(event) => updatePrintField("length", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>Roll ID</span>
+                          <input value={printForm.roll_id} onChange={(event) => updatePrintField("roll_id", event.target.value)} />
+                        </label>
+                        <label className="wide">
+                          <span>Note</span>
+                          <input value={printForm.note} onChange={(event) => updatePrintField("note", event.target.value)} />
+                        </label>
+                      </div>
+                    </section>
+                  )}
+                </div>
+              )}
+
+              <label className="job-print-rework">
+                <span>Rework / Special Message</span>
+                <textarea value={printForm.rework_message} onChange={(event) => updatePrintField("rework_message", event.target.value)} rows={2} />
+              </label>
+
+              {!selectedPrintPress?.printer_ip && (
+                <div className="job-print-warning">
+                  <AlertTriangle size={16} />
+                  <span>Select a press with a printer IP. Add printer setup on the Presses page.</span>
+                </div>
+              )}
+              {printLabelError && <div className="job-print-warning error"><AlertTriangle size={16} /><span>{printLabelError}</span></div>}
+              {printNotice && <div className="job-print-success"><CheckCircle2 size={16} /><span>{printNotice}</span></div>}
+
+              <div className="job-print-actions">
+                <button className="ghost-btn" type="button" onClick={resetPrintForm}>
+                  <RotateCcw size={15} /> Reset
+                </button>
+                <button className="primary-btn" type="submit" disabled={printingLabel || !selectedPrintPress?.printer_ip}>
+                  <Send size={15} /> {printingLabel ? "Queueing..." : "Queue Print Job"}
+                </button>
+              </div>
+            </form>
           </section>
         </div>
       )}

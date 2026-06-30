@@ -2095,6 +2095,20 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     },
   });
 
+  const jobTicketPrintMutation = useMutation({
+    mutationFn: async (payload) => {
+      if (!selected?.id) throw new Error("No job ticket selected.");
+      return postRecordAction("job-tickets", selected.id, "queue-print-label", {
+        ...payload,
+        performed_by: currentUserForView?.name || "",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-ticket-events"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   const jobTicketScheduleCreateMutation = useMutation({
     mutationFn: (payload) => createRecord("production-schedule", {
       ...payload,
@@ -2486,6 +2500,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         {scheduleRemoveMutation.error && <div className="error-box">{scheduleRemoveMutation.error.message}</div>}
         {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
         {jobTicketChangeApprovalMutation.error && <div className="error-box">{jobTicketChangeApprovalMutation.error.message}</div>}
+        {jobTicketPrintMutation.error && <div className="error-box">{jobTicketPrintMutation.error.message}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {materialTypeSaveMutation.error && <div className="error-box">{materialTypeSaveMutation.error.message}</div>}
         {materialTypeDeleteMutation.error && <div className="error-box">{materialTypeDeleteMutation.error.message}</div>}
@@ -2895,6 +2910,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 currentUserName={currentUserForView?.name || currentUser?.name || ""}
                 approvingChangeId={jobTicketChangeApprovalMutation.isPending ? jobTicketChangeApprovalMutation.variables?.event?.id || "" : ""}
                 onApproveChange={(event, status, pendingPayload) => jobTicketChangeApprovalMutation.mutate({ event, status, pendingPayload })}
+                printingLabel={jobTicketPrintMutation.isPending}
+                printLabelError={jobTicketPrintMutation.error?.message || ""}
+                onQueuePrintLabel={(payload) => jobTicketPrintMutation.mutateAsync(payload)}
                 onQuoteJob={() => {
                   setQuoteJobTicketId(String(selected.id));
                   setQuoteCustomerId("");

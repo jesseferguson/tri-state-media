@@ -1,9 +1,13 @@
+import json
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, LiveFootageArchive, Message, MessageThread, ProductionSchedule
+from tooling.models import Press
+
+from .models import CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, LiveFootageArchive, LocalLiveFootageReading, Message, MessageThread, ProductionSchedule
 
 
 class FinishedInventoryOrderWorkflowTests(TestCase):
@@ -241,3 +245,98 @@ class LiveFootageArchiveTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         archive = LiveFootageArchive.objects.get(shift_date="2026-05-27")
         self.assertEqual(archive.total_footage, Decimal("15000.00"))
+
+
+class LocalLiveFootageTests(TestCase):
+    def test_local_relay_saves_speed_and_footage_without_firebase(self):
+        speed_response = self.client.put(
+            reverse("local-live-footage-relay", args=["eti", "speed"]),
+            {"currentSpeed": 123, "timestamp": 1782760000},
+            content_type="application/json",
+        )
+        footage_response = self.client.post(
+            reverse("local-live-footage-relay", args=["eti", "daily"]),
+            {"footage": 42.5, "timestamp": 1782760015},
+            content_type="application/json",
+        )
+
+        self.assertEqual(speed_response.status_code, 200, speed_response.content)
+        self.assertEqual(footage_response.status_code, 200, footage_response.content)
+        self.assertEqual(LocalLiveFootageReading.objects.count(), 2)
+        self.assertEqual(LocalLiveFootageReading.objects.get(kind="speed").speed_fpm, 123)
+        self.assertEqual(LocalLiveFootageReading.objects.get(kind="footage").footage, Decimal("42.50"))
+
+    def test_local_snapshot_returns_database_values(self):
+        LocalLiveFootageReading.objects.create(press_key="ETI", press_name="ETI", kind="speed", speed_fpm=88)
+        LocalLiveFootageReading.objects.create(press_key="ETI", press_name="ETI", kind="footage", footage=Decimal("12.50"))
+
+        response = self.client.get(reverse("local-live-footage-snapshot"))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["mode"], "local_database_only")
+        eti = next(row for row in response.json()["presses"] if row["key"] == "ETI")
+        self.assertEqual(eti["speed"], 88)
+        self.assertEqual(eti["totalFootage"], 12.5)
+
+
+class JobTicketPrintQueueTests(TestCase):
+    class FirebaseResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return b'{"name":"firebase-job-1"}'
+
+    def test_queue_print_label_posts_legacy_payload_to_firebase(self):
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-PRINT",
+            job_name="PM-2-1-R",
+            product_code="TSM-PRINT",
+            customer_name="Abe Tech",
+            description="2 x 1 PM Label",
+            carton_label_part_number="PM-2-1-R",
+            carton_label_description_a="2 x 1 PM Label",
+            carton_label_finishing_1="1000 labels/roll",
+            carton_label_finishing_2="4000 labels/carton",
+        )
+        press = Press.objects.create(
+            name="ETI",
+            printer_ip="192.168.1.55",
+            printer_queue_key="ETI",
+            printer_speed="7",
+            printer_darkness="12",
+        )
+
+        with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
+            response = self.client.post(
+                reverse("job-ticket-queue-print-label", args=[ticket.id]),
+                {
+                    "press": press.id,
+                    "template": "BARCODE",
+                    "total": 2,
+                    "lot_number": "LOT-1",
+                    "starting_number": "100",
+                    "ending_number": "199",
+                    "po": "PO-77",
+                    "performed_by": "Shipping",
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        firebase_request = mocked_urlopen.call_args.args[0]
+        self.assertIn("/PRINT_JOBS/ETI.json", firebase_request.full_url)
+        body = json.loads(firebase_request.data.decode("utf-8"))
+        self.assertEqual(body["TYPE"], "BARCODE")
+        self.assertEqual(body["Printer"], "192.168.1.55")
+        self.assertEqual(body["SPEED"], "7")
+        self.assertEqual(body["DARKNESS"], "12")
+        self.assertEqual(body["line"], "PM-2-1-R")
+        self.assertEqual(body["Starting Number"], "100")
+        self.assertEqual(body["Ending Number"], "199")
+        self.assertTrue(JobTicketEvent.objects.filter(job_ticket=ticket, event_type="print_queued").exists())

@@ -19,10 +19,11 @@ const shiftStartMinute = 0;
 const shiftEndHour = 2;
 const shiftEndMinute = 59;
 const archiveEndpoint = "live-footage-archives";
+const etiDailyNode = "/ETI_SPEED";
 
 const presses = [
   { key: "18AZT", name: "18 Aztech", dailyNode: "/18Aztech_SPEED", speedNode: "/18Aztech_CURRENT_SPEED" },
-  { key: "ETI", name: "ETI", dailyNode: "/ETI_SPEED", speedNode: "/ETI_CURRENT_SPEED" },
+  { key: "ETI", name: "ETI", dailyNode: etiDailyNode, speedNode: "/ETI_CURRENT_SPEED" },
   { key: "SLIT", name: "Slitter", dailyNode: "/SLITTER_SPEED", speedNode: "/SLITTER_CURRENT_SPEED" },
   { key: "13NIL", name: "13 Nilpeter", dailyNode: "/13Nilpeter_SPEED", speedNode: "/13Nilpeter_CURRENT_SPEED" },
   { key: "17NIL", name: "17 Nilpeter", dailyNode: "/17Nilpeter_SPEED", speedNode: "/17Nilpeter_CURRENT_SPEED" },
@@ -144,7 +145,11 @@ function normalizeDailyList(payload) {
   if (!payload || typeof payload !== "object") return [];
   return Object.values(payload)
     .filter((value) => value && typeof value === "object" && "timestamp" in value)
-    .map((value) => ({ ts: Number(value.timestamp) || 0, footage: Number(value.footage) || 0 }))
+    .map((value) => {
+      const rawTimestamp = Number(value.timestamp) || 0;
+      const timestampSeconds = rawTimestamp > 100000000000 ? rawTimestamp / 1000 : rawTimestamp;
+      return { ts: timestampSeconds, footage: Number(value.footage) || 0 };
+    })
     .filter((row) => row.ts > 0);
 }
 

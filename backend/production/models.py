@@ -919,6 +919,37 @@ class LiveFootageArchive(models.Model):
         return f"{self.shift_date} / {self.total_footage} ft"
 
 
+class LocalLiveFootageReading(models.Model):
+    KIND_CHOICES = [
+        ("speed", "Speed"),
+        ("footage", "Footage"),
+    ]
+
+    press_key = models.CharField(max_length=40, db_index=True)
+    press_name = models.CharField(max_length=120, blank=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, db_index=True)
+    speed_fpm = models.PositiveIntegerField(null=True, blank=True)
+    footage = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    device_timestamp = models.PositiveIntegerField(null=True, blank=True)
+    source_ip = models.GenericIPAddressField(null=True, blank=True)
+    recorded_at = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-recorded_at", "-id"]
+        indexes = [
+            models.Index(fields=["press_key", "kind", "-recorded_at"]),
+            models.Index(fields=["kind", "recorded_at"]),
+        ]
+
+    def __str__(self):
+        if self.kind == "speed":
+            value = f"{self.speed_fpm or 0} FPM"
+        else:
+            value = f"{self.footage or 0} ft"
+        return f"{self.press_name or self.press_key} / {self.kind} / {value}"
+
+
 class FinishedInventory(models.Model):
     STATUS_CHOICES = [
         ("available", "Available"),

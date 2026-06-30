@@ -16347,6 +16347,219 @@ textarea {
   background: #ffffff;
 }
 
+.job-print-workspace {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.job-print-hero {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, .42fr);
+  gap: 12px;
+  align-items: stretch;
+  padding: 14px;
+  border: 1px solid #dfe5ec;
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, .9), rgba(255, 255, 255, .96) 48%),
+    #ffffff;
+}
+
+.job-print-hero h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(1.35rem, 3vw, 2.05rem);
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.job-print-hero span,
+.job-printer-status span,
+.job-print-section-head span {
+  color: #64748b;
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.job-printer-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.job-printer-status svg {
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
+.job-printer-status.ready {
+  border-color: rgba(22, 163, 74, .32);
+  background: #f0fdf4;
+}
+
+.job-printer-status.ready svg {
+  color: #16a34a;
+}
+
+.job-printer-status.needs-setup {
+  border-color: rgba(217, 119, 6, .32);
+  background: #fffbeb;
+}
+
+.job-printer-status.needs-setup svg {
+  color: #d97706;
+}
+
+.job-printer-status div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.job-printer-status strong {
+  min-width: 0;
+  color: #0f172a;
+  font-size: .9rem;
+  font-weight: 950;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-print-form {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dfe5ec;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.job-print-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.job-print-grid.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.job-print-grid label,
+.job-print-rework {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.job-print-grid label.wide {
+  grid-column: span 2;
+}
+
+.job-print-grid span,
+.job-print-rework span {
+  color: #475569;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.job-print-grid input,
+.job-print-grid select,
+.job-print-rework textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 800;
+}
+
+.job-print-rework textarea {
+  resize: vertical;
+}
+
+.job-print-options {
+  display: grid;
+  gap: 10px;
+}
+
+.job-print-options section {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.job-print-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.job-print-section-head strong {
+  color: #0f172a;
+  font-size: .9rem;
+  font-weight: 950;
+}
+
+.job-print-warning,
+.job-print-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: .82rem;
+  font-weight: 850;
+}
+
+.job-print-warning {
+  border: 1px solid rgba(217, 119, 6, .28);
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.job-print-warning.error {
+  border-color: rgba(220, 38, 38, .28);
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.job-print-success {
+  border: 1px solid rgba(22, 163, 74, .28);
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.job-print-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .job-ticket-card-head {
   min-width: 0;
   display: flex;
@@ -16888,6 +17101,7 @@ textarea {
 @media (max-width: 980px) {
   .job-ticket-sheet-head,
   .job-ticket-main-grid,
+  .job-print-hero,
   .job-order-history-grid {
     grid-template-columns: 1fr;
   }
@@ -16908,6 +17122,11 @@ textarea {
 
   .job-ticket-description {
     max-height: none;
+  }
+
+  .job-print-grid,
+  .job-print-grid.compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -16932,6 +17151,30 @@ textarea {
   .job-ticket-card-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .job-print-form,
+  .job-print-hero {
+    padding: 10px;
+  }
+
+  .job-print-grid,
+  .job-print-grid.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .job-print-grid label.wide {
+    grid-column: auto;
+  }
+
+  .job-print-section-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .job-print-actions .primary-btn,
+  .job-print-actions .ghost-btn {
+    width: 100%;
   }
 
   .job-chart-range.compact {

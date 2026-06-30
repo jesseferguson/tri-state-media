@@ -76,8 +76,8 @@ class ToolingLocationViewSet(BaseToolingViewSet):
 class PressViewSet(BaseToolingViewSet):
     queryset = Press.objects.select_related("location").all().order_by("name")
     serializer_class = PressSerializer
-    search_fields = ["name", "notes", "location__name", "location__code"]
-    ordering_fields = ["name", "color_count", "die_station_count", "max_web_width_inches", "is_active"]
+    search_fields = ["name", "notes", "location__name", "location__code", "printer_ip", "printer_queue_key"]
+    ordering_fields = ["name", "color_count", "die_station_count", "max_web_width_inches", "printer_ip", "printer_queue_key", "is_active"]
 
 
 class MagViewSet(BaseToolingViewSet):

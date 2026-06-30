@@ -20,6 +20,7 @@ from .models import (
     JobTicket,
     JobTicketUsage,
     LiveFootageArchive,
+    LocalLiveFootageReading,
     Message,
     MessageThread,
     ProductionSchedule,
@@ -471,6 +472,12 @@ class JobTicketUsageSerializer(serializers.ModelSerializer):
 class LiveFootageArchiveSerializer(serializers.ModelSerializer):
     class Meta:
         model = LiveFootageArchive
+        fields = "__all__"
+
+
+class LocalLiveFootageReadingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LocalLiveFootageReading
         fields = "__all__"
 
 

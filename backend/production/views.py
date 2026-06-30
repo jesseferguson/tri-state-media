@@ -1,10 +1,15 @@
 import logging
+import json
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -14,7 +19,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from materials.models import MaterialUsage
-from tooling.models import ToolingLocation
+from tooling.models import Press, ToolingLocation
 
 from .models import (
     BoxInventory,
@@ -31,6 +36,7 @@ from .models import (
     JobTicket,
     JobTicketUsage,
     LiveFootageArchive,
+    LocalLiveFootageReading,
     Message,
     MessageThread,
     ProductionSchedule,
@@ -54,6 +60,7 @@ from .serializers import (
     JobTicketSerializer,
     JobTicketUsageSerializer,
     LiveFootageArchiveSerializer,
+    LocalLiveFootageReadingSerializer,
     MessageSerializer,
     MessageThreadSerializer,
     ProductionScheduleSerializer,
@@ -65,6 +72,28 @@ from .serializers import (
 
 
 logger = logging.getLogger(__name__)
+
+FIREBASE_LIVE_FOOTAGE_BASE = "https://realtime2-94ff8-default-rtdb.firebaseio.com"
+FIREBASE_PRINT_QUEUE_BASE = getattr(settings, "FIREBASE_PRINT_QUEUE_BASE", FIREBASE_LIVE_FOOTAGE_BASE)
+FIREBASE_PRINT_QUEUE_ROOT = getattr(settings, "FIREBASE_PRINT_QUEUE_ROOT", "PRINT_JOBS")
+LIVE_FOOTAGE_RELAY_NODES = {
+    "eti": {
+        "speed": ("PUT", "/ETI_CURRENT_SPEED.json?print=silent"),
+        "daily": ("POST", "/ETI_SPEED.json?print=silent"),
+    },
+}
+
+LOCAL_LIVE_FOOTAGE_PRESSES = {
+    "18azt": {"key": "18AZT", "name": "18 Aztech"},
+    "eti": {"key": "ETI", "name": "ETI"},
+    "slit": {"key": "SLIT", "name": "Slitter"},
+    "13nil": {"key": "13NIL", "name": "13 Nilpeter"},
+    "17nil": {"key": "17NIL", "name": "17 Nilpeter"},
+    "13azt": {"key": "13AZT", "name": "13 Aztech"},
+}
+PLANT_TIME_ZONE = ZoneInfo("America/New_York")
+LOCAL_LIVE_FOOTAGE_GOAL = Decimal("400000")
+LOCAL_LIVE_FOOTAGE_BUCKET_MINUTES = 10
 
 
 JOB_TICKET_CHANGE_FIELDS = [
@@ -106,6 +135,356 @@ JOB_TICKET_CHANGE_FIELDS = [
     ("carton_label_finishing_2", "Carton Label Finishing 2"),
     ("job_notes", "Job Notes"),
 ]
+
+
+def _relay_number(value, default=0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _print_text(data, key, default=""):
+    value = data.get(key, default)
+    if value in [None, ""]:
+        return str(default or "")
+    return str(value).strip()
+
+
+def _positive_int(value, default=1):
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return default
+    return max(1, parsed)
+
+
+def _firebase_safe_key(value, default="default"):
+    text = str(value or default or "").strip()
+    safe = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in text)
+    safe = "_".join(part for part in safe.split("_") if part)
+    return safe or default
+
+
+def _firebase_post_json(base_url, path_parts, payload, timeout=8):
+    clean_base = str(base_url or "").rstrip("/")
+    clean_parts = [str(part).strip("/") for part in path_parts if str(part).strip("/")]
+    url = f"{clean_base}/{'/'.join(clean_parts)}.json?print=silent"
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    firebase_request = Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(firebase_request, timeout=timeout) as response:
+        response_body = response.read().decode("utf-8") or "{}"
+        try:
+            response_payload = json.loads(response_body)
+        except json.JSONDecodeError:
+            response_payload = {}
+        return response.status, response_payload
+
+
+def _job_ticket_carton_payload(ticket, request_data, press=None):
+    template = _print_text(request_data, "template", "Standard").upper()
+    if template in {"STANDARD", "STD"}:
+        template = "Standard"
+
+    labels_per_unit = ticket.labels_per_unit or ""
+    labels_per_carton = ticket.units_per_carton or ticket.labels_per_carton or ""
+    default_label_a = f"{labels_per_unit} {ticket.unit_type or 'labels'}/unit" if labels_per_unit else ""
+    default_label_b = f"{labels_per_carton} {ticket.unit_type or 'labels'}/carton" if labels_per_carton else ""
+    part_number = (
+        _print_text(request_data, "part_number")
+        or ticket.carton_label_part_number
+        or ticket.product_code
+        or ticket.job_name
+        or ticket.ticket_number
+        or ""
+    )
+
+    payload = {
+        "TYPE": template,
+        "Printer": _print_text(request_data, "printer_ip", getattr(press, "printer_ip", "")),
+        "Printer Port": _positive_int(request_data.get("printer_port") or getattr(press, "printer_port", None), 9100),
+        "SPEED": _print_text(request_data, "speed", getattr(press, "printer_speed", "") or "5"),
+        "DARKNESS": _print_text(request_data, "darkness", getattr(press, "printer_darkness", "") or "11"),
+        "Total Ship Stock": _positive_int(request_data.get("total"), 1),
+        "line": part_number,
+        "TEXT1": _print_text(request_data, "text1", ticket.carton_label_description_a or ticket.description or ""),
+        "TEXT2": _print_text(request_data, "text2", ticket.carton_label_description_b or ""),
+        "TEXT3": _print_text(request_data, "text3", ticket.carton_label_description_c or ""),
+        "BLACKOUT": _print_text(request_data, "blackout"),
+        "labela": _print_text(request_data, "labela", ticket.carton_label_finishing_1 or default_label_a),
+        "labelb": _print_text(request_data, "labelb", ticket.carton_label_finishing_2 or default_label_b),
+        "Lot Number": _print_text(request_data, "lot_number"),
+        "label type": _print_text(request_data, "label_type"),
+        "Starting Number": _print_text(request_data, "starting_number"),
+        "Ending Number": _print_text(request_data, "ending_number"),
+        "refnumber": _print_text(request_data, "ref_number"),
+        "PO": _print_text(request_data, "po"),
+        "REWORK MESSAGE": _print_text(request_data, "rework_message"),
+        "CSH": _print_text(request_data, "clopay_shipping_header"),
+        "CSD": _print_text(request_data, "clopay_ship_date"),
+        "CSPN": _print_text(request_data, "clopay_part_number"),
+        "CSPO": _print_text(request_data, "clopay_po"),
+        "CSPOL": _print_text(request_data, "clopay_po_line"),
+        "CSQ": _print_text(request_data, "clopay_quantity"),
+        "CSUOM": _print_text(request_data, "clopay_uom"),
+        "Operator": _print_text(request_data, "operator"),
+        "Part Number List Logic": _print_text(request_data, "material_part_number", part_number),
+        "Face": _print_text(request_data, "face", ticket.face_type or ""),
+        "Liner ": _print_text(request_data, "liner", ticket.liner_type or ""),
+        "Liner": _print_text(request_data, "liner", ticket.liner_type or ""),
+        "Note": _print_text(request_data, "note"),
+        "Adhesive Width ": _print_text(request_data, "adhesive_width"),
+        "Adhesive Width": _print_text(request_data, "adhesive_width"),
+        "Length": _print_text(request_data, "length"),
+        "Adhesive": _print_text(request_data, "adhesive"),
+        "ID": _print_text(request_data, "roll_id"),
+        "Job Ticket": ticket.ticket_number,
+        "TSM ID": ticket.product_code,
+        "Customer": ticket.customer.name if ticket.customer else ticket.customer_name,
+        "Queued At": timezone.now().isoformat(),
+    }
+    return {key: value for key, value in payload.items() if value not in [None, ""]}
+
+
+def _client_ip(request):
+    forwarded_for = str(request.META.get("HTTP_X_FORWARDED_FOR") or "").split(",")[0].strip()
+    return forwarded_for or request.META.get("REMOTE_ADDR") or None
+
+
+def _local_press_info(press):
+    raw_key = str(press or "").strip().lower()
+    info = LOCAL_LIVE_FOOTAGE_PRESSES.get(raw_key)
+    if info:
+        return raw_key, info["key"], info["name"]
+    display_key = raw_key.upper() if raw_key else "UNKNOWN"
+    return raw_key, display_key, display_key
+
+
+def _local_live_shift_window(now=None):
+    current = timezone.localtime(now or timezone.now(), PLANT_TIME_ZONE)
+    start = current.replace(hour=5, minute=0, second=0, microsecond=0)
+    if current < start:
+        start -= timedelta(days=1)
+    end = (start + timedelta(days=1)).replace(hour=2, minute=59, second=0, microsecond=0)
+    return start, end
+
+
+def _local_live_chart_payload(shift_rows, known_keys, shift_start, shift_end, now):
+    effective_end = min(timezone.localtime(now, PLANT_TIME_ZONE), shift_end)
+    bucket_seconds = LOCAL_LIVE_FOOTAGE_BUCKET_MINUTES * 60
+    duration_seconds = max(bucket_seconds, int((effective_end - shift_start).total_seconds()))
+    bucket_count = max(2, (duration_seconds // bucket_seconds) + 1)
+    bucket_times = [shift_start + timedelta(minutes=LOCAL_LIVE_FOOTAGE_BUCKET_MINUTES * index) for index in range(bucket_count)]
+    labels = [bucket.strftime("%H:%M") for bucket in bucket_times]
+    press_keys = list(known_keys.keys())
+    bucket_sums = {key: [0.0 for _ in range(bucket_count)] for key in press_keys}
+
+    for row in shift_rows.filter(kind="footage").order_by("recorded_at"):
+        if row.press_key not in bucket_sums:
+            bucket_sums[row.press_key] = [0.0 for _ in range(bucket_count)]
+            press_keys.append(row.press_key)
+        row_time = timezone.localtime(row.recorded_at, PLANT_TIME_ZONE)
+        index = int(max(0, (row_time - shift_start).total_seconds()) // bucket_seconds)
+        index = min(bucket_count - 1, max(0, index))
+        bucket_sums[row.press_key][index] += float(row.footage or 0)
+
+    series = []
+    company_points = [0.0 for _ in range(bucket_count)]
+    for key in press_keys:
+        running = 0.0
+        points = []
+        for index, value in enumerate(bucket_sums.get(key, [])):
+            running += float(value or 0)
+            points.append(round(running, 2))
+            company_points[index] += running
+        series.append({
+            "key": key,
+            "name": known_keys.get(key, key),
+            "points": points,
+        })
+
+    return {
+        "bucketMinutes": LOCAL_LIVE_FOOTAGE_BUCKET_MINUTES,
+        "labels": labels,
+        "series": series,
+        "companyPoints": [round(value, 2) for value in company_points],
+    }
+
+
+@api_view(["POST", "PUT"])
+def live_footage_relay(request, press, kind):
+    press_key = str(press or "").strip().lower()
+    kind_key = str(kind or "").strip().lower()
+    node = LIVE_FOOTAGE_RELAY_NODES.get(press_key, {}).get(kind_key)
+    if not node:
+        return Response({"detail": "Unknown live footage relay."}, status=status.HTTP_404_NOT_FOUND)
+
+    method, path = node
+    if request.method.upper() != method:
+        return Response({"detail": f"Use {method} for this relay."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    timestamp = int(_relay_number(request.data.get("timestamp"), 0))
+    if kind_key == "speed":
+        current_speed = int(round(_relay_number(request.data.get("currentSpeed", request.data.get("speed")), 0)))
+        if current_speed < 0 or current_speed > 700:
+            return Response({"currentSpeed": ["Speed must be between 0 and 700 FPM."]}, status=status.HTTP_400_BAD_REQUEST)
+        payload = {"currentSpeed": current_speed, "timestamp": timestamp}
+    else:
+        footage = round(_relay_number(request.data.get("footage"), 0), 1)
+        if footage < 0 or footage > 5000:
+            return Response({"footage": ["Footage must be between 0 and 5,000 ft."]}, status=status.HTTP_400_BAD_REQUEST)
+        payload = {"footage": footage, "timestamp": timestamp}
+
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    firebase_request = Request(
+        f"{FIREBASE_LIVE_FOOTAGE_BASE}{path}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method=method,
+    )
+
+    try:
+        with urlopen(firebase_request, timeout=8) as response:
+            firebase_status = response.status
+    except HTTPError as error:
+        return Response(
+            {"detail": "Firebase rejected the live footage relay.", "firebase_status": error.code},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    except URLError as error:
+        return Response(
+            {"detail": "Could not reach Firebase from the live footage relay.", "error": str(error.reason)},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response({"ok": True, "press": press_key, "kind": kind_key, "firebase_status": firebase_status})
+
+
+@api_view(["POST", "PUT"])
+def local_live_footage_relay(request, press, kind):
+    press_slug, press_key, press_name = _local_press_info(press)
+    kind_key = str(kind or "").strip().lower()
+    if not press_slug:
+        return Response({"press": ["Enter a press key."]}, status=status.HTTP_400_BAD_REQUEST)
+    if kind_key not in {"speed", "daily", "footage"}:
+        return Response({"detail": "Use speed or footage for this local relay."}, status=status.HTTP_404_NOT_FOUND)
+
+    normalized_kind = "footage" if kind_key in {"daily", "footage"} else "speed"
+    expected_method = "PUT" if normalized_kind == "speed" else "POST"
+    if request.method.upper() != expected_method:
+        return Response({"detail": f"Use {expected_method} for this local relay."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    timestamp = int(_relay_number(request.data.get("timestamp"), 0))
+    payload = {
+        "press_key": press_key,
+        "press_name": press_name,
+        "kind": normalized_kind,
+        "device_timestamp": timestamp or None,
+        "source_ip": _client_ip(request),
+    }
+
+    if normalized_kind == "speed":
+        current_speed = int(round(_relay_number(request.data.get("currentSpeed", request.data.get("speed")), 0)))
+        if current_speed < 0 or current_speed > 700:
+            return Response({"currentSpeed": ["Speed must be between 0 and 700 FPM."]}, status=status.HTTP_400_BAD_REQUEST)
+        payload["speed_fpm"] = current_speed
+    else:
+        try:
+            footage = Decimal(str(round(_relay_number(request.data.get("footage"), 0), 2)))
+        except (InvalidOperation, ValueError):
+            return Response({"footage": ["Enter valid footage."]}, status=status.HTTP_400_BAD_REQUEST)
+        if footage < 0 or footage > Decimal("5000"):
+            return Response({"footage": ["Footage must be between 0 and 5,000 ft."]}, status=status.HTTP_400_BAD_REQUEST)
+        payload["footage"] = footage
+
+    reading = LocalLiveFootageReading.objects.create(**payload)
+    return Response({
+        "ok": True,
+        "saved_to": "local_database",
+        "id": reading.id,
+        "press": press_key,
+        "kind": normalized_kind,
+        "recorded_at": reading.recorded_at,
+    })
+
+
+@api_view(["GET"])
+def local_live_footage_snapshot(request):
+    now = timezone.now()
+    shift_start, shift_end = _local_live_shift_window(now)
+    shift_rows = LocalLiveFootageReading.objects.filter(recorded_at__gte=shift_start, recorded_at__lt=shift_end)
+    totals = {
+        row["press_key"]: Decimal(row["total"] or 0)
+        for row in shift_rows.filter(kind="footage").values("press_key").annotate(
+            total=Coalesce(Sum("footage"), Value(Decimal("0"), output_field=DecimalField(max_digits=12, decimal_places=2)))
+        )
+    }
+    counts = {
+        row["press_key"]: int(row["count"] or 0)
+        for row in shift_rows.values("press_key").annotate(count=Count("id"))
+    }
+
+    known_keys = {info["key"]: info["name"] for info in LOCAL_LIVE_FOOTAGE_PRESSES.values()}
+    for key, name in LocalLiveFootageReading.objects.values_list("press_key", "press_name").distinct():
+        if key:
+            known_keys.setdefault(key, name or key)
+    chart = _local_live_chart_payload(shift_rows, known_keys, shift_start, shift_end, now)
+
+    presses = []
+    for press_key, press_name in sorted(known_keys.items(), key=lambda item: item[1]):
+        latest_speed = LocalLiveFootageReading.objects.filter(press_key=press_key, kind="speed").order_by("-recorded_at", "-id").first()
+        latest_footage = shift_rows.filter(press_key=press_key, kind="footage").order_by("-recorded_at", "-id").first()
+        speed_age_seconds = None
+        if latest_speed:
+            speed_age_seconds = max(0, int((now - latest_speed.recorded_at).total_seconds()))
+        presses.append({
+            "key": press_key,
+            "name": press_name,
+            "speed": latest_speed.speed_fpm if latest_speed else 0,
+            "speedRecordedAt": latest_speed.recorded_at if latest_speed else None,
+            "speedAgeSeconds": speed_age_seconds,
+            "speedStale": speed_age_seconds is None or speed_age_seconds > 120,
+            "totalFootage": float(totals.get(press_key, Decimal("0"))),
+            "lastFootageAt": latest_footage.recorded_at if latest_footage else None,
+            "readingCount": counts.get(press_key, 0),
+            "sourceIp": latest_speed.source_ip if latest_speed else None,
+        })
+
+    recent = LocalLiveFootageReadingSerializer(
+        LocalLiveFootageReading.objects.all().order_by("-recorded_at", "-id")[:50],
+        many=True,
+    ).data
+
+    return Response({
+        "serverTime": now,
+        "shiftStart": shift_start,
+        "shiftEnd": shift_end,
+        "shiftDate": shift_start.date(),
+        "totalFootage": float(sum(totals.values(), Decimal("0"))),
+        "goalFootage": float(LOCAL_LIVE_FOOTAGE_GOAL),
+        "chart": chart,
+        "presses": presses,
+        "recent": recent,
+        "readingCount": shift_rows.count(),
+        "mode": "local_database_only",
+    })
+
+
+@api_view(["POST"])
+def local_live_footage_reset_shift(request):
+    shift_start, shift_end = _local_live_shift_window()
+    deleted, _ = LocalLiveFootageReading.objects.filter(recorded_at__gte=shift_start, recorded_at__lt=shift_end).delete()
+    return Response({
+        "ok": True,
+        "deleted": deleted,
+        "shiftStart": shift_start,
+        "shiftEnd": shift_end,
+    })
 
 
 def short_summary(value):
@@ -699,6 +1078,72 @@ class JobTicketViewSet(BaseProductionViewSet):
             qs = qs.filter(customer_id=customer)
         return qs
 
+    @action(detail=True, methods=["post"], url_path="queue-print-label")
+    def queue_print_label(self, request, pk=None):
+        ticket = self.get_object()
+        press = None
+        press_id = request.data.get("press")
+        if press_id:
+            press = Press.objects.filter(pk=press_id).first()
+            if not press:
+                return Response({"press": ["Selected press was not found."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        payload = _job_ticket_carton_payload(ticket, request.data, press)
+        printer_ip = str(payload.get("Printer") or "").strip()
+        if not printer_ip:
+            return Response({"printer": ["Select a press with a printer IP, or enter a printer IP before queueing."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        queue_key = _firebase_safe_key(
+            request.data.get("queue_key")
+            or getattr(press, "printer_queue_key", "")
+            or getattr(press, "name", "")
+            or printer_ip
+        )
+        payload["Queue Key"] = queue_key
+        payload["Queued By"] = self.history_actor()
+
+        try:
+            firebase_status, firebase_payload = _firebase_post_json(
+                FIREBASE_PRINT_QUEUE_BASE,
+                [FIREBASE_PRINT_QUEUE_ROOT, queue_key],
+                payload,
+            )
+        except HTTPError as error:
+            return Response(
+                {"detail": "Firebase rejected the print job.", "firebase_status": error.code},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except URLError as error:
+            return Response(
+                {"detail": "Could not reach Firebase to queue the print job.", "error": str(error.reason)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        firebase_key = str(firebase_payload.get("name") or "")
+        self.create_ticket_event(
+            ticket,
+            "print_queued",
+            f"{payload.get('Queued By') or 'system'} queued a {payload.get('TYPE', 'label')} label for {queue_key}.",
+            payload.get("Queued By"),
+            extra_details={
+                "queue_key": queue_key,
+                "firebase_key": firebase_key,
+                "template": payload.get("TYPE"),
+                "printer_ip": printer_ip,
+                "printer_port": payload.get("Printer Port"),
+                "source": "job_ticket_print_label",
+            },
+        )
+        return Response({
+            "ok": True,
+            "queueKey": queue_key,
+            "firebaseKey": firebase_key,
+            "firebaseStatus": firebase_status,
+            "printerIp": printer_ip,
+            "printerPort": payload.get("Printer Port"),
+            "template": payload.get("TYPE"),
+        }, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=["post", "delete"], url_path=r"images/(?P<slot>general|spec|finishing)")
     def images(self, request, pk=None, slot=None):
         ticket = self.get_object()
@@ -1132,6 +1577,26 @@ class LiveFootageArchiveViewSet(BaseProductionViewSet):
 
         serializer = self.get_serializer(archive)
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class LocalLiveFootageReadingViewSet(BaseProductionViewSet):
+    queryset = LocalLiveFootageReading.objects.all().order_by("-recorded_at", "-id")
+    serializer_class = LocalLiveFootageReadingSerializer
+    search_fields = ["press_key", "press_name", "kind", "source_ip"]
+    ordering_fields = ["recorded_at", "press_key", "kind", "speed_fpm", "footage", "created_at"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        press = str(self.request.query_params.get("press") or "").strip()
+        kind = str(self.request.query_params.get("kind") or "").strip()
+        shift_start, shift_end = _local_live_shift_window()
+        if press:
+            qs = qs.filter(Q(press_key__iexact=press) | Q(press_name__iexact=press))
+        if kind:
+            qs = qs.filter(kind__iexact=kind)
+        if self.request.query_params.get("current_shift"):
+            qs = qs.filter(recorded_at__gte=shift_start, recorded_at__lt=shift_end)
+        return qs
 
 
 class FinishedInventoryViewSet(BaseProductionViewSet):

@@ -17,6 +17,7 @@ from .views import (
     JobTicketUsageViewSet,
     JobTicketViewSet,
     LiveFootageArchiveViewSet,
+    LocalLiveFootageReadingViewSet,
     MessageThreadViewSet,
     MessageViewSet,
     ProductionScheduleViewSet,
@@ -25,6 +26,10 @@ from .views import (
     QuoteRawMaterialViewSet,
     QuoteRecordViewSet,
     company_sign_in,
+    local_live_footage_relay,
+    local_live_footage_reset_shift,
+    local_live_footage_snapshot,
+    live_footage_relay,
 )
 from .data_import import data_flush, data_import_csv, data_import_templates
 
@@ -49,6 +54,7 @@ router.register("job-tickets", JobTicketViewSet, basename="job-ticket")
 router.register("job-ticket-events", JobTicketEventViewSet, basename="job-ticket-event")
 router.register("job-ticket-usages", JobTicketUsageViewSet, basename="job-ticket-usage")
 router.register("live-footage-archives", LiveFootageArchiveViewSet, basename="live-footage-archive")
+router.register("local-live-footage-readings", LocalLiveFootageReadingViewSet, basename="local-live-footage-reading")
 router.register("production-schedule", ProductionScheduleViewSet, basename="production-schedule")
 router.register("finished-inventory", FinishedInventoryViewSet, basename="finished-inventory")
 
@@ -57,5 +63,9 @@ urlpatterns = [
     path("data-import/templates/", data_import_templates, name="data-import-templates"),
     path("data-import/flush/", data_flush, name="data-import-flush"),
     path("data-import/<str:import_type>/", data_import_csv, name="data-import-csv"),
+    path("live-footage-relay/<str:press>/<str:kind>/", live_footage_relay, name="live-footage-relay"),
+    path("local-live-footage/snapshot/", local_live_footage_snapshot, name="local-live-footage-snapshot"),
+    path("local-live-footage/reset-shift/", local_live_footage_reset_shift, name="local-live-footage-reset-shift"),
+    path("local-live-footage/<str:press>/<str:kind>/", local_live_footage_relay, name="local-live-footage-relay"),
     *router.urls,
 ]

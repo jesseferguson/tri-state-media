@@ -14,9 +14,15 @@ DEBUG = os.environ.get("DEBUG", "False") == "True"
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
+    "192.168.1.134",
+    "192.168.1.174",
     "tri-state-media-backend.onrender.com",
     ".onrender.com",
 ]
+
+LOCAL_BACKEND_HOST = os.environ.get("LOCAL_BACKEND_HOST")
+if LOCAL_BACKEND_HOST:
+    ALLOWED_HOSTS.append(LOCAL_BACKEND_HOST)
 
 RENDER_EXTERNAL_HOSTNAME = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
 if RENDER_EXTERNAL_HOSTNAME:
