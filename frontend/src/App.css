@@ -19169,6 +19169,61 @@ textarea {
   padding: 12px;
 }
 
+.material-schedule-feedback {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid;
+  border-radius: 8px;
+}
+
+.material-schedule-feedback > svg {
+  flex: 0 0 auto;
+}
+
+.material-schedule-feedback > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.material-schedule-feedback strong,
+.material-schedule-feedback span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.material-schedule-feedback strong {
+  font-size: .8rem;
+  font-weight: 950;
+}
+
+.material-schedule-feedback span {
+  font-size: .74rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.material-schedule-feedback.success {
+  border-color: rgba(22, 163, 74, .3);
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.material-schedule-feedback.error {
+  border-color: rgba(220, 38, 38, .26);
+  background: #fff7f7;
+  color: #991b1b;
+}
+
+.material-schedule-feedback .ghost-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  background: #ffffff;
+}
+
 .material-detail-overview {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(165px, 100%), 1fr));
@@ -19571,6 +19626,16 @@ textarea {
 
   .finished-window .finished-schedule-actions .primary-btn {
     width: 100%;
+  }
+
+  .material-schedule-feedback {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .material-schedule-feedback .ghost-btn {
+    width: 100%;
+    margin-left: 0;
   }
 
   .material-activity-btn {

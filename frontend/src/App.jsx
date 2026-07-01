@@ -3173,6 +3173,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
             inventoryRows={selectedMaterialInventoryRows}
             presses={lookupQuery.data?.presses ?? []}
             scheduling={finishedScheduleMutation.isPending}
+            scheduleError={finishedScheduleMutation.error?.message || ""}
             canSchedule={isTriStateMaterial(selected)}
             startScheduleOpen={finishedMaterialStartSchedule}
             onClose={() => {
@@ -3184,7 +3185,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               setFinishedMaterialStartSchedule(false);
               setFormMode("edit");
             }}
-            onSchedule={(schedule) => finishedScheduleMutation.mutate({ material: selected, schedule })}
+            onSchedule={(schedule) => finishedScheduleMutation.mutateAsync({ material: selected, schedule })}
+            onClearScheduleError={() => finishedScheduleMutation.reset()}
             onViewUsage={() => {
               setFinishedMaterialOpen(false);
               setFinishedMaterialStartSchedule(false);

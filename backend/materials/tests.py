@@ -86,3 +86,44 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertIn("Easy Release", body["Note"])
         tag.refresh_from_db()
         self.assertEqual(tag.print_status, "queued")
+
+    def test_finished_material_schedule_payload_creates_coater_job(self):
+        face = MaterialSpec.objects.create(material_type="face", code="FACE-SCHEDULE", name="PM Face")
+        liner = MaterialSpec.objects.create(material_type="liner", code="LINER-SCHEDULE", name="40 Liner")
+        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-SCHEDULE", name="2417 Adhesive")
+        silicone = MaterialSpec.objects.create(material_type="silicone", code="SIL-SCHEDULE", name="Easy Release")
+        material = MaterialSpec.objects.create(material_type="coated_stock", code="PM-SCHEDULE", name="PM")
+        material.allowed_face_materials.add(face)
+        material.allowed_liner_materials.add(liner)
+        material.allowed_adhesive_materials.add(adhesive)
+        material.allowed_silicone_materials.add(silicone)
+        press = Press.objects.create(name="ETI Schedule", printer_ip="192.168.1.71")
+
+        response = self.client.post(
+            reverse("coater-roll-tag-list"),
+            {
+                "name": material.name,
+                "status": "scheduled",
+                "print_status": "not_printed",
+                "scheduled_by": "Scheduler",
+                "scheduled_material": material.id,
+                "produced_material": material.id,
+                "liner": liner.id,
+                "face": face.id,
+                "adhesive": adhesive.id,
+                "silicone": silicone.id,
+                "result_code": material.code,
+                "length_feet": 150000,
+                "run_date": "2026-06-30",
+                "cut_description": "Cut 9/9",
+                "operator_notes": "Run easy release",
+                "press": press.id,
+                "log_inventory": False,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertTrue(response.json()["tag_number"].startswith("CRT-"))
+        self.assertEqual(response.json()["press"], press.id)
+        self.assertEqual(response.json()["cut_description"], "Cut 9/9")

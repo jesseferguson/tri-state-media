@@ -129,6 +129,29 @@ function defaultCoaterPress(presses) {
     ?? null;
 }
 
+function scheduleDefaults(material, presses) {
+  const press = defaultCoaterPress(presses);
+  return {
+    cut_description: material.coater_cut_plan || "",
+    feet: material.target_run_length_feet || "",
+    press: press?.id || "",
+    run_date: today(),
+    operator_notes: material.operator_notes || "",
+  };
+}
+
+function missingConstructionTypes(material) {
+  const required = [
+    ["face_material", "allowed_face_materials", "Face"],
+    ["liner_material", "allowed_liner_materials", "Liner"],
+    ["adhesive_material", "allowed_adhesive_materials", "Adhesive"],
+    ["silicone_material", "allowed_silicone_materials", "Silicone"],
+  ];
+  return required
+    .filter(([preferred, allowed]) => !material?.[preferred] && !(Array.isArray(material?.[allowed]) && material[allowed].length))
+    .map(([, , label]) => label);
+}
+
 function compatibilitySummary(material, summaryKey, familyKey, nameKey) {
   return material[summaryKey] || material[familyKey] || material[nameKey];
 }
@@ -243,16 +266,18 @@ function AverageUsagePanel({ rows, onViewUsage }) {
   );
 }
 
-export default function FinishedMaterialWindow({ material, usageRows = [], inventoryRows = [], presses = [], scheduling = false, canSchedule = true, startScheduleOpen = false, onClose, onEdit, onSchedule, onViewUsage }) {
+export default function FinishedMaterialWindow({ material, usageRows = [], inventoryRows = [], presses = [], scheduling = false, scheduleError = "", canSchedule = true, startScheduleOpen = false, onClose, onEdit, onSchedule, onClearScheduleError, onViewUsage }) {
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(canSchedule && startScheduleOpen));
   const defaultPress = defaultCoaterPress(presses);
-  const [scheduleForm, setScheduleForm] = useState({
-    cut_description: "",
-    feet: material.target_run_length_feet || "",
-    press: defaultPress?.id || "",
-    run_date: today(),
-    operator_notes: "",
-  });
+  const [scheduleForm, setScheduleForm] = useState(() => scheduleDefaults(material, presses));
+  const [localScheduleError, setLocalScheduleError] = useState("");
+  const [scheduleNotice, setScheduleNotice] = useState("");
+
+  useEffect(() => {
+    setScheduleForm(scheduleDefaults(material, presses));
+    setLocalScheduleError("");
+    setScheduleNotice("");
+  }, [material.id]);
 
   useEffect(() => {
     if (!defaultPress?.id || scheduleForm.press) return;
@@ -264,22 +289,54 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
   }, [canSchedule, material.id, startScheduleOpen]);
 
   function updateSchedule(name, value) {
+    onClearScheduleError?.();
+    setLocalScheduleError("");
+    setScheduleNotice("");
     setScheduleForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  function submitSchedule(event) {
+  async function submitSchedule(event) {
     event.preventDefault();
     if (!canSchedule) return;
-    onSchedule?.({
-      cut_description: scheduleForm.cut_description,
-      feet: scheduleForm.feet === "" ? null : Number(scheduleForm.feet),
-      press: scheduleForm.press || null,
-      run_date: scheduleForm.run_date || null,
-      operator_notes: scheduleForm.operator_notes,
-    });
+    const missingConstruction = missingConstructionTypes(material);
+    const feet = Number(scheduleForm.feet);
+    if (missingConstruction.length) {
+      setLocalScheduleError(`Add the missing construction types before scheduling: ${missingConstruction.join(", ")}.`);
+      return;
+    }
+    if (!scheduleForm.press) {
+      setLocalScheduleError("Select the coater press.");
+      return;
+    }
+    if (!Number.isFinite(feet) || feet <= 0) {
+      setLocalScheduleError("Enter the number of feet to run.");
+      return;
+    }
+    if (!scheduleForm.cut_description.trim()) {
+      setLocalScheduleError("Enter the cutting notes, such as Cut 9/9.");
+      return;
+    }
+
+    setLocalScheduleError("");
+    setScheduleNotice("");
+    onClearScheduleError?.();
+    try {
+      const saved = await onSchedule?.({
+        cut_description: scheduleForm.cut_description.trim(),
+        feet,
+        press: scheduleForm.press,
+        run_date: scheduleForm.run_date || null,
+        operator_notes: scheduleForm.operator_notes.trim(),
+      });
+      setScheduleNotice(`${saved?.tag_number || material.code || material.name} is scheduled for ${selectedSchedulePress?.name || "the coater"}.`);
+      setScheduleOpen(false);
+    } catch (error) {
+      setLocalScheduleError(error.message || "The material could not be scheduled.");
+    }
   }
 
   const selectedSchedulePress = presses.find((press) => String(press.id) === String(scheduleForm.press)) || defaultPress;
+  const missingConstruction = missingConstructionTypes(material);
   const activeInventory = activeInventoryRows(inventoryRows);
   const compatibility = [
     ["Face", compatibilitySummary(material, "allowed_face_material_summary", "face_material_family", "face_material_name")],
@@ -304,7 +361,12 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
           </div>
           <div className="finished-window-actions">
             {canSchedule && (
-              <button className="ghost-btn" type="button" onClick={() => setScheduleOpen((value) => !value)}><CalendarPlus size={15} /> Schedule Material</button>
+              <button className="ghost-btn" type="button" onClick={() => {
+                onClearScheduleError?.();
+                setLocalScheduleError("");
+                setScheduleNotice("");
+                setScheduleOpen((value) => !value);
+              }}><CalendarPlus size={15} /> Schedule Material</button>
             )}
             <button className="primary-btn" type="button" onClick={onEdit}><Pencil size={15} /> Edit</button>
             <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
@@ -312,6 +374,13 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
         </header>
 
         <div className="material-detail-body">
+          {scheduleNotice && (
+            <div className="material-schedule-feedback success" role="status">
+              <CalendarPlus size={17} />
+              <div><strong>Material Scheduled</strong><span>{scheduleNotice}</span></div>
+            </div>
+          )}
+
           <section className="material-detail-overview">
             <DetailTile label="Material Type" value={materialTypeName(material)} tone="primary" />
             <DetailTile label="Inventory" value={inventoryTotalFeet(material, inventoryRows)} />
@@ -342,10 +411,20 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
                 <span>Schedule Material</span>
                 <strong>{selectedSchedulePress ? `Press: ${selectedSchedulePress.name}` : "Coater Lineup"}</strong>
               </div>
+              {missingConstruction.length > 0 && (
+                <div className="material-schedule-feedback error field-wide" role="alert">
+                  <Layers3 size={17} />
+                  <div>
+                    <strong>Material Setup Needed</strong>
+                    <span>Add {missingConstruction.join(", ")} before this material can be scheduled.</span>
+                  </div>
+                  <button className="ghost-btn xs" type="button" onClick={onEdit}>Edit Material</button>
+                </div>
+              )}
               <label>
                 <span>Press</span>
-                <select value={scheduleForm.press} onChange={(event) => updateSchedule("press", event.target.value)}>
-                  <option value="">Unassigned</option>
+                <select value={scheduleForm.press} onChange={(event) => updateSchedule("press", event.target.value)} required>
+                  <option value="">Select press</option>
                   {presses.map((press) => (
                     <option value={press.id} key={press.id}>{press.name}</option>
                   ))}
@@ -353,22 +432,28 @@ export default function FinishedMaterialWindow({ material, usageRows = [], inven
               </label>
               <label>
                 <span>Run Date</span>
-                <input type="date" value={scheduleForm.run_date} onChange={(event) => updateSchedule("run_date", event.target.value)} />
+                <input type="date" value={scheduleForm.run_date} onChange={(event) => updateSchedule("run_date", event.target.value)} required />
               </label>
               <label>
                 <span>Cutting Notes</span>
-                <input value={scheduleForm.cut_description} onChange={(event) => updateSchedule("cut_description", event.target.value)} placeholder="Cut 9/9" />
+                <input value={scheduleForm.cut_description} onChange={(event) => updateSchedule("cut_description", event.target.value)} placeholder="Cut 9/9" required />
               </label>
               <label>
                 <span>Feet</span>
-                <input type="number" step="0.01" value={scheduleForm.feet} onChange={(event) => updateSchedule("feet", event.target.value)} placeholder="Run feet" />
+                <input type="number" min="0.01" step="0.01" value={scheduleForm.feet} onChange={(event) => updateSchedule("feet", event.target.value)} placeholder="Run feet" required />
               </label>
               <label className="field-wide">
                 <span>Note To Operator</span>
                 <textarea value={scheduleForm.operator_notes} onChange={(event) => updateSchedule("operator_notes", event.target.value)} placeholder="Operator note for this scheduled run" />
               </label>
+              {(localScheduleError || scheduleError) && (
+                <div className="material-schedule-feedback error field-wide" role="alert">
+                  <X size={17} />
+                  <div><strong>Could Not Schedule</strong><span>{localScheduleError || scheduleError}</span></div>
+                </div>
+              )}
               <div className="finished-schedule-actions">
-                <button className="primary-btn" type="submit" disabled={scheduling}>{scheduling ? "Scheduling..." : "Schedule Material"}</button>
+                <button className="primary-btn" type="submit" disabled={scheduling || missingConstruction.length > 0}>{scheduling ? "Scheduling..." : "Schedule Material"}</button>
               </div>
             </form>
           )}
