@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 
-from production.models import JobTicket, ProductionSchedule
+from production.models import JobTicket, ProductionMaterialAssignment, ProductionSchedule
 from tooling.models import Press
 
 from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
@@ -46,10 +46,25 @@ class CoaterRollTagPrintQueueTests(TestCase):
             printer_darkness="13",
             printer_queue_key="ETI",
         )
+        schedule = CoaterRollTag.objects.create(
+            name="PM-2417-40 schedule",
+            status="running",
+            face=face,
+            liner=liner,
+            adhesive=adhesive,
+            silicone=silicone,
+            produced_material=produced,
+            width_inches=Decimal("13"),
+            length_feet=Decimal("10000"),
+            operator="ET Operator",
+            press=press,
+            log_inventory=False,
+        )
         tag = CoaterRollTag.objects.create(
             name="PM-2417-40",
-            status="complete",
+            status="tag_printed",
             print_status="not_printed",
+            source_schedule=schedule,
             face=face,
             liner=liner,
             adhesive=adhesive,
@@ -78,6 +93,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
                     "save_printer_settings": True,
                     "performed_by": "ET Operator",
                     "frontend_url": "https://plant.example.com",
+                    "auto_document": True,
                 },
                 content_type="application/json",
             )
@@ -104,12 +120,53 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertIn("Easy Release", body["Note"])
         tag.refresh_from_db()
         self.assertEqual(tag.print_status, "queued")
+        self.assertEqual(tag.status, "complete")
+        self.assertTrue(response.json()["documented"])
+        self.assertTrue(tag.logged_inventory_id)
+        logged_inventory_id = tag.logged_inventory_id
+        self.assertTrue(RawMaterialInventory.objects.filter(source_roll_tag=tag, status="available").exists())
+        linked_job = JobTicket.objects.create(ticket_number="JT-ROLL-DELETE", job_name="Delete test")
+        linked_schedule = ProductionSchedule.objects.create(job_ticket=linked_job, status="running")
+        ProductionMaterialAssignment.objects.create(
+            production_schedule=linked_schedule,
+            inventory_id=logged_inventory_id,
+            source_type="tsm",
+            assigned_by="ET Operator",
+        )
+        MaterialUsage.objects.create(
+            inventory_id=logged_inventory_id,
+            material=produced,
+            usage_type="adjustment",
+            quantity=Decimal("0"),
+            coater_roll_tag=tag,
+            production_schedule=linked_schedule,
+            job_ticket=linked_job,
+            used_by="ET Operator",
+        )
         press.refresh_from_db()
         self.assertEqual(press.printer_ip, "192.168.1.72")
         self.assertEqual(press.printer_port, 9101)
         self.assertEqual(press.printer_speed, "8")
         self.assertEqual(press.printer_darkness, "15")
         self.assertTrue(response.json()["printerSettingsSaved"])
+
+        wrong_delete = self.client.post(
+            reverse("coater-roll-tag-delete-roll", args=[tag.id]),
+            {"confirm_tag_number": "WRONG"},
+            content_type="application/json",
+        )
+        self.assertEqual(wrong_delete.status_code, 400, wrong_delete.content)
+
+        delete_response = self.client.post(
+            reverse("coater-roll-tag-delete-roll", args=[tag.id]),
+            {"confirm_tag_number": tag.tag_number},
+            content_type="application/json",
+        )
+        self.assertEqual(delete_response.status_code, 200, delete_response.content)
+        self.assertFalse(CoaterRollTag.objects.filter(pk=tag.id).exists())
+        self.assertFalse(RawMaterialInventory.objects.filter(pk=logged_inventory_id).exists())
+        self.assertFalse(ProductionMaterialAssignment.objects.filter(inventory_id=logged_inventory_id).exists())
+        self.assertFalse(MaterialUsage.objects.filter(coater_roll_tag_id=tag.id).exists())
 
     def test_finished_material_schedule_payload_creates_coater_job(self):
         face = MaterialSpec.objects.create(material_type="face", code="FACE-SCHEDULE", name="PM Face")

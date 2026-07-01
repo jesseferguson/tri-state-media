@@ -743,6 +743,18 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         )
 
         tag = self.get_object()
+        auto_document = _request_bool(request.data.get("auto_document")) and bool(tag.source_schedule_id)
+        if auto_document and not tag.logged_inventory_id and tag.status != "complete":
+            if not tag.width_inches or Decimal(tag.width_inches) <= 0:
+                return Response(
+                    {"width_inches": ["Enter the finished roll width before printing."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not tag.length_feet or Decimal(tag.length_feet) <= 0:
+                return Response(
+                    {"length_feet": ["Enter the actual roll length before printing."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         press_id = request.data.get("press") or tag.press_id
         press = Press.objects.filter(pk=press_id).first() if press_id else None
         if not press:
@@ -828,7 +840,15 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             )
 
         tag.print_status = "queued"
-        tag.save(update_fields=["print_status", "updated_at"])
+        documented_now = False
+        if auto_document and not tag.logged_inventory_id and tag.status != "complete":
+            tag.status = "complete"
+            tag.log_inventory = True
+            tag.run_date = tag.run_date or timezone.localdate()
+            tag.save()
+            documented_now = True
+        else:
+            tag.save(update_fields=["print_status", "updated_at"])
         printer_settings_saved = False
         if _request_bool(request.data.get("save_printer_settings")):
             press.printer_ip = printer_ip
@@ -853,6 +873,48 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
                 "printerSettingsSaved": printer_settings_saved,
                 "copies": payload.get("Total Ship Stock"),
                 "rollTagUrl": roll_tag_url,
+                "documented": documented_now,
+                "roll": self.get_serializer(tag).data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="delete-roll")
+    def delete_roll(self, request, pk=None):
+        roll = self.get_object()
+        if not roll.source_schedule_id:
+            return Response(
+                {"detail": "Scheduled material jobs cannot be deleted from the roll history. Delete only a physical roll."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        confirmation = str(request.data.get("confirm_tag_number") or "").strip()
+        if confirmation != roll.tag_number:
+            return Response(
+                {"confirm_tag_number": [f"Enter {roll.tag_number} to confirm permanent deletion."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from production.models import ProductionMaterialAssignment
+
+        inventory_ids = set(
+            RawMaterialInventory.objects.filter(
+                Q(source_roll_tag=roll) | Q(pk=roll.logged_inventory_id)
+            ).values_list("id", flat=True)
+        )
+        with transaction.atomic():
+            MaterialUsage.objects.filter(
+                Q(coater_roll_tag=roll) | Q(inventory_id__in=inventory_ids)
+            ).delete()
+            ProductionMaterialAssignment.objects.filter(inventory_id__in=inventory_ids).delete()
+            RawMaterialInventory.objects.filter(id__in=inventory_ids).delete()
+            tag_number = roll.tag_number
+            roll.delete()
+
+        return Response(
+            {
+                "ok": True,
+                "tagNumber": tag_number,
+                "deletedInventoryCount": len(inventory_ids),
+            }
         )
