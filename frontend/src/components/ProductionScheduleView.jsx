@@ -3,6 +3,7 @@ import { Image as ImageIcon, PackageCheck, ScanLine, Trash2 } from "lucide-react
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import RecipeOptionsView from "./RecipeOptionsView";
+import ScheduleMaterialWorkflow from "./ScheduleMaterialWorkflow";
 
 function sameId(a, b) {
   if (a === null || a === undefined || b === null || b === undefined) return false;
@@ -369,7 +370,7 @@ function RemoveScheduleDialog({ row, onClose, onConfirm }) {
   );
 }
 
-function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlexDieCountUpdate }) {
+function ScheduleDetailOverlay({ row, lookups, currentUser, onClose, onFlexDieReorder, onFlexDieCountUpdate }) {
   if (!row) return null;
   const tone = shipTone(row);
   const ticket = ticketForSchedule(row, lookups) ?? scheduleTicketFallback(row);
@@ -425,6 +426,15 @@ function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlex
               <DetailItem label="On Hand" value={`${materialInventory.length} rolls / ${formatNumber(materialFeet, " ft")}`} />
             </div>
             <ScheduleMaterialChart rows={materialInventory} />
+          </div>
+
+          <div className="schedule-operator-card wide schedule-material-action-card">
+            <ScheduleMaterialWorkflow
+              schedule={row}
+              ticket={ticket}
+              inventoryRows={lookups?.["raw-materials"] ?? []}
+              currentUser={currentUser}
+            />
           </div>
 
           <div className="schedule-operator-card">
@@ -527,6 +537,7 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
       <ScheduleDetailOverlay
         row={selected}
         lookups={lookups}
+        currentUser={currentUser}
         onClose={onClose}
         onFlexDieReorder={onFlexDieReorder}
         onFlexDieCountUpdate={onFlexDieCountUpdate}

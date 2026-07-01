@@ -18,7 +18,8 @@ from rest_framework.decorators import action, api_view
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from materials.models import MaterialUsage
+from materials.models import MaterialUsage, RawMaterialInventory
+from materials.serializers import RawMaterialInventorySerializer
 from tooling.models import Press, ToolingLocation
 
 from .models import (
@@ -39,7 +40,10 @@ from .models import (
     LocalLiveFootageReading,
     Message,
     MessageThread,
+    ProductionMaterialAssignment,
     ProductionSchedule,
+    ProductionShiftReport,
+    ProductionShiftSetting,
     QuoteCostRate,
     QuoteFinishedMaterial,
     QuoteRawMaterial,
@@ -63,7 +67,10 @@ from .serializers import (
     LocalLiveFootageReadingSerializer,
     MessageSerializer,
     MessageThreadSerializer,
+    ProductionMaterialAssignmentSerializer,
     ProductionScheduleSerializer,
+    ProductionShiftReportSerializer,
+    ProductionShiftSettingSerializer,
     QuoteCostRateSerializer,
     QuoteFinishedMaterialSerializer,
     QuoteRawMaterialSerializer,
@@ -1391,6 +1398,7 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
             "material_inventory",
             "press",
         )
+        .prefetch_related("shift_reports", "material_assignments")
         .all()
         .order_by("scheduled_date", "priority", "job_ticket__ticket_number")
     )
@@ -1452,6 +1460,330 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
         schedule._delete_actor = actor
         schedule.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProductionMaterialAssignmentViewSet(BaseProductionViewSet):
+    serializer_class = ProductionMaterialAssignmentSerializer
+    search_fields = [
+        "inventory__serial_number",
+        "inventory__lot_number",
+        "inventory__source_roll_tag__tag_number",
+        "inventory__material__name",
+        "inventory__material__code",
+        "inventory__supplier__name",
+        "carton_lot_code",
+        "assigned_by",
+        "quality_note",
+        "notes",
+        "production_schedule__job_ticket__ticket_number",
+        "production_schedule__job_ticket__job_name",
+    ]
+    ordering_fields = ["assigned_at", "ended_at", "status", "source_type"]
+
+    def get_queryset(self):
+        usage_total = (
+            MaterialUsage.objects.filter(
+                production_schedule_id=OuterRef("production_schedule_id"),
+                inventory_id=OuterRef("inventory_id"),
+                usage_type__in=["finished", "scrap"],
+            )
+            .values("production_schedule_id", "inventory_id")
+            .annotate(total=Sum("quantity"))
+            .values("total")[:1]
+        )
+        queryset = (
+            ProductionMaterialAssignment.objects.select_related(
+                "production_schedule",
+                "production_schedule__job_ticket",
+                "inventory",
+                "inventory__material",
+                "inventory__material__master_type",
+                "inventory__supplier",
+                "inventory__location",
+                "inventory__source_roll_tag",
+            )
+            .annotate(
+                used_footage_total=Coalesce(
+                    Subquery(usage_total),
+                    Value(Decimal("0"), output_field=DecimalField(max_digits=12, decimal_places=3)),
+                )
+            )
+            .all()
+            .order_by("-assigned_at", "-id")
+        )
+        schedule = self.request.query_params.get("production_schedule")
+        inventory = self.request.query_params.get("inventory")
+        assignment_status = self.request.query_params.get("status")
+        if schedule:
+            queryset = queryset.filter(production_schedule_id=schedule)
+        if inventory:
+            queryset = queryset.filter(inventory_id=inventory)
+        if assignment_status:
+            queryset = queryset.filter(status=assignment_status)
+        return queryset
+
+    def perform_create(self, serializer):
+        schedule = serializer.validated_data["production_schedule"]
+        inventory = serializer.validated_data["inventory"]
+        existing = ProductionMaterialAssignment.objects.filter(
+            production_schedule=schedule,
+            inventory=inventory,
+            status="active",
+        ).first()
+        if existing:
+            raise serializers.ValidationError({"inventory": "This roll is already active on this scheduled order."})
+        assignment = serializer.save()
+        if schedule.status in ["unscheduled", "scheduled", "ready"]:
+            schedule.status = "running"
+            schedule.last_updated_by = assignment.assigned_by or schedule.last_updated_by
+            schedule.save()
+
+    @action(detail=False, methods=["get"], url_path="scan-roll")
+    def scan_roll(self, request):
+        schedule_id = request.query_params.get("production_schedule")
+        scan = str(request.query_params.get("scan") or "").strip()
+        if not schedule_id or not scan:
+            return Response(
+                {"detail": "A scheduled order and scanned roll code are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        schedule = ProductionSchedule.objects.select_related(
+            "job_ticket",
+            "job_ticket__material_spec",
+            "job_ticket__material_master_type",
+        ).filter(pk=schedule_id).first()
+        if not schedule:
+            return Response({"detail": "Scheduled order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        inventory = RawMaterialInventory.objects.select_related(
+            "material",
+            "material__master_type",
+            "supplier",
+            "location",
+            "source_roll_tag",
+        ).filter(
+            Q(serial_number__iexact=scan)
+            | Q(lot_number__iexact=scan)
+            | Q(source_roll_tag__tag_number__iexact=scan)
+        ).first()
+        if not inventory:
+            return Response({"detail": "No roll matched that barcode or lot number."}, status=status.HTTP_404_NOT_FOUND)
+
+        required_master = schedule.job_ticket.material_master_type_id or (
+            schedule.job_ticket.material_spec.master_type_id
+            if schedule.job_ticket.material_spec_id and schedule.job_ticket.material_spec
+            else None
+        )
+        actual_master = inventory.material.master_type_id if inventory.material_id and inventory.material else None
+        if required_master and actual_master != required_master:
+            return Response(
+                {
+                    "detail": "That roll is not compatible with this job.",
+                    "required_material": schedule.job_ticket.material_master_type.code
+                    if schedule.job_ticket.material_master_type_id
+                    else schedule.job_ticket.material_spec.master_type.code,
+                    "scanned_material": inventory.material.master_type.code if actual_master else "",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if not inventory.source_roll_tag_id:
+            return Response(
+                {"detail": "This is purchased material. Select it from the Purchased Roll list and enter the 5-digit carton lot number."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if not inventory.is_active or inventory.status in ["depleted", "scrapped", "on_hold"]:
+            return Response({"detail": "This roll is not active production inventory."}, status=status.HTTP_409_CONFLICT)
+
+        existing = ProductionMaterialAssignment.objects.filter(
+            production_schedule=schedule,
+            inventory=inventory,
+            status="active",
+        ).first()
+        return Response({
+            "inventory": RawMaterialInventorySerializer(inventory).data,
+            "already_assigned": ProductionMaterialAssignmentSerializer(existing).data if existing else None,
+        })
+
+    @action(detail=True, methods=["post"], url_path="record-usage")
+    def record_usage(self, request, pk=None):
+        try:
+            with transaction.atomic():
+                assignment = (
+                    ProductionMaterialAssignment.objects.select_for_update()
+                    .select_related("production_schedule", "production_schedule__job_ticket", "inventory")
+                    .get(pk=pk)
+                )
+                inventory = RawMaterialInventory.objects.select_for_update().get(pk=assignment.inventory_id)
+                if assignment.status != "active":
+                    return Response({"detail": "This roll assignment is no longer active."}, status=status.HTTP_409_CONFLICT)
+
+                available = Decimal(inventory.length_feet if inventory.length_feet is not None else inventory.quantity or 0)
+                mode = str(request.data.get("mode") or "partial").strip().lower()
+                mark_bad = bool(request.data.get("mark_bad") or request.data.get("poor_run"))
+                close_roll = bool(request.data.get("close_roll"))
+                note = str(request.data.get("notes") or "").strip()
+                if mark_bad and not note:
+                    return Response({"notes": ["Describe what made the roll unrunnable."]}, status=status.HTTP_400_BAD_REQUEST)
+
+                if mode == "full":
+                    entered = available
+                    deducted = available
+                else:
+                    try:
+                        entered = Decimal(str(request.data.get("footage_used") or "0"))
+                    except (InvalidOperation, ValueError):
+                        return Response({"footage_used": ["Enter valid footage."]}, status=status.HTTP_400_BAD_REQUEST)
+                    if entered <= 0:
+                        return Response({"footage_used": ["Footage used must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+                    deducted = min(available, (entered * Decimal("1.03")).quantize(Decimal("0.001")))
+
+                if available <= 0:
+                    return Response({"detail": "This roll has no footage remaining."}, status=status.HTTP_409_CONFLICT)
+                if entered > available:
+                    return Response(
+                        {"footage_used": [f"Only {available} ft remain on this roll."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                usage = MaterialUsage.objects.create(
+                    inventory=inventory,
+                    material=inventory.material,
+                    usage_type="finished",
+                    quantity=deducted,
+                    unit="lf",
+                    used_by=str(request.data.get("used_by") or assignment.assigned_by or "").strip(),
+                    reference=f"Schedule {assignment.production_schedule_id} / assignment {assignment.id}",
+                    job_ticket=assignment.production_schedule.job_ticket,
+                    production_schedule=assignment.production_schedule,
+                    notes=note,
+                )
+                inventory.refresh_from_db()
+                remaining = Decimal(inventory.length_feet if inventory.length_feet is not None else inventory.quantity or 0)
+
+                if mark_bad:
+                    inventory.status = "on_hold"
+                    inventory.save(update_fields=["status"])
+                    MaterialUsage.objects.create(
+                        inventory=inventory,
+                        material=inventory.material,
+                        usage_type="qc_issue",
+                        quantity=0,
+                        unit="lf",
+                        used_by=usage.used_by,
+                        reference=f"Schedule {assignment.production_schedule_id} / assignment {assignment.id}",
+                        job_ticket=assignment.production_schedule.job_ticket,
+                        production_schedule=assignment.production_schedule,
+                        notes=note,
+                    )
+                    assignment.status = "rejected"
+                    assignment.quality_note = note
+                    assignment.ended_at = timezone.now()
+                elif mode == "full" or remaining <= 0 or close_roll:
+                    assignment.status = "complete"
+                    assignment.ended_at = timezone.now()
+                assignment.save()
+
+                return Response({
+                    "assignment": self.get_serializer(assignment).data,
+                    "usage_id": usage.id,
+                    "entered_footage": entered,
+                    "buffer_footage": max(Decimal("0"), deducted - entered),
+                    "deducted_footage": deducted,
+                    "remaining_footage": remaining,
+                    "inventory_status": inventory.status,
+                })
+        except ProductionMaterialAssignment.DoesNotExist:
+            return Response({"detail": "Material assignment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
+def sync_schedule_report_progress(schedule):
+    totals = schedule.shift_reports.aggregate(good=Sum("good_footage"))
+    schedule.actual_footage = totals["good"] or Decimal("0")
+    latest = schedule.shift_reports.order_by("-shift_end", "-id").first()
+    if latest:
+        schedule.status = "complete" if latest.outcome == "job_complete" else "running"
+        schedule.operator = latest.operator or schedule.operator
+        schedule.last_updated_by = latest.created_by or latest.operator or schedule.last_updated_by
+    schedule.save()
+
+
+class ProductionShiftReportViewSet(BaseProductionViewSet):
+    serializer_class = ProductionShiftReportSerializer
+    search_fields = [
+        "operator",
+        "created_by",
+        "notes",
+        "press__name",
+        "job_ticket__ticket_number",
+        "job_ticket__job_name",
+        "production_schedule__customer__name",
+        "production_schedule__customer_po",
+    ]
+    ordering_fields = [
+        "report_date",
+        "shift_start",
+        "shift_end",
+        "operator",
+        "press__name",
+        "total_footage",
+        "good_footage",
+        "material_footage",
+    ]
+
+    def get_queryset(self):
+        queryset = ProductionShiftReport.objects.select_related(
+            "production_schedule",
+            "production_schedule__customer",
+            "job_ticket",
+            "job_ticket__customer",
+            "press",
+        ).all()
+        date_from = parse_date(str(self.request.query_params.get("date_from") or ""))
+        date_to = parse_date(str(self.request.query_params.get("date_to") or ""))
+        schedule = self.request.query_params.get("production_schedule")
+        operator = str(self.request.query_params.get("operator") or "").strip()
+        press = self.request.query_params.get("press")
+        if date_from:
+            queryset = queryset.filter(report_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(report_date__lte=date_to)
+        if schedule:
+            queryset = queryset.filter(production_schedule_id=schedule)
+        if operator:
+            queryset = queryset.filter(operator__iexact=operator)
+        if press:
+            queryset = queryset.filter(press_id=press)
+        return queryset.order_by("-report_date", "-shift_end", "-id")
+
+    def perform_create(self, serializer):
+        report = serializer.save()
+        sync_schedule_report_progress(report.production_schedule)
+
+    def perform_update(self, serializer):
+        previous_schedule_id = serializer.instance.production_schedule_id
+        report = serializer.save()
+        if previous_schedule_id != report.production_schedule_id:
+            previous = ProductionSchedule.objects.filter(pk=previous_schedule_id).first()
+            if previous:
+                sync_schedule_report_progress(previous)
+        sync_schedule_report_progress(report.production_schedule)
+
+    def perform_destroy(self, instance):
+        schedule = instance.production_schedule
+        instance.delete()
+        sync_schedule_report_progress(schedule)
+
+
+class ProductionShiftSettingViewSet(BaseProductionViewSet):
+    serializer_class = ProductionShiftSettingSerializer
+    queryset = ProductionShiftSetting.objects.all()
+    search_fields = ["name", "updated_by"]
+    ordering_fields = ["name", "updated_at"]
+
+    def list(self, request, *args, **kwargs):
+        if not ProductionShiftSetting.objects.exists():
+            ProductionShiftSetting.objects.create()
+        return super().list(request, *args, **kwargs)
 
 
 class CustomerOrderViewSet(viewsets.ReadOnlyModelViewSet):

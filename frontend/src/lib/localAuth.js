@@ -29,13 +29,13 @@ export const defaultRoleDefinitions = [
     id: "role-csr",
     name: "CSR",
     description: "Customer service quoting, tickets, and scheduling",
-    allowedResourceKeys: ["quote-calculator", "customers", "job-tickets", "production-schedule", "customer-orders"],
+    allowedResourceKeys: ["quote-calculator", "customers", "job-tickets", "production-schedule", "customer-orders", "footage-reports"],
   },
   {
     id: "role-production",
     name: "Production",
     description: "Production queue, job details, and press workflow",
-    allowedResourceKeys: ["production-schedule", "job-tickets", "customer-orders", "presses", "material-handling"],
+    allowedResourceKeys: ["production-schedule", "job-tickets", "customer-orders", "presses", "material-handling", "footage-reports"],
   },
   {
     id: "role-coater",

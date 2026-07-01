@@ -5,9 +5,22 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 
+from materials.models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
 from tooling.models import Press
 
-from .models import CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, LiveFootageArchive, LocalLiveFootageReading, Message, MessageThread, ProductionSchedule
+from .models import (
+    CustomerOrder,
+    CustomerOrderEvent,
+    FinishedInventory,
+    JobTicket,
+    JobTicketEvent,
+    LiveFootageArchive,
+    LocalLiveFootageReading,
+    Message,
+    MessageThread,
+    ProductionMaterialAssignment,
+    ProductionSchedule,
+)
 
 
 class FinishedInventoryOrderWorkflowTests(TestCase):
@@ -277,6 +290,175 @@ class LocalLiveFootageTests(TestCase):
         eti = next(row for row in response.json()["presses"] if row["key"] == "ETI")
         self.assertEqual(eti["speed"], 88)
         self.assertEqual(eti["totalFootage"], 12.5)
+
+
+class ScheduledMaterialWorkflowTests(TestCase):
+    def setUp(self):
+        self.master = MaterialMasterType.objects.create(code="PM", name="PM")
+        self.other_master = MaterialMasterType.objects.create(code="PET", name="PET")
+        self.material = MaterialSpec.objects.create(
+            material_type="coated_stock",
+            code="PM-40-3180",
+            name="PM",
+            master_type=self.master,
+        )
+        self.other_material = MaterialSpec.objects.create(
+            material_type="coated_stock",
+            code="PET-40-3180",
+            name="PET",
+            master_type=self.other_master,
+        )
+        face = MaterialSpec.objects.create(material_type="face", code="FACE-TEST", name="Face")
+        liner = MaterialSpec.objects.create(material_type="liner", code="LINER-TEST", name="Liner")
+        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-TEST", name="Adhesive")
+        silicone = MaterialSpec.objects.create(material_type="silicone", code="SIL-TEST", name="Silicone")
+        self.roll_tag = CoaterRollTag.objects.create(
+            name="PM roll",
+            status="complete",
+            liner=liner,
+            face=face,
+            adhesive=adhesive,
+            silicone=silicone,
+            produced_material=self.material,
+            result_lot_number="LOT-TSM-100",
+            result_serial_number="CRT-100",
+            width_inches=Decimal("12.75"),
+            length_feet=Decimal("10000"),
+            log_inventory=False,
+        )
+        self.tsm_inventory = RawMaterialInventory.objects.create(
+            material=self.material,
+            serial_number="CRT-100",
+            lot_number="LOT-TSM-100",
+            width_inches=Decimal("12.75"),
+            length_feet=Decimal("10000"),
+            quantity=Decimal("10000"),
+            source_roll_tag=self.roll_tag,
+        )
+        self.purchased_inventory = RawMaterialInventory.objects.create(
+            material=self.material,
+            serial_number="PURCHASED-100",
+            lot_number="SUPPLIER-LOT",
+            width_inches=Decimal("12.75"),
+            length_feet=Decimal("25000"),
+            quantity=Decimal("25000"),
+        )
+        self.wrong_inventory = RawMaterialInventory.objects.create(
+            material=self.other_material,
+            serial_number="PET-ROLL-1",
+            lot_number="PET-LOT-1",
+            length_feet=Decimal("5000"),
+            quantity=Decimal("5000"),
+        )
+        self.ticket = JobTicket.objects.create(
+            ticket_number="JT-MAT-1",
+            job_name="PM job",
+            product_code="PM-4-65-R",
+            material_master_type=self.master,
+        )
+        self.schedule = ProductionSchedule.objects.create(
+            job_ticket=self.ticket,
+            target_footage=Decimal("20000"),
+            scheduled_by="Scheduler",
+        )
+
+    def test_scanner_only_accepts_compatible_tsm_roll(self):
+        response = self.client.get(
+            reverse("production-material-assignment-scan-roll"),
+            {"production_schedule": self.schedule.id, "scan": "LOT-TSM-100"},
+        )
+        wrong_response = self.client.get(
+            reverse("production-material-assignment-scan-roll"),
+            {"production_schedule": self.schedule.id, "scan": "PET-ROLL-1"},
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["inventory"]["id"], self.tsm_inventory.id)
+        self.assertEqual(wrong_response.status_code, 409, wrong_response.content)
+
+    def test_purchased_roll_requires_five_digit_carton_stamp(self):
+        bad = self.client.post(
+            reverse("production-material-assignment-list"),
+            {
+                "production_schedule": self.schedule.id,
+                "inventory": self.purchased_inventory.id,
+                "source_type": "outsourced",
+                "carton_lot_code": "1234",
+            },
+            content_type="application/json",
+        )
+        good = self.client.post(
+            reverse("production-material-assignment-list"),
+            {
+                "production_schedule": self.schedule.id,
+                "inventory": self.purchased_inventory.id,
+                "source_type": "outsourced",
+                "carton_lot_code": "12345",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(bad.status_code, 400, bad.content)
+        self.assertEqual(good.status_code, 201, good.content)
+
+    def test_partial_use_adds_buffer_and_bad_roll_goes_on_hold(self):
+        assignment = ProductionMaterialAssignment.objects.create(
+            production_schedule=self.schedule,
+            inventory=self.tsm_inventory,
+            source_type="tsm",
+            assigned_by="Operator",
+        )
+        partial = self.client.post(
+            reverse("production-material-assignment-record-usage", args=[assignment.id]),
+            {"mode": "partial", "footage_used": "1000", "used_by": "Operator"},
+            content_type="application/json",
+        )
+        bad = self.client.post(
+            reverse("production-material-assignment-record-usage", args=[assignment.id]),
+            {
+                "mode": "partial",
+                "footage_used": "100",
+                "mark_bad": True,
+                "notes": "Coating streak made the remaining roll unrunnable.",
+                "used_by": "Operator",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(partial.status_code, 200, partial.content)
+        self.assertEqual(Decimal(str(partial.json()["deducted_footage"])), Decimal("1030.000"))
+        self.assertEqual(bad.status_code, 200, bad.content)
+        self.tsm_inventory.refresh_from_db()
+        assignment.refresh_from_db()
+        self.assertEqual(self.tsm_inventory.status, "on_hold")
+        self.assertEqual(assignment.status, "rejected")
+        self.assertTrue(MaterialUsage.objects.filter(inventory=self.tsm_inventory, usage_type="qc_issue").exists())
+
+    def test_shift_report_updates_schedule_handoff_progress(self):
+        response = self.client.post(
+            reverse("production-shift-report-list"),
+            {
+                "production_schedule": self.schedule.id,
+                "operator": "Levi",
+                "report_date": "2026-07-01",
+                "shift_start": "2026-07-01T03:00:00-04:00",
+                "shift_end": "2026-07-02T03:00:00-04:00",
+                "total_footage": "8500",
+                "good_footage": "8000",
+                "material_footage": "8755",
+                "outcome": "end_shift",
+                "created_by": "Levi",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.actual_footage, Decimal("8000"))
+        self.assertEqual(self.schedule.status, "running")
+        detail = self.client.get(reverse("production-schedule-detail", args=[self.schedule.id]))
+        self.assertEqual(Decimal(str(detail.json()["footage_remaining"])), Decimal("12000"))
+        self.assertEqual(Decimal(str(detail.json()["reported_waste_footage"])), Decimal("500"))
 
 
 class JobTicketPrintQueueTests(TestCase):

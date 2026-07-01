@@ -10,6 +10,7 @@ import FlexDieDetailPanel from "./components/FlexDieDetailPanel";
 import FlexDieTable from "./components/FlexDieTable";
 import FinishedInventoryView, { FinishedInventoryWindow } from "./components/FinishedInventoryView";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
+import FootageReportsView from "./components/FootageReportsView";
 import CustomerWorkspace from "./components/CustomerWorkspace";
 import CoaterOperatorView from "./components/CoaterOperatorView";
 import DataImportTool from "./components/DataImportTool";
@@ -2628,6 +2629,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           />
         ) : resource.viewMode === "liveFootage" ? (
           <LiveFootageView tvMode={liveFootageTvMode} onTvModeChange={setLiveFootageTvMode} />
+        ) : resource.viewMode === "footageReports" ? (
+          <FootageReportsView currentUser={currentUserForView} />
         ) : resource.viewMode === "coaterOperator" ? (
           <CoaterOperatorView
             currentUser={currentUserForView}

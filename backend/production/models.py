@@ -1,6 +1,9 @@
 from django.db import models
 from django.contrib.auth.hashers import check_password, make_password
+from django.core.validators import RegexValidator
 from django.utils import timezone
+from datetime import time
+from decimal import Decimal
 from uuid import uuid4
 
 from materials.models import MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
@@ -633,6 +636,13 @@ class ProductionSchedule(models.Model):
     )
     press_sequence = models.PositiveIntegerField(null=True, blank=True)
     operator = models.CharField(max_length=100, blank=True)
+    target_footage = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Planned linear footage for operator progress and shift handoff.",
+    )
     actual_footage = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     footage_report = models.TextField(blank=True)
     notes = models.TextField(blank=True)
@@ -752,6 +762,118 @@ class ProductionSchedule(models.Model):
                 performed_by=actor,
             )
         return super().delete(*args, **kwargs)
+
+
+class ProductionMaterialAssignment(models.Model):
+    SOURCE_CHOICES = [
+        ("tsm", "Tri-State Media Roll"),
+        ("outsourced", "Purchased Roll"),
+    ]
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("complete", "Used"),
+        ("rejected", "Quality Hold"),
+        ("removed", "Removed"),
+    ]
+
+    production_schedule = models.ForeignKey(
+        ProductionSchedule,
+        on_delete=models.CASCADE,
+        related_name="material_assignments",
+    )
+    inventory = models.ForeignKey(
+        RawMaterialInventory,
+        on_delete=models.PROTECT,
+        related_name="production_assignments",
+    )
+    source_type = models.CharField(max_length=20, choices=SOURCE_CHOICES)
+    carton_lot_code = models.CharField(
+        max_length=5,
+        blank=True,
+        validators=[RegexValidator(r"^\d{5}$", "Enter the 5-digit lot number stamped on the cartons.")],
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    assigned_by = models.CharField(max_length=120, blank=True)
+    quality_note = models.TextField(blank=True)
+    notes = models.TextField(blank=True)
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-assigned_at", "-id"]
+
+    def __str__(self):
+        return f"{self.production_schedule} / {self.inventory.serial_number or self.inventory.lot_number}"
+
+
+class ProductionShiftSetting(models.Model):
+    name = models.CharField(max_length=80, unique=True, default="Plant Reporting Day")
+    shift_start_time = models.TimeField(default=time(3, 0))
+    shift_end_time = models.TimeField(default=time(3, 0))
+    end_on_next_day = models.BooleanField(default=True)
+    updated_by = models.CharField(max_length=120, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class ProductionShiftReport(models.Model):
+    OUTCOME_CHOICES = [
+        ("end_shift", "End of Shift"),
+        ("job_complete", "Job Complete"),
+    ]
+
+    production_schedule = models.ForeignKey(
+        ProductionSchedule,
+        on_delete=models.CASCADE,
+        related_name="shift_reports",
+    )
+    job_ticket = models.ForeignKey(
+        JobTicket,
+        on_delete=models.PROTECT,
+        related_name="shift_reports",
+    )
+    press = models.ForeignKey(
+        Press,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shift_reports",
+    )
+    operator = models.CharField(max_length=120)
+    report_date = models.DateField(default=timezone.localdate, db_index=True)
+    shift_start = models.DateTimeField()
+    shift_end = models.DateTimeField()
+    total_footage = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    good_footage = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    material_footage = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, default="end_shift")
+    notes = models.TextField(blank=True)
+    created_by = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-report_date", "-shift_end", "-id"]
+
+    def save(self, *args, **kwargs):
+        if self.production_schedule_id:
+            self.job_ticket = self.production_schedule.job_ticket
+            if not self.press_id:
+                self.press = self.production_schedule.press
+        super().save(*args, **kwargs)
+
+    @property
+    def waste_footage(self):
+        return max(Decimal("0"), Decimal(self.total_footage or 0) - Decimal(self.good_footage or 0))
+
+    def __str__(self):
+        return f"{self.report_date} / {self.operator} / {self.good_footage} ft"
 
 
 class CustomerOrderManager(models.Manager):

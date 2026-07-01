@@ -20,7 +20,10 @@ from .views import (
     LocalLiveFootageReadingViewSet,
     MessageThreadViewSet,
     MessageViewSet,
+    ProductionMaterialAssignmentViewSet,
     ProductionScheduleViewSet,
+    ProductionShiftReportViewSet,
+    ProductionShiftSettingViewSet,
     QuoteCostRateViewSet,
     QuoteFinishedMaterialViewSet,
     QuoteRawMaterialViewSet,
@@ -56,6 +59,9 @@ router.register("job-ticket-usages", JobTicketUsageViewSet, basename="job-ticket
 router.register("live-footage-archives", LiveFootageArchiveViewSet, basename="live-footage-archive")
 router.register("local-live-footage-readings", LocalLiveFootageReadingViewSet, basename="local-live-footage-reading")
 router.register("production-schedule", ProductionScheduleViewSet, basename="production-schedule")
+router.register("production-material-assignments", ProductionMaterialAssignmentViewSet, basename="production-material-assignment")
+router.register("production-shift-reports", ProductionShiftReportViewSet, basename="production-shift-report")
+router.register("production-shift-settings", ProductionShiftSettingViewSet, basename="production-shift-setting")
 router.register("finished-inventory", FinishedInventoryViewSet, basename="finished-inventory")
 
 urlpatterns = [

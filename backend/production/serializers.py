@@ -1,6 +1,7 @@
 import re
 from urllib.parse import unquote, urlparse
 
+from django.db import models
 from rest_framework import serializers
 
 from materials.models import MaterialMasterType
@@ -23,7 +24,10 @@ from .models import (
     LocalLiveFootageReading,
     Message,
     MessageThread,
+    ProductionMaterialAssignment,
     ProductionSchedule,
+    ProductionShiftReport,
+    ProductionShiftSetting,
     QUOTE_COMPANY_CHOICES,
     QuoteCostRate,
     QuoteFinishedMaterial,
@@ -525,6 +529,13 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     material_inventory_name = serializers.CharField(source="material_inventory.name", read_only=True)
     material_inventory_serial = serializers.CharField(source="material_inventory.serial_number", read_only=True)
     press_name = serializers.CharField(source="press.name", read_only=True)
+    reported_total_footage = serializers.SerializerMethodField()
+    reported_good_footage = serializers.SerializerMethodField()
+    reported_material_footage = serializers.SerializerMethodField()
+    reported_waste_footage = serializers.SerializerMethodField()
+    footage_remaining = serializers.SerializerMethodField()
+    shift_report_count = serializers.SerializerMethodField()
+    active_material_count = serializers.SerializerMethodField()
 
     def get_customer_name(self, obj):
         if obj.customer:
@@ -571,9 +582,144 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     def get_job_general_image_is_document(self, obj):
         return is_document_url(self.get_job_general_image_url(obj))
 
+    def _report_totals(self, obj):
+        cached = getattr(obj, "_report_totals_cache", None)
+        if cached is None:
+            reports = list(obj.shift_reports.all())
+            cached = {
+                "total": sum((report.total_footage or 0 for report in reports), 0),
+                "good": sum((report.good_footage or 0 for report in reports), 0),
+                "material": sum((report.material_footage or 0 for report in reports), 0),
+            }
+            obj._report_totals_cache = cached
+        return cached
+
+    def get_reported_total_footage(self, obj):
+        return self._report_totals(obj).get("total") or 0
+
+    def get_reported_good_footage(self, obj):
+        return self._report_totals(obj).get("good") or 0
+
+    def get_reported_material_footage(self, obj):
+        return self._report_totals(obj).get("material") or 0
+
+    def get_reported_waste_footage(self, obj):
+        totals = self._report_totals(obj)
+        return max(0, (totals.get("total") or 0) - (totals.get("good") or 0))
+
+    def get_footage_remaining(self, obj):
+        if obj.target_footage is None:
+            return None
+        return max(0, obj.target_footage - self.get_reported_good_footage(obj))
+
+    def get_shift_report_count(self, obj):
+        return len(obj.shift_reports.all())
+
+    def get_active_material_count(self, obj):
+        return sum(1 for assignment in obj.material_assignments.all() if assignment.status == "active")
+
     class Meta:
         model = ProductionSchedule
         fields = "__all__"
+
+
+class ProductionMaterialAssignmentSerializer(serializers.ModelSerializer):
+    inventory_serial = serializers.CharField(source="inventory.serial_number", read_only=True)
+    inventory_lot = serializers.CharField(source="inventory.lot_number", read_only=True)
+    inventory_name = serializers.CharField(source="inventory.name", read_only=True)
+    inventory_code = serializers.CharField(source="inventory.code", read_only=True)
+    inventory_width_inches = serializers.DecimalField(source="inventory.width_inches", max_digits=8, decimal_places=3, read_only=True)
+    inventory_length_feet = serializers.DecimalField(source="inventory.length_feet", max_digits=12, decimal_places=2, read_only=True)
+    inventory_quantity = serializers.DecimalField(source="inventory.quantity", max_digits=12, decimal_places=3, read_only=True)
+    inventory_status = serializers.CharField(source="inventory.status", read_only=True)
+    inventory_location = serializers.CharField(source="inventory.location.full_path", read_only=True)
+    supplier_name = serializers.CharField(source="inventory.supplier.name", read_only=True)
+    material_name = serializers.CharField(source="inventory.material.name", read_only=True)
+    material_code = serializers.CharField(source="inventory.material.code", read_only=True)
+    material_master_type = serializers.IntegerField(source="inventory.material.master_type_id", read_only=True)
+    material_master_type_code = serializers.CharField(source="inventory.material.master_type.code", read_only=True)
+    source_roll_tag = serializers.CharField(source="inventory.source_roll_tag.tag_number", read_only=True)
+    job_ticket = serializers.IntegerField(source="production_schedule.job_ticket_id", read_only=True)
+    job_ticket_number = serializers.CharField(source="production_schedule.job_ticket.ticket_number", read_only=True)
+    job_name = serializers.CharField(source="production_schedule.job_ticket.job_name", read_only=True)
+    used_footage = serializers.SerializerMethodField()
+
+    def get_used_footage(self, obj):
+        annotated = getattr(obj, "used_footage_total", None)
+        if annotated is not None:
+            return annotated
+        return obj.production_schedule.material_usage_records.filter(
+            inventory_id=obj.inventory_id,
+            usage_type__in=["finished", "scrap"],
+        ).aggregate(total=models.Sum("quantity"))["total"] or 0
+
+    def validate(self, attrs):
+        schedule = attrs.get("production_schedule") or getattr(self.instance, "production_schedule", None)
+        inventory = attrs.get("inventory") or getattr(self.instance, "inventory", None)
+        source_type = attrs.get("source_type") or getattr(self.instance, "source_type", "")
+        carton_lot_code = attrs.get("carton_lot_code", getattr(self.instance, "carton_lot_code", ""))
+        if schedule and inventory:
+            ticket = schedule.job_ticket
+            required_master = ticket.material_master_type_id or (
+                ticket.material_spec.master_type_id if ticket.material_spec_id and ticket.material_spec else None
+            )
+            actual_master = inventory.material.master_type_id if inventory.material_id and inventory.material else None
+            if required_master and actual_master != required_master:
+                raise serializers.ValidationError({"inventory": "This roll is not the material type required by this job."})
+            if inventory.material_type != "coated_stock":
+                raise serializers.ValidationError({"inventory": "Select a finished coated-material roll."})
+            if inventory.status in ["depleted", "scrapped", "on_hold"] or not inventory.is_active:
+                raise serializers.ValidationError({"inventory": "This roll is not active production inventory."})
+        if source_type == "tsm" and inventory and not inventory.source_roll_tag_id:
+            raise serializers.ValidationError({"inventory": "This is not a Tri-State produced roll. Use Purchased Roll."})
+        if source_type == "outsourced" and not str(carton_lot_code or "").isdigit():
+            raise serializers.ValidationError({"carton_lot_code": "Enter the 5-digit lot number stamped on the cartons."})
+        if source_type == "outsourced" and len(str(carton_lot_code or "")) != 5:
+            raise serializers.ValidationError({"carton_lot_code": "The carton lot number must be exactly 5 digits."})
+        return attrs
+
+    class Meta:
+        model = ProductionMaterialAssignment
+        fields = "__all__"
+
+
+class ProductionShiftSettingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductionShiftSetting
+        fields = "__all__"
+
+
+class ProductionShiftReportSerializer(serializers.ModelSerializer):
+    job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
+    job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
+    customer_name = serializers.SerializerMethodField()
+    press_name = serializers.CharField(source="press.name", read_only=True)
+    waste_footage = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    def get_customer_name(self, obj):
+        if obj.production_schedule.customer:
+            return obj.production_schedule.customer.name
+        if obj.job_ticket.customer:
+            return obj.job_ticket.customer.name
+        return obj.job_ticket.customer_name
+
+    def validate(self, attrs):
+        total = attrs.get("total_footage", getattr(self.instance, "total_footage", 0))
+        good = attrs.get("good_footage", getattr(self.instance, "good_footage", 0))
+        start = attrs.get("shift_start", getattr(self.instance, "shift_start", None))
+        end = attrs.get("shift_end", getattr(self.instance, "shift_end", None))
+        if total < 0 or good < 0:
+            raise serializers.ValidationError("Footage cannot be negative.")
+        if good > total:
+            raise serializers.ValidationError({"good_footage": "Good footage cannot be greater than total footage."})
+        if start and end and end <= start:
+            raise serializers.ValidationError({"shift_end": "Shift end must be after shift start."})
+        return attrs
+
+    class Meta:
+        model = ProductionShiftReport
+        fields = "__all__"
+        read_only_fields = ["job_ticket"]
 
 
 class CustomerOrderSerializer(serializers.ModelSerializer):

@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   CalendarPlus,
   CheckCircle2,
   Factory,
@@ -741,6 +742,21 @@ export const resources = [
   },
 
   {
+    key: "footage-reports",
+    label: "Footage Reports",
+    singular: "Footage Report",
+    group: "production",
+    icon: BarChart3,
+    accent: "#15803d",
+    staticView: true,
+    viewMode: "footageReports",
+    disableCreate: true,
+    tagline: "Search operator shift reports and compare production footage by press and operator.",
+    columns: [],
+    fields: [],
+  },
+
+  {
     key: "coater-operator",
     label: "Coater Operator",
     singular: "Coater Operator",
@@ -1058,6 +1074,7 @@ export const resources = [
       },
       { name: "press_sequence", label: "Press Order #", type: "number", step: "1" },
       { name: "operator", label: "Operator", type: "text" },
+      { name: "target_footage", label: "Planned Footage", type: "number", step: "0.01", helpText: "Used for operator progress and shift handoff." },
       { name: "actual_footage", label: "Actual Footage", type: "number", step: "0.01" },
       { name: "footage_report", label: "Footage Report", type: "textarea" },
       { name: "notes", label: "Operator Note", type: "textarea" },
