@@ -128,10 +128,6 @@ function defaultSupplierSelection(tag, finishedMaterial, slot, supplierOptions, 
   return { supplierId: option.id, materialId: matchingMaterial?.id || materialIds[0] || "" };
 }
 
-function generatedLot(tag) {
-  return [tag?.tag_number, today().replaceAll("-", "")].filter(Boolean).join("-");
-}
-
 function printerSettingsFor(press) {
   return {
     printer_ip: press?.printer_ip || "",
@@ -166,9 +162,9 @@ function defaultRollForm(tag, data, currentUser) {
     silicone: defaultComponentId(material, tag, componentSlots[3]),
     coating: defaultComponentId(material, tag, componentSlots[4]),
     width_inches: tag?.width_inches || "",
-    length_feet: tag?.length_feet || "",
+    length_feet: tag?.is_schedule ? "" : (tag?.length_feet || ""),
     weight_lbs: tag?.weight_lbs || "",
-    result_lot_number: tag?.result_lot_number || "",
+    result_lot_number: tag?.is_schedule ? "" : (tag?.result_lot_number || ""),
     location,
     operator_notes: tag?.operator_notes || "",
     operator: currentUser?.name || tag?.operator || "",
@@ -182,7 +178,7 @@ function defaultRollForm(tag, data, currentUser) {
     form[slot.key] = selection.materialId || form[slot.key];
     form[slot.supplierKey] = selection.supplierId;
   });
-  return { ...form, result_lot_number: form.result_lot_number || generatedLot(tag) };
+  return form;
 }
 
 function validateRollForm(form, data = {}) {
@@ -193,7 +189,6 @@ function validateRollForm(form, data = {}) {
     if (!form[slot.supplierKey]) missing.push(`${slot.label} supplier`);
   });
   if (!numberOrNull(form.length_feet) || numberOrNull(form.length_feet) <= 0) missing.push("Run feet");
-  if (!form.result_lot_number) missing.push("Lot number");
   if (form.print_roll_tag && !form.printer_press) {
     missing.push("Roll tag printer");
   } else if (form.print_roll_tag && !String(form.printer_ip || "").trim()) {
@@ -222,10 +217,14 @@ function MaterialJobCard({ tag, selected, onSelect }) {
         <span>{tag.tag_number || "Scheduled Run"}</span>
         <strong>{tag.scheduled_material_name || tag.name}</strong>
       </div>
-      <em>{[tag.press_name || "No press", tag.cut_description || "No cutting notes"].filter(Boolean).join(" / ")}</em>
+      <em>{[
+        tag.press_name || "No press",
+        tag.cut_description || "No cutting notes",
+        tag.length_feet ? `Target ${qty(tag.length_feet, " ft")}` : "",
+      ].filter(Boolean).join(" / ")}</em>
       <footer>
         <span>{labelize(tag.status)}</span>
-        <strong>{tag.length_feet ? qty(tag.length_feet, " ft") : "--"}</strong>
+        <strong>{tag.schedule_roll_count || 0} roll{Number(tag.schedule_roll_count || 0) === 1 ? "" : "s"}</strong>
       </footer>
     </button>
   );
@@ -299,7 +298,7 @@ function ComponentPicker({ slot, form, setForm, materials, supplierOptions, allo
   );
 }
 
-function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
+function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, onSave }) {
   const [form, setForm] = useState(() => defaultRollForm(tag, data, currentUser));
   const [printerSettingsOpen, setPrinterSettingsOpen] = useState(false);
   const missing = validateRollForm(form, data);
@@ -309,6 +308,11 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
   useEffect(() => {
     setForm(defaultRollForm(tag, data, currentUser));
   }, [tag?.id]);
+
+  useEffect(() => {
+    if (!createdRollId) return;
+    setForm((current) => ({ ...current, result_lot_number: "" }));
+  }, [createdRollId]);
 
   function update(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -373,8 +377,8 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
           <input type="number" step="0.01" value={form.weight_lbs} onChange={(event) => update("weight_lbs", event.target.value)} />
         </label>
         <label>
-          <span>Lot Number</span>
-          <input value={form.result_lot_number} onChange={(event) => update("result_lot_number", event.target.value)} required />
+          <span>Roll Lot Number</span>
+          <input value={form.result_lot_number} onChange={(event) => update("result_lot_number", event.target.value)} placeholder="Automatic if left blank" />
         </label>
         <label>
           <span>Plant Location</span>
@@ -424,17 +428,6 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
                 ))}
               </select>
             </label>
-            <label>
-              <span>Copies</span>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                step="1"
-                value={form.print_copies}
-                onChange={(event) => update("print_copies", event.target.value)}
-              />
-            </label>
             <div className={`coater-printer-ready ${form.printer_ip ? "ready" : "needs-setup"}`}>
               <Printer size={16} />
               <span>
@@ -481,7 +474,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
       <div className="coater-roll-actions">
         <button className="primary-btn" type="submit" disabled={saving || missing.length > 0}>
           {form.print_roll_tag ? <Printer size={16} /> : <CheckCircle2 size={16} />}
-          {saving ? "Creating..." : form.print_roll_tag ? "Create & Print Roll Tag" : "Create Roll Tag"}
+          {saving ? "Creating Roll..." : form.print_roll_tag ? "Create & Print New Roll" : "Create New Roll"}
         </button>
       </div>
     </form>
@@ -521,7 +514,7 @@ function ProductJobCard({ row, form, setForm, updating, onStart, onComplete }) {
   );
 }
 
-function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
+function RollTagDetailDialog({ tag, schedule, relatedRolls = [], inventoryRows = [], data, currentUser, onClose, onOpenRoll, onSaved }) {
   const tagPress = (data.presses ?? []).find((press) => sameId(press.id, tag.press));
   const [form, setForm] = useState(() => ({
     result_lot_number: tag.result_lot_number || "",
@@ -657,7 +650,7 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
           <div>
             <p className="eyebrow">Material Roll Tag</p>
             <h2>{tag.tag_number}</h2>
-            <span>{tag.result_code || tag.produced_material_name || tag.scheduled_material_name || tag.name}</span>
+            <span>{tag.result_code || tag.produced_material_name || tag.scheduled_material_name || tag.name} / Schedule {tag.schedule_tag_number || schedule?.tag_number || "--"}</span>
           </div>
           <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
         </header>
@@ -666,8 +659,8 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
           <section className="roll-tag-link-summary">
             <div><span>Status</span><strong>{labelize(tag.status)}</strong></div>
             <div><span>Print Status</span><strong>{labelize(tag.print_status)}</strong></div>
-            <div><span>Created</span><strong>{shortDate(tag.created_at)}</strong></div>
-            <div><span>Material</span><strong>{tag.result_code || tag.name}</strong></div>
+            <div><span>Schedule ID</span><strong>{tag.schedule_tag_number || schedule?.tag_number || "--"}</strong></div>
+            <div><span>Schedule Rolls</span><strong>{relatedRolls.length.toLocaleString()}</strong></div>
           </section>
 
           <section className="roll-tag-link-components">
@@ -719,6 +712,51 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
               <span>Operator Notes</span>
               <textarea value={form.operator_notes} onChange={(event) => update("operator_notes", event.target.value)} rows={2} />
             </label>
+          </section>
+
+          <section className="roll-tag-family">
+            <header>
+              <div>
+                <span>Related Rolls</span>
+                <strong>{schedule?.name || tag.name}</strong>
+              </div>
+              <b>{relatedRolls.length} produced</b>
+            </header>
+            <div className="roll-tag-family-list">
+              {relatedRolls.map((roll) => (
+                <button className={sameId(roll.id, tag.id) ? "active" : ""} type="button" key={roll.id} onClick={() => onOpenRoll?.(roll.id)}>
+                  <span>{roll.tag_number}</span>
+                  <strong>{roll.result_lot_number || "--"}</strong>
+                  <small>{[roll.width_inches ? `${roll.width_inches}"` : "", roll.length_feet ? `${qty(roll.length_feet)} ft` : "", shortDate(roll.run_date)].filter(Boolean).join(" / ")}</small>
+                </button>
+              ))}
+              {!relatedRolls.length && <p>No rolls have been created from this schedule yet.</p>}
+            </div>
+          </section>
+
+          <section className="roll-tag-inventory">
+            <header>
+              <div>
+                <span>Material Inventory</span>
+                <strong>{tag.result_code || tag.produced_material_name || tag.name}</strong>
+              </div>
+              <b>{inventoryRows.length} on record</b>
+            </header>
+            <div className="roll-tag-inventory-list">
+              {inventoryRows.map((inventory) => (
+                <article className={sameId(inventory.source_roll_tag, tag.id) ? "current" : ""} key={inventory.id}>
+                  <div>
+                    <strong>{inventory.serial_number || inventory.code || inventory.name}</strong>
+                    <span>{inventory.lot_number || "No lot number"}</span>
+                  </div>
+                  <span>{inventory.width_inches ? `${inventory.width_inches}" wide` : "Width --"}</span>
+                  <span>{inventory.length_feet ? `${qty(inventory.length_feet)} ft` : `${qty(inventory.quantity)} ${inventory.unit || ""}`}</span>
+                  <span>{inventory.location_full_path || inventory.location_name || "No location"}</span>
+                  <b>{labelize(inventory.status)}</b>
+                </article>
+              ))}
+              {!inventoryRows.length && <p>No inventory records are linked to this material yet.</p>}
+            </div>
           </section>
 
           <section className="roll-tag-link-printer">
@@ -785,23 +823,25 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
   );
 }
 
-export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", onLinkedRollTagClose }) {
+export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", onLinkedRollTagChange, onLinkedRollTagClose }) {
   const queryClient = useQueryClient();
   const [selectedPress, setSelectedPress] = useState("all");
   const [selectedTagId, setSelectedTagId] = useState("");
   const [productForms, setProductForms] = useState({});
   const [rollTagNotice, setRollTagNotice] = useState("");
+  const [lastCreatedRollId, setLastCreatedRollId] = useState("");
 
   const dataQuery = useQuery({
     queryKey: ["coater-operator-data"],
     queryFn: async () => {
-      const [tags, schedule, materials, supplierOptions, presses, locations] = await Promise.all([
+      const [tags, schedule, materials, supplierOptions, presses, locations, rawMaterials] = await Promise.all([
         fetchCollection("coater-roll-tags", { ordering: "-run_date,tag_number", pageSize: 500, fetchAll: true }),
         fetchCollection("production-schedule", { ordering: "scheduled_date,press_sequence", pageSize: 500, fetchAll: true }),
         fetchCollection("materials", { ordering: "material_type,name", pageSize: 500, fetchAll: true }),
         fetchCollection("material-supplier-options", { ordering: "material__material_type,material__name,supplier_name", pageSize: 1000, fetchAll: true }),
         fetchCollection("presses", { ordering: "name", pageSize: 250, fetchAll: true }),
         fetchCollection("locations", { ordering: "name", pageSize: 500, fetchAll: true }),
+        fetchCollection("raw-materials", { ordering: "-received_date,-id", filters: { material_type: "coated_stock" }, pageSize: 1000, fetchAll: true }),
       ]);
       return {
         tags: tags.results ?? [],
@@ -810,13 +850,14 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         supplierOptions: supplierOptions.results ?? [],
         presses: presses.results ?? [],
         locations: locations.results ?? [],
+        rawMaterials: rawMaterials.results ?? [],
       };
     },
     staleTime: 20_000,
     refetchInterval: 60_000,
   });
 
-  const data = dataQuery.data ?? { tags: [], schedule: [], materials: [], supplierOptions: [], presses: [], locations: [] };
+  const data = dataQuery.data ?? { tags: [], schedule: [], materials: [], supplierOptions: [], presses: [], locations: [], rawMaterials: [] };
   const operatorName = currentUser?.name || "";
   const preferredPresses = useMemo(() => {
     const coater = data.presses.filter(isCoaterPress);
@@ -824,6 +865,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
   }, [data.presses]);
 
   const materialJobs = useMemo(() => data.tags
+    .filter((tag) => !tag.source_schedule)
     .filter((tag) => activeMaterialStatuses.has(tag.status))
     .filter((tag) => selectedPress === "all" || sameId(tag.press, selectedPress))
     .sort((a, b) => String(a.run_date || "").localeCompare(String(b.run_date || "")) || String(a.tag_number || "").localeCompare(String(b.tag_number || ""))),
@@ -839,10 +881,35 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
     if (selectedTagId) return materialJobs.find((tag) => sameId(tag.id, selectedTagId)) ?? materialJobs[0] ?? null;
     return materialJobs[0] ?? null;
   }, [materialJobs, selectedTagId]);
+  const selectedScheduleRolls = useMemo(() => {
+    if (!selectedTag) return [];
+    return data.tags
+      .filter((tag) => sameId(tag.source_schedule, selectedTag.id) && tag.status !== "void")
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  }, [data.tags, selectedTag]);
   const linkedRollTag = useMemo(
     () => data.tags.find((tag) => sameId(tag.id, linkedRollTagId)) ?? null,
     [data.tags, linkedRollTagId]
   );
+  const linkedSchedule = useMemo(() => {
+    if (!linkedRollTag) return null;
+    const scheduleId = linkedRollTag.source_schedule || linkedRollTag.id;
+    return data.tags.find((tag) => sameId(tag.id, scheduleId)) ?? null;
+  }, [data.tags, linkedRollTag]);
+  const linkedScheduleRolls = useMemo(() => {
+    if (!linkedSchedule) return [];
+    return data.tags
+      .filter((tag) => sameId(tag.source_schedule, linkedSchedule.id) && tag.status !== "void")
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  }, [data.tags, linkedSchedule]);
+  const linkedMaterialInventory = useMemo(() => {
+    if (!linkedRollTag) return [];
+    const materialId = linkedRollTag.produced_material || linkedRollTag.scheduled_material || linkedSchedule?.produced_material || linkedSchedule?.scheduled_material;
+    const rollIds = new Set(linkedScheduleRolls.map((roll) => String(roll.id)));
+    return data.rawMaterials
+      .filter((inventory) => sameId(inventory.material, materialId) || rollIds.has(String(inventory.source_roll_tag || "")))
+      .sort((a, b) => Number(b.status === "available") - Number(a.status === "available") || String(b.received_date || "").localeCompare(String(a.received_date || "")));
+  }, [data.rawMaterials, linkedRollTag, linkedSchedule, linkedScheduleRolls]);
 
   useEffect(() => {
     if (!selectedTag?.id) {
@@ -854,14 +921,11 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
     }
   }, [materialJobs, selectedTag?.id, selectedTagId]);
 
-  const completeTagMutation = useMutation({
+  const createRollMutation = useMutation({
     mutationFn: async ({ tag, form }) => {
       const missing = validateRollForm(form, data);
       if (missing.length) throw new Error(`Missing: ${missing.join(", ")}`);
-      const material = data.materials.find((row) => sameId(row.id, tag.scheduled_material || tag.produced_material));
-      const saved = await updateRecord("coater-roll-tags", tag.id, {
-        status: "complete",
-        print_status: tag.print_status === "printed" ? "printed" : "not_printed",
+      const saved = await postRecordAction("coater-roll-tags", tag.id, "create-roll", {
         liner: numberOrNull(form.liner),
         face: numberOrNull(form.face),
         adhesive: numberOrNull(form.adhesive),
@@ -872,22 +936,13 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         adhesive_supplier_option: numberOrNull(form.adhesive_supplier_option),
         silicone_supplier_option: numberOrNull(form.silicone_supplier_option),
         coating_supplier_option: numberOrNull(form.coating_supplier_option),
-        liner_inventory: null,
-        face_inventory: null,
-        adhesive_inventory: null,
-        silicone_inventory: null,
-        coating_inventory: null,
-        produced_material: tag.produced_material || tag.scheduled_material || null,
-        result_code: tag.result_code || material?.code || "",
-        result_serial_number: tag.result_serial_number || tag.tag_number,
-        result_lot_number: form.result_lot_number,
+        result_lot_number: String(form.result_lot_number || "").trim(),
         width_inches: numberOrNull(form.width_inches),
         length_feet: numberOrNull(form.length_feet),
         weight_lbs: numberOrNull(form.weight_lbs),
         operator: form.operator || operatorName,
         run_date: today(),
         location: numberOrNull(form.location),
-        log_inventory: true,
         operator_notes: form.operator_notes || tag.operator_notes || "",
         notes: noteBlock(tag, form, data.supplierOptions),
       });
@@ -896,7 +951,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
       try {
         const printResult = await postRecordAction("coater-roll-tags", saved.id, "queue-print-label", {
           press: numberOrNull(form.printer_press),
-          copies: numberOrNull(form.print_copies) || 1,
+          copies: 1,
           printer_ip: String(form.printer_ip || "").trim(),
           printer_port: numberOrNull(form.printer_port) || 9100,
           speed: String(form.printer_speed || 5),
@@ -912,16 +967,36 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
       }
     },
     onSuccess: ({ saved, printResult }) => {
-      setSelectedTagId(String(saved.id));
+      setSelectedTagId(String(saved.source_schedule || selectedTagId));
+      setLastCreatedRollId(String(saved.id));
       setRollTagNotice(
         printResult
-          ? `${saved.tag_number} created and queued to ${printResult.queueKey}.`
-          : `${saved.tag_number} created without printing.`
+          ? `${saved.tag_number} was added to inventory and queued to ${printResult.queueKey}. The schedule is still running.`
+          : `${saved.tag_number} was added to inventory. The schedule is still running.`
       );
       queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
+    },
+  });
+
+  const finishScheduleMutation = useMutation({
+    mutationFn: (schedule) => updateRecord("coater-roll-tags", schedule.id, {
+      status: "complete",
+      operator: operatorName || schedule.operator,
+    }),
+    onSuccess: (saved) => {
+      setRollTagNotice(`${saved.tag_number} was finished and removed from the active lineup.`);
+      setSelectedTagId("");
+      queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
     },
   });
@@ -1000,6 +1075,19 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
               <span><Factory size={14} /> Run Material</span>
               <strong>{selectedTag?.tag_number || "No run selected"}</strong>
             </div>
+            {selectedTag && (
+              <button
+                className="ghost-btn xs"
+                type="button"
+                disabled={createRollMutation.isPending || finishScheduleMutation.isPending}
+                onClick={() => {
+                  const message = `Finish ${selectedTag.tag_number}? It will leave the active lineup, but all ${selectedScheduleRolls.length} roll records will remain in inventory.`;
+                  if (window.confirm(message)) finishScheduleMutation.mutate(selectedTag);
+                }}
+              >
+                <CheckCircle2 size={14} /> {finishScheduleMutation.isPending ? "Finishing..." : "Finish Schedule"}
+              </button>
+            )}
           </header>
           {rollTagNotice && <div className="coater-print-success"><CheckCircle2 size={16} /><span>{rollTagNotice}</span></div>}
           {selectedTag ? (
@@ -1007,12 +1095,30 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
               tag={selectedTag}
               data={data}
               currentUser={currentUser}
-              saving={completeTagMutation.isPending}
-              error={completeTagMutation.error?.message}
-              onSave={(form) => { setRollTagNotice(""); completeTagMutation.mutate({ tag: selectedTag, form }); }}
+              saving={createRollMutation.isPending}
+              error={createRollMutation.error?.message}
+              createdRollId={lastCreatedRollId}
+              onSave={(form) => { setRollTagNotice(""); createRollMutation.mutate({ tag: selectedTag, form }); }}
             />
           ) : (
             <p className="coater-empty">Select a scheduled material run.</p>
+          )}
+          {selectedTag && (
+            <section className="coater-produced-rolls">
+              <header>
+                <div><span>Produced Rolls</span><strong>{selectedScheduleRolls.length} from this schedule</strong></div>
+              </header>
+              <div>
+                {selectedScheduleRolls.slice(0, 12).map((roll) => (
+                  <button type="button" key={roll.id} onClick={() => onLinkedRollTagChange?.(roll.id)}>
+                    <strong>{roll.tag_number}</strong>
+                    <span>{roll.result_lot_number}</span>
+                    <b>{roll.length_feet ? `${qty(roll.length_feet)} ft` : "--"}</b>
+                  </button>
+                ))}
+                {!selectedScheduleRolls.length && <p>Each new roll will appear here with its own ID.</p>}
+              </div>
+            </section>
           )}
         </section>
       </div>
@@ -1043,9 +1149,13 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
       {linkedRollTag && (
         <RollTagDetailDialog
           tag={linkedRollTag}
+          schedule={linkedSchedule}
+          relatedRolls={linkedScheduleRolls}
+          inventoryRows={linkedMaterialInventory}
           data={data}
           currentUser={currentUser}
           onClose={onLinkedRollTagClose}
+          onOpenRoll={onLinkedRollTagChange}
           onSaved={() => {
             queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
             queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });

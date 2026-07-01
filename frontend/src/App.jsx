@@ -2606,6 +2606,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           <CoaterOperatorView
             currentUser={currentUserForView}
             linkedRollTagId={linkedRollTagId}
+            onLinkedRollTagChange={(rollTagId) => {
+              setLinkedRollTagId(String(rollTagId));
+              const url = new URL(window.location.href);
+              url.searchParams.set("rollTagId", String(rollTagId));
+              window.history.replaceState({}, "", url);
+            }}
             onLinkedRollTagClose={() => {
               setLinkedRollTagId("");
               const url = new URL(window.location.href);

@@ -18525,7 +18525,7 @@ textarea {
 .coater-print-controls {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) minmax(80px, .28fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(190px, 1fr) minmax(260px, 1fr);
   gap: 9px;
   align-items: end;
   padding: 11px;
@@ -18669,7 +18669,7 @@ textarea {
 }
 
 .roll-tag-link-window {
-  width: min(1040px, calc(100vw - 20px));
+  width: min(1180px, calc(100vw - 20px));
   max-height: calc(100dvh - 20px);
   display: flex;
   flex-direction: column;
@@ -18812,6 +18812,176 @@ textarea {
 
 .roll-tag-link-edit textarea {
   resize: vertical;
+}
+
+.coater-produced-rolls,
+.roll-tag-family,
+.roll-tag-inventory {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dfe7ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.coater-produced-rolls > header,
+.roll-tag-family > header,
+.roll-tag-inventory > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coater-produced-rolls > header div,
+.roll-tag-family > header div,
+.roll-tag-inventory > header div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.coater-produced-rolls > header span,
+.roll-tag-family > header span,
+.roll-tag-inventory > header span {
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.coater-produced-rolls > header strong,
+.roll-tag-family > header strong,
+.roll-tag-inventory > header strong {
+  color: #0f172a;
+  font-size: .84rem;
+  font-weight: 950;
+}
+
+.roll-tag-family > header b,
+.roll-tag-inventory > header b {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: .65rem;
+  white-space: nowrap;
+}
+
+.coater-produced-rolls > div,
+.roll-tag-family-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.coater-produced-rolls > div button,
+.roll-tag-family-list button {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid #dfe7ef;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #334155;
+  text-align: left;
+}
+
+.coater-produced-rolls > div button:hover,
+.roll-tag-family-list button:hover,
+.roll-tag-family-list button.active {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
+.coater-produced-rolls button strong,
+.roll-tag-family-list button span {
+  color: #0f172a;
+  font-size: .76rem;
+  font-weight: 950;
+}
+
+.coater-produced-rolls button span,
+.roll-tag-family-list button strong,
+.roll-tag-family-list button small {
+  min-width: 0;
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.coater-produced-rolls button b {
+  color: #0f766e;
+  font-size: .68rem;
+}
+
+.coater-produced-rolls p,
+.roll-tag-family-list p,
+.roll-tag-inventory-list > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px;
+  color: #64748b;
+  font-size: .74rem;
+  text-align: center;
+}
+
+.roll-tag-inventory-list {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.roll-tag-inventory-list article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) 90px 110px minmax(180px, 1fr) 90px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.roll-tag-inventory-list article.current {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
+.roll-tag-inventory-list article > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.roll-tag-inventory-list article strong {
+  color: #0f172a;
+  font-size: .76rem;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-inventory-list article span {
+  min-width: 0;
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-inventory-list article > b {
+  justify-self: end;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: .62rem;
+  font-weight: 950;
 }
 
 .roll-tag-link-printer {
@@ -19005,6 +19175,35 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .coater-panel > header,
+  .coater-produced-rolls > header,
+  .roll-tag-family > header,
+  .roll-tag-inventory > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .coater-panel > header > button {
+    width: 100%;
+  }
+
+  .coater-produced-rolls > div,
+  .roll-tag-family-list {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .roll-tag-inventory-list article {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .roll-tag-inventory-list article > div {
+    grid-column: 1 / -1;
+  }
+
+  .roll-tag-inventory-list article > b {
+    justify-self: start;
+  }
+
   .roll-tag-link-edit label.wide {
     grid-column: auto;
   }
@@ -19025,6 +19224,18 @@ textarea {
 
   .coater-product-controls {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .coater-produced-rolls > div,
+  .roll-tag-family-list,
+  .roll-tag-inventory-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .roll-tag-inventory-list article > div {
+    grid-column: auto;
   }
 }
 

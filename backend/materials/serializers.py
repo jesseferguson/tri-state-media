@@ -190,10 +190,27 @@ class CoaterRollTagSerializer(serializers.ModelSerializer):
     press_name = serializers.CharField(source="press.name", read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
     logged_inventory_serial = serializers.CharField(source="logged_inventory.serial_number", read_only=True)
+    schedule_id = serializers.SerializerMethodField()
+    schedule_tag_number = serializers.SerializerMethodField()
+    schedule_roll_count = serializers.SerializerMethodField()
+    is_schedule = serializers.SerializerMethodField()
 
     class Meta:
         model = CoaterRollTag
         fields = "__all__"
+
+    def get_schedule_id(self, obj):
+        return obj.source_schedule_id or obj.pk
+
+    def get_schedule_tag_number(self, obj):
+        return obj.source_schedule.tag_number if obj.source_schedule_id else obj.tag_number
+
+    def get_schedule_roll_count(self, obj):
+        schedule = obj.source_schedule if obj.source_schedule_id else obj
+        return sum(1 for roll in schedule.produced_rolls.all() if roll.status != "void")
+
+    def get_is_schedule(self, obj):
+        return not obj.source_schedule_id and not obj.log_inventory
 
     @staticmethod
     def component_family_key(material):

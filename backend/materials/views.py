@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.db import transaction
+from django.db import transaction
 from django.db.models import DecimalField, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -418,11 +419,13 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "silicone_supplier_option__supplier",
             "coating_supplier_option__supplier",
             "produced_material",
+            "source_schedule",
             "press",
             "location",
             "logged_inventory",
         )
         .all()
+        .prefetch_related("produced_rolls", "source_schedule__produced_rolls")
         .order_by("-run_date", "tag_number")
     )
     serializer_class = CoaterRollTagSerializer
@@ -466,6 +469,68 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         "press__name",
         "operator",
     ]
+
+    @action(detail=True, methods=["post"], url_path="create-roll")
+    def create_roll(self, request, pk=None):
+        schedule = self.get_object()
+        if schedule.source_schedule_id or schedule.log_inventory:
+            return Response(
+                {"detail": "New rolls must be created from a coater schedule."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if schedule.status not in ["scheduled", "running", "on_hold"]:
+            return Response(
+                {"detail": "Reopen this schedule before creating another roll."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        def requested_id(key, fallback):
+            value = request.data.get(key)
+            return value if value not in [None, ""] else fallback
+
+        payload = {
+            "name": schedule.name,
+            "status": "complete",
+            "print_status": "not_printed",
+            "scheduled_by": schedule.scheduled_by,
+            "cut_description": schedule.cut_description,
+            "operator_notes": request.data.get("operator_notes", schedule.operator_notes),
+            "scheduled_material": schedule.scheduled_material_id,
+            "source_schedule": schedule.pk,
+            "liner": requested_id("liner", schedule.liner_id),
+            "face": requested_id("face", schedule.face_id),
+            "adhesive": requested_id("adhesive", schedule.adhesive_id),
+            "silicone": requested_id("silicone", schedule.silicone_id),
+            "coating": requested_id("coating", schedule.coating_id),
+            "liner_supplier_option": request.data.get("liner_supplier_option"),
+            "face_supplier_option": request.data.get("face_supplier_option"),
+            "adhesive_supplier_option": request.data.get("adhesive_supplier_option"),
+            "silicone_supplier_option": request.data.get("silicone_supplier_option"),
+            "coating_supplier_option": request.data.get("coating_supplier_option"),
+            "produced_material": schedule.produced_material_id or schedule.scheduled_material_id,
+            "result_code": schedule.result_code,
+            "width_inches": request.data.get("width_inches"),
+            "length_feet": request.data.get("length_feet"),
+            "weight_lbs": request.data.get("weight_lbs"),
+            "operator": request.data.get("operator", ""),
+            "run_date": request.data.get("run_date") or timezone.localdate().isoformat(),
+            "press": requested_id("press", schedule.press_id),
+            "location": request.data.get("location"),
+            "log_inventory": True,
+            "notes": request.data.get("notes", ""),
+        }
+        if request.data.get("result_lot_number"):
+            payload["result_lot_number"] = request.data["result_lot_number"]
+
+        serializer = self.get_serializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            roll = serializer.save()
+            if schedule.status != "running":
+                schedule.status = "running"
+                schedule.save(update_fields=["status", "updated_at"])
+
+        return Response(self.get_serializer(roll).data, status=status.HTTP_201_CREATED)
 
     @staticmethod
     def component_print_text(material, inventory=None, supplier_option=None):
@@ -558,6 +623,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "ID": tag.result_serial_number or tag.tag_number,
             "Roll Tag URL": roll_tag_url,
             "Roll Tag": tag.tag_number,
+            "Schedule ID": tag.source_schedule.tag_number if tag.source_schedule_id else tag.tag_number,
             "Queue Key": queue_key,
             "Queued By": _print_text(request.data, "performed_by", tag.operator),
             "Queued At": timezone.now().isoformat(),

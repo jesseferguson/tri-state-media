@@ -7,7 +7,7 @@ from django.urls import reverse
 
 from tooling.models import Press
 
-from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption
+from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, RawMaterialInventory
 
 
 class CoaterRollTagPrintQueueTests(TestCase):
@@ -147,7 +147,56 @@ class CoaterRollTagPrintQueueTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertTrue(response.json()["tag_number"].startswith("CRT-"))
+        self.assertTrue(response.json()["tag_number"].startswith("CRS-"))
         self.assertEqual(response.json()["result_lot_number"], f"LOT-{response.json()['tag_number']}")
         self.assertEqual(response.json()["press"], press.id)
         self.assertEqual(response.json()["cut_description"], "Cut 9/9")
+
+        schedule_id = response.json()["id"]
+        first_roll = self.client.post(
+            reverse("coater-roll-tag-create-roll", args=[schedule_id]),
+            {
+                "liner": liner.id,
+                "face": face.id,
+                "adhesive": adhesive.id,
+                "silicone": silicone.id,
+                "length_feet": 5000,
+                "width_inches": 13,
+                "operator": "ET Operator",
+                "press": press.id,
+                "notes": "First roll",
+            },
+            content_type="application/json",
+        )
+        second_roll = self.client.post(
+            reverse("coater-roll-tag-create-roll", args=[schedule_id]),
+            {
+                "liner": liner.id,
+                "face": face.id,
+                "adhesive": adhesive.id,
+                "silicone": silicone.id,
+                "length_feet": 5000,
+                "width_inches": 13,
+                "operator": "ET Operator",
+                "press": press.id,
+                "notes": "Second roll",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(first_roll.status_code, 201, first_roll.content)
+        self.assertEqual(second_roll.status_code, 201, second_roll.content)
+        self.assertTrue(first_roll.json()["tag_number"].startswith("CRT-"))
+        self.assertNotEqual(first_roll.json()["tag_number"], second_roll.json()["tag_number"])
+        self.assertEqual(first_roll.json()["source_schedule"], schedule_id)
+        self.assertEqual(first_roll.json()["schedule_id"], schedule_id)
+        self.assertEqual(first_roll.json()["schedule_tag_number"], response.json()["tag_number"])
+        self.assertEqual(first_roll.json()["status"], "complete")
+
+        schedule = CoaterRollTag.objects.get(pk=schedule_id)
+        self.assertEqual(schedule.status, "running")
+        self.assertEqual(schedule.produced_rolls.count(), 2)
+        self.assertFalse(schedule.logged_inventory_id)
+        first = CoaterRollTag.objects.get(pk=first_roll.json()["id"])
+        self.assertEqual(first.result_serial_number, first.tag_number)
+        self.assertTrue(RawMaterialInventory.objects.filter(source_roll_tag=first, status="available").exists())

@@ -461,6 +461,13 @@ class CoaterRollTag(models.Model):
         blank=True,
         related_name="scheduled_roll_tags",
     )
+    source_schedule = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="produced_rolls",
+    )
 
     liner = models.ForeignKey(
         MaterialSpec,
@@ -624,6 +631,7 @@ class CoaterRollTag(models.Model):
     def save(self, *args, **kwargs):
         needs_tag_number = not self.tag_number
         needs_lot_number = not self.result_lot_number
+        needs_serial_number = not self.result_serial_number
         if needs_tag_number and not self.pk:
             self.tag_number = f"PENDING-{uuid4().hex[:12].upper()}"
         if needs_lot_number:
@@ -632,10 +640,13 @@ class CoaterRollTag(models.Model):
         super().save(*args, **kwargs)
 
         if needs_tag_number:
-            self.tag_number = f"CRT-{self.pk:06d}"
+            prefix = "CRS" if not self.source_schedule_id and not self.log_inventory else "CRT"
+            self.tag_number = f"{prefix}-{self.pk:06d}"
             if needs_lot_number:
                 self.result_lot_number = f"LOT-{self.tag_number}"
-            super().save(update_fields=["tag_number", "result_lot_number", "updated_at"])
+            if needs_serial_number:
+                self.result_serial_number = self.tag_number
+            super().save(update_fields=["tag_number", "result_lot_number", "result_serial_number", "updated_at"])
 
         if not self.log_inventory or self.logged_inventory_id:
             self._log_component_usage()
