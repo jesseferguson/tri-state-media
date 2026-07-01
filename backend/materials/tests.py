@@ -7,7 +7,7 @@ from django.urls import reverse
 
 from tooling.models import Press
 
-from .models import CoaterRollTag, MaterialSpec, RawMaterialInventory
+from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption
 
 
 class CoaterRollTagPrintQueueTests(TestCase):
@@ -29,12 +29,13 @@ class CoaterRollTagPrintQueueTests(TestCase):
         adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-2417", name="2417 Adhesive", material_family="2417")
         silicone = MaterialSpec.objects.create(material_type="silicone", code="SIL-EASY", name="Easy Release", material_family="Easy Release")
         produced = MaterialSpec.objects.create(material_type="coated_stock", code="PM-2417-40", name="PM-2417-40")
-        face_roll = RawMaterialInventory.objects.create(
+        face_supplier = MaterialSupplierOption.objects.create(
             material=face,
-            lot_number="FACE-LOT",
-            serial_number="FACE-ROLL-1",
-            length_feet=5000,
-            quantity=5000,
+            supplier_name="Face Supply Co",
+            option_name="PM Face Stock",
+            supplier_item_number="FACE-100",
+            thickness_mil=Decimal("2.5"),
+            width_inches=Decimal("13"),
         )
         press = Press.objects.create(
             name="ETI",
@@ -52,7 +53,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
             liner=liner,
             adhesive=adhesive,
             silicone=silicone,
-            face_inventory=face_roll,
+            face_supplier_option=face_supplier,
             produced_material=produced,
             result_code="PM-2417-40",
             result_serial_number="CRT-TEST-1",
@@ -80,7 +81,8 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertEqual(body["Total Ship Stock"], 2)
         self.assertEqual(body["Part Number List Logic"], "PM-2417-40")
         self.assertIn("PM", body["Face"])
-        self.assertIn("FACE-LOT", body["Face"])
+        self.assertIn("Face Supply Co", body["Face"])
+        self.assertIn("FACE-100", body["Face"])
         self.assertEqual(body["Lot Number"], "LOT-2026-1")
         self.assertEqual(body["ID"], "CRT-TEST-1")
         self.assertIn("Easy Release", body["Note"])

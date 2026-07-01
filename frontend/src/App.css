@@ -18337,6 +18337,32 @@ textarea {
   gap: 8px;
 }
 
+.coater-required-family {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid #dce7ef;
+  border-left: 3px solid #0f766e;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.coater-required-family span {
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.coater-required-family strong {
+  color: #0f172a;
+  font-size: .8rem;
+  font-weight: 950;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .coater-supplier-options {
   display: grid;
   gap: 5px;
@@ -18359,6 +18385,11 @@ textarea {
   border: 1px solid #dcefe8;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.coater-supplier-option.selected {
+  border-color: rgba(15, 118, 110, .3);
+  background: #f0fdfa;
 }
 
 .coater-supplier-option strong {

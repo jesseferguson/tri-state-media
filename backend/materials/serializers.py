@@ -177,6 +177,16 @@ class CoaterRollTagSerializer(serializers.ModelSerializer):
     adhesive_inventory_serial = serializers.CharField(source="adhesive_inventory.serial_number", read_only=True)
     silicone_inventory_serial = serializers.CharField(source="silicone_inventory.serial_number", read_only=True)
     coating_inventory_serial = serializers.CharField(source="coating_inventory.serial_number", read_only=True)
+    liner_supplier_name = serializers.CharField(source="liner_supplier_option.supplier_name", read_only=True)
+    liner_supplier_item_number = serializers.CharField(source="liner_supplier_option.supplier_item_number", read_only=True)
+    face_supplier_name = serializers.CharField(source="face_supplier_option.supplier_name", read_only=True)
+    face_supplier_item_number = serializers.CharField(source="face_supplier_option.supplier_item_number", read_only=True)
+    adhesive_supplier_name = serializers.CharField(source="adhesive_supplier_option.supplier_name", read_only=True)
+    adhesive_supplier_item_number = serializers.CharField(source="adhesive_supplier_option.supplier_item_number", read_only=True)
+    silicone_supplier_name = serializers.CharField(source="silicone_supplier_option.supplier_name", read_only=True)
+    silicone_supplier_item_number = serializers.CharField(source="silicone_supplier_option.supplier_item_number", read_only=True)
+    coating_supplier_name = serializers.CharField(source="coating_supplier_option.supplier_name", read_only=True)
+    coating_supplier_item_number = serializers.CharField(source="coating_supplier_option.supplier_item_number", read_only=True)
     press_name = serializers.CharField(source="press.name", read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
     logged_inventory_serial = serializers.CharField(source="logged_inventory.serial_number", read_only=True)
@@ -184,3 +194,26 @@ class CoaterRollTagSerializer(serializers.ModelSerializer):
     class Meta:
         model = CoaterRollTag
         fields = "__all__"
+
+    @staticmethod
+    def component_family_key(material):
+        return str(material.material_family or material.name or material.code or "").strip().lower()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        errors = {}
+        for component_key in ["liner", "face", "adhesive", "silicone", "coating"]:
+            material = attrs.get(component_key, getattr(self.instance, component_key, None))
+            option_key = f"{component_key}_supplier_option"
+            option = attrs.get(option_key, getattr(self.instance, option_key, None))
+            same_family = (
+                option
+                and material
+                and option.material.material_type == material.material_type
+                and self.component_family_key(option.material) == self.component_family_key(material)
+            )
+            if option and material and option.material_id != material.id and not same_family:
+                errors[option_key] = [f"Select a supplier option linked to this {component_key} type."]
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs

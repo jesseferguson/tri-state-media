@@ -7,11 +7,11 @@ import { formatInches, getRecordTitle, labelize } from "../lib/format";
 const activeMaterialStatuses = new Set(["scheduled", "running", "on_hold"]);
 const activeProductStatuses = new Set(["scheduled", "ready", "running", "on_hold"]);
 const componentSlots = [
-  { key: "liner", preferredKey: "liner_material", label: "Liner", type: "liner", inventoryKey: "liner_inventory", allowedKey: "allowed_liner_materials" },
-  { key: "face", preferredKey: "face_material", label: "Face", type: "face", inventoryKey: "face_inventory", allowedKey: "allowed_face_materials" },
-  { key: "adhesive", preferredKey: "adhesive_material", label: "Adhesive", type: "adhesive", inventoryKey: "adhesive_inventory", allowedKey: "allowed_adhesive_materials" },
-  { key: "silicone", preferredKey: "silicone_material", label: "Silicone", type: "silicone", inventoryKey: "silicone_inventory", allowedKey: "allowed_silicone_materials" },
-  { key: "coating", preferredKey: "coating_material", label: "Coating", type: "coating", inventoryKey: "coating_inventory", allowedKey: "allowed_coating_materials", optional: true },
+  { key: "liner", preferredKey: "liner_material", label: "Liner", type: "liner", supplierKey: "liner_supplier_option", allowedKey: "allowed_liner_materials" },
+  { key: "face", preferredKey: "face_material", label: "Face", type: "face", supplierKey: "face_supplier_option", allowedKey: "allowed_face_materials" },
+  { key: "adhesive", preferredKey: "adhesive_material", label: "Adhesive", type: "adhesive", supplierKey: "adhesive_supplier_option", allowedKey: "allowed_adhesive_materials" },
+  { key: "silicone", preferredKey: "silicone_material", label: "Silicone", type: "silicone", supplierKey: "silicone_supplier_option", allowedKey: "allowed_silicone_materials" },
+  { key: "coating", preferredKey: "coating_material", label: "Coating", type: "coating", supplierKey: "coating_supplier_option", allowedKey: "allowed_coating_materials", optional: true },
 ];
 
 function sameId(a, b) {
@@ -47,20 +47,6 @@ function shortDate(value) {
   return date.toLocaleDateString();
 }
 
-function materialLabel(row) {
-  return [row?.name || row?.material_name, labelize(row?.material_type)].filter(Boolean).join(" - ") || "Select";
-}
-
-function inventoryLabel(row) {
-  return [
-    row.serial_number || row.source_roll_tag_number,
-    row.supplier_name,
-    row.lot_number ? `Lot ${row.lot_number}` : "",
-    row.width_inches ? `${formatInches(row.width_inches)} wide` : "",
-    row.length_feet || row.quantity ? `${qty(row.length_feet ?? row.quantity, " ft")}` : "",
-  ].filter(Boolean).join(" / ") || getRecordTitle(row);
-}
-
 function supplierOptionTitle(option) {
   return [
     option.supplier_name || option.supplier_lookup_name || "Supplier",
@@ -77,13 +63,11 @@ function supplierOptionMeta(option) {
   ].filter(Boolean).join(" / ");
 }
 
-function activeInventory(rows, materialType, materialId = "") {
-  return (rows ?? []).filter((row) => {
-    if (row.is_active === false || ["depleted", "scrapped", "in_use"].includes(row.status)) return false;
-    if (row.material_type !== materialType) return false;
-    if (materialId) return sameId(row.material, materialId);
-    return true;
-  });
+function supplierChoiceLabel(option) {
+  return [
+    option.material_family || option.material_name,
+    supplierOptionTitle(option),
+  ].filter(Boolean).join(" / ");
 }
 
 function allowedComponentIds(material, slot) {
@@ -106,26 +90,55 @@ function plantFloorLocation(locations) {
   return (locations ?? []).find((row) => /plant\s*floor/i.test(`${row.full_path || ""} ${row.name || ""}`)) ?? null;
 }
 
-function componentInventoryLots(form, inventoryRows) {
-  return componentSlots
-    .map((slot) => (inventoryRows ?? []).find((row) => sameId(row.id, form[slot.inventoryKey])))
-    .filter(Boolean)
-    .map((row) => row.lot_number || row.serial_number)
-    .filter(Boolean);
+function componentFamilyKey(row) {
+  return String(row?.material_family || row?.material_name || row?.name || row?.material_code || row?.code || "")
+    .trim()
+    .toLowerCase();
 }
 
-function generatedLot(tag, form, inventoryRows) {
-  const lots = componentInventoryLots(form, inventoryRows).slice(0, 3).join("-");
-  return [tag?.tag_number, lots || "LOT", today().replaceAll("-", "")].filter(Boolean).join("-");
+function supplierChoices(supplierOptions, materialId, materials = []) {
+  const active = (supplierOptions ?? []).filter((option) => option.is_active !== false);
+  const exact = active.filter((option) => sameId(option.material, materialId));
+  if (exact.length) {
+    return exact.sort((a, b) => supplierOptionTitle(a).localeCompare(supplierOptionTitle(b), undefined, { numeric: true }));
+  }
+  const material = (materials ?? []).find((row) => sameId(row.id, materialId));
+  const family = componentFamilyKey(material);
+  if (!family) return [];
+  return active
+    .filter((option) => option.material_type === material?.material_type && componentFamilyKey(option) === family)
+    .sort((a, b) => supplierOptionTitle(a).localeCompare(supplierOptionTitle(b), undefined, { numeric: true }));
 }
 
-function noteBlock(tag, form, inventoryRows) {
+function defaultSupplierSelection(tag, finishedMaterial, slot, supplierOptions, materials) {
+  if (tag?.[slot.supplierKey]) {
+    return { supplierId: tag[slot.supplierKey], materialId: tag[slot.key] || "" };
+  }
+  const materialIds = allowedComponentIds(finishedMaterial, slot);
+  const options = new Map();
+  materialIds.forEach((materialId) => {
+    supplierChoices(supplierOptions, materialId, materials).forEach((option) => options.set(String(option.id), option));
+  });
+  if (options.size !== 1) return { supplierId: "", materialId: materialIds[0] || "" };
+  const option = Array.from(options.values())[0];
+  const matchingMaterial = (materials ?? []).find((row) => (
+    materialIds.some((id) => sameId(id, row.id))
+    && (sameId(row.id, option.material) || componentFamilyKey(row) === componentFamilyKey(option))
+  ));
+  return { supplierId: option.id, materialId: matchingMaterial?.id || materialIds[0] || "" };
+}
+
+function generatedLot(tag) {
+  return [tag?.tag_number, today().replaceAll("-", "")].filter(Boolean).join("-");
+}
+
+function noteBlock(tag, form, supplierOptions) {
   const lines = [
     tag.cut_description ? `Cutting Notes: ${tag.cut_description}` : "",
     form.operator_notes ? `Operator Notes: ${form.operator_notes}` : "",
     ...componentSlots.map((slot) => {
-      const inv = (inventoryRows ?? []).find((row) => sameId(row.id, form[slot.inventoryKey]));
-      return inv ? `${slot.label}: ${inventoryLabel(inv)}` : "";
+      const option = (supplierOptions ?? []).find((row) => sameId(row.id, form[slot.supplierKey]));
+      return option ? `${slot.label} Supplier: ${supplierOptionTitle(option)}${supplierOptionMeta(option) ? ` / ${supplierOptionMeta(option)}` : ""}` : "";
     }),
   ];
   return lines.filter(Boolean).join("\n");
@@ -143,11 +156,6 @@ function defaultRollForm(tag, data, currentUser) {
     adhesive: defaultComponentId(material, tag, componentSlots[2]),
     silicone: defaultComponentId(material, tag, componentSlots[3]),
     coating: defaultComponentId(material, tag, componentSlots[4]),
-    liner_inventory: tag?.liner_inventory || "",
-    face_inventory: tag?.face_inventory || "",
-    adhesive_inventory: tag?.adhesive_inventory || "",
-    silicone_inventory: tag?.silicone_inventory || "",
-    coating_inventory: tag?.coating_inventory || "",
     width_inches: tag?.width_inches || "",
     length_feet: tag?.length_feet || "",
     weight_lbs: tag?.weight_lbs || "",
@@ -159,7 +167,12 @@ function defaultRollForm(tag, data, currentUser) {
     printer_press: printerPress?.id ? String(printerPress.id) : "",
     print_copies: "1",
   };
-  return { ...form, result_lot_number: form.result_lot_number || generatedLot(tag, form, data.inventory) };
+  componentSlots.forEach((slot) => {
+    const selection = defaultSupplierSelection(tag, material, slot, data.supplierOptions, data.materials);
+    form[slot.key] = selection.materialId || form[slot.key];
+    form[slot.supplierKey] = selection.supplierId;
+  });
+  return { ...form, result_lot_number: form.result_lot_number || generatedLot(tag) };
 }
 
 function validateRollForm(form, data = {}) {
@@ -167,7 +180,7 @@ function validateRollForm(form, data = {}) {
   componentSlots.forEach((slot) => {
     if (slot.optional) return;
     if (!form[slot.key]) missing.push(`${slot.label} type`);
-    if (!form[slot.inventoryKey]) missing.push(`${slot.label} roll`);
+    if (!form[slot.supplierKey]) missing.push(`${slot.label} supplier`);
   });
   if (!numberOrNull(form.length_feet) || numberOrNull(form.length_feet) <= 0) missing.push("Run feet");
   if (!form.result_lot_number) missing.push("Lot number");
@@ -209,28 +222,33 @@ function MaterialJobCard({ tag, selected, onSelect }) {
   );
 }
 
-function ComponentPicker({ slot, form, setForm, materials, inventory, supplierOptions, allowedIds = [] }) {
-  const materialOptions = materials.filter((row) => {
-    if (row.material_type !== slot.type || row.is_active === false) return false;
-    if (!allowedIds.length) return true;
-    return allowedIds.some((id) => sameId(id, row.id));
+function ComponentPicker({ slot, form, setForm, materials, supplierOptions, allowedIds = [] }) {
+  const materialOptions = materials.filter((row) => (
+    row.material_type === slot.type
+    && row.is_active !== false
+    && (allowedIds.some((id) => sameId(id, row.id)) || sameId(row.id, form[slot.key]))
+  ));
+  const supplierMap = new Map();
+  materialOptions.forEach((material) => {
+    supplierChoices(supplierOptions, material.id, materials).forEach((option) => supplierMap.set(String(option.id), option));
   });
-  const inventoryOptions = activeInventory(inventory, slot.type, form[slot.key]);
-  const selectedSupplierOptions = (supplierOptions ?? [])
-    .filter((option) => option.is_active !== false && sameId(option.material, form[slot.key]))
-    .sort((a, b) => String(a.supplier_name || a.supplier_lookup_name || "").localeCompare(String(b.supplier_name || b.supplier_lookup_name || "")));
-  const visibleSupplierOptions = selectedSupplierOptions.slice(0, 3);
+  const selectedSupplierOptions = Array.from(supplierMap.values())
+    .sort((a, b) => supplierChoiceLabel(a).localeCompare(supplierChoiceLabel(b), undefined, { numeric: true }));
+  const selectedSupplier = selectedSupplierOptions.find((option) => sameId(option.id, form[slot.supplierKey]));
+  const familyLabels = materialOptions
+    .map((row) => row.material_family || row.name || row.code)
+    .filter((value, index, values) => value && values.indexOf(value) === index);
 
-  function updateMaterial(value) {
-    setForm((prev) => ({ ...prev, [slot.key]: value, [slot.inventoryKey]: "" }));
-  }
-
-  function updateInventory(value) {
-    const selectedInventory = inventory.find((row) => sameId(row.id, value));
+  function updateSupplier(value) {
+    const option = selectedSupplierOptions.find((row) => sameId(row.id, value));
+    const matchingMaterial = option
+      ? materialOptions.find((row) => sameId(row.id, option.material))
+        || materialOptions.find((row) => componentFamilyKey(row) === componentFamilyKey(option))
+      : null;
     setForm((prev) => ({
       ...prev,
-      [slot.inventoryKey]: value,
-      [slot.key]: selectedInventory?.material || prev[slot.key],
+      [slot.key]: matchingMaterial?.id || prev[slot.key] || "",
+      [slot.supplierKey]: value,
     }));
   }
 
@@ -240,41 +258,31 @@ function ComponentPicker({ slot, form, setForm, materials, inventory, supplierOp
         <strong>{slot.label}</strong>
         {slot.optional && <span>Optional</span>}
       </header>
+      <div className="coater-required-family">
+        <span>Compatible Type</span>
+        <strong>{familyLabels.join(" / ") || "Not configured"}</strong>
+      </div>
       <label>
-        <span>{slot.label} Type</span>
-        <select value={form[slot.key] || ""} onChange={(event) => updateMaterial(event.target.value)} required={!slot.optional}>
-          <option value="">Select type</option>
-          {materialOptions.map((row) => (
-            <option value={row.id} key={row.id}>{materialLabel(row)}</option>
+        <span>{slot.label} Supplier</span>
+        <select value={form[slot.supplierKey] || ""} onChange={(event) => updateSupplier(event.target.value)} required={!slot.optional}>
+          <option value="">{selectedSupplierOptions.length ? "Select supplier material" : "No suppliers linked"}</option>
+          {selectedSupplierOptions.map((option) => (
+            <option value={option.id} key={option.id}>{supplierChoiceLabel(option)}</option>
           ))}
         </select>
       </label>
-      <label>
-        <span>{slot.label} Roll</span>
-        <select value={form[slot.inventoryKey] || ""} onChange={(event) => updateInventory(event.target.value)} required={!slot.optional}>
-          <option value="">Select roll</option>
-          {inventoryOptions.map((row) => (
-            <option value={row.id} key={row.id}>{inventoryLabel(row)}</option>
-          ))}
-        </select>
-      </label>
-      {form[slot.key] && (
+      {materialOptions.length > 0 && (
         <div className="coater-supplier-options">
-          <span>Supplier Options</span>
-          {visibleSupplierOptions.length ? (
-            <>
-              {visibleSupplierOptions.map((option) => (
-                <div key={option.id} className="coater-supplier-option">
-                  <strong>{supplierOptionTitle(option)}</strong>
-                  {supplierOptionMeta(option) && <em>{supplierOptionMeta(option)}</em>}
-                </div>
-              ))}
-              {selectedSupplierOptions.length > visibleSupplierOptions.length && (
-                <small>+{selectedSupplierOptions.length - visibleSupplierOptions.length} more</small>
-              )}
-            </>
+          <span>Compatible Supplier Material</span>
+          {selectedSupplier ? (
+            <div className="coater-supplier-option selected">
+              <strong>{supplierOptionTitle(selectedSupplier)}</strong>
+              {supplierOptionMeta(selectedSupplier) && <em>{supplierOptionMeta(selectedSupplier)}</em>}
+            </div>
+          ) : selectedSupplierOptions.length ? (
+            <em>{selectedSupplierOptions.length} compatible option{selectedSupplierOptions.length === 1 ? "" : "s"} available</em>
           ) : (
-            <em>No supplier options saved</em>
+            <em>No suppliers are linked to this {slot.label.toLowerCase()} type.</em>
           )}
         </div>
       )}
@@ -322,7 +330,6 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
             form={form}
             setForm={setForm}
             materials={data.materials}
-            inventory={data.inventory}
             supplierOptions={data.supplierOptions}
             allowedIds={allowedComponentIds(scheduledMaterial, slot)}
           />
@@ -480,11 +487,10 @@ export default function CoaterOperatorView({ currentUser }) {
   const dataQuery = useQuery({
     queryKey: ["coater-operator-data"],
     queryFn: async () => {
-      const [tags, schedule, materials, inventory, supplierOptions, presses, locations] = await Promise.all([
+      const [tags, schedule, materials, supplierOptions, presses, locations] = await Promise.all([
         fetchCollection("coater-roll-tags", { ordering: "-run_date,tag_number", pageSize: 500, fetchAll: true }),
         fetchCollection("production-schedule", { ordering: "scheduled_date,press_sequence", pageSize: 500, fetchAll: true }),
         fetchCollection("materials", { ordering: "material_type,name", pageSize: 500, fetchAll: true }),
-        fetchCollection("raw-materials", { ordering: "material_type,name,serial_number", pageSize: 500, fetchAll: true }),
         fetchCollection("material-supplier-options", { ordering: "material__material_type,material__name,supplier_name", pageSize: 1000, fetchAll: true }),
         fetchCollection("presses", { ordering: "name", pageSize: 250, fetchAll: true }),
         fetchCollection("locations", { ordering: "name", pageSize: 500, fetchAll: true }),
@@ -493,7 +499,6 @@ export default function CoaterOperatorView({ currentUser }) {
         tags: tags.results ?? [],
         schedule: schedule.results ?? [],
         materials: materials.results ?? [],
-        inventory: inventory.results ?? [],
         supplierOptions: supplierOptions.results ?? [],
         presses: presses.results ?? [],
         locations: locations.results ?? [],
@@ -503,7 +508,7 @@ export default function CoaterOperatorView({ currentUser }) {
     refetchInterval: 60_000,
   });
 
-  const data = dataQuery.data ?? { tags: [], schedule: [], materials: [], inventory: [], supplierOptions: [], presses: [], locations: [] };
+  const data = dataQuery.data ?? { tags: [], schedule: [], materials: [], supplierOptions: [], presses: [], locations: [] };
   const operatorName = currentUser?.name || "";
   const preferredPresses = useMemo(() => {
     const coater = data.presses.filter(isCoaterPress);
@@ -556,11 +561,16 @@ export default function CoaterOperatorView({ currentUser }) {
         adhesive: numberOrNull(form.adhesive),
         silicone: numberOrNull(form.silicone),
         coating: numberOrNull(form.coating),
-        liner_inventory: numberOrNull(form.liner_inventory),
-        face_inventory: numberOrNull(form.face_inventory),
-        adhesive_inventory: numberOrNull(form.adhesive_inventory),
-        silicone_inventory: numberOrNull(form.silicone_inventory),
-        coating_inventory: numberOrNull(form.coating_inventory),
+        liner_supplier_option: numberOrNull(form.liner_supplier_option),
+        face_supplier_option: numberOrNull(form.face_supplier_option),
+        adhesive_supplier_option: numberOrNull(form.adhesive_supplier_option),
+        silicone_supplier_option: numberOrNull(form.silicone_supplier_option),
+        coating_supplier_option: numberOrNull(form.coating_supplier_option),
+        liner_inventory: null,
+        face_inventory: null,
+        adhesive_inventory: null,
+        silicone_inventory: null,
+        coating_inventory: null,
         produced_material: tag.produced_material || tag.scheduled_material || null,
         result_code: tag.result_code || material?.code || "",
         result_serial_number: tag.result_serial_number || tag.tag_number,
@@ -573,7 +583,7 @@ export default function CoaterOperatorView({ currentUser }) {
         location: numberOrNull(form.location),
         log_inventory: true,
         operator_notes: form.operator_notes || tag.operator_notes || "",
-        notes: noteBlock(tag, form, data.inventory),
+        notes: noteBlock(tag, form, data.supplierOptions),
       });
       if (!form.print_roll_tag) return { saved, printResult: null };
 

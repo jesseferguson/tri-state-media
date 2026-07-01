@@ -410,6 +410,11 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "adhesive_inventory",
             "silicone_inventory",
             "coating_inventory",
+            "liner_supplier_option__supplier",
+            "face_supplier_option__supplier",
+            "adhesive_supplier_option__supplier",
+            "silicone_supplier_option__supplier",
+            "coating_supplier_option__supplier",
             "produced_material",
             "press",
             "location",
@@ -438,6 +443,11 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         "adhesive__name",
         "silicone__name",
         "coating__name",
+        "liner_supplier_option__supplier_name",
+        "face_supplier_option__supplier_name",
+        "adhesive_supplier_option__supplier_name",
+        "silicone_supplier_option__supplier_name",
+        "coating_supplier_option__supplier_name",
         "produced_material__name",
         "press__name",
         "notes",
@@ -456,10 +466,19 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
     ]
 
     @staticmethod
-    def component_print_text(material, inventory):
+    def component_print_text(material, inventory=None, supplier_option=None):
         parts = []
         if material:
             parts.append(material.material_family or material.name or material.code)
+        if supplier_option:
+            parts.append(supplier_option.supplier_name or (supplier_option.supplier.name if supplier_option.supplier else ""))
+            parts.append(supplier_option.option_name)
+            if supplier_option.supplier_item_number:
+                parts.append(f"Item {supplier_option.supplier_item_number}")
+            if supplier_option.thickness_mil is not None:
+                parts.append(f"{supplier_option.thickness_mil} mil")
+            if supplier_option.width_inches is not None:
+                parts.append(f'{supplier_option.width_inches}"')
         if inventory:
             if inventory.supplier:
                 parts.append(inventory.supplier.name)
@@ -494,11 +513,11 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        face_text = self.component_print_text(tag.face, tag.face_inventory)
-        liner_text = self.component_print_text(tag.liner, tag.liner_inventory)
-        adhesive_text = self.component_print_text(tag.adhesive, tag.adhesive_inventory)
-        silicone_text = self.component_print_text(tag.silicone, tag.silicone_inventory)
-        coating_text = self.component_print_text(tag.coating, tag.coating_inventory)
+        face_text = self.component_print_text(tag.face, tag.face_inventory, tag.face_supplier_option)
+        liner_text = self.component_print_text(tag.liner, tag.liner_inventory, tag.liner_supplier_option)
+        adhesive_text = self.component_print_text(tag.adhesive, tag.adhesive_inventory, tag.adhesive_supplier_option)
+        silicone_text = self.component_print_text(tag.silicone, tag.silicone_inventory, tag.silicone_supplier_option)
+        coating_text = self.component_print_text(tag.coating, tag.coating_inventory, tag.coating_supplier_option)
         manufacturing_note = " / ".join(
             part for part in [
                 f"Silicone: {silicone_text}" if silicone_text else "",

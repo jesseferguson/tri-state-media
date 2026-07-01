@@ -536,6 +536,42 @@ class CoaterRollTag(models.Model):
         limit_choices_to={"material_type": "coating"},
     )
 
+    liner_supplier_option = models.ForeignKey(
+        MaterialSupplierOption,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="coater_liner_tags",
+    )
+    face_supplier_option = models.ForeignKey(
+        MaterialSupplierOption,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="coater_face_tags",
+    )
+    adhesive_supplier_option = models.ForeignKey(
+        MaterialSupplierOption,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="coater_adhesive_tags",
+    )
+    silicone_supplier_option = models.ForeignKey(
+        MaterialSupplierOption,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="coater_silicone_tags",
+    )
+    coating_supplier_option = models.ForeignKey(
+        MaterialSupplierOption,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="coater_coating_tags",
+    )
+
     produced_material = models.ForeignKey(
         MaterialSpec,
         on_delete=models.SET_NULL,
