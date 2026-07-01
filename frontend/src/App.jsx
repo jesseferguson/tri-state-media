@@ -1167,6 +1167,9 @@ export default function App() {
 function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
   const queryClient = useQueryClient();
   const [activeKey, setActiveKey] = useState(() => defaultResourceKeyForRole(roleDefinitions, currentUser?.role));
+  const [linkedRollTagId, setLinkedRollTagId] = useState(() => (
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("rollTagId") || "" : ""
+  ));
   const [previewRoleName, setPreviewRoleName] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
@@ -1236,6 +1239,15 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     if (activeKeyAllowed) return;
     setActiveKey(defaultResourceKeyForRole(roleDefinitions, viewRoleName));
   }, [activeKeyAllowed, viewRoleName, roleDefinitions]);
+
+  useEffect(() => {
+    if (!linkedRollTagId) return;
+    if (resourceAvailableForRole(roleDefinitions, viewRoleName, "coater-operator")) {
+      setActiveKey("coater-operator");
+      setSelected(null);
+      setFormMode(null);
+    }
+  }, [linkedRollTagId, roleDefinitions, viewRoleName]);
 
   const listQuery = useQuery({
     queryKey: collectionQueryKey,
@@ -2527,7 +2539,16 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         ) : resource.viewMode === "liveFootage" ? (
           <LiveFootageView tvMode={liveFootageTvMode} onTvModeChange={setLiveFootageTvMode} />
         ) : resource.viewMode === "coaterOperator" ? (
-          <CoaterOperatorView currentUser={currentUserForView} />
+          <CoaterOperatorView
+            currentUser={currentUserForView}
+            linkedRollTagId={linkedRollTagId}
+            onLinkedRollTagClose={() => {
+              setLinkedRollTagId("");
+              const url = new URL(window.location.href);
+              url.searchParams.delete("rollTagId");
+              window.history.replaceState({}, "", url);
+            }}
+          />
         ) : resource.viewMode === "dataImport" ? (
           <DataImportTool currentUser={currentUserForView} />
         ) : (

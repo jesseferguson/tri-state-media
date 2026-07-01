@@ -1,6 +1,8 @@
 from decimal import Decimal
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import DecimalField, Q, Sum
 from django.db.models.functions import Coalesce
@@ -467,26 +469,23 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
 
     @staticmethod
     def component_print_text(material, inventory=None, supplier_option=None):
-        parts = []
-        if material:
-            parts.append(material.material_family or material.name or material.code)
+        component_type = material.material_family or material.name or material.code if material else ""
+        company_name = ""
+        part_number = ""
         if supplier_option:
-            parts.append(supplier_option.supplier_name or (supplier_option.supplier.name if supplier_option.supplier else ""))
-            parts.append(supplier_option.option_name)
-            if supplier_option.supplier_item_number:
-                parts.append(f"Item {supplier_option.supplier_item_number}")
-            if supplier_option.thickness_mil is not None:
-                parts.append(f"{supplier_option.thickness_mil} mil")
-            if supplier_option.width_inches is not None:
-                parts.append(f'{supplier_option.width_inches}"')
-        if inventory:
-            if inventory.supplier:
-                parts.append(inventory.supplier.name)
-            if inventory.lot_number:
-                parts.append(f"Lot {inventory.lot_number}")
-            if inventory.serial_number:
-                parts.append(inventory.serial_number)
-        return " / ".join(str(part).strip() for part in parts if str(part).strip())
+            company_name = supplier_option.supplier_name or (supplier_option.supplier.name if supplier_option.supplier else "")
+            part_number = supplier_option.supplier_item_number
+        elif inventory:
+            company_name = inventory.supplier.name if inventory.supplier else ""
+            part_number = inventory.code or inventory.serial_number
+        return " - ".join(str(part).strip() for part in [component_type, company_name, part_number] if str(part).strip())
+
+    @staticmethod
+    def print_measurement(value, suffix=""):
+        if value is None:
+            return ""
+        text = format(Decimal(value).normalize(), "f")
+        return f"{text}{suffix}"
 
     @action(detail=True, methods=["post"], url_path="queue-print-label")
     def queue_print_label(self, request, pk=None):
@@ -529,6 +528,11 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         material = tag.produced_material or tag.scheduled_material
         part_number = tag.result_code or getattr(material, "code", "") or tag.name
         queue_key = _firebase_safe_key(press.printer_queue_key or press.name or printer_ip)
+        frontend_base = _print_text(request.data, "frontend_url", settings.FRONTEND_PUBLIC_URL).rstrip("/")
+        if urlparse(frontend_base).hostname in {"localhost", "127.0.0.1"}:
+            frontend_base = settings.FRONTEND_PUBLIC_URL
+        roll_tag_url = f"{frontend_base}/?rollTagId={tag.pk}"
+        width_text = self.print_measurement(tag.width_inches, '"')
         payload = {
             "TYPE": "COATER",
             "Printer": printer_ip,
@@ -544,12 +548,14 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "Adhesive": adhesive_text,
             "Silicone": silicone_text,
             "Coating": coating_text,
-            "Adhesive Width ": f'{tag.width_inches}"' if tag.width_inches is not None else "",
-            "Adhesive Width": f'{tag.width_inches}"' if tag.width_inches is not None else "",
-            "Length": f"{tag.length_feet} ft" if tag.length_feet is not None else "",
+            "Width": width_text,
+            "Adhesive Width ": width_text,
+            "Adhesive Width": width_text,
+            "Length": self.print_measurement(tag.length_feet, " ft"),
             "Lot Number": tag.result_lot_number,
             "Note": manufacturing_note,
             "ID": tag.result_serial_number or tag.tag_number,
+            "Roll Tag URL": roll_tag_url,
             "Roll Tag": tag.tag_number,
             "Queue Key": queue_key,
             "Queued By": _print_text(request.data, "performed_by", tag.operator),
@@ -587,6 +593,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
                 "printerIp": printer_ip,
                 "printerPort": payload.get("Printer Port"),
                 "copies": payload.get("Total Ship Stock"),
+                "rollTagUrl": roll_tag_url,
             },
             status=status.HTTP_201_CREATED,
         )

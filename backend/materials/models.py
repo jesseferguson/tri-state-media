@@ -583,7 +583,7 @@ class CoaterRollTag(models.Model):
 
     result_code = models.CharField(max_length=80, blank=True)
     result_serial_number = models.CharField(max_length=80, blank=True)
-    result_lot_number = models.CharField(max_length=80, blank=True)
+    result_lot_number = models.CharField(max_length=80, unique=True, blank=True)
     width_inches = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     length_feet = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     weight_lbs = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -623,14 +623,19 @@ class CoaterRollTag(models.Model):
 
     def save(self, *args, **kwargs):
         needs_tag_number = not self.tag_number
+        needs_lot_number = not self.result_lot_number
         if needs_tag_number and not self.pk:
             self.tag_number = f"PENDING-{uuid4().hex[:12].upper()}"
+        if needs_lot_number:
+            self.result_lot_number = f"LOT-{self.tag_number}"
 
         super().save(*args, **kwargs)
 
         if needs_tag_number:
             self.tag_number = f"CRT-{self.pk:06d}"
-            super().save(update_fields=["tag_number", "updated_at"])
+            if needs_lot_number:
+                self.result_lot_number = f"LOT-{self.tag_number}"
+            super().save(update_fields=["tag_number", "result_lot_number", "updated_at"])
 
         if not self.log_inventory or self.logged_inventory_id:
             self._log_component_usage()

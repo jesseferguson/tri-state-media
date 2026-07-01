@@ -23,6 +23,10 @@ FIREBASE_PRINT_QUEUE_NAME = os.environ.get(
     "FIREBASE_PRINT_QUEUE_NAME",
     "SHARED",
 ).strip("/")
+FRONTEND_PUBLIC_URL = os.environ.get(
+    "FRONTEND_PUBLIC_URL",
+    "https://tri-state-media-front-end.onrender.com",
+).rstrip("/")
 
 ALLOWED_HOSTS = [
     "localhost",

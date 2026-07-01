@@ -18606,6 +18606,214 @@ textarea {
   font-weight: 850;
 }
 
+.roll-tag-link-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  background: rgba(15, 23, 42, .62);
+  backdrop-filter: blur(3px);
+}
+
+.roll-tag-link-window {
+  width: min(1040px, calc(100vw - 20px));
+  max-height: calc(100dvh - 20px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d8e2ec;
+  border-radius: 10px;
+  background: #f3f6f9;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+}
+
+.roll-tag-link-window > header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border-bottom: 1px solid #dce4ed;
+  background: #ffffff;
+}
+
+.roll-tag-link-window > header h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.25rem;
+  font-weight: 950;
+}
+
+.roll-tag-link-window > header span {
+  color: #64748b;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.roll-tag-link-body {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.roll-tag-link-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.roll-tag-link-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid #dfe7ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.roll-tag-link-summary span,
+.roll-tag-link-components label > span,
+.roll-tag-link-edit label > span,
+.roll-tag-link-printer label > span {
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.roll-tag-link-summary strong {
+  min-width: 0;
+  color: #0f172a;
+  font-size: .86rem;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-link-components {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 8px;
+}
+
+.roll-tag-link-components label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid #dfe7ef;
+  border-top: 3px solid #0f766e;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.roll-tag-link-components label > strong {
+  color: #0f172a;
+  font-size: .8rem;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-link-components select,
+.roll-tag-link-edit input,
+.roll-tag-link-edit select,
+.roll-tag-link-edit textarea,
+.roll-tag-link-printer input,
+.roll-tag-link-printer select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 800;
+}
+
+.roll-tag-link-edit {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dfe7ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.roll-tag-link-edit label,
+.roll-tag-link-printer label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.roll-tag-link-edit label.wide {
+  grid-column: 1 / -1;
+}
+
+.roll-tag-link-edit textarea {
+  resize: vertical;
+}
+
+.roll-tag-link-printer {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 90px minmax(180px, .7fr);
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #cfe2dd;
+  border-radius: 8px;
+  background: #f0fdfa;
+}
+
+.roll-tag-link-printer > div {
+  min-width: 0;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  border: 1px solid #f2c8a1;
+  border-radius: 7px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: .72rem;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-link-printer > div.ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.roll-tag-link-body > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.roll-tag-link-window.not-found {
+  width: min(460px, calc(100vw - 20px));
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.roll-tag-link-window.not-found h2,
+.roll-tag-link-window.not-found p {
+  margin: 0;
+}
+
 .coater-roll-actions {
   display: flex;
   justify-content: flex-end;
@@ -18705,6 +18913,39 @@ textarea {
 
   .coater-printer-ready {
     grid-column: auto;
+  }
+
+  .roll-tag-link-overlay {
+    padding: 5px;
+  }
+
+  .roll-tag-link-window {
+    width: calc(100vw - 10px);
+    max-height: calc(100dvh - 10px);
+  }
+
+  .roll-tag-link-window > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .roll-tag-link-summary,
+  .roll-tag-link-edit,
+  .roll-tag-link-printer {
+    grid-template-columns: 1fr;
+  }
+
+  .roll-tag-link-edit label.wide {
+    grid-column: auto;
+  }
+
+  .roll-tag-link-body > footer {
+    flex-direction: column;
+  }
+
+  .roll-tag-link-body > footer .primary-btn,
+  .roll-tag-link-body > footer .ghost-btn {
+    width: 100%;
   }
 
   .coater-hero .ghost-btn,

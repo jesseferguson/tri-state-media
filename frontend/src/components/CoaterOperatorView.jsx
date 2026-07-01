@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Factory, PackageCheck, Play, Printer, RefreshCcw, Ruler } from "lucide-react";
+import { CheckCircle2, Factory, PackageCheck, Play, Printer, RefreshCcw, Ruler, Save, X } from "lucide-react";
 import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
@@ -477,7 +477,216 @@ function ProductJobCard({ row, form, setForm, updating, onStart, onComplete }) {
   );
 }
 
-export default function CoaterOperatorView({ currentUser }) {
+function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
+  const [form, setForm] = useState(() => ({
+    result_lot_number: tag.result_lot_number || "",
+    width_inches: tag.width_inches || "",
+    length_feet: tag.length_feet || "",
+    weight_lbs: tag.weight_lbs || "",
+    operator: tag.operator || currentUser?.name || "",
+    operator_notes: tag.operator_notes || "",
+    location: tag.location || "",
+    press: tag.press || "",
+    copies: "1",
+    liner_supplier_option: tag.liner_supplier_option || "",
+    face_supplier_option: tag.face_supplier_option || "",
+    adhesive_supplier_option: tag.adhesive_supplier_option || "",
+    silicone_supplier_option: tag.silicone_supplier_option || "",
+    coating_supplier_option: tag.coating_supplier_option || "",
+  }));
+  const [busyAction, setBusyAction] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const selectedPress = (data.presses ?? []).find((press) => sameId(press.id, form.press));
+
+  useEffect(() => {
+    setForm({
+      result_lot_number: tag.result_lot_number || "",
+      width_inches: tag.width_inches || "",
+      length_feet: tag.length_feet || "",
+      weight_lbs: tag.weight_lbs || "",
+      operator: tag.operator || currentUser?.name || "",
+      operator_notes: tag.operator_notes || "",
+      location: tag.location || "",
+      press: tag.press || "",
+      copies: "1",
+      liner_supplier_option: tag.liner_supplier_option || "",
+      face_supplier_option: tag.face_supplier_option || "",
+      adhesive_supplier_option: tag.adhesive_supplier_option || "",
+      silicone_supplier_option: tag.silicone_supplier_option || "",
+      coating_supplier_option: tag.coating_supplier_option || "",
+    });
+    setError("");
+    setNotice("");
+  }, [tag.id]);
+
+  function update(name, value) {
+    setError("");
+    setNotice("");
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function editPayload() {
+    return {
+      result_lot_number: form.result_lot_number.trim(),
+      width_inches: numberOrNull(form.width_inches),
+      length_feet: numberOrNull(form.length_feet),
+      weight_lbs: numberOrNull(form.weight_lbs),
+      operator: form.operator.trim(),
+      operator_notes: form.operator_notes.trim(),
+      location: numberOrNull(form.location),
+      press: numberOrNull(form.press),
+      liner_supplier_option: numberOrNull(form.liner_supplier_option),
+      face_supplier_option: numberOrNull(form.face_supplier_option),
+      adhesive_supplier_option: numberOrNull(form.adhesive_supplier_option),
+      silicone_supplier_option: numberOrNull(form.silicone_supplier_option),
+      coating_supplier_option: numberOrNull(form.coating_supplier_option),
+    };
+  }
+
+  async function run(action) {
+    if (!form.result_lot_number.trim()) {
+      setError("Enter the unique lot number.");
+      return;
+    }
+    if (action === "reprint" && !selectedPress?.printer_ip) {
+      setError("Select a press with a configured printer IP.");
+      return;
+    }
+    setBusyAction(action);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await updateRecord("coater-roll-tags", tag.id, editPayload());
+      if (action === "reprint") {
+        await postRecordAction("coater-roll-tags", saved.id, "queue-print-label", {
+          press: numberOrNull(form.press),
+          copies: numberOrNull(form.copies) || 1,
+          operator: form.operator || currentUser?.name || "",
+          performed_by: currentUser?.name || form.operator || "",
+          frontend_url: window.location.origin,
+        });
+        setNotice(`${saved.tag_number} was saved and queued for reprint.`);
+      } else {
+        setNotice(`${saved.tag_number} was saved.`);
+      }
+      onSaved?.(saved);
+    } catch (actionError) {
+      setError(actionError.message || "The roll tag could not be saved.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  return (
+    <section className="roll-tag-link-overlay" role="dialog" aria-modal="true" aria-label={`Roll tag ${tag.tag_number}`}>
+      <div className="roll-tag-link-window">
+        <header>
+          <div>
+            <p className="eyebrow">Material Roll Tag</p>
+            <h2>{tag.tag_number}</h2>
+            <span>{tag.result_code || tag.produced_material_name || tag.scheduled_material_name || tag.name}</span>
+          </div>
+          <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
+        </header>
+
+        <div className="roll-tag-link-body">
+          <section className="roll-tag-link-summary">
+            <div><span>Status</span><strong>{labelize(tag.status)}</strong></div>
+            <div><span>Print Status</span><strong>{labelize(tag.print_status)}</strong></div>
+            <div><span>Created</span><strong>{shortDate(tag.created_at)}</strong></div>
+            <div><span>Material</span><strong>{tag.result_code || tag.name}</strong></div>
+          </section>
+
+          <section className="roll-tag-link-components">
+            {componentSlots.map((slot) => {
+              const material = (data.materials ?? []).find((row) => sameId(row.id, tag[slot.key]));
+              const options = supplierChoices(data.supplierOptions, tag[slot.key], data.materials);
+              return (
+                <label key={slot.key}>
+                  <span>{slot.label}</span>
+                  <strong>{material?.material_family || tag[`${slot.key}_name`] || material?.name || "--"}</strong>
+                  <select value={form[slot.supplierKey] || ""} onChange={(event) => update(slot.supplierKey, event.target.value)} required={!slot.optional}>
+                    <option value="">{options.length ? "Select supplier material" : "No suppliers linked"}</option>
+                    {options.map((option) => <option value={option.id} key={option.id}>{supplierChoiceLabel(option)}</option>)}
+                  </select>
+                </label>
+              );
+            })}
+          </section>
+
+          <section className="roll-tag-link-edit">
+            <label>
+              <span>Unique Lot Number</span>
+              <input value={form.result_lot_number} onChange={(event) => update("result_lot_number", event.target.value)} required />
+            </label>
+            <label>
+              <span>Cut Width</span>
+              <input type="number" min="0" step="0.001" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} />
+            </label>
+            <label>
+              <span>Length</span>
+              <input type="number" min="0" step="0.01" value={form.length_feet} onChange={(event) => update("length_feet", event.target.value)} />
+            </label>
+            <label>
+              <span>Weight</span>
+              <input type="number" min="0" step="0.01" value={form.weight_lbs} onChange={(event) => update("weight_lbs", event.target.value)} />
+            </label>
+            <label>
+              <span>Operator</span>
+              <input value={form.operator} onChange={(event) => update("operator", event.target.value)} />
+            </label>
+            <label>
+              <span>Plant Location</span>
+              <select value={form.location || ""} onChange={(event) => update("location", event.target.value)}>
+                <option value="">No location</option>
+                {(data.locations ?? []).map((location) => <option value={location.id} key={location.id}>{location.full_path || location.name}</option>)}
+              </select>
+            </label>
+            <label className="wide">
+              <span>Operator Notes</span>
+              <textarea value={form.operator_notes} onChange={(event) => update("operator_notes", event.target.value)} rows={2} />
+            </label>
+          </section>
+
+          <section className="roll-tag-link-printer">
+            <label>
+              <span>Reprint To</span>
+              <select value={form.press || ""} onChange={(event) => update("press", event.target.value)}>
+                <option value="">Select printer</option>
+                {(data.presses ?? []).map((press) => (
+                  <option value={press.id} key={press.id}>{press.name}{press.printer_ip ? ` / ${press.printer_ip}` : " / setup needed"}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Copies</span>
+              <input type="number" min="1" max="20" value={form.copies} onChange={(event) => update("copies", event.target.value)} />
+            </label>
+            <div className={selectedPress?.printer_ip ? "ready" : ""}>
+              <Printer size={16} />
+              <span>{selectedPress?.printer_ip ? `${selectedPress.printer_ip}:${selectedPress.printer_port || 9100}` : "Printer setup required"}</span>
+            </div>
+          </section>
+
+          {error && <div className="coater-error">{error}</div>}
+          {notice && <div className="coater-print-success"><CheckCircle2 size={16} /><span>{notice}</span></div>}
+
+          <footer>
+            <button className="ghost-btn" type="button" onClick={() => run("save")} disabled={Boolean(busyAction)}>
+              <Save size={16} /> {busyAction === "save" ? "Saving..." : "Save Changes"}
+            </button>
+            <button className="primary-btn" type="button" onClick={() => run("reprint")} disabled={Boolean(busyAction) || !selectedPress?.printer_ip}>
+              <Printer size={16} /> {busyAction === "reprint" ? "Queueing..." : "Save & Reprint"}
+            </button>
+          </footer>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", onLinkedRollTagClose }) {
   const queryClient = useQueryClient();
   const [selectedPress, setSelectedPress] = useState("all");
   const [selectedTagId, setSelectedTagId] = useState("");
@@ -537,6 +746,10 @@ export default function CoaterOperatorView({ currentUser }) {
     if (selectedTagId) return materialJobs.find((tag) => sameId(tag.id, selectedTagId)) ?? materialJobs[0] ?? null;
     return materialJobs[0] ?? null;
   }, [materialJobs, selectedTagId]);
+  const linkedRollTag = useMemo(
+    () => data.tags.find((tag) => sameId(tag.id, linkedRollTagId)) ?? null,
+    [data.tags, linkedRollTagId]
+  );
 
   useEffect(() => {
     if (!selectedTag?.id) {
@@ -593,6 +806,7 @@ export default function CoaterOperatorView({ currentUser }) {
           copies: numberOrNull(form.print_copies) || 1,
           operator: form.operator || operatorName,
           performed_by: form.operator || operatorName,
+          frontend_url: window.location.origin,
         });
         return { saved, printResult };
       } catch (printError) {
@@ -726,6 +940,29 @@ export default function CoaterOperatorView({ currentUser }) {
           {!productJobs.length && <p className="coater-empty">No finished product jobs are scheduled for this press.</p>}
         </div>
       </section>
+
+      {linkedRollTag && (
+        <RollTagDetailDialog
+          tag={linkedRollTag}
+          data={data}
+          currentUser={currentUser}
+          onClose={onLinkedRollTagClose}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
+            queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
+            queryClient.invalidateQueries({ queryKey: ["lookups"] });
+          }}
+        />
+      )}
+      {linkedRollTagId && !linkedRollTag && !dataQuery.isLoading && (
+        <section className="roll-tag-link-overlay" role="dialog" aria-modal="true" aria-label="Roll tag not found">
+          <div className="roll-tag-link-window not-found">
+            <h2>Roll Tag Not Found</h2>
+            <p>This roll tag may have been removed or the barcode link is incomplete.</p>
+            <button className="primary-btn" type="button" onClick={onLinkedRollTagClose}>Close</button>
+          </div>
+        </section>
+      )}
     </section>
   );
 }

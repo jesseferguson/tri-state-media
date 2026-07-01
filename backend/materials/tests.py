@@ -68,7 +68,11 @@ class CoaterRollTagPrintQueueTests(TestCase):
         with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
             response = self.client.post(
                 reverse("coater-roll-tag-queue-print-label", args=[tag.id]),
-                {"copies": 2, "performed_by": "ET Operator"},
+                {
+                    "copies": 2,
+                    "performed_by": "ET Operator",
+                    "frontend_url": "https://plant.example.com",
+                },
                 content_type="application/json",
             )
 
@@ -83,8 +87,11 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertIn("PM", body["Face"])
         self.assertIn("Face Supply Co", body["Face"])
         self.assertIn("FACE-100", body["Face"])
+        self.assertEqual(body["Face"], "PM - Face Supply Co - FACE-100")
+        self.assertEqual(body["Width"], '13"')
         self.assertEqual(body["Lot Number"], "LOT-2026-1")
         self.assertEqual(body["ID"], "CRT-TEST-1")
+        self.assertEqual(body["Roll Tag URL"], f"https://plant.example.com/?rollTagId={tag.id}")
         self.assertIn("Easy Release", body["Note"])
         tag.refresh_from_db()
         self.assertEqual(tag.print_status, "queued")
@@ -127,5 +134,6 @@ class CoaterRollTagPrintQueueTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         self.assertTrue(response.json()["tag_number"].startswith("CRT-"))
+        self.assertEqual(response.json()["result_lot_number"], f"LOT-{response.json()['tag_number']}")
         self.assertEqual(response.json()["press"], press.id)
         self.assertEqual(response.json()["cut_description"], "Cut 9/9")
