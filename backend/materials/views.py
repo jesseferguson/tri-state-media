@@ -497,6 +497,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             _firebase_safe_key,
             _positive_int,
             _print_text,
+            _request_bool,
         )
 
         tag = self.get_object()
@@ -582,6 +583,15 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
 
         tag.print_status = "queued"
         tag.save(update_fields=["print_status", "updated_at"])
+        printer_settings_saved = False
+        if _request_bool(request.data.get("save_printer_settings")):
+            press.printer_ip = printer_ip
+            press.printer_port = payload.get("Printer Port") or 9100
+            press.printer_speed = str(payload.get("SPEED") or "5")
+            press.printer_darkness = str(payload.get("DARKNESS") or "11")
+            press.save(update_fields=["printer_ip", "printer_port", "printer_speed", "printer_darkness"])
+            printer_settings_saved = True
+
         firebase_key = str(firebase_payload.get("name") or "")
         return Response(
             {
@@ -592,6 +602,9 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
                 "firebaseStatus": firebase_status,
                 "printerIp": printer_ip,
                 "printerPort": payload.get("Printer Port"),
+                "printerSpeed": payload.get("SPEED"),
+                "printerDarkness": payload.get("DARKNESS"),
+                "printerSettingsSaved": printer_settings_saved,
                 "copies": payload.get("Total Ship Stock"),
                 "rollTagUrl": roll_tag_url,
             },

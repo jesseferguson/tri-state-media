@@ -70,6 +70,11 @@ class CoaterRollTagPrintQueueTests(TestCase):
                 reverse("coater-roll-tag-queue-print-label", args=[tag.id]),
                 {
                     "copies": 2,
+                    "printer_ip": "192.168.1.72",
+                    "printer_port": 9101,
+                    "speed": "8",
+                    "darkness": "15",
+                    "save_printer_settings": True,
                     "performed_by": "ET Operator",
                     "frontend_url": "https://plant.example.com",
                 },
@@ -81,7 +86,10 @@ class CoaterRollTagPrintQueueTests(TestCase):
         body = json.loads(firebase_request.data.decode("utf-8"))
         self.assertIn("/TEST_PRINT_SERVER_JOBS/SHARED.json", firebase_request.full_url)
         self.assertEqual(body["TYPE"], "COATER")
-        self.assertEqual(body["Printer"], "192.168.1.70")
+        self.assertEqual(body["Printer"], "192.168.1.72")
+        self.assertEqual(body["Printer Port"], 9101)
+        self.assertEqual(body["SPEED"], "8")
+        self.assertEqual(body["DARKNESS"], "15")
         self.assertEqual(body["Total Ship Stock"], 2)
         self.assertEqual(body["Part Number List Logic"], "PM-2417-40")
         self.assertIn("PM", body["Face"])
@@ -95,6 +103,12 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertIn("Easy Release", body["Note"])
         tag.refresh_from_db()
         self.assertEqual(tag.print_status, "queued")
+        press.refresh_from_db()
+        self.assertEqual(press.printer_ip, "192.168.1.72")
+        self.assertEqual(press.printer_port, 9101)
+        self.assertEqual(press.printer_speed, "8")
+        self.assertEqual(press.printer_darkness, "15")
+        self.assertTrue(response.json()["printerSettingsSaved"])
 
     def test_finished_material_schedule_payload_creates_coater_job(self):
         face = MaterialSpec.objects.create(material_type="face", code="FACE-SCHEDULE", name="PM Face")

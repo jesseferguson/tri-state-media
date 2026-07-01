@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Factory, PackageCheck, Play, Printer, RefreshCcw, Ruler, Save, X } from "lucide-react";
+import { CheckCircle2, Factory, PackageCheck, Play, Printer, RefreshCcw, Ruler, Save, Settings2, X } from "lucide-react";
 import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
@@ -132,6 +132,15 @@ function generatedLot(tag) {
   return [tag?.tag_number, today().replaceAll("-", "")].filter(Boolean).join("-");
 }
 
+function printerSettingsFor(press) {
+  return {
+    printer_ip: press?.printer_ip || "",
+    printer_port: String(press?.printer_port || 9100),
+    printer_speed: String(press?.printer_speed || 5),
+    printer_darkness: String(press?.printer_darkness || 11),
+  };
+}
+
 function noteBlock(tag, form, supplierOptions) {
   const lines = [
     tag.cut_description ? `Cutting Notes: ${tag.cut_description}` : "",
@@ -166,6 +175,7 @@ function defaultRollForm(tag, data, currentUser) {
     print_roll_tag: true,
     printer_press: printerPress?.id ? String(printerPress.id) : "",
     print_copies: "1",
+    ...printerSettingsFor(printerPress),
   };
   componentSlots.forEach((slot) => {
     const selection = defaultSupplierSelection(tag, material, slot, data.supplierOptions, data.materials);
@@ -186,9 +196,8 @@ function validateRollForm(form, data = {}) {
   if (!form.result_lot_number) missing.push("Lot number");
   if (form.print_roll_tag && !form.printer_press) {
     missing.push("Roll tag printer");
-  } else if (form.print_roll_tag) {
-    const printer = (data.presses ?? []).find((press) => sameId(press.id, form.printer_press));
-    if (!printer?.printer_ip) missing.push("Printer IP setup");
+  } else if (form.print_roll_tag && !String(form.printer_ip || "").trim()) {
+    missing.push("Printer IP setup");
   }
   return missing;
 }
@@ -292,6 +301,7 @@ function ComponentPicker({ slot, form, setForm, materials, supplierOptions, allo
 
 function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
   const [form, setForm] = useState(() => defaultRollForm(tag, data, currentUser));
+  const [printerSettingsOpen, setPrinterSettingsOpen] = useState(false);
   const missing = validateRollForm(form, data);
   const scheduledMaterial = (data.materials ?? []).find((row) => sameId(row.id, tag?.scheduled_material));
   const selectedPrinter = (data.presses ?? []).find((press) => sameId(press.id, form.printer_press));
@@ -302,6 +312,15 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
 
   function update(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function selectPrinter(pressId) {
+    const press = (data.presses ?? []).find((row) => sameId(row.id, pressId));
+    setForm((prev) => ({
+      ...prev,
+      printer_press: pressId,
+      ...printerSettingsFor(press),
+    }));
   }
 
   function submit(event) {
@@ -396,7 +415,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
           <div className="coater-print-controls">
             <label>
               <span>Roll Tag Printer</span>
-              <select value={form.printer_press} onChange={(event) => update("printer_press", event.target.value)} required>
+              <select value={form.printer_press} onChange={(event) => selectPrinter(event.target.value)} required>
                 <option value="">Select printer</option>
                 {(data.presses ?? []).map((press) => (
                   <option value={press.id} key={press.id}>
@@ -416,16 +435,41 @@ function RollRunForm({ tag, data, currentUser, saving, error, onSave }) {
                 onChange={(event) => update("print_copies", event.target.value)}
               />
             </label>
-            <div className={`coater-printer-ready ${selectedPrinter?.printer_ip ? "ready" : "needs-setup"}`}>
+            <div className={`coater-printer-ready ${form.printer_ip ? "ready" : "needs-setup"}`}>
               <Printer size={16} />
               <span>
                 <strong>{selectedPrinter?.name || "No printer selected"}</strong>
                 <small>
-                  {selectedPrinter?.printer_ip
-                    ? `${selectedPrinter.printer_ip}:${selectedPrinter.printer_port || 9100} / Speed ${selectedPrinter.printer_speed || 5} / Darkness ${selectedPrinter.printer_darkness || 11}`
-                    : "Add the printer IP in Press settings"}
+                  {form.printer_ip
+                    ? `${form.printer_ip}:${form.printer_port || 9100} / Speed ${form.printer_speed || 5} / Darkness ${form.printer_darkness || 11}`
+                    : "Add the printer IP below"}
                 </small>
               </span>
+            </div>
+            <div className="coater-printer-settings-row">
+              <button className="ghost-btn xs" type="button" onClick={() => setPrinterSettingsOpen((open) => !open)}>
+                <Settings2 size={15} /> {printerSettingsOpen ? "Hide Printer Settings" : "Edit Printer Settings"}
+              </button>
+              {printerSettingsOpen && (
+                <div className="coater-inline-printer-grid">
+                  <label>
+                    <span>Printer IP</span>
+                    <input value={form.printer_ip} onChange={(event) => update("printer_ip", event.target.value)} placeholder="192.168.1.100" />
+                  </label>
+                  <label>
+                    <span>Port</span>
+                    <input type="number" min="1" max="65535" value={form.printer_port} onChange={(event) => update("printer_port", event.target.value)} />
+                  </label>
+                  <label>
+                    <span>Speed</span>
+                    <input type="number" min="1" max="14" value={form.printer_speed} onChange={(event) => update("printer_speed", event.target.value)} />
+                  </label>
+                  <label>
+                    <span>Darkness</span>
+                    <input type="number" min="0" max="30" step="1" value={form.printer_darkness} onChange={(event) => update("printer_darkness", event.target.value)} />
+                  </label>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -478,6 +522,7 @@ function ProductJobCard({ row, form, setForm, updating, onStart, onComplete }) {
 }
 
 function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
+  const tagPress = (data.presses ?? []).find((press) => sameId(press.id, tag.press));
   const [form, setForm] = useState(() => ({
     result_lot_number: tag.result_lot_number || "",
     width_inches: tag.width_inches || "",
@@ -488,6 +533,7 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
     location: tag.location || "",
     press: tag.press || "",
     copies: "1",
+    ...printerSettingsFor(tagPress),
     liner_supplier_option: tag.liner_supplier_option || "",
     face_supplier_option: tag.face_supplier_option || "",
     adhesive_supplier_option: tag.adhesive_supplier_option || "",
@@ -497,7 +543,7 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const selectedPress = (data.presses ?? []).find((press) => sameId(press.id, form.press));
+  const [printerSettingsOpen, setPrinterSettingsOpen] = useState(false);
 
   useEffect(() => {
     setForm({
@@ -510,6 +556,7 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
       location: tag.location || "",
       press: tag.press || "",
       copies: "1",
+      ...printerSettingsFor((data.presses ?? []).find((press) => sameId(press.id, tag.press))),
       liner_supplier_option: tag.liner_supplier_option || "",
       face_supplier_option: tag.face_supplier_option || "",
       adhesive_supplier_option: tag.adhesive_supplier_option || "",
@@ -518,12 +565,24 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
     });
     setError("");
     setNotice("");
+    setPrinterSettingsOpen(false);
   }, [tag.id]);
 
   function update(name, value) {
     setError("");
     setNotice("");
     setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function selectPrinter(pressId) {
+    const press = (data.presses ?? []).find((row) => sameId(row.id, pressId));
+    setError("");
+    setNotice("");
+    setForm((current) => ({
+      ...current,
+      press: pressId,
+      ...printerSettingsFor(press),
+    }));
   }
 
   function editPayload() {
@@ -549,18 +608,31 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
       setError("Enter the unique lot number.");
       return;
     }
-    if (action === "reprint" && !selectedPress?.printer_ip) {
-      setError("Select a press with a configured printer IP.");
+    if (action === "reprint" && !String(form.printer_ip || "").trim()) {
+      setError("Enter the printer IP before reprinting.");
       return;
     }
     setBusyAction(action);
     setError("");
     setNotice("");
     try {
+      if (form.press) {
+        await updateRecord("presses", form.press, {
+          printer_ip: String(form.printer_ip || "").trim(),
+          printer_port: numberOrNull(form.printer_port) || 9100,
+          printer_speed: String(form.printer_speed || 5),
+          printer_darkness: String(form.printer_darkness || 11),
+        });
+      }
       const saved = await updateRecord("coater-roll-tags", tag.id, editPayload());
       if (action === "reprint") {
         await postRecordAction("coater-roll-tags", saved.id, "queue-print-label", {
           press: numberOrNull(form.press),
+          printer_ip: String(form.printer_ip || "").trim(),
+          printer_port: numberOrNull(form.printer_port) || 9100,
+          speed: String(form.printer_speed || 5),
+          darkness: String(form.printer_darkness || 11),
+          save_printer_settings: true,
           copies: numberOrNull(form.copies) || 1,
           operator: form.operator || currentUser?.name || "",
           performed_by: currentUser?.name || form.operator || "",
@@ -652,7 +724,7 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
           <section className="roll-tag-link-printer">
             <label>
               <span>Reprint To</span>
-              <select value={form.press || ""} onChange={(event) => update("press", event.target.value)}>
+              <select value={form.press || ""} onChange={(event) => selectPrinter(event.target.value)}>
                 <option value="">Select printer</option>
                 {(data.presses ?? []).map((press) => (
                   <option value={press.id} key={press.id}>{press.name}{press.printer_ip ? ` / ${press.printer_ip}` : " / setup needed"}</option>
@@ -663,10 +735,37 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
               <span>Copies</span>
               <input type="number" min="1" max="20" value={form.copies} onChange={(event) => update("copies", event.target.value)} />
             </label>
-            <div className={selectedPress?.printer_ip ? "ready" : ""}>
+            <div className={form.printer_ip ? "ready" : ""}>
               <Printer size={16} />
-              <span>{selectedPress?.printer_ip ? `${selectedPress.printer_ip}:${selectedPress.printer_port || 9100}` : "Printer setup required"}</span>
+              <span>
+                {form.printer_ip
+                  ? `${form.printer_ip}:${form.printer_port || 9100} / Speed ${form.printer_speed || 5} / Darkness ${form.printer_darkness || 11}`
+                  : "Printer setup required"}
+              </span>
             </div>
+            <button className="ghost-btn xs roll-tag-printer-settings-toggle" type="button" onClick={() => setPrinterSettingsOpen((open) => !open)}>
+              <Settings2 size={15} /> {printerSettingsOpen ? "Hide Printer Settings" : "Edit Printer Settings"}
+            </button>
+            {printerSettingsOpen && (
+              <section className="roll-tag-printer-settings" aria-label="Printer settings">
+                <label>
+                  <span>Printer IP</span>
+                  <input value={form.printer_ip} onChange={(event) => update("printer_ip", event.target.value)} placeholder="192.168.1.100" />
+                </label>
+                <label>
+                  <span>Port</span>
+                  <input type="number" min="1" max="65535" value={form.printer_port} onChange={(event) => update("printer_port", event.target.value)} />
+                </label>
+                <label>
+                  <span>Speed</span>
+                  <input type="number" min="1" max="14" value={form.printer_speed} onChange={(event) => update("printer_speed", event.target.value)} />
+                </label>
+                <label>
+                  <span>Darkness</span>
+                  <input type="number" min="0" max="30" step="1" value={form.printer_darkness} onChange={(event) => update("printer_darkness", event.target.value)} />
+                </label>
+              </section>
+            )}
           </section>
 
           {error && <div className="coater-error">{error}</div>}
@@ -676,7 +775,7 @@ function RollTagDetailDialog({ tag, data, currentUser, onClose, onSaved }) {
             <button className="ghost-btn" type="button" onClick={() => run("save")} disabled={Boolean(busyAction)}>
               <Save size={16} /> {busyAction === "save" ? "Saving..." : "Save Changes"}
             </button>
-            <button className="primary-btn" type="button" onClick={() => run("reprint")} disabled={Boolean(busyAction) || !selectedPress?.printer_ip}>
+            <button className="primary-btn" type="button" onClick={() => run("reprint")} disabled={Boolean(busyAction) || !form.printer_ip}>
               <Printer size={16} /> {busyAction === "reprint" ? "Queueing..." : "Save & Reprint"}
             </button>
           </footer>
@@ -804,6 +903,11 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         const printResult = await postRecordAction("coater-roll-tags", saved.id, "queue-print-label", {
           press: numberOrNull(form.printer_press),
           copies: numberOrNull(form.print_copies) || 1,
+          printer_ip: String(form.printer_ip || "").trim(),
+          printer_port: numberOrNull(form.printer_port) || 9100,
+          speed: String(form.printer_speed || 5),
+          darkness: String(form.printer_darkness || 11),
+          save_printer_settings: true,
           operator: form.operator || operatorName,
           performed_by: form.operator || operatorName,
           frontend_url: window.location.origin,
