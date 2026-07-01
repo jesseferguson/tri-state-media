@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Image as ImageIcon, PackageCheck, Trash2 } from "lucide-react";
+import { Image as ImageIcon, PackageCheck, ScanLine, Trash2 } from "lucide-react";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import RecipeOptionsView from "./RecipeOptionsView";
@@ -465,7 +465,7 @@ function ScheduleDetailOverlay({ row, lookups, onClose, onFlexDieReorder, onFlex
   );
 }
 
-export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, lookups = {}, onSelect, onClose, onEdit, onUpdate, onRemove, onFlexDieReorder, onFlexDieCountUpdate }) {
+export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, lookups = {}, onSelect, onClose, onEdit, onUpdate, onRemove, onUseMaterial, onFlexDieReorder, onFlexDieCountUpdate }) {
   const [removeRow, setRemoveRow] = useState(null);
   const grouped = useMemo(() => buildLineupGroups(rows, presses), [rows, presses]);
 
@@ -506,6 +506,11 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
                   <button className="ghost-btn xs" type="button" onClick={() => onEdit?.(row)}>
                     Edit
                   </button>
+                  {onUseMaterial && (
+                    <button className="ghost-btn xs" type="button" onClick={() => onUseMaterial(row)}>
+                      <ScanLine size={13} /> Scan Roll
+                    </button>
+                  )}
                   {onRemove && (
                     <button className="danger-btn xs" type="button" onClick={() => setRemoveRow(row)}>
                       <Trash2 size={12} /> Delete

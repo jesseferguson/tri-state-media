@@ -35,13 +35,13 @@ export const defaultRoleDefinitions = [
     id: "role-production",
     name: "Production",
     description: "Production queue, job details, and press workflow",
-    allowedResourceKeys: ["production-schedule", "job-tickets", "customer-orders", "presses"],
+    allowedResourceKeys: ["production-schedule", "job-tickets", "customer-orders", "presses", "material-handling"],
   },
   {
     id: "role-coater",
     name: "Coater",
     description: "Coater operator lineup and roll tag workflow",
-    allowedResourceKeys: ["coater-operator"],
+    allowedResourceKeys: ["coater-operator", "material-handling"],
   },
   {
     id: "role-manager",

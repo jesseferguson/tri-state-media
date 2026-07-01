@@ -364,6 +364,20 @@ class MaterialUsage(models.Model):
         blank=True,
         related_name="material_usages",
     )
+    job_ticket = models.ForeignKey(
+        "production.JobTicket",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="material_usage_records",
+    )
+    production_schedule = models.ForeignKey(
+        "production.ProductionSchedule",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="material_usage_records",
+    )
     finished_inventory = models.ForeignKey(
         "production.FinishedInventory",
         on_delete=models.SET_NULL,
@@ -434,6 +448,7 @@ class CoaterRollTag(models.Model):
     STATUS_CHOICES = [
         ("scheduled", "Scheduled"),
         ("running", "Running"),
+        ("tag_printed", "Tag Printed"),
         ("complete", "Complete"),
         ("on_hold", "On Hold"),
         ("void", "Void"),

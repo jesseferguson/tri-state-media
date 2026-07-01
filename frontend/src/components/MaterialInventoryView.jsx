@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, History, PackageCheck } from "lucide-react";
 import { formatInches, getRecordTitle, groupBy, labelize } from "../lib/format";
 
 function sameId(a, b) {
@@ -114,15 +114,31 @@ function MaterialGroup({ name, rows, selectedId, onSelect }) {
 }
 
 export default function MaterialInventoryView({ rows, selectedId, onSelect }) {
-  const grouped = useMemo(() => groupBy(rows ?? [], materialGroupName), [rows]);
+  const [showInactive, setShowInactive] = useState(false);
+  const activeRows = useMemo(
+    () => (rows ?? []).filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status) && Number(row.length_feet ?? row.quantity ?? 0) > 0),
+    [rows]
+  );
+  const displayedRows = showInactive ? (rows ?? []) : activeRows;
+  const grouped = useMemo(() => groupBy(displayedRows, materialGroupName), [displayedRows]);
 
   if (!rows?.length) return <p className="tool-stack-empty">No material inventory matches this view.</p>;
 
   return (
     <div className="material-inventory-view">
+      <header className="material-inventory-mode">
+        <div>
+          <PackageCheck size={16} />
+          <span><strong>{activeRows.length} active rolls</strong><small>Active inventory</small></span>
+        </div>
+        <button className="ghost-btn xs" type="button" onClick={() => setShowInactive((value) => !value)}>
+          <History size={14} /> {showInactive ? "Active Rolls Only" : "Show Used History"}
+        </button>
+      </header>
       {Object.entries(grouped).map(([name, list]) => (
         <MaterialGroup key={name} name={name} rows={list} selectedId={selectedId} onSelect={onSelect} />
       ))}
+      {!displayedRows.length && <p className="tool-stack-empty">No active material rolls match this view.</p>}
     </div>
   );
 }

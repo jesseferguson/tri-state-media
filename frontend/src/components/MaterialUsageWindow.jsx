@@ -1,4 +1,5 @@
-import { BarChart3, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { BarChart3, Search, X } from "lucide-react";
 import { formatCell, getRecordTitle, labelize } from "../lib/format";
 
 function usageTitle(row) {
@@ -22,8 +23,18 @@ function summary(rows) {
 }
 
 export default function MaterialUsageWindow({ title, rows, onClose }) {
-  const totals = summary(rows);
-  const largest = Math.max(...rows.map((row) => Number(row.quantity ?? 0)).filter(Number.isFinite), 1);
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const filteredRows = useMemo(() => rows.filter((row) => {
+    const date = String(row.used_date || row.created_at || "").slice(0, 10);
+    const text = `${row.reference} ${row.coater_roll_tag_number} ${row.production_schedule} ${row.job_ticket_number} ${row.inventory_serial} ${row.used_by} ${row.notes}`.toLowerCase();
+    return (!search || text.includes(search.toLowerCase()))
+      && (!dateFrom || date >= dateFrom)
+      && (!dateTo || date <= dateTo);
+  }), [dateFrom, dateTo, rows, search]);
+  const totals = summary(filteredRows);
+  const largest = Math.max(...filteredRows.map((row) => Number(row.quantity ?? 0)).filter(Number.isFinite), 1);
   const unitText = Array.from(totals.units).join(", ") || "lf";
 
   return (
@@ -39,12 +50,18 @@ export default function MaterialUsageWindow({ title, rows, onClose }) {
 
         <div className="usage-stats">
           <div><span>Total Used</span><strong>{totals.total.toLocaleString()} {unitText}</strong></div>
-          <div><span>Records</span><strong>{rows.length}</strong></div>
+          <div><span>Records</span><strong>{filteredRows.length}</strong></div>
           <div><span>Types</span><strong>{Object.keys(totals.byType).map(labelize).join(", ") || "--"}</strong></div>
         </div>
 
+        <div className="usage-history-filters">
+          <label><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search schedule ID, roll, job, or operator" /></label>
+          <label><span>From</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
+          <label><span>To</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+        </div>
+
         <div className="usage-chart">
-          {rows.length ? rows.map((row) => {
+          {filteredRows.length ? filteredRows.map((row) => {
             const qty = Number(row.quantity ?? 0);
             const width = `${Math.max(5, Math.round((qty / largest) * 100))}%`;
             return (

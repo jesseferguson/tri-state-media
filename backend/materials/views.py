@@ -1,9 +1,9 @@
+import re
 from decimal import Decimal
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 
 from django.conf import settings
-from django.db import transaction
 from django.db import transaction
 from django.db.models import DecimalField, Q, Sum
 from django.db.models.functions import Coalesce
@@ -215,6 +215,97 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             qs = qs.filter(material__master_type_id=master_type)
         return qs
 
+    @action(detail=True, methods=["post"], url_path="consume-roll")
+    def consume_roll(self, request, pk=None):
+        from production.models import JobTicket, ProductionSchedule
+
+        inventory = self.get_object()
+        available = Decimal(inventory.length_feet if inventory.length_feet is not None else inventory.quantity or 0)
+        if available <= 0:
+            return Response({"detail": "This roll has no active footage remaining."}, status=status.HTTP_400_BAD_REQUEST)
+
+        mode = str(request.data.get("mode") or "partial").strip().lower()
+        if mode not in ["full", "partial"]:
+            return Response({"mode": ["Choose full or partial roll usage."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        entered_footage = available
+        buffer_percent = Decimal("0")
+        if mode == "partial":
+            try:
+                entered_footage = Decimal(str(request.data.get("used_feet", "")))
+            except Exception:
+                return Response({"used_feet": ["Enter the footage used."]}, status=status.HTTP_400_BAD_REQUEST)
+            if entered_footage <= 0:
+                return Response({"used_feet": ["Footage used must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+            if entered_footage > available:
+                return Response(
+                    {"used_feet": [f"Only {available} ft remains on this roll."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            buffer_percent = Decimal("3")
+
+        buffered_footage = min(available, (entered_footage * (Decimal("1") + buffer_percent / Decimal("100"))).quantize(Decimal("0.001")))
+        buffer_footage = max(Decimal("0"), buffered_footage - entered_footage)
+        schedule_id = request.data.get("production_schedule")
+        job_ticket_id = request.data.get("job_ticket")
+        schedule = ProductionSchedule.objects.select_related("job_ticket").filter(pk=schedule_id).first() if schedule_id else None
+        job_ticket = JobTicket.objects.filter(pk=job_ticket_id).first() if job_ticket_id else None
+        if schedule and not job_ticket:
+            job_ticket = schedule.job_ticket
+        if schedule_id and not schedule:
+            return Response({"production_schedule": ["Select a valid scheduled job."]}, status=status.HTTP_400_BAD_REQUEST)
+        if job_ticket_id and not job_ticket:
+            return Response({"job_ticket": ["Select a valid job ticket."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        operator = str(request.data.get("used_by") or "").strip()
+        note = str(request.data.get("notes") or "").strip()
+        poor_run = bool(request.data.get("poor_run"))
+        reference = (
+            getattr(job_ticket, "ticket_number", "")
+            or (f"Schedule {schedule.pk}" if schedule else "")
+            or "Material handling"
+        )
+        usage_note = " / ".join(
+            part for part in [
+                "Full roll consumed" if mode == "full" else f"Operator entered {entered_footage} ft + {buffer_footage} ft safety buffer",
+                "Poor run" if poor_run else "",
+                note,
+            ]
+            if part
+        )
+
+        with transaction.atomic():
+            usage = MaterialUsage.objects.create(
+                inventory=inventory,
+                material=inventory.material,
+                usage_type="finished",
+                quantity=buffered_footage,
+                unit="lf",
+                used_date=timezone.localdate(),
+                used_by=operator,
+                reference=reference,
+                job_ticket=job_ticket,
+                production_schedule=schedule,
+                notes=usage_note,
+            )
+            inventory.refresh_from_db()
+            inventory.status = "depleted" if Decimal(inventory.length_feet or inventory.quantity or 0) <= 0 else "available"
+            if poor_run or note:
+                event_note = f"{timezone.localdate()}: {operator or 'Operator'} / {usage_note}"
+                inventory.notes = "\n".join(part for part in [inventory.notes, event_note] if part)
+            inventory.save(update_fields=["status", "notes"] if poor_run or note else ["status"])
+
+        return Response(
+            {
+                "inventory": self.get_serializer(inventory).data,
+                "usage": MaterialUsageSerializer(usage).data,
+                "enteredFootage": entered_footage,
+                "bufferFootage": buffer_footage,
+                "deductedFootage": buffered_footage,
+                "remainingFootage": inventory.length_feet if inventory.length_feet is not None else inventory.quantity,
+            }
+        )
+
     @action(detail=True, methods=["post"], url_path="check-out")
     def check_out(self, request, pk=None):
         inventory = self.get_object()
@@ -350,6 +441,9 @@ class MaterialUsageViewSet(BaseMaterialsViewSet):
         "coater_roll_tag__tag_number",
         "finished_inventory__name",
         "finished_inventory__sku",
+        "job_ticket__ticket_number",
+        "job_ticket__job_name",
+        "production_schedule__id",
         "used_by",
         "reference",
         "notes",
@@ -368,6 +462,8 @@ class MaterialUsageViewSet(BaseMaterialsViewSet):
                 "inventory",
                 "material",
                 "coater_roll_tag",
+                "job_ticket",
+                "production_schedule",
                 "finished_inventory",
                 "finished_inventory__job_ticket",
                 "finished_inventory__location",
@@ -380,6 +476,8 @@ class MaterialUsageViewSet(BaseMaterialsViewSet):
         finished_inventory = self.request.query_params.get("finished_inventory")
         finished_inventory_job_ticket = self.request.query_params.get("finished_inventory_job_ticket")
         finished_inventory_tsm_id = self.request.query_params.get("finished_inventory_tsm_id")
+        job_ticket = self.request.query_params.get("job_ticket")
+        production_schedule = self.request.query_params.get("production_schedule")
         if material:
             qs = qs.filter(material_id=material)
         if inventory:
@@ -396,6 +494,10 @@ class MaterialUsageViewSet(BaseMaterialsViewSet):
                 Q(finished_inventory__notes__icontains=f"Imported TSM ID: {tsm_id}") |
                 Q(finished_inventory__sku__iexact=tsm_id)
             )
+        if job_ticket:
+            qs = qs.filter(job_ticket_id=job_ticket)
+        if production_schedule:
+            qs = qs.filter(production_schedule_id=production_schedule)
         return qs
 
 
@@ -403,9 +505,13 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
     queryset = (
         CoaterRollTag.objects.select_related(
             "scheduled_material",
+            "scheduled_material__master_type",
             "liner",
+            "liner__master_type",
             "face",
+            "face__master_type",
             "adhesive",
+            "adhesive__master_type",
             "silicone",
             "coating",
             "liner_inventory",
@@ -419,6 +525,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "silicone_supplier_option__supplier",
             "coating_supplier_option__supplier",
             "produced_material",
+            "produced_material__master_type",
             "source_schedule",
             "press",
             "location",
@@ -470,6 +577,16 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         "operator",
     ]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        material_id = self.request.query_params.get("material")
+        source_schedule = self.request.query_params.get("source_schedule")
+        if material_id:
+            qs = qs.filter(Q(scheduled_material_id=material_id) | Q(produced_material_id=material_id))
+        if source_schedule:
+            qs = qs.filter(source_schedule_id=source_schedule)
+        return qs
+
     @action(detail=True, methods=["post"], url_path="create-roll")
     def create_roll(self, request, pk=None):
         schedule = self.get_object()
@@ -488,18 +605,22 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             value = request.data.get(key)
             return value if value not in [None, ""] else fallback
 
+        liner_id = requested_id("liner", schedule.liner_id)
+        adhesive_id = requested_id("adhesive", schedule.adhesive_id)
+        liner = MaterialSpec.objects.filter(pk=liner_id).select_related("master_type").first()
+        adhesive = MaterialSpec.objects.filter(pk=adhesive_id).select_related("master_type").first()
         payload = {
             "name": schedule.name,
-            "status": "complete",
+            "status": "tag_printed",
             "print_status": "not_printed",
             "scheduled_by": schedule.scheduled_by,
             "cut_description": schedule.cut_description,
             "operator_notes": request.data.get("operator_notes", schedule.operator_notes),
             "scheduled_material": schedule.scheduled_material_id,
             "source_schedule": schedule.pk,
-            "liner": requested_id("liner", schedule.liner_id),
+            "liner": liner_id,
             "face": requested_id("face", schedule.face_id),
-            "adhesive": requested_id("adhesive", schedule.adhesive_id),
+            "adhesive": adhesive_id,
             "silicone": requested_id("silicone", schedule.silicone_id),
             "coating": requested_id("coating", schedule.coating_id),
             "liner_supplier_option": request.data.get("liner_supplier_option"),
@@ -508,7 +629,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "silicone_supplier_option": request.data.get("silicone_supplier_option"),
             "coating_supplier_option": request.data.get("coating_supplier_option"),
             "produced_material": schedule.produced_material_id or schedule.scheduled_material_id,
-            "result_code": schedule.result_code,
+            "result_code": self.roll_part_number(schedule.scheduled_material or schedule.produced_material, liner, adhesive),
             "width_inches": request.data.get("width_inches"),
             "length_feet": request.data.get("length_feet"),
             "weight_lbs": request.data.get("weight_lbs"),
@@ -516,7 +637,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "run_date": request.data.get("run_date") or timezone.localdate().isoformat(),
             "press": requested_id("press", schedule.press_id),
             "location": request.data.get("location"),
-            "log_inventory": True,
+            "log_inventory": False,
             "notes": request.data.get("notes", ""),
         }
         if request.data.get("result_lot_number"):
@@ -531,6 +652,62 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
                 schedule.save(update_fields=["status", "updated_at"])
 
         return Response(self.get_serializer(roll).data, status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def part_token(material):
+        if not material:
+            return ""
+        value = getattr(getattr(material, "master_type", None), "code", "") or material.material_family
+        if not value and material.material_type == "coated_stock":
+            value = re.split(r"[-/]", str(material.name or material.code or ""), maxsplit=1)[0]
+        value = value or material.name or material.code
+        return re.sub(r"[^A-Za-z0-9]+", "", str(value or "").upper())
+
+    @classmethod
+    def roll_part_number(cls, material, liner, adhesive):
+        return "-".join(
+            token for token in [
+                cls.part_token(material),
+                cls.part_token(liner),
+                cls.part_token(adhesive),
+            ]
+            if token
+        )
+
+    @action(detail=True, methods=["post"], url_path="document-roll")
+    def document_roll(self, request, pk=None):
+        roll = self.get_object()
+        if not roll.source_schedule_id:
+            return Response(
+                {"detail": "Select a printed roll tag from a coater schedule."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if roll.logged_inventory_id or roll.status == "complete":
+            return Response(
+                {"detail": "This master roll has already been documented."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            footage = Decimal(str(request.data.get("length_feet", "")))
+        except Exception:
+            return Response({"length_feet": ["Enter the actual master roll footage."]}, status=status.HTTP_400_BAD_REQUEST)
+        if footage <= 0:
+            return Response({"length_feet": ["Footage must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        for field in ["width_inches", "weight_lbs", "operator", "operator_notes", "notes"]:
+            if field in request.data:
+                setattr(roll, field, request.data.get(field))
+        if "location" in request.data:
+            roll.location_id = request.data.get("location") or None
+        if request.data.get("result_lot_number"):
+            roll.result_lot_number = str(request.data["result_lot_number"]).strip()
+        roll.length_feet = footage
+        roll.run_date = request.data.get("run_date") or timezone.localdate()
+        roll.status = "complete"
+        roll.log_inventory = True
+        roll.save()
+        return Response(self.get_serializer(roll).data)
 
     @staticmethod
     def component_print_text(material, inventory=None, supplier_option=None):
@@ -592,7 +769,10 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             if part
         )
         material = tag.produced_material or tag.scheduled_material
-        part_number = tag.result_code or getattr(material, "code", "") or tag.name
+        part_number = self.roll_part_number(material, tag.liner, tag.adhesive) or tag.result_code or getattr(material, "code", "") or tag.name
+        if tag.result_code != part_number:
+            tag.result_code = part_number
+            tag.save(update_fields=["result_code", "updated_at"])
         queue_key = _firebase_safe_key(press.printer_queue_key or press.name or printer_ip)
         frontend_base = _print_text(request.data, "frontend_url", settings.FRONTEND_PUBLIC_URL).rstrip("/")
         if urlparse(frontend_base).hostname in {"localhost", "127.0.0.1"}:

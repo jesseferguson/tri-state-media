@@ -142,6 +142,9 @@ class MaterialUsageSerializer(serializers.ModelSerializer):
     material_code = serializers.CharField(source="material.code", read_only=True)
     material_type = serializers.CharField(source="material.material_type", read_only=True)
     coater_roll_tag_number = serializers.CharField(source="coater_roll_tag.tag_number", read_only=True)
+    job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
+    job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
+    production_schedule_status = serializers.CharField(source="production_schedule.status", read_only=True)
     finished_inventory_name = serializers.CharField(source="finished_inventory.name", read_only=True)
     finished_inventory_sku = serializers.CharField(source="finished_inventory.sku", read_only=True)
     finished_inventory_unit = serializers.CharField(source="finished_inventory.unit", read_only=True)
@@ -193,6 +196,11 @@ class CoaterRollTagSerializer(serializers.ModelSerializer):
     schedule_id = serializers.SerializerMethodField()
     schedule_tag_number = serializers.SerializerMethodField()
     schedule_roll_count = serializers.SerializerMethodField()
+    schedule_pending_roll_count = serializers.SerializerMethodField()
+    schedule_documented_roll_count = serializers.SerializerMethodField()
+    schedule_documented_footage = serializers.SerializerMethodField()
+    schedule_target_footage = serializers.SerializerMethodField()
+    schedule_progress_percent = serializers.SerializerMethodField()
     is_schedule = serializers.SerializerMethodField()
 
     class Meta:
@@ -208,6 +216,32 @@ class CoaterRollTagSerializer(serializers.ModelSerializer):
     def get_schedule_roll_count(self, obj):
         schedule = obj.source_schedule if obj.source_schedule_id else obj
         return sum(1 for roll in schedule.produced_rolls.all() if roll.status != "void")
+
+    def get_schedule_pending_roll_count(self, obj):
+        schedule = obj.source_schedule if obj.source_schedule_id else obj
+        return sum(1 for roll in schedule.produced_rolls.all() if roll.status == "tag_printed")
+
+    def get_schedule_documented_roll_count(self, obj):
+        schedule = obj.source_schedule if obj.source_schedule_id else obj
+        return sum(1 for roll in schedule.produced_rolls.all() if roll.status == "complete")
+
+    def get_schedule_documented_footage(self, obj):
+        schedule = obj.source_schedule if obj.source_schedule_id else obj
+        return sum(
+            (roll.length_feet or 0)
+            for roll in schedule.produced_rolls.all()
+            if roll.status == "complete"
+        )
+
+    def get_schedule_target_footage(self, obj):
+        schedule = obj.source_schedule if obj.source_schedule_id else obj
+        return schedule.length_feet or 0
+
+    def get_schedule_progress_percent(self, obj):
+        target = self.get_schedule_target_footage(obj)
+        if not target:
+            return 0
+        return min(100, round(float(self.get_schedule_documented_footage(obj) / target * 100), 1))
 
     def get_is_schedule(self, obj):
         return not obj.source_schedule_id and not obj.log_inventory

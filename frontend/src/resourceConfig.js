@@ -756,6 +756,21 @@ export const resources = [
   },
 
   {
+    key: "material-handling",
+    label: "Material Handling",
+    singular: "Material Handling",
+    group: "production-material",
+    icon: PackageCheck,
+    accent: "#0f766e",
+    staticView: true,
+    viewMode: "materialHandling",
+    disableCreate: true,
+    tagline: "Scan, locate, edit, and consume active coated-stock rolls.",
+    columns: [],
+    fields: [],
+  },
+
+  {
     key: "customers",
     endpoint: "customers",
     label: "Customers",

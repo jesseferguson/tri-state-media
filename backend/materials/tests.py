@@ -5,9 +5,10 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 
+from production.models import JobTicket, ProductionSchedule
 from tooling.models import Press
 
-from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, RawMaterialInventory
+from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
 
 
 class CoaterRollTagPrintQueueTests(TestCase):
@@ -26,7 +27,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
     def test_roll_tag_print_uses_manufacturing_and_printer_data(self):
         face = MaterialSpec.objects.create(material_type="face", code="FACE-PM", name="PM Face", material_family="PM")
         liner = MaterialSpec.objects.create(material_type="liner", code="LINER-40", name="40 Liner", material_family="40")
-        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-2417", name="2417 Adhesive", material_family="2417")
+        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-3180", name="3180 Adhesive", material_family="3180")
         silicone = MaterialSpec.objects.create(material_type="silicone", code="SIL-EASY", name="Easy Release", material_family="Easy Release")
         produced = MaterialSpec.objects.create(material_type="coated_stock", code="PM-2417-40", name="PM-2417-40")
         face_supplier = MaterialSupplierOption.objects.create(
@@ -91,7 +92,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertEqual(body["SPEED"], "8")
         self.assertEqual(body["DARKNESS"], "15")
         self.assertEqual(body["Total Ship Stock"], 2)
-        self.assertEqual(body["Part Number List Logic"], "PM-2417-40")
+        self.assertEqual(body["Part Number List Logic"], "PM-40-3180")
         self.assertIn("PM", body["Face"])
         self.assertIn("Face Supply Co", body["Face"])
         self.assertIn("FACE-100", body["Face"])
@@ -112,8 +113,8 @@ class CoaterRollTagPrintQueueTests(TestCase):
 
     def test_finished_material_schedule_payload_creates_coater_job(self):
         face = MaterialSpec.objects.create(material_type="face", code="FACE-SCHEDULE", name="PM Face")
-        liner = MaterialSpec.objects.create(material_type="liner", code="LINER-SCHEDULE", name="40 Liner")
-        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-SCHEDULE", name="2417 Adhesive")
+        liner = MaterialSpec.objects.create(material_type="liner", code="LINER-SCHEDULE", name="40 Liner", material_family="40")
+        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-SCHEDULE", name="3180 Adhesive", material_family="3180")
         silicone = MaterialSpec.objects.create(material_type="silicone", code="SIL-SCHEDULE", name="Easy Release")
         material = MaterialSpec.objects.create(material_type="coated_stock", code="PM-SCHEDULE", name="PM")
         material.allowed_face_materials.add(face)
@@ -160,7 +161,6 @@ class CoaterRollTagPrintQueueTests(TestCase):
                 "face": face.id,
                 "adhesive": adhesive.id,
                 "silicone": silicone.id,
-                "length_feet": 5000,
                 "width_inches": 13,
                 "operator": "ET Operator",
                 "press": press.id,
@@ -175,7 +175,6 @@ class CoaterRollTagPrintQueueTests(TestCase):
                 "face": face.id,
                 "adhesive": adhesive.id,
                 "silicone": silicone.id,
-                "length_feet": 5000,
                 "width_inches": 13,
                 "operator": "ET Operator",
                 "press": press.id,
@@ -191,7 +190,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertEqual(first_roll.json()["source_schedule"], schedule_id)
         self.assertEqual(first_roll.json()["schedule_id"], schedule_id)
         self.assertEqual(first_roll.json()["schedule_tag_number"], response.json()["tag_number"])
-        self.assertEqual(first_roll.json()["status"], "complete")
+        self.assertEqual(first_roll.json()["status"], "tag_printed")
 
         schedule = CoaterRollTag.objects.get(pk=schedule_id)
         self.assertEqual(schedule.status, "running")
@@ -199,4 +198,66 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertFalse(schedule.logged_inventory_id)
         first = CoaterRollTag.objects.get(pk=first_roll.json()["id"])
         self.assertEqual(first.result_serial_number, first.tag_number)
+        self.assertFalse(RawMaterialInventory.objects.filter(source_roll_tag=first).exists())
+
+        first_documented = self.client.post(
+            reverse("coater-roll-tag-document-roll", args=[first.id]),
+            {
+                "length_feet": 40000,
+                "width_inches": 13,
+                "operator": "ET Operator",
+                "location": None,
+                "notes": "Master roll one",
+            },
+            content_type="application/json",
+        )
+        second_documented = self.client.post(
+            reverse("coater-roll-tag-document-roll", args=[second_roll.json()["id"]]),
+            {
+                "length_feet": 60000,
+                "width_inches": 13,
+                "operator": "ET Operator",
+                "notes": "Master roll two",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(first_documented.status_code, 200, first_documented.content)
+        self.assertEqual(second_documented.status_code, 200, second_documented.content)
+        self.assertEqual(first_documented.json()["status"], "complete")
         self.assertTrue(RawMaterialInventory.objects.filter(source_roll_tag=first, status="available").exists())
+
+        schedule_detail = self.client.get(reverse("coater-roll-tag-detail", args=[schedule_id]))
+        self.assertEqual(schedule_detail.json()["schedule_pending_roll_count"], 0)
+        self.assertEqual(schedule_detail.json()["schedule_documented_roll_count"], 2)
+        self.assertEqual(Decimal(schedule_detail.json()["schedule_documented_footage"]), Decimal("100000"))
+        self.assertEqual(schedule_detail.json()["schedule_progress_percent"], 66.7)
+
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-MATERIAL-USE",
+            job_name="Material consumption",
+            product_code="PM-TEST",
+        )
+        production_schedule = ProductionSchedule.objects.create(
+            job_ticket=ticket,
+            status="running",
+            press=press,
+            scheduled_by="Scheduler",
+        )
+        inventory = RawMaterialInventory.objects.get(source_roll_tag=first)
+        consumption = self.client.post(
+            reverse("raw-material-consume-roll", args=[inventory.id]),
+            {
+                "mode": "partial",
+                "used_feet": 10000,
+                "used_by": "Press Operator",
+                "production_schedule": production_schedule.id,
+                "notes": "Job finished before roll ran out",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(consumption.status_code, 200, consumption.content)
+        self.assertEqual(Decimal(consumption.json()["deductedFootage"]), Decimal("10300.000"))
+        self.assertEqual(Decimal(consumption.json()["remainingFootage"]), Decimal("29700.000"))
+        usage = MaterialUsage.objects.get(pk=consumption.json()["usage"]["id"])
+        self.assertEqual(usage.job_ticket_id, ticket.id)
+        self.assertEqual(usage.production_schedule_id, production_schedule.id)

@@ -20,6 +20,7 @@ import JobTicketPanel from "./components/JobTicketPanel";
 import LabelLayoutsView from "./components/LabelLayoutsView";
 import LiveFootageView from "./components/LiveFootageView";
 import MaterialInventoryView from "./components/MaterialInventoryView";
+import MaterialHandlingView, { activeJobKey } from "./components/MaterialHandlingView";
 import MaterialTypeTable from "./components/MaterialTypeTable";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
 import MaterialTypeManager from "./components/MaterialTypeManager";
@@ -163,6 +164,14 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
   if (resource.key === "material-coated-stock") {
     addLookupSpec(specs, relationLookupSpec("raw-materials", selected?.id ? { material: selected.id } : { material_type: "coated_stock" }, 250));
     if (selected?.id) addLookupSpec(specs, relationLookupSpec("material-usages", { material: selected.id }, 150));
+    if (selected?.id) addLookupSpec(specs, {
+      key: "coater-roll-tags",
+      endpoint: "coater-roll-tags",
+      ordering: "-run_date,-created_at",
+      filters: { material: selected.id },
+      pageSize: 1000,
+      fetchAll: true,
+    });
     addLookupSpec(specs, relationLookupSpec("presses", {}, 100));
   }
 
@@ -1271,8 +1280,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
 
   useEffect(() => {
     if (!linkedRollTagId) return;
-    if (resourceAvailableForRole(roleDefinitions, viewRoleName, "coater-operator")) {
-      setActiveKey("coater-operator");
+    if (resourceAvailableForRole(roleDefinitions, viewRoleName, "material-handling")) {
+      setActiveKey("material-handling");
       setSelected(null);
       setFormMode(null);
     }
@@ -1345,7 +1354,24 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     }
 
     if (resource.endpoint === "materials") {
-      return usages.filter((row) => String(row.material) === String(selected.id));
+      const materialUsages = usages.filter((row) => String(row.material) === String(selected.id));
+      const productionRuns = (lookupQuery.data?.["coater-roll-tags"] ?? [])
+        .filter((row) => row.source_schedule && row.status === "complete")
+        .map((row) => ({
+          id: `coater-run-${row.id}`,
+          material: row.produced_material || row.scheduled_material,
+          usage_type: "coater",
+          quantity: row.length_feet || 0,
+          unit: "lf",
+          used_date: row.run_date || String(row.created_at || "").slice(0, 10),
+          used_by: row.operator,
+          reference: row.schedule_tag_number,
+          coater_roll_tag_number: row.tag_number,
+          production_schedule: row.schedule_id,
+          inventory_serial: row.result_serial_number,
+          notes: row.notes,
+        }));
+      return [...productionRuns, ...materialUsages];
     }
 
     return [];
@@ -2619,6 +2645,17 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               window.history.replaceState({}, "", url);
             }}
           />
+        ) : resource.viewMode === "materialHandling" ? (
+          <MaterialHandlingView
+            currentUser={currentUserForView}
+            linkedRollTagId={linkedRollTagId}
+            onLinkedRollTagChange={(rollTagId) => {
+              setLinkedRollTagId(String(rollTagId));
+              const url = new URL(window.location.href);
+              url.searchParams.set("rollTagId", String(rollTagId));
+              window.history.replaceState({}, "", url);
+            }}
+          />
         ) : resource.viewMode === "dataImport" ? (
           <DataImportTool currentUser={currentUserForView} />
         ) : (
@@ -2738,6 +2775,19 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                       id: row.id,
                       payload: { reason, performed_by: currentUserForView.name },
                     })}
+                    onUseMaterial={(row) => {
+                      const context = {
+                        scheduleId: row.id,
+                        jobTicketId: row.job_ticket,
+                        label: [row.job_ticket_number || row.job_name || `Schedule ${row.id}`, row.press_name].filter(Boolean).join(" / "),
+                      };
+                      window.localStorage.setItem(activeJobKey, JSON.stringify(context));
+                      setLinkedRollTagId("");
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete("rollTagId");
+                      window.history.replaceState({}, "", url);
+                      switchResource("material-handling");
+                    }}
                     onFlexDieReorder={(die, note) => requestFlexDieReorder(die, note)}
                     onFlexDieCountUpdate={(die, payload) => adjustFlexDieCount(die, payload)}
                   />
