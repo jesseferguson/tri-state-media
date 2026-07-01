@@ -822,12 +822,6 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
     const coater = data.presses.filter(isCoaterPress);
     return coater.length ? coater : data.presses;
   }, [data.presses]);
-  const defaultPress = preferredPresses.find((press) => /eti/i.test(press.name)) ?? preferredPresses[0];
-
-  useEffect(() => {
-    if (selectedPress !== "all" || !defaultPress?.id) return;
-    setSelectedPress(String(defaultPress.id));
-  }, [defaultPress?.id, selectedPress]);
 
   const materialJobs = useMemo(() => data.tags
     .filter((tag) => activeMaterialStatuses.has(tag.status))
@@ -976,7 +970,8 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
 
       <PressFilter presses={preferredPresses} selectedPress={selectedPress} onSelect={setSelectedPress} />
 
-      {dataQuery.error && <p className="coater-error">{dataQuery.error.message}</p>}
+      {dataQuery.isLoading && <p className="coater-empty">Loading the coater lineup...</p>}
+      {dataQuery.error && <p className="coater-error">The coater lineup could not load: {dataQuery.error.message}</p>}
 
       <div className="coater-work-grid">
         <section className="coater-panel">

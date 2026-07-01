@@ -2769,6 +2769,7 @@ export const resources = [
     icon: Factory,
     accent: "#38bdf8",
     defaultOrdering: "name",
+    viewMode: "presses",
     tagline: "Press capability: location, colors, web width, die stations, and undercut capability.",
     columns: [
       "name",
@@ -2797,9 +2798,13 @@ export const resources = [
         type: "searchRelation",
         relation: "locations",
         searchable: true,
+        lookupPageSize: 1000,
+        lookupFetchAll: true,
+        display: (row) => row.full_path || [row.parent_name, row.name].filter(Boolean).join(" > "),
         searchFields: [
           "name",
           "code",
+          "full_path",
           "location_type",
           "parent_name",
           "supplier_name",
@@ -2949,7 +2954,7 @@ export const resources = [
     endpoint: "suppliers",
     label: "Suppliers",
     singular: "Supplier",
-    group: "plant",
+    group: "production",
     icon: Store,
     accent: "#fde68a",
     defaultOrdering: "name",
@@ -2983,9 +2988,9 @@ export const resources = [
       {
         name: "tags",
         label: "Tags",
-        type: "text",
+        type: "tagInput",
         placeholder: "tooling, material, box, core",
-        helpText: "Comma-separated tags recommend this supplier in matching forms.",
+        helpText: "Use an existing tag when possible so supplier recommendations stay organized.",
       },
       {
         name: "city",

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, Building2, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
+import { BadgeCheck, Building2, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Menu, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
 import { createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
@@ -33,6 +33,7 @@ import RecipeToolStackView from "./components/RecipeToolStackView";
 import RollScanStation from "./components/RollScanStation";
 import RollWorkflowWindow from "./components/RollWorkflowWindow";
 import ProductionScheduleView from "./components/ProductionScheduleView";
+import PressTable from "./components/PressTable";
 import SupplierTable from "./components/SupplierTable";
 import ToolingItemDetailPanel from "./components/ToolingItemDetailPanel";
 import {
@@ -177,6 +178,10 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, { key: "quote-records", endpoint: "quote-records", ordering: "-created_at", filters: { customer: selected.id }, pageSize: 1000, fetchAll: true });
     addLookupSpec(specs, relationLookupSpec("customer-orders", { customer: selected.id }, 1000, true));
     addLookupSpec(specs, relationLookupSpec("job-tickets", { customer: selected.id }, 1000, true));
+  }
+
+  if (resource.key === "suppliers") {
+    addLookupSpec(specs, relationLookupSpec("suppliers", {}, 1000, true));
   }
 
   if (resource.key === "finished-inventory" && selected?.id) {
@@ -366,6 +371,17 @@ const initialOpenGroups = Object.fromEntries(
 
 const topLevelGroups = resourceGroups.filter((group) => !group.parent);
 const groupLabelsByKey = Object.fromEntries(resourceGroups.map((group) => [group.key, group.label]));
+
+function navigationResourcesForGroup(items, groupKey) {
+  const grouped = items.filter((item) => item.group === groupKey);
+  if (groupKey !== "production") return grouped;
+  const suppliers = grouped.find((item) => item.key === "suppliers");
+  if (!suppliers) return grouped;
+  const withoutSuppliers = grouped.filter((item) => item.key !== "suppliers");
+  const customerIndex = withoutSuppliers.findIndex((item) => item.key === "customers");
+  withoutSuppliers.splice(customerIndex >= 0 ? customerIndex + 1 : withoutSuppliers.length, 0, suppliers);
+  return withoutSuppliers;
+}
 const materialTypePageKeys = new Set([
   "material-faces",
   "material-liners",
@@ -1178,6 +1194,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const [flexFilters, setFlexFilters] = useState(emptyFlexDieFilters);
   const [flexDieDetailOpen, setFlexDieDetailOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState(initialOpenGroups);
+  const [mobilePageMenuOpen, setMobilePageMenuOpen] = useState(false);
+  const [mobilePageSearch, setMobilePageSearch] = useState("");
   const [usageOpen, setUsageOpen] = useState(false);
   const [rollOpen, setRollOpen] = useState(false);
   const [finishedInventoryOpen, setFinishedInventoryOpen] = useState(false);
@@ -1232,8 +1250,19 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const showingScheduleFormOverlay = Boolean(formMode && resource.key === "production-schedule");
   const showingFlexDieFormOverlay = Boolean(formMode && resource.key === "flex-dies");
   const showingToolingConfigFormOverlay = Boolean(formMode && isToolingConfigPage);
+  const showingPressFormOverlay = Boolean(formMode && resource.key === "presses");
   const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage && resource.key !== "recipes");
   const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
+  const mobileMenuGroups = useMemo(() => {
+    const query = mobilePageSearch.trim().toLowerCase();
+    return resourceGroups
+      .map((group) => ({
+        ...group,
+        items: navigationResourcesForGroup(allowedResources, group.key)
+          .filter((item) => !query || `${item.label} ${item.singular} ${group.label}`.toLowerCase().includes(query)),
+      }))
+      .filter((group) => group.items.length);
+  }, [allowedResources, mobilePageSearch]);
 
   useEffect(() => {
     if (activeKeyAllowed) return;
@@ -1973,9 +2002,6 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       const silicone = firstMaterialComponentId(material, "silicone_material", "allowed_silicone_materials");
       const coating = firstMaterialComponentId(material, "coating_material", "allowed_coating_materials");
 
-      const scheduledPress = schedule.press
-        ? (lookupQuery.data?.presses ?? []).find((press) => String(press.id) === String(schedule.press))
-        : null;
       return createRecord("coater-roll-tags", {
         name: material.name || material.material_family || material.code,
         status: "scheduled",
@@ -1997,11 +2023,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           schedule.cut_description ? `Cut: ${schedule.cut_description}` : "",
           schedule.operator_notes ? `Operator note: ${schedule.operator_notes}` : "",
         ].filter(Boolean).join("\n"),
-        press: scheduledPress?.id ?? null,
+        press: schedule.press ? Number(schedule.press) : null,
         log_inventory: false,
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
     },
@@ -2207,6 +2234,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     setMaterialTypeManagerOpen(false);
     setToolingWorkspaceForm(null);
     setSearch("");
+    setMobilePageMenuOpen(false);
+    setMobilePageSearch("");
   }
 
   function closeRecordForm() {
@@ -2397,25 +2426,60 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         />
         <MessagesCenter currentUser={currentUser} users={users} compact showToast={false} />
         {!singleResourceMode && (
-          <label>
-            <span>Page</span>
-            <select value={resource.key} onChange={(event) => switchResource(event.target.value)}>
-              {allowedResources.map((item) => (
-                <option value={item.key} key={item.key}>
-                  {groupLabelsByKey[item.group] ? `${groupLabelsByKey[item.group]} - ` : ""}{item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <button className="mobile-page-menu-trigger" type="button" onClick={() => setMobilePageMenuOpen(true)}>
+            <Menu size={18} />
+            <span><small>Pages</small><strong>Browse all screens</strong></span>
+            <ChevronRight size={17} />
+          </button>
         )}
       </section>
+
+      {mobilePageMenuOpen && (
+        <section className="mobile-page-menu-overlay" role="dialog" aria-modal="true" aria-label="Choose a page">
+          <div className="mobile-page-menu-window">
+            <header>
+              <div>
+                <span>Navigation</span>
+                <strong>Choose a page</strong>
+              </div>
+              <button className="ghost-btn" type="button" onClick={() => { setMobilePageMenuOpen(false); setMobilePageSearch(""); }}>
+                <X size={17} /> Close
+              </button>
+            </header>
+            <label className="mobile-page-search">
+              <Search size={17} />
+              <input autoFocus value={mobilePageSearch} onChange={(event) => setMobilePageSearch(event.target.value)} placeholder="Search pages..." />
+            </label>
+            <div className="mobile-page-groups">
+              {mobileMenuGroups.map((group) => (
+                <section className="mobile-page-group" key={group.key}>
+                  <header><strong>{group.label}</strong><span>{group.items.length}</span></header>
+                  <div>
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <button className={item.key === resource.key ? "active" : ""} type="button" key={item.key} onClick={() => switchResource(item.key)} style={{ "--accent": item.accent }}>
+                          <span><Icon size={18} /></span>
+                          <strong>{item.label}</strong>
+                          {item.key === resource.key ? <b>Current</b> : <ChevronRight size={16} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+              {!mobileMenuGroups.length && <p className="mobile-page-empty">No pages match that search.</p>}
+            </div>
+          </div>
+        </section>
+      )}
 
       {!liveFootageFullView && <aside className="sidebar">
         <PressSpeedSidebarWidget onOpenLiveFootage={openLiveFootageFromSidebar} />
 
         {topLevelGroups.map((group) => {
           const childGroups = resourceGroups.filter((item) => item.parent === group.key);
-          const groupResources = allowedResources.filter((item) => item.group === group.key);
+          const groupResources = navigationResourcesForGroup(allowedResources, group.key);
           const visibleChildGroups = childGroups.filter((child) => allowedResources.some((item) => item.group === child.key));
           const activeInGroup = groupResources.some((item) => item.key === resource.key) || visibleChildGroups.some((child) => allowedResources.some((item) => item.group === child.key && item.key === resource.key));
           const open = Boolean(openGroups[group.key]);
@@ -2442,7 +2506,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                   })}
 
                   {visibleChildGroups.map((child) => {
-                    const childResources = allowedResources.filter((item) => item.group === child.key);
+                    const childResources = navigationResourcesForGroup(allowedResources, child.key);
                     const activeInChild = childResources.some((item) => item.key === resource.key);
                     const childOpen = Boolean(openGroups[child.key]);
                     if (!childResources.length) return null;
@@ -2608,7 +2672,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               </section>
             )}
 
-            {formMode && !showingMaterialFormOverlay && !showingScheduleFormOverlay && !showingFlexDieFormOverlay && !showingToolingConfigFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
+            {formMode && !showingMaterialFormOverlay && !showingScheduleFormOverlay && !showingFlexDieFormOverlay && !showingToolingConfigFormOverlay && !showingPressFormOverlay && !(showingJobTicketOverlay && formMode === "edit") && (
               <RecordForm
                 resource={resource}
                 record={formMode === "edit" ? selected : null}
@@ -2621,7 +2685,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               />
             )}
 
-            <section className={`content-grid ${["customers", "job-tickets", "production-schedule", "material-coated-stock", "suppliers", "flex-dies"].includes(resource.key) || isMaterialTypePage || isToolingConfigPage ? "wide-list" : ""}`}>
+            <section className={`content-grid ${["customers", "job-tickets", "production-schedule", "material-coated-stock", "suppliers", "presses", "flex-dies"].includes(resource.key) || isMaterialTypePage || isToolingConfigPage ? "wide-list" : ""}`}>
               <div className="list-panel compact-card">
                 <div className="panel-head thin">
                   <div>
@@ -2765,6 +2829,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
                     onDelete={viewCanManageUsers ? confirmDeleteRecord : undefined}
                   />
+                ) : resource.key === "presses" ? (
+                  <PressTable
+                    rows={visibleRows}
+                    onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
+                    onDelete={viewCanManageUsers ? confirmDeleteRecord : undefined}
+                  />
                 ) : resource.key === "flex-dies" ? (
                   <FlexDieTable
                     rows={tableRows}
@@ -2825,7 +2895,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 )}
               </div>
 
-              {resource.key !== "customers" && resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && resource.key !== "suppliers" && resource.key !== "flex-dies" && !isMaterialTypePage && !isToolingConfigPage && (
+              {resource.key !== "customers" && resource.key !== "job-tickets" && resource.key !== "production-schedule" && resource.key !== "raw-materials" && resource.key !== "finished-inventory" && resource.key !== "material-coated-stock" && resource.key !== "suppliers" && resource.key !== "presses" && resource.key !== "flex-dies" && !isMaterialTypePage && !isToolingConfigPage && (
                 <aside className={resource.key === "flex-dies" && selected ? "flex-die-detail-shell" : toolingItemPageKeys.has(resource.key) && selected ? "tooling-item-detail-shell" : "detail-panel compact-card"}>
                   {selected ? (
                   resource.key === "flex-dies" ? (
@@ -2980,6 +3050,23 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 record={formMode === "edit" ? selected : null}
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={lookupQuery.data ?? {}}
+                submitting={saveMutation.isPending}
+                onSubmit={(payload) => saveMutation.mutate(payload)}
+                onCancel={closeRecordForm}
+                canUseField={canUseRecordField}
+              />
+            </div>
+          </section>
+        )}
+
+        {showingPressFormOverlay && (
+          <section className="press-form-overlay" role="dialog" aria-modal="true" aria-label={`${formMode === "edit" ? "Edit" : "Add"} press`}>
+            <div className="press-form-window">
+              <RecordForm
+                resource={resource}
+                record={formMode === "edit" ? selected : null}
+                defaults={formMode === "create" ? createDefaults : {}}
+                lookups={recordFormLookups}
                 submitting={saveMutation.isPending}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={closeRecordForm}

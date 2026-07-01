@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Plus, Search, Tag, X } from "lucide-react";
 import { formatInches, getRecordTitle } from "../lib/format";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 
@@ -355,6 +355,133 @@ function splitTags(value) {
     .split(/[,;]+/)
     .map((tag) => tag.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function tagDistance(left, right) {
+  const a = String(left || "").toLowerCase();
+  const b = String(right || "").toLowerCase();
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let previous = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const current = row[j];
+      row[j] = Math.min(
+        row[j] + 1,
+        row[j - 1] + 1,
+        previous + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      previous = current;
+    }
+  }
+  return row[b.length];
+}
+
+function supplierTagOptions(rows) {
+  const tags = new Map();
+  (rows ?? []).forEach((row) => {
+    splitTags(row.tags).forEach((tag) => {
+      const key = tag.toLowerCase();
+      const existing = tags.get(key);
+      tags.set(key, { label: existing?.label || tag, count: (existing?.count || 0) + 1 });
+    });
+  });
+  return Array.from(tags.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function SupplierTagInput({ id, value, rows, placeholder, onChange }) {
+  const [draft, setDraft] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = splitTags(value);
+  const options = useMemo(() => supplierTagOptions(rows), [rows]);
+  const suggestions = useMemo(() => {
+    const query = draft.trim().toLowerCase();
+    const selectedKeys = new Set(selected.map((tag) => tag.toLowerCase()));
+    return options
+      .filter((option) => !selectedKeys.has(option.label.toLowerCase()))
+      .map((option) => {
+        const label = option.label.toLowerCase();
+        const threshold = Math.max(1, Math.floor(Math.max(label.length, query.length) * .25));
+        const score = !query ? 3
+          : label.startsWith(query) ? 0
+          : label.includes(query) ? 1
+          : tagDistance(label, query) <= threshold ? 2
+          : 99;
+        return { ...option, score };
+      })
+      .filter((option) => option.score < 99)
+      .sort((a, b) => a.score - b.score || b.count - a.count || a.label.localeCompare(b.label))
+      .slice(0, 8);
+  }, [draft, options, selected]);
+
+  function addTag(rawTag) {
+    const clean = String(rawTag || "").trim().replace(/^,+|,+$/g, "");
+    if (!clean) return;
+    const canonical = options.find((option) => option.label.toLowerCase() === clean.toLowerCase())?.label || clean;
+    if (!selected.some((tag) => tag.toLowerCase() === canonical.toLowerCase())) {
+      onChange([...selected, canonical].join(", "));
+    }
+    setDraft("");
+    setOpen(false);
+  }
+
+  function removeTag(tag) {
+    onChange(selected.filter((item) => item.toLowerCase() !== tag.toLowerCase()).join(", "));
+  }
+
+  return (
+    <div className="supplier-tag-input">
+      <div className="supplier-tag-chips">
+        {selected.map((tag) => (
+          <button type="button" key={tag.toLowerCase()} onClick={() => removeTag(tag)} title={`Remove ${tag}`}>
+            <Tag size={13} /><span>{tag}</span><X size={12} />
+          </button>
+        ))}
+      </div>
+      <div className="supplier-tag-entry">
+        <input
+          id={id}
+          value={draft}
+          placeholder={selected.length ? "Add another tag" : placeholder}
+          onFocus={() => setOpen(true)}
+          onBlur={() => window.setTimeout(() => setOpen(false), 100)}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next.includes(",")) {
+              const parts = next.split(",");
+              parts.slice(0, -1).forEach(addTag);
+              setDraft(parts.at(-1) || "");
+              setOpen(true);
+              return;
+            }
+            setDraft(next);
+            setOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addTag(suggestions[0]?.label || draft);
+            }
+            if (event.key === "Backspace" && !draft && selected.length) removeTag(selected.at(-1));
+          }}
+        />
+        <button type="button" onClick={() => addTag(suggestions[0]?.label || draft)} disabled={!draft.trim()}>
+          <Plus size={15} /> Add
+        </button>
+        {open && suggestions.length > 0 && (
+          <div className="supplier-tag-suggestions">
+            <span>{draft.trim() ? "Suggested tags" : "Existing tags"}</span>
+            {suggestions.map((option) => (
+              <button type="button" key={option.label.toLowerCase()} onMouseDown={(event) => event.preventDefault()} onClick={() => addTag(option.label)}>
+                <strong>{option.label}</strong>
+                <small>{option.count} supplier{option.count === 1 ? "" : "s"}</small>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function fieldRecommendedTags(field) {
@@ -725,6 +852,25 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
           const sectionHeading = field.section && field.section !== visibleFields[index - 1]?.section
             ? <div className="form-section-heading"><strong>{field.section}</strong>{field.sectionHint && <span>{field.sectionHint}</span>}</div>
             : null;
+
+          if (field.type === "tagInput") {
+            return (
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <label className={fieldWideClass} htmlFor={id}>
+                  <span>{fieldLabel}</span>
+                  <SupplierTagInput
+                    id={id}
+                    value={value}
+                    rows={lookups.suppliers ?? []}
+                    placeholder={field.placeholder}
+                    onChange={(next) => update(field.name, next)}
+                  />
+                  {field.helpText && <small>{field.helpText}</small>}
+                </label>
+              </Fragment>
+            );
+          }
 
           if (field.type === "textarea") {
             return (
