@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertTriangle, CheckCircle2, Gauge, Goal, Maximize2, Minimize2, Timer } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Gauge, Goal, Maximize2, Minimize2, Save, Settings2, Timer, X } from "lucide-react";
 import { requestApi } from "../api";
 import AnimatedNumber from "./AnimatedNumber";
 
@@ -20,6 +20,17 @@ const shiftEndHour = 2;
 const shiftEndMinute = 59;
 const archiveEndpoint = "live-footage-archives";
 const etiDailyNode = "/ETI_SPEED";
+const etiSettingsEndpoint = "live-footage/eti-settings";
+const defaultEtiSettings = {
+  wheelDiameterInches: 3,
+  pulsesPerRevolution: 1,
+  settingsCheckSeconds: 300,
+  speedSendSeconds: 120,
+  footageSendSeconds: 300,
+  resetEnabled: false,
+  resetHour: 3,
+  resetMinute: 0,
+};
 
 const presses = [
   { key: "18AZT", name: "18 Aztech", dailyNode: "/18Aztech_SPEED", speedNode: "/18Aztech_CURRENT_SPEED" },
@@ -49,6 +60,49 @@ function formatShortNumber(value) {
 
 function formatShortRate(value) {
   return `${formatShortNumber(value)}/hr`;
+}
+
+function formatInterval(value) {
+  const seconds = Math.max(0, Number(value) || 0);
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  if (seconds % 3600 === 0) {
+    const hours = seconds / 3600;
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  if (seconds % 60 === 0) {
+    const minutes = seconds / 60;
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function normalizeEtiSettings(settings = {}) {
+  return {
+    ...defaultEtiSettings,
+    ...settings,
+    wheelDiameterInches: Number(settings.wheelDiameterInches ?? defaultEtiSettings.wheelDiameterInches),
+    pulsesPerRevolution: Number(settings.pulsesPerRevolution ?? defaultEtiSettings.pulsesPerRevolution),
+    settingsCheckSeconds: Number(settings.settingsCheckSeconds ?? defaultEtiSettings.settingsCheckSeconds),
+    speedSendSeconds: Number(settings.speedSendSeconds ?? defaultEtiSettings.speedSendSeconds),
+    footageSendSeconds: Number(settings.footageSendSeconds ?? defaultEtiSettings.footageSendSeconds),
+    resetEnabled: Boolean(settings.resetEnabled ?? defaultEtiSettings.resetEnabled),
+    resetHour: Number(settings.resetHour ?? defaultEtiSettings.resetHour),
+    resetMinute: Number(settings.resetMinute ?? defaultEtiSettings.resetMinute),
+  };
+}
+
+function readableApiError(error, fallback) {
+  const rawMessage = String(error?.message || "").trim();
+  if (!rawMessage) return fallback;
+  try {
+    const payload = JSON.parse(rawMessage);
+    if (payload?.detail) return payload.detail;
+    const firstValue = Object.values(payload || {})[0];
+    if (Array.isArray(firstValue) && firstValue[0]) return firstValue[0];
+  } catch {
+    // The API helper also returns ordinary text errors.
+  }
+  return rawMessage;
 }
 
 function wasteAdjustedFootage(rawFootage) {
@@ -425,7 +479,12 @@ function PaceNote({ pace, goalHit }) {
   );
 }
 
-export default function LiveFootageView({ tvMode = false, onTvModeChange = () => {} }) {
+export default function LiveFootageView({
+  tvMode = false,
+  onTvModeChange = () => {},
+  currentUser = null,
+  canManageSettings = false,
+}) {
   const canvasRef = useRef(null);
   const dailyCacheRef = useRef(null);
   const lastDailyFetchRef = useRef(0);
@@ -434,6 +493,15 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
   const refreshRef = useRef(null);
   const chartDrawnRef = useRef(false);
   const savedArchiveIdsRef = useRef(new Set());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsForm, setSettingsForm] = useState(defaultEtiSettings);
+  const [settingsStatus, setSettingsStatus] = useState({
+    loading: false,
+    saving: false,
+    error: "",
+    notice: "",
+    exists: true,
+  });
   const [snapshot, setSnapshot] = useState({
     state: "loading",
     error: "",
@@ -478,6 +546,86 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
   const wasteBufferPercentLabel = `${Math.round(wasteBufferPercent * 100)}%`;
   const countedProgressPercent = Math.max(0, Math.min(100, animatedSnapshot.percent));
   const wasteProgressPercent = Math.max(0, Math.min(100 - countedProgressPercent, (animatedSnapshot.currentWasteFootage / goalFootage) * 100));
+  const settingsHeaders = {
+    "X-Company-User-Id": String(currentUser?.id || ""),
+    "X-Company-Username": String(currentUser?.username || ""),
+  };
+
+  async function openSettings() {
+    setSettingsOpen(true);
+    setSettingsStatus({ loading: true, saving: false, error: "", notice: "", exists: true });
+    try {
+      const payload = await requestApi(etiSettingsEndpoint, { headers: settingsHeaders });
+      setSettingsForm(normalizeEtiSettings(payload?.settings));
+      setSettingsStatus({
+        loading: false,
+        saving: false,
+        error: "",
+        notice: "",
+        exists: payload?.exists !== false,
+      });
+    } catch (error) {
+      setSettingsStatus({
+        loading: false,
+        saving: false,
+        error: readableApiError(error, "Could not load ETI settings."),
+        notice: "",
+        exists: true,
+      });
+    }
+  }
+
+  function updateSetting(key, value) {
+    setSettingsForm((current) => ({ ...current, [key]: value }));
+    setSettingsStatus((current) => ({ ...current, error: "", notice: "" }));
+  }
+
+  function updateResetTime(value) {
+    const [hour, minute] = String(value || "00:00").split(":").map(Number);
+    setSettingsForm((current) => ({
+      ...current,
+      resetHour: Number.isFinite(hour) ? hour : 0,
+      resetMinute: Number.isFinite(minute) ? minute : 0,
+    }));
+    setSettingsStatus((current) => ({ ...current, error: "", notice: "" }));
+  }
+
+  async function saveSettings(event) {
+    event.preventDefault();
+    setSettingsStatus((current) => ({ ...current, saving: true, error: "", notice: "" }));
+    const payload = {
+      wheelDiameterInches: Number(settingsForm.wheelDiameterInches),
+      pulsesPerRevolution: Number(settingsForm.pulsesPerRevolution),
+      settingsCheckSeconds: Number(settingsForm.settingsCheckSeconds),
+      speedSendSeconds: Number(settingsForm.speedSendSeconds),
+      footageSendSeconds: Number(settingsForm.footageSendSeconds),
+      resetEnabled: Boolean(settingsForm.resetEnabled),
+      resetHour: Number(settingsForm.resetHour),
+      resetMinute: Number(settingsForm.resetMinute),
+    };
+    try {
+      const result = await requestApi(etiSettingsEndpoint, {
+        method: "PUT",
+        headers: settingsHeaders,
+        body: JSON.stringify(payload),
+      });
+      setSettingsForm(normalizeEtiSettings(result?.settings));
+      setSettingsStatus({
+        loading: false,
+        saving: false,
+        error: "",
+        notice: `Saved. The ETI controller will apply this within ${formatInterval(payload.settingsCheckSeconds)}.`,
+        exists: true,
+      });
+    } catch (error) {
+      setSettingsStatus((current) => ({
+        ...current,
+        saving: false,
+        error: readableApiError(error, "Could not save ETI settings."),
+        notice: "",
+      }));
+    }
+  }
 
   async function commitArchiveRecord(record) {
     const archiveId = record.shift_date;
@@ -661,6 +809,15 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
     return () => window.cancelAnimationFrame(frameId);
   }, [tvMode]);
 
+  useEffect(() => {
+    if (!settingsOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setSettingsOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [settingsOpen]);
+
   return (
     <section className="live-footage-view">
       <div className="live-footage-hero">
@@ -670,6 +827,11 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
           <span>{snapshot.rangeText || "Loading shift window..."}</span>
         </div>
         <div className="live-footage-hero-actions">
+          {canManageSettings && !tvMode && (
+            <button className="live-footage-settings-btn" type="button" onClick={openSettings}>
+              <Settings2 size={15} /> ETI Settings
+            </button>
+          )}
           <button type="button" onClick={() => {
             dailyCacheRef.current = null;
             lastDailyFetchRef.current = 0;
@@ -760,6 +922,198 @@ export default function LiveFootageView({ tvMode = false, onTvModeChange = () =>
           <p className="live-footage-note">Speeds and daily rows over {maxValidSpeedFpm} FPM are ignored. The browser saves the finished shift locally once it reaches 2:59 AM.</p>
         </article>
       </div>
+
+      {settingsOpen && canManageSettings && (
+        <div className="live-device-settings-overlay" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
+          <section
+            className="live-device-settings-window"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="eti-settings-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="live-device-settings-header">
+              <div>
+                <span className="live-device-settings-kicker"><Settings2 size={15} /> Admin device control</span>
+                <h3 id="eti-settings-title">ETI Footage Settings</h3>
+                <p>Changes are saved to Firebase and picked up by the ESP32 automatically.</p>
+              </div>
+              <button className="live-device-settings-close" type="button" onClick={() => setSettingsOpen(false)} aria-label="Close ETI settings">
+                <X size={19} />
+              </button>
+            </header>
+
+            {settingsStatus.loading ? (
+              <div className="live-device-settings-loading">
+                <Activity size={20} />
+                <strong>Loading device settings...</strong>
+              </div>
+            ) : (
+              <form className="live-device-settings-form" onSubmit={saveSettings}>
+                {!settingsStatus.exists && (
+                  <div className="live-device-settings-info">
+                    <CheckCircle2 size={17} />
+                    <span>The controller is using safe defaults. Saving will create its Firebase settings.</span>
+                  </div>
+                )}
+
+                <div className="live-device-settings-section">
+                  <div className="live-device-settings-section-title">
+                    <Gauge size={18} />
+                    <div>
+                      <strong>Wheel calibration</strong>
+                      <span>These values determine the measured feet and FPM.</span>
+                    </div>
+                  </div>
+                  <div className="live-device-settings-fields two-column">
+                    <label>
+                      <span>Wheel diameter</span>
+                      <div className="live-device-settings-input">
+                        <input
+                          type="number"
+                          min="0.5"
+                          max="48"
+                          step="0.001"
+                          value={settingsForm.wheelDiameterInches}
+                          onChange={(event) => updateSetting("wheelDiameterInches", event.target.value)}
+                          required
+                        />
+                        <small>inches</small>
+                      </div>
+                    </label>
+                    <label>
+                      <span>Pulses per revolution</span>
+                      <div className="live-device-settings-input">
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          step="1"
+                          value={settingsForm.pulsesPerRevolution}
+                          onChange={(event) => updateSetting("pulsesPerRevolution", event.target.value)}
+                          required
+                        />
+                        <small>pulses</small>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="live-device-settings-section">
+                  <div className="live-device-settings-section-title">
+                    <Timer size={18} />
+                    <div>
+                      <strong>Update timing</strong>
+                      <span>Longer intervals use fewer Firebase requests.</span>
+                    </div>
+                  </div>
+                  <div className="live-device-settings-fields three-column">
+                    <label>
+                      <span>Check settings</span>
+                      <div className="live-device-settings-input">
+                        <input
+                          type="number"
+                          min="30"
+                          max="86400"
+                          step="1"
+                          value={settingsForm.settingsCheckSeconds}
+                          onChange={(event) => updateSetting("settingsCheckSeconds", event.target.value)}
+                          required
+                        />
+                        <small>seconds</small>
+                      </div>
+                      <em>{formatInterval(settingsForm.settingsCheckSeconds)}</em>
+                    </label>
+                    <label>
+                      <span>Send current speed</span>
+                      <div className="live-device-settings-input">
+                        <input
+                          type="number"
+                          min="5"
+                          max="3600"
+                          step="1"
+                          value={settingsForm.speedSendSeconds}
+                          onChange={(event) => updateSetting("speedSendSeconds", event.target.value)}
+                          required
+                        />
+                        <small>seconds</small>
+                      </div>
+                      <em>{formatInterval(settingsForm.speedSendSeconds)}</em>
+                    </label>
+                    <label>
+                      <span>Send daily footage</span>
+                      <div className="live-device-settings-input">
+                        <input
+                          type="number"
+                          min="30"
+                          max="21600"
+                          step="1"
+                          value={settingsForm.footageSendSeconds}
+                          onChange={(event) => updateSetting("footageSendSeconds", event.target.value)}
+                          required
+                        />
+                        <small>seconds</small>
+                      </div>
+                      <em>{formatInterval(settingsForm.footageSendSeconds)}</em>
+                    </label>
+                  </div>
+                </div>
+
+                <div className={`live-device-reset-row ${settingsForm.resetEnabled ? "enabled" : ""}`}>
+                  <div className="live-device-settings-section-title">
+                    <AlertTriangle size={18} />
+                    <div>
+                      <strong>ESP32 daily reset</strong>
+                      <span>When enabled, the controller clears ETI footage at the selected Ohio time.</span>
+                    </div>
+                  </div>
+                  <div className="live-device-reset-controls">
+                    <label className="live-device-toggle">
+                      <input
+                        type="checkbox"
+                        checked={settingsForm.resetEnabled}
+                        onChange={(event) => updateSetting("resetEnabled", event.target.checked)}
+                      />
+                      <span aria-hidden="true" />
+                      <b>{settingsForm.resetEnabled ? "Enabled" : "Disabled"}</b>
+                    </label>
+                    <label className="live-device-time">
+                      <span>Reset time</span>
+                      <input
+                        type="time"
+                        value={`${pad2(settingsForm.resetHour)}:${pad2(settingsForm.resetMinute)}`}
+                        onChange={(event) => updateResetTime(event.target.value)}
+                        disabled={!settingsForm.resetEnabled}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {settingsStatus.error && (
+                  <div className="live-device-settings-message error">
+                    <AlertTriangle size={16} />
+                    <span>{settingsStatus.error}</span>
+                  </div>
+                )}
+                {settingsStatus.notice && (
+                  <div className="live-device-settings-message success">
+                    <CheckCircle2 size={16} />
+                    <span>{settingsStatus.notice}</span>
+                  </div>
+                )}
+
+                <footer className="live-device-settings-footer">
+                  <button type="button" className="secondary" onClick={() => setSettingsOpen(false)}>Cancel</button>
+                  <button type="submit" className="primary" disabled={settingsStatus.saving}>
+                    {settingsStatus.saving ? <Activity className="live-device-settings-spin" size={17} /> : <Save size={17} />}
+                    {settingsStatus.saving ? "Saving..." : "Save ETI Settings"}
+                  </button>
+                </footer>
+              </form>
+            )}
+          </section>
+        </div>
+      )}
     </section>
   );
 }

@@ -81,6 +81,7 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 FIREBASE_LIVE_FOOTAGE_BASE = "https://realtime2-94ff8-default-rtdb.firebaseio.com"
+FIREBASE_ETI_SETTINGS_PATH = "/ETI_DEVICE_SETTINGS.json"
 FIREBASE_PRINT_QUEUE_BASE = settings.FIREBASE_PRINT_QUEUE_BASE
 FIREBASE_PRINT_QUEUE_ROOT = settings.FIREBASE_PRINT_QUEUE_ROOT
 FIREBASE_PRINT_QUEUE_NAME = settings.FIREBASE_PRINT_QUEUE_NAME
@@ -173,6 +174,60 @@ def _request_bool(value):
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+ETI_DEVICE_SETTINGS_DEFAULTS = {
+    "wheelDiameterInches": 3.0,
+    "pulsesPerRevolution": 1,
+    "settingsCheckSeconds": 300,
+    "speedSendSeconds": 120,
+    "footageSendSeconds": 300,
+    "resetEnabled": False,
+    "resetHour": 3,
+    "resetMinute": 0,
+    "schemaVersion": 1,
+}
+
+
+def _verified_settings_admin(request):
+    user_id = str(request.META.get("HTTP_X_COMPANY_USER_ID") or "").strip()
+    username = str(request.META.get("HTTP_X_COMPANY_USERNAME") or "").strip()
+    queryset = CompanyUser.objects.select_related("role").filter(active=True, role__name__iexact="Admin")
+    if user_id.isdigit():
+        queryset = queryset.filter(pk=int(user_id))
+    elif username:
+        queryset = queryset.filter(username__iexact=username)
+    else:
+        return None
+    user = queryset.first()
+    if user and username and user.username.lower() != username.lower():
+        return None
+    return user
+
+
+def _eti_setting_number(data, key, minimum, maximum, integer=False):
+    raw = data.get(key)
+    try:
+        value = int(raw) if integer else float(raw)
+    except (TypeError, ValueError):
+        raise serializers.ValidationError({key: [f"Enter a number between {minimum} and {maximum}."]})
+    if value < minimum or value > maximum:
+        raise serializers.ValidationError({key: [f"Enter a value between {minimum} and {maximum}."]})
+    return value
+
+
+def _validated_eti_settings(data):
+    return {
+        "wheelDiameterInches": _eti_setting_number(data, "wheelDiameterInches", 0.5, 48),
+        "pulsesPerRevolution": _eti_setting_number(data, "pulsesPerRevolution", 1, 100, integer=True),
+        "settingsCheckSeconds": _eti_setting_number(data, "settingsCheckSeconds", 30, 86400, integer=True),
+        "speedSendSeconds": _eti_setting_number(data, "speedSendSeconds", 5, 3600, integer=True),
+        "footageSendSeconds": _eti_setting_number(data, "footageSendSeconds", 30, 21600, integer=True),
+        "resetEnabled": _request_bool(data.get("resetEnabled")),
+        "resetHour": _eti_setting_number(data, "resetHour", 0, 23, integer=True),
+        "resetMinute": _eti_setting_number(data, "resetMinute", 0, 59, integer=True),
+        "schemaVersion": 1,
+    }
 
 
 def _firebase_safe_key(value, default="default"):
@@ -389,6 +444,89 @@ def live_footage_relay(request, press, kind):
         )
 
     return Response({"ok": True, "press": press_key, "kind": kind_key, "firebase_status": firebase_status})
+
+
+@api_view(["GET", "PUT"])
+def eti_device_settings(request):
+    admin_user = _verified_settings_admin(request)
+    if not admin_user:
+        return Response(
+            {"detail": "Only an active Admin user can manage ETI device settings."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    firebase_url = f"{FIREBASE_LIVE_FOOTAGE_BASE}{FIREBASE_ETI_SETTINGS_PATH}"
+    if request.method == "GET":
+        firebase_request = Request(firebase_url, method="GET")
+        try:
+            with urlopen(firebase_request, timeout=8) as response:
+                response_body = response.read().decode("utf-8") or "null"
+                firebase_payload = json.loads(response_body)
+                firebase_status = response.status
+        except (json.JSONDecodeError, TypeError):
+            return Response(
+                {"detail": "Firebase returned invalid ETI settings data."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except HTTPError as error:
+            return Response(
+                {"detail": "Firebase rejected the ETI settings request.", "firebase_status": error.code},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except URLError as error:
+            return Response(
+                {"detail": "Could not reach Firebase for ETI settings.", "error": str(error.reason)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        exists = isinstance(firebase_payload, dict)
+        settings_payload = {
+            **ETI_DEVICE_SETTINGS_DEFAULTS,
+            **(firebase_payload if exists else {}),
+        }
+        return Response({
+            "settings": settings_payload,
+            "exists": exists,
+            "firebase_status": firebase_status,
+        })
+
+    try:
+        settings_payload = _validated_eti_settings(request.data)
+    except serializers.ValidationError as error:
+        return Response(error.detail, status=status.HTTP_400_BAD_REQUEST)
+
+    firebase_payload = {
+        **settings_payload,
+        "updatedBy": admin_user.name or admin_user.username,
+        "updatedAt": timezone.now().isoformat(),
+    }
+    body = json.dumps(firebase_payload, separators=(",", ":")).encode("utf-8")
+    firebase_request = Request(
+        f"{firebase_url}?print=silent",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="PUT",
+    )
+    try:
+        with urlopen(firebase_request, timeout=8) as response:
+            firebase_status = response.status
+    except HTTPError as error:
+        return Response(
+            {"detail": "Firebase rejected the ETI settings update.", "firebase_status": error.code},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    except URLError as error:
+        return Response(
+            {"detail": "Could not reach Firebase to save ETI settings.", "error": str(error.reason)},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response({
+        "ok": True,
+        "settings": firebase_payload,
+        "firebase_status": firebase_status,
+        "updated_by": admin_user.name or admin_user.username,
+    })
 
 
 @api_view(["POST", "PUT"])

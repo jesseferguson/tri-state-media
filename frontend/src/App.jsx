@@ -2628,7 +2628,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
             canApproveQuotes={canApproveQuotes}
           />
         ) : resource.viewMode === "liveFootage" ? (
-          <LiveFootageView tvMode={liveFootageTvMode} onTvModeChange={setLiveFootageTvMode} />
+          <LiveFootageView
+            tvMode={liveFootageTvMode}
+            onTvModeChange={setLiveFootageTvMode}
+            currentUser={currentUserForView}
+            canManageSettings={viewCanManageUsers}
+          />
         ) : resource.viewMode === "footageReports" ? (
           <FootageReportsView currentUser={currentUserForView} />
         ) : resource.viewMode === "coaterOperator" ? (

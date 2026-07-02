@@ -9,6 +9,8 @@ from materials.models import CoaterRollTag, MaterialMasterType, MaterialSpec, Ma
 from tooling.models import Press
 
 from .models import (
+    CompanyRole,
+    CompanyUser,
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
@@ -258,6 +260,123 @@ class LiveFootageArchiveTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         archive = LiveFootageArchive.objects.get(shift_date="2026-05-27")
         self.assertEqual(archive.total_footage, Decimal("15000.00"))
+
+
+class EtiDeviceSettingsTests(TestCase):
+    class FirebaseResponse:
+        status = 200
+
+        def __init__(self, body=b"null"):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return self.body
+
+    def setUp(self):
+        self.admin_role, _ = CompanyRole.objects.get_or_create(name="Admin")
+        self.admin = CompanyUser.objects.create(
+            username="settings-admin",
+            name="Settings Admin",
+            password_hash="unused",
+            role=self.admin_role,
+        )
+        self.headers = {
+            "HTTP_X_COMPANY_USER_ID": str(self.admin.id),
+            "HTTP_X_COMPANY_USERNAME": self.admin.username,
+        }
+
+    def test_non_admin_cannot_read_device_settings(self):
+        production_role, _ = CompanyRole.objects.get_or_create(name="Production")
+        operator = CompanyUser.objects.create(
+            username="operator",
+            name="Operator",
+            password_hash="unused",
+            role=production_role,
+        )
+
+        with patch("production.views.urlopen") as mocked_urlopen:
+            response = self.client.get(
+                reverse("eti-device-settings"),
+                HTTP_X_COMPANY_USER_ID=str(operator.id),
+                HTTP_X_COMPANY_USERNAME=operator.username,
+            )
+
+        self.assertEqual(response.status_code, 403, response.content)
+        mocked_urlopen.assert_not_called()
+
+    def test_admin_reads_firebase_settings_merged_with_defaults(self):
+        firebase_body = json.dumps({
+            "wheelDiameterInches": 4.25,
+            "speedSendSeconds": 90,
+        }).encode("utf-8")
+
+        with patch("production.views.urlopen", return_value=self.FirebaseResponse(firebase_body)) as mocked_urlopen:
+            response = self.client.get(reverse("eti-device-settings"), **self.headers)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["settings"]["wheelDiameterInches"], 4.25)
+        self.assertEqual(response.json()["settings"]["speedSendSeconds"], 90)
+        self.assertEqual(response.json()["settings"]["footageSendSeconds"], 300)
+        firebase_request = mocked_urlopen.call_args.args[0]
+        self.assertEqual(firebase_request.get_method(), "GET")
+        self.assertTrue(firebase_request.full_url.endswith("/ETI_DEVICE_SETTINGS.json"))
+
+    def test_admin_saves_validated_device_settings(self):
+        payload = {
+            "wheelDiameterInches": 3.5,
+            "pulsesPerRevolution": 2,
+            "settingsCheckSeconds": 240,
+            "speedSendSeconds": 120,
+            "footageSendSeconds": 480,
+            "resetEnabled": True,
+            "resetHour": 3,
+            "resetMinute": 15,
+        }
+
+        with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
+            response = self.client.put(
+                reverse("eti-device-settings"),
+                payload,
+                content_type="application/json",
+                **self.headers,
+            )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        firebase_request = mocked_urlopen.call_args.args[0]
+        self.assertEqual(firebase_request.get_method(), "PUT")
+        self.assertIn("/ETI_DEVICE_SETTINGS.json?print=silent", firebase_request.full_url)
+        body = json.loads(firebase_request.data.decode("utf-8"))
+        self.assertEqual(body["wheelDiameterInches"], 3.5)
+        self.assertEqual(body["footageSendSeconds"], 480)
+        self.assertTrue(body["resetEnabled"])
+        self.assertEqual(body["updatedBy"], "Settings Admin")
+
+    def test_invalid_device_setting_does_not_reach_firebase(self):
+        with patch("production.views.urlopen") as mocked_urlopen:
+            response = self.client.put(
+                reverse("eti-device-settings"),
+                {
+                    "wheelDiameterInches": 0,
+                    "pulsesPerRevolution": 1,
+                    "settingsCheckSeconds": 300,
+                    "speedSendSeconds": 120,
+                    "footageSendSeconds": 300,
+                    "resetEnabled": False,
+                    "resetHour": 3,
+                    "resetMinute": 0,
+                },
+                content_type="application/json",
+                **self.headers,
+            )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        mocked_urlopen.assert_not_called()
 
 
 class LocalLiveFootageTests(TestCase):
