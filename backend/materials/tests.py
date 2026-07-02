@@ -5,10 +5,20 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 
-from production.models import JobTicket, ProductionMaterialAssignment, ProductionSchedule
+from production.models import CompanyRole, CompanyUser, JobTicket, ProductionMaterialAssignment, ProductionSchedule
 from tooling.models import Press
 
-from .models import CoaterRollTag, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+from .models import (
+    CoaterRollTag,
+    MaterialMovement,
+    MaterialRack,
+    MaterialSkid,
+    MaterialSpec,
+    MaterialSupplierOption,
+    MaterialUsage,
+    RawMaterialInventory,
+)
+from .zpl import rack_label_zpl, skid_label_zpl
 
 
 class CoaterRollTagPrintQueueTests(TestCase):
@@ -318,3 +328,306 @@ class CoaterRollTagPrintQueueTests(TestCase):
         usage = MaterialUsage.objects.get(pk=consumption.json()["usage"]["id"])
         self.assertEqual(usage.job_ticket_id, ticket.id)
         self.assertEqual(usage.production_schedule_id, production_schedule.id)
+
+
+class SkidRackWorkflowTests(TestCase):
+    class FirebaseResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return b'{"name":"storage-print-1"}'
+
+    def setUp(self):
+        admin_role, _ = CompanyRole.objects.get_or_create(name="Admin")
+        production_role, _ = CompanyRole.objects.get_or_create(name="Production")
+        self.admin = CompanyUser.objects.create(
+            username="storage-admin",
+            name="Storage Admin",
+            password_hash="unused",
+            role=admin_role,
+        )
+        self.operator = CompanyUser.objects.create(
+            username="storage-operator",
+            name="Storage Operator",
+            password_hash="unused",
+            role=production_role,
+        )
+        self.admin_headers = {
+            "HTTP_X_COMPANY_USER_ID": str(self.admin.id),
+            "HTTP_X_COMPANY_USERNAME": self.admin.username,
+        }
+        self.operator_headers = {
+            "HTTP_X_COMPANY_USER_ID": str(self.operator.id),
+            "HTTP_X_COMPANY_USERNAME": self.operator.username,
+        }
+        self.material = MaterialSpec.objects.create(
+            material_type="coated_stock",
+            code="PM-STORAGE",
+            name="PM Storage",
+        )
+        self.roll = RawMaterialInventory.objects.create(
+            material=self.material,
+            serial_number="ROLL-STORAGE-001",
+            lot_number="LOT-STORAGE-001",
+            width_inches=Decimal("9"),
+            length_feet=Decimal("10000"),
+            quantity=Decimal("10000"),
+            unit="lf",
+            status="available",
+        )
+        self.press = Press.objects.create(
+            name="Storage Zebra",
+            printer_ip="192.168.1.90",
+            printer_port=9100,
+            printer_speed="6",
+            printer_darkness="18",
+        )
+
+    def create_skid(self):
+        response = self.client.post(
+            reverse("skid-list"),
+            {"status": "active", "notes": "Test skid"},
+            content_type="application/json",
+            **self.admin_headers,
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        return MaterialSkid.objects.get(pk=response.json()["id"])
+
+    def create_rack(self, code="RACK-03-A"):
+        response = self.client.post(
+            reverse("rack-list"),
+            {"rack_code": code, "aisle": "03", "bay": "A", "status": "active"},
+            content_type="application/json",
+            **self.admin_headers,
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        return MaterialRack.objects.get(pk=response.json()["id"])
+
+    def add_roll(self, skid, roll=None):
+        target = roll or self.roll
+        return self.client.post(
+            reverse("skid-add-roll", args=[skid.id]),
+            {"scan_value": target.serial_number, "performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+
+    def test_create_skid_and_rack_generate_identifiers_and_history(self):
+        skid = self.create_skid()
+        rack = self.create_rack()
+
+        self.assertRegex(skid.skid_number, r"^SKID-\d{4}-\d{6}$")
+        self.assertEqual(rack.rack_code, "RACK-03-A")
+        self.assertTrue(skid.qr_token)
+        self.assertTrue(rack.qr_token)
+        self.assertTrue(MaterialMovement.objects.filter(skid=skid, action_type="skid_created").exists())
+        self.assertTrue(MaterialMovement.objects.filter(rack=rack, action_type="rack_created").exists())
+
+    def test_add_and_remove_roll_from_skid_records_each_movement(self):
+        skid = self.create_skid()
+        added = self.add_roll(skid)
+        self.assertEqual(added.status_code, 200, added.content)
+        self.roll.refresh_from_db()
+        self.assertEqual(self.roll.current_skid_id, skid.id)
+
+        removed = self.client.post(
+            reverse("skid-remove-roll", args=[skid.id]),
+            {"scan_value": self.roll.serial_number, "performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+        self.assertEqual(removed.status_code, 200, removed.content)
+        self.roll.refresh_from_db()
+        self.assertIsNone(self.roll.current_skid_id)
+        self.assertEqual(removed.json()["roll"]["current_location_display"], "Plant Floor")
+        self.assertTrue(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_assigned_to_skid").exists())
+        self.assertTrue(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_removed_from_skid").exists())
+
+        added_back = self.add_roll(skid)
+        self.assertEqual(added_back.status_code, 200, added_back.content)
+        self.assertTrue(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_added_back_to_skid").exists())
+
+    def test_add_and_remove_skid_from_rack_updates_derived_roll_location(self):
+        skid = self.create_skid()
+        rack = self.create_rack()
+        self.add_roll(skid)
+
+        added = self.client.post(
+            reverse("rack-add-skid", args=[rack.id]),
+            {"scan_value": str(skid.qr_token), "performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+        self.assertEqual(added.status_code, 200, added.content)
+        skid.refresh_from_db()
+        self.assertEqual(skid.current_rack_id, rack.id)
+        roll_detail = self.client.get(reverse("raw-material-detail", args=[self.roll.id]))
+        self.assertIn(rack.rack_code, roll_detail.json()["current_location_display"])
+
+        removed = self.client.post(
+            reverse("rack-remove-skid", args=[rack.id]),
+            {"scan_value": skid.skid_number, "performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+        self.assertEqual(removed.status_code, 200, removed.content)
+        skid.refresh_from_db()
+        self.assertIsNone(skid.current_rack_id)
+        self.assertTrue(MaterialMovement.objects.filter(skid=skid, action_type="skid_assigned_to_rack").exists())
+        self.assertTrue(MaterialMovement.objects.filter(skid=skid, action_type="skid_removed_from_rack").exists())
+
+    def test_skid_page_can_scan_rack_qr_and_move_directly(self):
+        skid = self.create_skid()
+        rack = self.create_rack()
+
+        response = self.client.post(
+            reverse("skid-move-to-rack", args=[skid.id]),
+            {
+                "scan_value": f"https://plant.example.com/?rackToken={rack.qr_token}",
+                "performed_by": self.operator.name,
+            },
+            content_type="application/json",
+            **self.operator_headers,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        skid.refresh_from_db()
+        self.assertEqual(skid.current_rack_id, rack.id)
+        self.assertIn(rack.rack_code, response.json()["completed"])
+
+    def test_partial_and_full_roll_usage_keep_inventory_consistent(self):
+        skid = self.create_skid()
+        self.add_roll(skid)
+
+        partial = self.client.post(
+            reverse("skid-use-roll", args=[skid.id]),
+            {"scan_value": self.roll.serial_number, "amount_used": 2500, "performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+        self.assertEqual(partial.status_code, 200, partial.content)
+        self.roll.refresh_from_db()
+        self.assertEqual(self.roll.length_feet, Decimal("7500"))
+        self.assertEqual(self.roll.current_skid_id, skid.id)
+        self.assertTrue(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_partially_used", amount_used=2500).exists())
+
+        full = self.client.post(
+            reverse("skid-use-roll", args=[skid.id]),
+            {"scan_value": self.roll.serial_number, "use_all": True, "performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+        self.assertEqual(full.status_code, 200, full.content)
+        self.roll.refresh_from_db()
+        self.assertEqual(self.roll.length_feet, Decimal("0"))
+        self.assertEqual(self.roll.status, "depleted")
+        self.assertIsNone(self.roll.current_skid_id)
+        self.assertTrue(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_fully_used").exists())
+
+    def test_cannot_use_more_than_remaining_quantity(self):
+        skid = self.create_skid()
+        self.add_roll(skid)
+
+        response = self.client.post(
+            reverse("skid-use-roll", args=[skid.id]),
+            {"scan_value": self.roll.serial_number, "amount_used": 10001},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+
+        self.assertEqual(response.status_code, 409, response.content)
+        self.roll.refresh_from_db()
+        self.assertEqual(self.roll.length_feet, Decimal("10000"))
+        self.assertFalse(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_partially_used").exists())
+
+    def test_print_and_reprint_skid_label_reuse_identifier_and_queue_4x3_zpl(self):
+        skid = self.create_skid()
+        original_number = skid.skid_number
+        original_token = skid.qr_token
+        payload = {
+            "press": self.press.id,
+            "copies": 1,
+            "frontend_url": "https://plant.example.com",
+            "performed_by": self.admin.name,
+        }
+
+        with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
+            first = self.client.post(
+                reverse("skid-print-label", args=[skid.id]),
+                payload,
+                content_type="application/json",
+                **self.admin_headers,
+            )
+            second = self.client.post(
+                reverse("skid-print-label", args=[skid.id]),
+                payload,
+                content_type="application/json",
+                **self.admin_headers,
+            )
+
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(second.status_code, 201, second.content)
+        self.assertFalse(first.json()["reprint"])
+        self.assertTrue(second.json()["reprint"])
+        skid.refresh_from_db()
+        self.assertEqual(skid.skid_number, original_number)
+        self.assertEqual(skid.qr_token, original_token)
+        body = json.loads(mocked_urlopen.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(body["TYPE"], "SKID_LABEL_4X3")
+        self.assertIn("^PW812", body["ZPL"])
+        self.assertIn("^LL609", body["ZPL"])
+        self.assertIn(str(skid.qr_token), body["ZPL"])
+
+    def test_print_and_reprint_rack_label_reuse_identifier_and_queue_4x3_zpl(self):
+        rack = self.create_rack()
+        original_token = rack.qr_token
+        payload = {
+            "press": self.press.id,
+            "frontend_url": "https://plant.example.com",
+            "performed_by": self.admin.name,
+        }
+
+        with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
+            first = self.client.post(
+                reverse("rack-print-label", args=[rack.id]),
+                payload,
+                content_type="application/json",
+                **self.admin_headers,
+            )
+            second = self.client.post(
+                reverse("rack-print-label", args=[rack.id]),
+                payload,
+                content_type="application/json",
+                **self.admin_headers,
+            )
+
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(second.status_code, 201, second.content)
+        self.assertTrue(second.json()["reprint"])
+        rack.refresh_from_db()
+        self.assertEqual(rack.rack_code, "RACK-03-A")
+        self.assertEqual(rack.qr_token, original_token)
+        body = json.loads(mocked_urlopen.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(body["TYPE"], "RACK_LABEL_4X3")
+        self.assertIn("^PW812", body["ZPL"])
+        self.assertIn("^LL609", body["ZPL"])
+        self.assertIn(str(rack.qr_token), body["ZPL"])
+
+    def test_zpl_generators_include_size_and_scan_urls(self):
+        skid = self.create_skid()
+        rack = self.create_rack()
+        skid_zpl = skid_label_zpl(skid, f"https://plant.example.com/?skidToken={skid.qr_token}")
+        rack_zpl = rack_label_zpl(rack, f"https://plant.example.com/?rackToken={rack.qr_token}")
+
+        self.assertIn("^PW812", skid_zpl)
+        self.assertIn("^LL609", skid_zpl)
+        self.assertIn(str(skid.qr_token), skid_zpl)
+        self.assertIn("^PW812", rack_zpl)
+        self.assertIn("^LL609", rack_zpl)
+        self.assertIn(str(rack.qr_token), rack_zpl)

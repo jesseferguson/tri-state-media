@@ -3,6 +3,9 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CoaterRollTagViewSet,
     MaterialMasterTypeViewSet,
+    MaterialMovementViewSet,
+    MaterialRackViewSet,
+    MaterialSkidViewSet,
     MaterialSpecViewSet,
     MaterialSupplierOptionViewSet,
     MaterialUsageViewSet,
@@ -17,5 +20,8 @@ router.register("material-supplier-options", MaterialSupplierOptionViewSet, base
 router.register("raw-materials", RawMaterialInventoryViewSet, basename="raw-material")
 router.register("material-usages", MaterialUsageViewSet, basename="material-usage")
 router.register("coater-roll-tags", CoaterRollTagViewSet, basename="coater-roll-tag")
+router.register("material-movements", MaterialMovementViewSet, basename="material-movement")
+router.register("skids", MaterialSkidViewSet, basename="skid")
+router.register("racks", MaterialRackViewSet, basename="rack")
 
 urlpatterns = router.urls

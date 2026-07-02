@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from .models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+from .models import (
+    CoaterRollTag,
+    MaterialMasterType,
+    MaterialMovement,
+    MaterialRack,
+    MaterialSkid,
+    MaterialSpec,
+    MaterialSupplierOption,
+    MaterialUsage,
+    RawMaterialInventory,
+)
 
 
 @admin.register(MaterialMasterType)
@@ -144,7 +154,56 @@ class RawMaterialInventoryAdmin(admin.ModelAdmin):
     )
     list_filter = ("material_type", "status", "unit", "is_active")
     search_fields = ("name", "code", "serial_number", "lot_number", "material__name", "material__code", "notes")
-    autocomplete_fields = ("material", "supplier", "location", "source_roll_tag")
+    autocomplete_fields = ("material", "supplier", "location", "source_roll_tag", "current_skid")
+
+
+@admin.register(MaterialRack)
+class MaterialRackAdmin(admin.ModelAdmin):
+    list_display = ("rack_code", "aisle", "bay", "level", "position", "status", "updated_at")
+    list_filter = ("status", "aisle", "level")
+    search_fields = ("rack_code", "aisle", "bay", "level", "position", "notes")
+
+
+@admin.register(MaterialSkid)
+class MaterialSkidAdmin(admin.ModelAdmin):
+    list_display = ("skid_number", "status", "current_rack", "other_location", "created_by", "updated_at")
+    list_filter = ("status", "current_rack")
+    search_fields = ("skid_number", "current_rack__rack_code", "other_location", "notes", "created_by")
+    autocomplete_fields = ("current_rack",)
+
+
+@admin.register(MaterialMovement)
+class MaterialMovementAdmin(admin.ModelAdmin):
+    list_display = (
+        "created_at",
+        "action_type",
+        "roll_reference",
+        "skid_reference",
+        "rack_reference",
+        "actor_name",
+        "from_location",
+        "to_location",
+    )
+    list_filter = ("action_type", "source", "created_at")
+    search_fields = (
+        "roll_reference",
+        "skid_reference",
+        "rack_reference",
+        "actor_name",
+        "from_location",
+        "to_location",
+        "notes",
+    )
+    readonly_fields = [field.name for field in MaterialMovement._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(MaterialUsage)

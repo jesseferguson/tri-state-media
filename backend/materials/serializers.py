@@ -1,10 +1,22 @@
 import re
+from decimal import Decimal
 
 from django.db.models import DecimalField, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import serializers
 
-from .models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+from .models import (
+    CoaterRollTag,
+    MaterialMasterType,
+    MaterialMovement,
+    MaterialRack,
+    MaterialSkid,
+    MaterialSpec,
+    MaterialSupplierOption,
+    MaterialUsage,
+    RawMaterialInventory,
+)
+from .services import roll_amount, roll_location
 
 
 def note_value(note, label):
@@ -127,10 +139,139 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
     location_name = serializers.CharField(source="location.name", read_only=True)
     location_full_path = serializers.ReadOnlyField(source="location.full_path")
     source_roll_tag_number = serializers.CharField(source="source_roll_tag.tag_number", read_only=True)
+    current_skid_number = serializers.CharField(source="current_skid.skid_number", read_only=True)
+    current_rack = serializers.IntegerField(source="current_skid.current_rack_id", read_only=True)
+    current_rack_code = serializers.CharField(source="current_skid.current_rack.rack_code", read_only=True)
+    current_location_type = serializers.SerializerMethodField()
+    current_location_display = serializers.SerializerMethodField()
+    usage_state = serializers.SerializerMethodField()
 
     class Meta:
         model = RawMaterialInventory
         fields = "__all__"
+        read_only_fields = ["current_skid", "original_length_feet"]
+
+    def get_current_location_type(self, obj):
+        if obj.status in {"depleted", "scrapped"} or roll_amount(obj) <= 0:
+            return "consumed"
+        if obj.current_skid_id and obj.current_skid.current_rack_id:
+            return "rack"
+        if obj.current_skid_id:
+            return "skid"
+        return "plant_floor"
+
+    def get_current_location_display(self, obj):
+        return roll_location(obj)
+
+    def get_usage_state(self, obj):
+        remaining = roll_amount(obj)
+        original = obj.original_length_feet
+        if remaining <= 0:
+            return "used"
+        if original is not None and remaining < Decimal(original):
+            return "partially_used"
+        return "active"
+
+
+class MaterialMovementSerializer(serializers.ModelSerializer):
+    action_label = serializers.CharField(source="get_action_type_display", read_only=True)
+    source_label = serializers.CharField(source="get_source_display", read_only=True)
+
+    class Meta:
+        model = MaterialMovement
+        fields = "__all__"
+
+
+class MaterialSkidSerializer(serializers.ModelSerializer):
+    current_rack_code = serializers.CharField(source="current_rack.rack_code", read_only=True)
+    current_location_type = serializers.ReadOnlyField()
+    current_location_display = serializers.ReadOnlyField()
+    roll_count = serializers.SerializerMethodField()
+    total_remaining_feet = serializers.SerializerMethodField()
+    rolls = serializers.SerializerMethodField()
+    last_movement = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MaterialSkid
+        fields = "__all__"
+        read_only_fields = ["skid_number", "qr_token", "current_rack", "created_by", "created_at", "updated_at"]
+
+    def active_rolls(self, obj):
+        prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("rolls")
+        queryset = prefetched if prefetched is not None else obj.rolls.select_related(
+            "material",
+            "material__master_type",
+            "supplier",
+            "location",
+            "source_roll_tag",
+            "current_skid",
+            "current_skid__current_rack",
+        ).all()
+        return [
+            roll for roll in queryset
+            if roll.is_active and roll.status not in {"depleted", "scrapped"} and roll_amount(roll) > 0
+        ]
+
+    def get_roll_count(self, obj):
+        return len(self.active_rolls(obj))
+
+    def get_total_remaining_feet(self, obj):
+        return sum((roll_amount(roll) for roll in self.active_rolls(obj)), Decimal("0"))
+
+    def get_rolls(self, obj):
+        return RawMaterialInventorySerializer(self.active_rolls(obj), many=True).data
+
+    def get_last_movement(self, obj):
+        event = obj.movement_history.first()
+        return MaterialMovementSerializer(event).data if event else None
+
+
+class MaterialRackSerializer(serializers.ModelSerializer):
+    location_detail = serializers.ReadOnlyField()
+    skid_count = serializers.SerializerMethodField()
+    roll_count = serializers.SerializerMethodField()
+    total_remaining_feet = serializers.SerializerMethodField()
+    skids = serializers.SerializerMethodField()
+    last_movement = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MaterialRack
+        fields = "__all__"
+        read_only_fields = ["qr_token", "created_by", "created_at", "updated_at"]
+
+    def active_skids(self, obj):
+        prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("skids")
+        queryset = prefetched if prefetched is not None else obj.skids.prefetch_related("rolls").all()
+        return [skid for skid in queryset if skid.status == "active"]
+
+    def get_skid_count(self, obj):
+        return len(self.active_skids(obj))
+
+    def get_roll_count(self, obj):
+        return sum(
+            1
+            for skid in self.active_skids(obj)
+            for roll in skid.rolls.all()
+            if roll.is_active and roll.status not in {"depleted", "scrapped"} and roll_amount(roll) > 0
+        )
+
+    def get_total_remaining_feet(self, obj):
+        return sum(
+            (
+                roll_amount(roll)
+                for skid in self.active_skids(obj)
+                for roll in skid.rolls.all()
+                if roll.is_active and roll.status not in {"depleted", "scrapped"} and roll_amount(roll) > 0
+            ),
+            Decimal("0"),
+        )
+
+    def get_skids(self, obj):
+        return MaterialSkidSerializer(self.active_skids(obj), many=True).data
+
+    def get_last_movement(self, obj):
+        event = obj.movement_history.first()
+        return MaterialMovementSerializer(event).data if event else None
 
 
 class MaterialUsageSerializer(serializers.ModelSerializer):

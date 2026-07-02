@@ -12,20 +12,619 @@ from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from tooling.models import Press
+from production.models import CompanyUser
 
-from .models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialSupplierOption, MaterialUsage, RawMaterialInventory
+from .models import (
+    CoaterRollTag,
+    MaterialMasterType,
+    MaterialMovement,
+    MaterialRack,
+    MaterialSkid,
+    MaterialSpec,
+    MaterialSupplierOption,
+    MaterialUsage,
+    RawMaterialInventory,
+)
 from .serializers import (
     CoaterRollTagSerializer,
     MaterialMasterTypeSerializer,
+    MaterialMovementSerializer,
+    MaterialRackSerializer,
+    MaterialSkidSerializer,
     MaterialSpecSerializer,
     MaterialSupplierOptionSerializer,
     MaterialUsageSerializer,
     RawMaterialInventorySerializer,
 )
+from .services import (
+    MaterialWorkflowError,
+    actor_context,
+    add_roll_to_skid,
+    add_skid_to_rack,
+    movement,
+    remove_roll_from_skid,
+    remove_skid_from_rack,
+    resolve_rack_scan,
+    roll_amount,
+    roll_location,
+    skid_location,
+    use_roll_from_skid,
+)
+from .zpl import rack_label_zpl, skid_label_zpl
+
+
+def _verified_company_user(request, *, admin_only=False):
+    user_id = str(request.META.get("HTTP_X_COMPANY_USER_ID") or "").strip()
+    username = str(request.META.get("HTTP_X_COMPANY_USERNAME") or "").strip()
+    queryset = CompanyUser.objects.select_related("role").filter(active=True)
+    if admin_only:
+        queryset = queryset.filter(role__name__iexact="Admin")
+    if user_id.isdigit():
+        queryset = queryset.filter(pk=int(user_id))
+    elif username:
+        queryset = queryset.filter(username__iexact=username)
+    else:
+        return None
+    user = queryset.first()
+    if user and username and user.username.lower() != username.lower():
+        return None
+    return user
+
+
+def _request_actor(request, user=None):
+    actor = actor_context(request)
+    if user:
+        actor["actor_name"] = user.name or user.username
+        actor["actor_user_id"] = str(user.pk)
+    return actor
+
+
+def _workflow_error(error):
+    return Response(
+        {"detail": error.message, "code": error.code, **error.details},
+        status=error.status_code,
+    )
+
+
+def _storage_print_job(request, *, label_type, scan_url, zpl):
+    from production.views import (
+        FIREBASE_PRINT_QUEUE_BASE,
+        FIREBASE_PRINT_QUEUE_NAME,
+        FIREBASE_PRINT_QUEUE_ROOT,
+        _firebase_post_json,
+        _positive_int,
+        _print_text,
+    )
+
+    press_id = request.data.get("press")
+    press = Press.objects.filter(pk=press_id).first() if press_id else None
+    if not press:
+        raise MaterialWorkflowError("Select a printer.", code="printer_required")
+    printer_ip = _print_text(request.data, "printer_ip", press.printer_ip)
+    if not printer_ip:
+        raise MaterialWorkflowError(
+            f"Add a printer IP for {press.name} before printing.",
+            code="printer_ip_required",
+        )
+    payload = {
+        "TYPE": label_type,
+        "Printer": printer_ip,
+        "Printer Port": _positive_int(request.data.get("printer_port") or press.printer_port, 9100),
+        "SPEED": _print_text(request.data, "speed", press.printer_speed or "5"),
+        "DARKNESS": _print_text(request.data, "darkness", press.printer_darkness or "20"),
+        "Total Ship Stock": _positive_int(request.data.get("copies"), 1),
+        "Scan URL": scan_url,
+        "ZPL": zpl,
+        "Queued By": _print_text(request.data, "performed_by"),
+        "Queued At": timezone.now().isoformat(),
+    }
+    try:
+        firebase_status, firebase_payload = _firebase_post_json(
+            FIREBASE_PRINT_QUEUE_BASE,
+            [FIREBASE_PRINT_QUEUE_ROOT, FIREBASE_PRINT_QUEUE_NAME],
+            payload,
+        )
+    except HTTPError as error:
+        raise MaterialWorkflowError(
+            "Firebase rejected the label print job.",
+            code="firebase_rejected",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            details={"firebase_status": error.code},
+        )
+    except URLError as error:
+        raise MaterialWorkflowError(
+            "Could not reach Firebase to queue the label.",
+            code="firebase_unavailable",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            details={"error": str(error.reason)},
+        )
+    return {
+        "firebaseKey": str(firebase_payload.get("name") or ""),
+        "firebaseStatus": firebase_status,
+        "printerIp": printer_ip,
+        "printerPort": payload["Printer Port"],
+        "printerSpeed": payload["SPEED"],
+        "printerDarkness": payload["DARKNESS"],
+        "copies": payload["Total Ship Stock"],
+        "scanUrl": scan_url,
+    }
 
 
 class BaseMaterialsViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+
+
+class MaterialMovementViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = MaterialMovementSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = [
+        "action_type",
+        "roll_reference",
+        "skid_reference",
+        "rack_reference",
+        "actor_name",
+        "from_location",
+        "to_location",
+        "notes",
+    ]
+    ordering_fields = ["created_at", "action_type", "actor_name"]
+
+    def get_queryset(self):
+        queryset = MaterialMovement.objects.select_related("roll", "skid", "rack").all()
+        for query_key, model_field in [
+            ("roll", "roll_id"),
+            ("skid", "skid_id"),
+            ("rack", "rack_id"),
+            ("action_type", "action_type"),
+            ("scan_session_id", "scan_session_id"),
+        ]:
+            value = self.request.query_params.get(query_key)
+            if value:
+                queryset = queryset.filter(**{model_field: value})
+        return queryset
+
+
+class MaterialSkidViewSet(BaseMaterialsViewSet):
+    serializer_class = MaterialSkidSerializer
+    search_fields = [
+        "skid_number",
+        "status",
+        "current_rack__rack_code",
+        "other_location",
+        "notes",
+        "created_by",
+        "rolls__serial_number",
+        "rolls__lot_number",
+    ]
+    ordering_fields = ["skid_number", "status", "created_at", "updated_at"]
+
+    def get_queryset(self):
+        return (
+            MaterialSkid.objects.select_related("current_rack")
+            .prefetch_related(
+                "movement_history",
+                "rolls",
+                "rolls__material",
+                "rolls__material__master_type",
+                "rolls__supplier",
+                "rolls__location",
+                "rolls__source_roll_tag",
+                "rolls__current_skid",
+                "rolls__current_skid__current_rack",
+            )
+            .all()
+            .distinct()
+        )
+
+    def create(self, request, *args, **kwargs):
+        user = _verified_company_user(request, admin_only=True)
+        if not user:
+            return Response({"detail": "Only an Admin can create skids."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            skid = serializer.save(created_by=user.name or user.username)
+            movement(
+                action_type="skid_created",
+                skid=skid,
+                from_location="",
+                to_location="Plant Floor",
+                notes="Skid created.",
+                source="manual",
+                **_request_actor(request, user),
+            )
+        return Response(self.get_serializer(skid).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        user = _verified_company_user(request, admin_only=True)
+        if not user:
+            return Response({"detail": "Only an Admin can edit skids."}, status=status.HTTP_403_FORBIDDEN)
+        skid = self.get_object()
+        requested_status = request.data.get("status", skid.status)
+        if requested_status != "active" and (
+            skid.current_rack_id
+            or skid.rolls.filter(is_active=True).exclude(status__in=["depleted", "scrapped"]).exists()
+        ):
+            return Response(
+                {"detail": "Move the skid out of its rack and remove active rolls before deactivating or retiring it."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        before_location = skid_location(skid)
+        before_values = {
+            "status": skid.status,
+            "current_rack": skid.current_rack_id,
+            "other_location": skid.other_location,
+            "notes": skid.notes,
+        }
+        partial = kwargs.pop("partial", False)
+        serializer = self.get_serializer(skid, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            skid = serializer.save()
+            changed = ["current_rack"] if before_values["current_rack"] != skid.current_rack_id else []
+            changed.extend(
+                key for key in ["status", "other_location", "notes"]
+                if before_values[key] != getattr(skid, key)
+            )
+            movement(
+                action_type="manual_edit",
+                skid=skid,
+                rack=skid.current_rack,
+                from_location=before_location,
+                to_location=skid_location(skid),
+                notes=f"Updated skid fields: {', '.join(dict.fromkeys(changed)) or 'details'}.",
+                source="manual",
+                **_request_actor(request, user),
+            )
+        return Response(self.get_serializer(skid).data)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Skids are retained for history. Set the status to Inactive or Retired instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=False, methods=["get"], url_path=r"scan/(?P<token>[^/.]+)")
+    def scan(self, request, token=None):
+        skid = self.get_queryset().filter(qr_token=token).first()
+        if not skid:
+            return Response({"detail": "Scan not recognized."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(self.get_serializer(skid).data)
+
+    @action(detail=True, methods=["get"])
+    def history(self, request, pk=None):
+        skid = self.get_object()
+        rows = skid.movement_history.select_related("roll", "rack").all()
+        return Response(MaterialMovementSerializer(rows, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="add-roll")
+    def add_roll(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not user:
+            return Response({"detail": "Sign in as an active user to move material."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            roll, skid = add_roll_to_skid(
+                skid_id=pk,
+                scan_value=request.data.get("scan_value") or request.data.get("roll"),
+                actor=_request_actor(request, user),
+                allow_move=str(request.data.get("confirm_move") or "").lower() in {"1", "true", "yes"},
+                source="scan",
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        return Response({
+            "ok": True,
+            "completed": f"Completed: Roll {roll.serial_number or roll.lot_number} added to {skid.skid_number}",
+            "roll": RawMaterialInventorySerializer(roll).data,
+            "skid": self.get_serializer(self.get_queryset().get(pk=skid.pk)).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="remove-roll")
+    def remove_roll(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not user:
+            return Response({"detail": "Sign in as an active user to move material."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            roll, skid = remove_roll_from_skid(
+                skid_id=pk,
+                roll_value=request.data.get("scan_value") or request.data.get("roll"),
+                actor=_request_actor(request, user),
+                source="scan",
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        return Response({
+            "ok": True,
+            "completed": f"Completed: Roll {roll.serial_number or roll.lot_number} removed from {skid.skid_number}",
+            "roll": RawMaterialInventorySerializer(roll).data,
+            "skid": self.get_serializer(self.get_queryset().get(pk=skid.pk)).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="use-roll")
+    def use_roll(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not user:
+            return Response({"detail": "Sign in as an active user to use material."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            roll, usage, skid = use_roll_from_skid(
+                skid_id=pk,
+                roll_value=request.data.get("scan_value") or request.data.get("roll"),
+                actor=_request_actor(request, user),
+                use_all=str(request.data.get("use_all") or "").lower() in {"1", "true", "yes"},
+                amount_used=request.data.get("amount_used"),
+                notes=str(request.data.get("notes") or "").strip(),
+                source="scan",
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        remaining = roll_amount(roll)
+        return Response({
+            "ok": True,
+            "completed": (
+                f"Completed: Roll {roll.serial_number or roll.lot_number} fully used"
+                if remaining <= 0
+                else f"Completed: {usage.quantity} ft used from {roll.serial_number or roll.lot_number}; {remaining} ft remaining"
+            ),
+            "roll": RawMaterialInventorySerializer(roll).data,
+            "usage": MaterialUsageSerializer(usage).data,
+            "skid": self.get_serializer(self.get_queryset().get(pk=skid.pk)).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="move-to-rack")
+    def move_to_rack(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not user:
+            return Response({"detail": "Sign in as an active user to move skids."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            rack = resolve_rack_scan(request.data.get("scan_value") or request.data.get("rack"), for_update=False)
+            skid, rack = add_skid_to_rack(
+                rack_id=rack.id,
+                skid_value=str(self.get_object().qr_token),
+                actor=_request_actor(request, user),
+                allow_move=str(request.data.get("confirm_move") or "").lower() in {"1", "true", "yes"},
+                source="scan",
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        return Response({
+            "ok": True,
+            "completed": f"Completed: {skid.skid_number} moved to {rack.rack_code}",
+            "skid": self.get_serializer(self.get_queryset().get(pk=skid.pk)).data,
+            "rack": MaterialRackSerializer(rack).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="print-label")
+    def print_label(self, request, pk=None):
+        user = _verified_company_user(request, admin_only=True)
+        if not user:
+            return Response({"detail": "Only an Admin can print or reprint skid labels."}, status=status.HTTP_403_FORBIDDEN)
+        skid = self.get_object()
+        frontend_base = str(request.data.get("frontend_url") or settings.FRONTEND_PUBLIC_URL).rstrip("/")
+        if urlparse(frontend_base).hostname in {"localhost", "127.0.0.1"}:
+            frontend_base = settings.FRONTEND_PUBLIC_URL
+        scan_url = f"{frontend_base}/?skidToken={skid.qr_token}"
+        press = Press.objects.filter(pk=request.data.get("press")).first()
+        zpl = skid_label_zpl(
+            skid,
+            scan_url,
+            darkness=request.data.get("darkness") or getattr(press, "printer_darkness", "") or "20",
+            speed=request.data.get("speed") or getattr(press, "printer_speed", "") or "5",
+            copies=request.data.get("copies") or 1,
+        )
+        try:
+            result = _storage_print_job(
+                request,
+                label_type="SKID_LABEL_4X3",
+                scan_url=scan_url,
+                zpl=zpl,
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        already_printed = MaterialMovement.objects.filter(
+            skid=skid,
+            action_type__in=["label_printed", "label_reprinted"],
+        ).exists()
+        movement(
+            action_type="label_reprinted" if already_printed else "label_printed",
+            skid=skid,
+            rack=skid.current_rack,
+            from_location=skid_location(skid),
+            to_location=skid_location(skid),
+            notes="Skid label queued for reprint." if already_printed else "Skid label queued for printing.",
+            source="manual",
+            **_request_actor(request, user),
+        )
+        return Response({"ok": True, "reprint": already_printed, **result}, status=status.HTTP_201_CREATED)
+
+
+class MaterialRackViewSet(BaseMaterialsViewSet):
+    serializer_class = MaterialRackSerializer
+    search_fields = [
+        "rack_code",
+        "aisle",
+        "bay",
+        "level",
+        "position",
+        "status",
+        "notes",
+        "skids__skid_number",
+    ]
+    ordering_fields = ["rack_code", "aisle", "bay", "level", "position", "status", "created_at"]
+
+    def get_queryset(self):
+        return (
+            MaterialRack.objects.prefetch_related(
+                "movement_history",
+                "skids",
+                "skids__movement_history",
+                "skids__rolls",
+                "skids__rolls__material",
+                "skids__rolls__material__master_type",
+                "skids__rolls__supplier",
+                "skids__rolls__location",
+                "skids__rolls__source_roll_tag",
+                "skids__rolls__current_skid",
+                "skids__rolls__current_skid__current_rack",
+            )
+            .all()
+            .distinct()
+        )
+
+    def create(self, request, *args, **kwargs):
+        user = _verified_company_user(request, admin_only=True)
+        if not user:
+            return Response({"detail": "Only an Admin can create racks."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            rack = serializer.save(created_by=user.name or user.username)
+            movement(
+                action_type="rack_created",
+                rack=rack,
+                from_location="",
+                to_location=f"Rack {rack.rack_code}",
+                notes="Rack created.",
+                source="manual",
+                **_request_actor(request, user),
+            )
+        return Response(self.get_serializer(rack).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        user = _verified_company_user(request, admin_only=True)
+        if not user:
+            return Response({"detail": "Only an Admin can edit racks."}, status=status.HTTP_403_FORBIDDEN)
+        rack = self.get_object()
+        requested_status = request.data.get("status", rack.status)
+        if requested_status == "inactive" and rack.skids.filter(status="active").exists():
+            return Response(
+                {"detail": "Remove active skids before deactivating this rack."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        before_detail = rack.location_detail
+        before_values = {
+            key: getattr(rack, key)
+            for key in ["rack_code", "aisle", "bay", "level", "position", "status", "notes"]
+        }
+        partial = kwargs.pop("partial", False)
+        serializer = self.get_serializer(rack, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            rack = serializer.save()
+            changed = [key for key, old_value in before_values.items() if old_value != getattr(rack, key)]
+            movement(
+                action_type="manual_edit",
+                rack=rack,
+                from_location=before_detail or rack.rack_code,
+                to_location=rack.location_detail or rack.rack_code,
+                notes=f"Updated rack fields: {', '.join(changed) or 'details'}.",
+                source="manual",
+                **_request_actor(request, user),
+            )
+        return Response(self.get_serializer(rack).data)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Racks are retained for history. Set the status to Inactive instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=False, methods=["get"], url_path=r"scan/(?P<token>[^/.]+)")
+    def scan(self, request, token=None):
+        rack = self.get_queryset().filter(qr_token=token).first()
+        if not rack:
+            return Response({"detail": "Scan not recognized."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(self.get_serializer(rack).data)
+
+    @action(detail=True, methods=["get"])
+    def history(self, request, pk=None):
+        rack = self.get_object()
+        rows = MaterialMovement.objects.filter(Q(rack=rack) | Q(skid__current_rack=rack)).select_related("roll", "skid", "rack")
+        return Response(MaterialMovementSerializer(rows.distinct(), many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="add-skid")
+    def add_skid(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not user:
+            return Response({"detail": "Sign in as an active user to move skids."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            skid, rack = add_skid_to_rack(
+                rack_id=pk,
+                skid_value=request.data.get("scan_value") or request.data.get("skid"),
+                actor=_request_actor(request, user),
+                allow_move=str(request.data.get("confirm_move") or "").lower() in {"1", "true", "yes"},
+                source="scan",
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        return Response({
+            "ok": True,
+            "completed": f"Completed: {skid.skid_number} moved to {rack.rack_code}",
+            "skid": MaterialSkidSerializer(skid).data,
+            "rack": self.get_serializer(self.get_queryset().get(pk=rack.pk)).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="remove-skid")
+    def remove_skid(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not user:
+            return Response({"detail": "Sign in as an active user to move skids."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            skid, rack = remove_skid_from_rack(
+                rack_id=pk,
+                skid_value=request.data.get("scan_value") or request.data.get("skid"),
+                actor=_request_actor(request, user),
+                source="scan",
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        return Response({
+            "ok": True,
+            "completed": f"Completed: {skid.skid_number} moved to Plant Floor",
+            "skid": MaterialSkidSerializer(skid).data,
+            "rack": self.get_serializer(self.get_queryset().get(pk=rack.pk)).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="print-label")
+    def print_label(self, request, pk=None):
+        user = _verified_company_user(request, admin_only=True)
+        if not user:
+            return Response({"detail": "Only an Admin can print or reprint rack labels."}, status=status.HTTP_403_FORBIDDEN)
+        rack = self.get_object()
+        frontend_base = str(request.data.get("frontend_url") or settings.FRONTEND_PUBLIC_URL).rstrip("/")
+        if urlparse(frontend_base).hostname in {"localhost", "127.0.0.1"}:
+            frontend_base = settings.FRONTEND_PUBLIC_URL
+        scan_url = f"{frontend_base}/?rackToken={rack.qr_token}"
+        press = Press.objects.filter(pk=request.data.get("press")).first()
+        zpl = rack_label_zpl(
+            rack,
+            scan_url,
+            darkness=request.data.get("darkness") or getattr(press, "printer_darkness", "") or "20",
+            speed=request.data.get("speed") or getattr(press, "printer_speed", "") or "5",
+            copies=request.data.get("copies") or 1,
+        )
+        try:
+            result = _storage_print_job(
+                request,
+                label_type="RACK_LABEL_4X3",
+                scan_url=scan_url,
+                zpl=zpl,
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        already_printed = MaterialMovement.objects.filter(
+            rack=rack,
+            action_type__in=["label_printed", "label_reprinted"],
+        ).exists()
+        movement(
+            action_type="label_reprinted" if already_printed else "label_printed",
+            rack=rack,
+            from_location=f"Rack {rack.rack_code}",
+            to_location=f"Rack {rack.rack_code}",
+            notes="Rack label queued for reprint." if already_printed else "Rack label queued for printing.",
+            source="manual",
+            **_request_actor(request, user),
+        )
+        return Response({"ok": True, "reprint": already_printed, **result}, status=status.HTTP_201_CREATED)
 
 
 class MaterialMasterTypeViewSet(BaseMaterialsViewSet):
@@ -200,7 +799,15 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
 
     def get_queryset(self):
         qs = (
-            RawMaterialInventory.objects.select_related("material", "material__master_type", "supplier", "location", "source_roll_tag")
+            RawMaterialInventory.objects.select_related(
+                "material",
+                "material__master_type",
+                "supplier",
+                "location",
+                "source_roll_tag",
+                "current_skid",
+                "current_skid__current_rack",
+            )
             .all()
             .order_by("material_type", "name", "serial_number")
         )
@@ -214,6 +821,29 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
         if master_type:
             qs = qs.filter(material__master_type_id=master_type)
         return qs
+
+    def perform_update(self, serializer):
+        roll = serializer.instance
+        before_location = roll_location(roll)
+        before_amount = roll_amount(roll)
+        tracked_fields = ["lot_number", "width_inches", "location_id", "status", "notes", "is_active"]
+        before_values = {field: getattr(roll, field) for field in tracked_fields}
+        roll = serializer.save()
+        changed = [field.replace("_id", "") for field, value in before_values.items() if value != getattr(roll, field)]
+        if changed:
+            movement(
+                action_type="manual_edit",
+                roll=roll,
+                skid=roll.current_skid,
+                rack=roll.current_skid.current_rack if roll.current_skid_id else None,
+                from_location=before_location,
+                to_location=roll_location(roll),
+                quantity_before=before_amount,
+                quantity_after=roll_amount(roll),
+                notes=f"Updated roll fields: {', '.join(changed)}.",
+                source="manual",
+                **_request_actor(self.request, _verified_company_user(self.request)),
+            )
 
     @action(detail=True, methods=["post"], url_path="consume-roll")
     def consume_roll(self, request, pk=None):
@@ -273,6 +903,9 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             ]
             if part
         )
+        skid = inventory.current_skid
+        rack = skid.current_rack if skid and skid.current_rack_id else None
+        before_location = roll_location(inventory)
 
         with transaction.atomic():
             usage = MaterialUsage.objects.create(
@@ -289,11 +922,33 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
                 notes=usage_note,
             )
             inventory.refresh_from_db()
-            inventory.status = "depleted" if Decimal(inventory.length_feet or inventory.quantity or 0) <= 0 else "available"
+            remaining = Decimal(inventory.length_feet or inventory.quantity or 0)
+            inventory.status = "depleted" if remaining <= 0 else "available"
+            if remaining <= 0:
+                inventory.current_skid = None
             if poor_run or note:
                 event_note = f"{timezone.localdate()}: {operator or 'Operator'} / {usage_note}"
                 inventory.notes = "\n".join(part for part in [inventory.notes, event_note] if part)
-            inventory.save(update_fields=["status", "notes"] if poor_run or note else ["status"])
+            update_fields = ["status"]
+            if remaining <= 0:
+                update_fields.append("current_skid")
+            if poor_run or note:
+                update_fields.append("notes")
+            inventory.save(update_fields=update_fields)
+            movement(
+                action_type="roll_fully_used" if remaining <= 0 else "roll_partially_used",
+                roll=inventory,
+                skid=skid,
+                rack=rack,
+                from_location=before_location,
+                to_location="Used / Consumed" if remaining <= 0 else roll_location(inventory),
+                quantity_before=available,
+                quantity_after=remaining,
+                amount_used=buffered_footage,
+                notes=usage_note,
+                source="manual",
+                **_request_actor(request, _verified_company_user(request)),
+            )
 
         return Response(
             {

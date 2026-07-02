@@ -22,6 +22,7 @@ import LabelLayoutsView from "./components/LabelLayoutsView";
 import LiveFootageView from "./components/LiveFootageView";
 import MaterialInventoryView from "./components/MaterialInventoryView";
 import MaterialHandlingView, { activeJobKey } from "./components/MaterialHandlingView";
+import MaterialStorageView from "./components/MaterialStorageView";
 import MaterialTypeTable from "./components/MaterialTypeTable";
 import MaterialTypeWindow from "./components/MaterialTypeWindow";
 import MaterialTypeManager from "./components/MaterialTypeManager";
@@ -1196,6 +1197,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const [linkedRollTagId, setLinkedRollTagId] = useState(() => (
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("rollTagId") || "" : ""
   ));
+  const [scannedSkidToken, setScannedSkidToken] = useState(() => (
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("skidToken") || "" : ""
+  ));
+  const [scannedRackToken, setScannedRackToken] = useState(() => (
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("rackToken") || "" : ""
+  ));
   const [previewRoleName, setPreviewRoleName] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
@@ -1287,6 +1294,14 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       setFormMode(null);
     }
   }, [linkedRollTagId, roleDefinitions, viewRoleName]);
+
+  useEffect(() => {
+    const targetKey = scannedSkidToken ? "skids" : scannedRackToken ? "racks" : "";
+    if (!targetKey || !resourceAvailableForRole(roleDefinitions, viewRoleName, targetKey)) return;
+    setActiveKey(targetKey);
+    setSelected(null);
+    setFormMode(null);
+  }, [scannedSkidToken, scannedRackToken, roleDefinitions, viewRoleName]);
 
   const listQuery = useQuery({
     queryKey: collectionQueryKey,
@@ -2661,6 +2676,20 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               setLinkedRollTagId(String(rollTagId));
               const url = new URL(window.location.href);
               url.searchParams.set("rollTagId", String(rollTagId));
+              window.history.replaceState({}, "", url);
+            }}
+          />
+        ) : resource.viewMode === "materialStorageSkids" || resource.viewMode === "materialStorageRacks" ? (
+          <MaterialStorageView
+            mode={resource.viewMode === "materialStorageSkids" ? "skids" : "racks"}
+            currentUser={currentUserForView}
+            initialToken={resource.viewMode === "materialStorageSkids" ? scannedSkidToken : scannedRackToken}
+            onClearToken={() => {
+              const isSkid = resource.viewMode === "materialStorageSkids";
+              if (isSkid) setScannedSkidToken("");
+              else setScannedRackToken("");
+              const url = new URL(window.location.href);
+              url.searchParams.delete(isSkid ? "skidToken" : "rackToken");
               window.history.replaceState({}, "", url);
             }}
           />

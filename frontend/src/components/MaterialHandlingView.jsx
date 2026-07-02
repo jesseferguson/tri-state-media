@@ -17,7 +17,7 @@ function footage(row) {
 }
 
 function locationName(row) {
-  return row?.location_full_path || row?.location_name || "No location";
+  return row?.current_location_display || row?.location_full_path || row?.location_name || "Plant Floor";
 }
 
 function widthName(row) {

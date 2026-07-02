@@ -1,6 +1,7 @@
 from decimal import Decimal
 from uuid import uuid4
 
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -225,6 +226,99 @@ class MaterialSupplierOption(models.Model):
         super().save(*args, **kwargs)
 
 
+class MaterialRack(models.Model):
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("inactive", "Inactive"),
+    ]
+
+    rack_code = models.CharField(max_length=80, unique=True)
+    qr_token = models.UUIDField(default=uuid4, unique=True, editable=False)
+    aisle = models.CharField(max_length=40, blank=True)
+    bay = models.CharField(max_length=40, blank=True)
+    level = models.CharField(max_length=40, blank=True)
+    position = models.CharField(max_length=40, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    notes = models.TextField(blank=True)
+    created_by = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["rack_code"]
+
+    @property
+    def location_detail(self):
+        parts = [
+            f"Aisle {self.aisle}" if self.aisle else "",
+            f"Bay {self.bay}" if self.bay else "",
+            f"Level {self.level}" if self.level else "",
+            f"Position {self.position}" if self.position else "",
+        ]
+        return " / ".join(part for part in parts if part)
+
+    def __str__(self):
+        return self.rack_code
+
+
+class MaterialSkid(models.Model):
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("inactive", "Inactive"),
+        ("retired", "Retired"),
+    ]
+
+    skid_number = models.CharField(max_length=80, unique=True, blank=True)
+    qr_token = models.UUIDField(default=uuid4, unique=True, editable=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    current_rack = models.ForeignKey(
+        MaterialRack,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="skids",
+    )
+    other_location = models.CharField(max_length=150, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "skid_number"]
+
+    @property
+    def current_location_type(self):
+        if self.status != "active":
+            return "inactive"
+        if self.current_rack_id:
+            return "rack"
+        if self.other_location:
+            return "other"
+        return "plant_floor"
+
+    @property
+    def current_location_display(self):
+        if self.status != "active":
+            return "Inactive" if self.status == "inactive" else "Retired"
+        if self.current_rack_id:
+            return self.current_rack.rack_code
+        return self.other_location or "Plant Floor"
+
+    def save(self, *args, **kwargs):
+        needs_number = not self.skid_number
+        if needs_number and not self.pk:
+            self.skid_number = f"PENDING-{uuid4().hex[:12].upper()}"
+        result = super().save(*args, **kwargs)
+        if needs_number:
+            self.skid_number = f"SKID-{timezone.localdate().year}-{self.pk:06d}"
+            super().save(update_fields=["skid_number", "updated_at"])
+        return result
+
+    def __str__(self):
+        return self.skid_number
+
+
 class RawMaterialInventory(models.Model):
     STATUS_CHOICES = [
         ("available", "Available"),
@@ -279,8 +373,16 @@ class RawMaterialInventory(models.Model):
         blank=True,
         related_name="material_inventory",
     )
+    current_skid = models.ForeignKey(
+        MaterialSkid,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rolls",
+    )
 
     width_inches = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    original_length_feet = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     length_feet = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     weight_lbs = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     quantity = models.DecimalField(max_digits=12, decimal_places=3, default=0)
@@ -304,7 +406,10 @@ class RawMaterialInventory(models.Model):
         ordering = ["material_type", "name", "serial_number"]
 
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
         needs_serial = not self.serial_number
+        if self.original_length_feet is None and self.length_feet is not None and not self.pk:
+            self.original_length_feet = self.length_feet
         if self.material:
             self.material_type = self.material.material_type
             if not self.code:
@@ -318,10 +423,108 @@ class RawMaterialInventory(models.Model):
             prefix = MATERIAL_TYPE_PREFIXES.get(self.material_type, "MAT")
             self.serial_number = f"{prefix}-{self.pk:06d}"
             super().save(update_fields=["serial_number"])
+        if is_new:
+            MaterialMovement.objects.create(
+                action_type="roll_registered",
+                roll=self,
+                from_location="",
+                to_location="Plant Floor",
+                quantity_before=0,
+                quantity_after=self.length_feet if self.length_feet is not None else self.quantity,
+                notes="Roll registered in material inventory.",
+                source="system",
+            )
         return result
 
     def __str__(self):
         return f"{self.name} / {self.serial_number or self.lot_number or self.pk}"
+
+
+class MaterialMovement(models.Model):
+    ACTION_CHOICES = [
+        ("roll_created", "Roll Created"),
+        ("roll_registered", "Roll Registered"),
+        ("roll_assigned_to_skid", "Roll Assigned to Skid"),
+        ("roll_removed_from_skid", "Roll Removed from Skid"),
+        ("roll_added_back_to_skid", "Roll Added Back to Skid"),
+        ("roll_partially_used", "Roll Partially Used"),
+        ("roll_fully_used", "Roll Fully Used"),
+        ("skid_created", "Skid Created"),
+        ("skid_assigned_to_rack", "Skid Assigned to Rack"),
+        ("skid_removed_from_rack", "Skid Removed from Rack"),
+        ("rack_created", "Rack Created"),
+        ("label_printed", "Label Printed"),
+        ("label_reprinted", "Label Reprinted"),
+        ("manual_edit", "Manual Edit"),
+    ]
+    SOURCE_CHOICES = [
+        ("scan", "Scan"),
+        ("manual", "Manual"),
+        ("system", "System"),
+    ]
+
+    action_type = models.CharField(max_length=40, choices=ACTION_CHOICES)
+    roll = models.ForeignKey(
+        RawMaterialInventory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movement_history",
+    )
+    skid = models.ForeignKey(
+        MaterialSkid,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movement_history",
+    )
+    rack = models.ForeignKey(
+        MaterialRack,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movement_history",
+    )
+    roll_reference = models.CharField(max_length=100, blank=True)
+    skid_reference = models.CharField(max_length=100, blank=True)
+    rack_reference = models.CharField(max_length=100, blank=True)
+    actor_name = models.CharField(max_length=120, blank=True)
+    actor_user_id = models.CharField(max_length=120, blank=True)
+    from_location = models.CharField(max_length=180, blank=True)
+    to_location = models.CharField(max_length=180, blank=True)
+    quantity_before = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    quantity_after = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    amount_used = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    notes = models.TextField(blank=True)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="manual")
+    device_info = models.CharField(max_length=500, blank=True)
+    scan_session_id = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["action_type", "-created_at"]),
+            models.Index(fields=["scan_session_id"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and MaterialMovement.objects.filter(pk=self.pk).exists():
+            raise ValidationError("Material movement history is append-only.")
+        if self.roll_id and not self.roll_reference:
+            self.roll_reference = self.roll.serial_number or self.roll.lot_number
+        if self.skid_id and not self.skid_reference:
+            self.skid_reference = self.skid.skid_number
+        if self.rack_id and not self.rack_reference:
+            self.rack_reference = self.rack.rack_code
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Material movement history cannot be deleted.")
+
+    def __str__(self):
+        reference = self.roll_reference or self.skid_reference or self.rack_reference
+        return f"{self.get_action_type_display()} / {reference or self.pk}"
 
 
 class MaterialUsage(models.Model):
@@ -686,6 +889,17 @@ class CoaterRollTag(models.Model):
             received_date=self.run_date,
             source_roll_tag=self,
             notes=f"Created from coater roll tag {self.tag_number}",
+        )
+        MaterialMovement.objects.create(
+            action_type="roll_created",
+            roll=inventory,
+            actor_name=self.operator,
+            from_location="Coater",
+            to_location="Plant Floor",
+            quantity_before=0,
+            quantity_after=inventory.length_feet if inventory.length_feet is not None else inventory.quantity,
+            notes=f"Created from coater roll tag {self.tag_number}.",
+            source="system",
         )
         self.logged_inventory = inventory
         super().save(update_fields=["logged_inventory", "updated_at"])
