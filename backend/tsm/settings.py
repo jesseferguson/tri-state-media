@@ -1,6 +1,7 @@
 import os
 import dj_database_url
 from pathlib import Path
+from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -68,6 +69,11 @@ if os.environ.get("AWS_STORAGE_BUCKET_NAME"):
     INSTALLED_APPS.append("storages")
 
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "x-company-user-id",
+    "x-company-username",
+)
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",

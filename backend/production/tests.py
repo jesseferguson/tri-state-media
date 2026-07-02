@@ -310,6 +310,19 @@ class EtiDeviceSettingsTests(TestCase):
         self.assertEqual(response.status_code, 403, response.content)
         mocked_urlopen.assert_not_called()
 
+    def test_browser_preflight_allows_admin_identity_headers(self):
+        response = self.client.options(
+            reverse("eti-device-settings"),
+            HTTP_ORIGIN="https://tri-state-media-front-end.onrender.com",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="GET",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="x-company-user-id,x-company-username",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        allowed_headers = response.headers.get("access-control-allow-headers", "").lower()
+        self.assertIn("x-company-user-id", allowed_headers)
+        self.assertIn("x-company-username", allowed_headers)
+
     def test_admin_reads_firebase_settings_merged_with_defaults(self):
         firebase_body = json.dumps({
             "wheelDiameterInches": 4.25,
