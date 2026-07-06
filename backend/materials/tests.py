@@ -481,17 +481,32 @@ class SkidRackWorkflowTests(TestCase):
         liner = MaterialSpec.objects.create(material_type="liner", code="LINER-QR", name="QR Liner")
         adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-QR", name="QR Adhesive")
         silicone = MaterialSpec.objects.create(material_type="silicone", code="SIL-QR", name="QR Silicone")
+        schedule = CoaterRollTag.objects.create(
+            name="PM schedule",
+            status="running",
+            face=face,
+            liner=liner,
+            adhesive=adhesive,
+            silicone=silicone,
+            scheduled_material=self.material,
+            log_inventory=False,
+        )
         tag = CoaterRollTag.objects.create(
             name="PM roll",
-            status="complete",
+            status="tag_printed",
             result_lot_number=self.roll.lot_number,
             face=face,
             liner=liner,
             adhesive=adhesive,
             silicone=silicone,
+            produced_material=self.material,
+            source_schedule=schedule,
+            length_feet=Decimal("10000"),
+            width_inches=Decimal("9"),
+            log_inventory=False,
         )
-        self.roll.source_roll_tag = tag
-        self.roll.save(update_fields=["source_roll_tag"])
+        self.roll.delete()
+        self.assertFalse(RawMaterialInventory.objects.filter(source_roll_tag=tag).exists())
         skid = self.create_skid()
 
         response = self.client.post(
@@ -508,8 +523,9 @@ class SkidRackWorkflowTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200, response.content)
-        self.roll.refresh_from_db()
-        self.assertEqual(self.roll.current_skid_id, skid.id)
+        tag.refresh_from_db()
+        self.assertIsNotNone(tag.logged_inventory_id)
+        self.assertEqual(tag.logged_inventory.current_skid_id, skid.id)
 
     def test_add_and_remove_skid_from_rack_updates_derived_roll_location(self):
         skid = self.create_skid()

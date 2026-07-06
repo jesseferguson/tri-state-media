@@ -33,7 +33,15 @@ function userHeaders(user) {
 function errorPayload(error) {
   const raw = String(error?.message || "");
   try {
-    return JSON.parse(raw);
+    const payload = JSON.parse(raw);
+    if (payload?.detail) return payload;
+    const fieldMessage = Object.entries(payload || {})
+      .flatMap(([field, messages]) => {
+        const values = Array.isArray(messages) ? messages : [messages];
+        return values.filter(Boolean).map((message) => `${labelize(field)}: ${message}`);
+      })
+      .join(" ");
+    return { ...payload, detail: fieldMessage || raw || "The action could not be completed." };
   } catch {
     return { detail: raw || "The action could not be completed." };
   }
@@ -335,6 +343,12 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
             </div>
           )}
           {error && !confirmation && <div className="storage-message error"><AlertTriangle size={17} /><span>{error}</span></div>}
+          {busy && (
+            <div className="storage-message">
+              <RefreshCcw size={17} />
+              <span>{action?.type === "add-roll" ? `Adding the scanned roll to ${record.skid_number}...` : `${title} in progress...`}</span>
+            </div>
+          )}
           {riskyConfirmed && !confirmation && (
             <div className="storage-message warning">
               <AlertTriangle size={18} />
@@ -346,7 +360,7 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
             {confirmation ? (
               <button className="danger-btn" type="button" onClick={onConfirmMove} disabled={busy}>{busy ? "Moving..." : "Yes, Move It Here"}</button>
             ) : (
-              <button className={riskyConfirmed ? "danger-btn" : "primary-btn"} type="submit" disabled={busy || !scanValue || (isUse && !useAll && !amount)}>
+              <button className={riskyConfirmed ? "danger-btn" : "primary-btn"} type="button" onClick={() => submit()} disabled={busy || !scanValue || (isUse && !useAll && !amount)}>
                 {busy ? "Working..." : riskyConfirmed ? "Confirm Action" : title}
               </button>
             )}

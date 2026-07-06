@@ -6,7 +6,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import MaterialMovement, MaterialRack, MaterialSkid, MaterialUsage, RawMaterialInventory
+from .models import CoaterRollTag, MaterialMovement, MaterialRack, MaterialSkid, MaterialUsage, RawMaterialInventory
 
 
 class MaterialWorkflowError(Exception):
@@ -86,7 +86,7 @@ def _scan_candidates(value):
     return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))
 
 
-def resolve_roll_scan(value, *, for_update=False):
+def resolve_roll_scan(value, *, for_update=False, materialize_printed_tag=False):
     queryset = RawMaterialInventory.objects.select_related(
         "location",
         "current_skid",
@@ -108,6 +108,45 @@ def resolve_roll_scan(value, *, for_update=False):
         roll = queryset.filter(filters).first()
         if roll:
             return roll
+
+    if materialize_printed_tag:
+        tag_queryset = CoaterRollTag.objects.filter(source_schedule__isnull=False).select_related(
+            "logged_inventory",
+            "produced_material",
+            "scheduled_material",
+        )
+        if for_update:
+            tag_queryset = tag_queryset.select_for_update()
+        for candidate in _scan_candidates(value):
+            filters = (
+                Q(tag_number__iexact=candidate)
+                | Q(result_serial_number__iexact=candidate)
+                | Q(result_lot_number__iexact=candidate)
+            )
+            if candidate.isdigit():
+                filters |= Q(pk=int(candidate))
+            tag = tag_queryset.filter(filters).first()
+            if not tag:
+                continue
+            if tag.logged_inventory_id:
+                return tag.logged_inventory
+            if not tag.length_feet or Decimal(tag.length_feet) <= 0:
+                raise MaterialWorkflowError(
+                    f"{tag.tag_number} has no roll footage. Edit the roll before adding it to a skid.",
+                    code="roll_footage_required",
+                    status_code=409,
+                )
+            tag.status = "complete"
+            tag.log_inventory = True
+            tag.run_date = tag.run_date or timezone.localdate()
+            tag.save()
+            if tag.logged_inventory_id:
+                return tag.logged_inventory
+            raise MaterialWorkflowError(
+                f"{tag.tag_number} could not create its inventory record.",
+                code="roll_inventory_missing",
+                status_code=409,
+            )
     raise MaterialWorkflowError("Scan not recognized.", code="scan_not_recognized", status_code=404)
 
 
@@ -168,7 +207,7 @@ def add_roll_to_skid(*, skid_id, scan_value, actor, allow_move=False, source="sc
     skid = MaterialSkid.objects.select_for_update().select_related("current_rack").get(pk=skid_id)
     if skid.status != "active":
         raise MaterialWorkflowError(f"{skid.skid_number} is not active.", code="inactive_skid", status_code=409)
-    roll = resolve_roll_scan(scan_value, for_update=True)
+    roll = resolve_roll_scan(scan_value, for_update=True, materialize_printed_tag=True)
     before = roll_amount(roll)
     if not roll.is_active or roll.status in {"depleted", "scrapped"} or before <= 0:
         raise MaterialWorkflowError("This roll has already been fully used.", code="roll_consumed", status_code=409)
