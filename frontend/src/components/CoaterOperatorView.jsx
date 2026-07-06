@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Factory, Layers3, PackageCheck, Play, Printer, RefreshCcw, Save, Settings2, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Factory, Layers3, PackageCheck, Play, Printer, RefreshCcw, Save, Search, Settings2, Trash2, X } from "lucide-react";
 import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
@@ -1060,6 +1060,8 @@ function RollTagDetailDialog({ tag, schedule, relatedRolls = [], inventoryRows =
 export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", onLinkedRollTagChange, onLinkedRollTagClose }) {
   const queryClient = useQueryClient();
   const [selectedPress, setSelectedPress] = useState("all");
+  const [lineupType, setLineupType] = useState("all");
+  const [lineupSearch, setLineupSearch] = useState("");
   const [selectedTagId, setSelectedTagId] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [deleteRollCandidate, setDeleteRollCandidate] = useState(null);
@@ -1140,6 +1142,28 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
     const rightDate = String(right.row.scheduled_date || right.row.run_date || right.row.due_date || "");
     return leftDate.localeCompare(rightDate);
   }), [materialJobs, productJobs]);
+  const visibleLineupJobs = useMemo(() => {
+    const query = lineupSearch.trim().toLowerCase();
+    return lineupJobs.filter((item) => {
+      if (lineupType !== "all" && item.kind !== lineupType) return false;
+      if (!query) return true;
+      const row = item.row;
+      return [
+        item.kind,
+        row.tag_number,
+        row.scheduled_material_name,
+        row.name,
+        row.job_ticket_number,
+        row.job_name,
+        row.job_product_code,
+        row.customer_name,
+        row.customer_po,
+        row.press_name,
+        row.cut_description,
+        row.status,
+      ].some((value) => String(value || "").toLowerCase().includes(query));
+    });
+  }, [lineupJobs, lineupSearch, lineupType]);
   const selectedScheduleRolls = useMemo(() => {
     if (!selectedTag) return [];
     return data.tags
@@ -1322,9 +1346,40 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
             <span className="product"><PackageCheck size={13} /> {productJobs.length} Finished Product</span>
           </div>
         </header>
+        <div className="coater-lineup-tools">
+          <label className="coater-lineup-search">
+            <Search size={17} aria-hidden="true" />
+            <input
+              type="search"
+              value={lineupSearch}
+              onChange={(event) => setLineupSearch(event.target.value)}
+              placeholder="Search job, material, customer, PO..."
+              aria-label="Search scheduled coater work"
+            />
+            {lineupSearch && (
+              <button type="button" onClick={() => setLineupSearch("")} title="Clear search" aria-label="Clear lineup search">
+                <X size={15} />
+              </button>
+            )}
+          </label>
+          <div className="coater-lineup-type-filter" role="tablist" aria-label="Scheduled work type">
+            <button className={lineupType === "all" ? "active" : ""} type="button" role="tab" aria-selected={lineupType === "all"} onClick={() => setLineupType("all")}>
+              All <span>{lineupJobs.length}</span>
+            </button>
+            <button className={lineupType === "material" ? "active material" : "material"} type="button" role="tab" aria-selected={lineupType === "material"} onClick={() => setLineupType("material")}>
+              Material <span>{materialJobs.length}</span>
+            </button>
+            <button className={lineupType === "product" ? "active product" : "product"} type="button" role="tab" aria-selected={lineupType === "product"} onClick={() => setLineupType("product")}>
+              Finished <span>{productJobs.length}</span>
+            </button>
+          </div>
+        </div>
         {rollTagNotice && !selectedTag && <div className="coater-print-success"><CheckCircle2 size={16} /><span>{rollTagNotice}</span></div>}
-        <div className="coater-unified-list">
-          {lineupJobs.map((item) => (
+        <div className="coater-lineup-result-count" aria-live="polite">
+          Showing <strong>{visibleLineupJobs.length}</strong> of {lineupJobs.length} scheduled job{lineupJobs.length === 1 ? "" : "s"}
+        </div>
+        <div className="coater-unified-list" tabIndex="0" aria-label="Scheduled coater jobs">
+          {visibleLineupJobs.map((item) => (
             <UnifiedJobCard
               item={item}
               key={`${item.kind}-${item.row.id}`}
@@ -1340,7 +1395,14 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
               }}
             />
           ))}
-          {!lineupJobs.length && <p className="coater-empty">No material or finished-product jobs are scheduled for this press.</p>}
+          {!visibleLineupJobs.length && (
+            <div className="coater-lineup-empty">
+              <Search size={22} />
+              <strong>{lineupJobs.length ? "No matching jobs" : "No scheduled work"}</strong>
+              <span>{lineupJobs.length ? "Try another search or show all work types." : "No material or finished-product jobs are scheduled for this press."}</span>
+              {lineupJobs.length ? <button className="ghost-btn" type="button" onClick={() => { setLineupSearch(""); setLineupType("all"); }}>Clear filters</button> : null}
+            </div>
+          )}
         </div>
       </section>
 

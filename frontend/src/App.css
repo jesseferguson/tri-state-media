@@ -25773,6 +25773,7 @@ textarea {
 }
 
 .coater-unified-panel {
+  gap: 0;
   padding: 0;
   overflow: hidden;
   border-radius: 8px;
@@ -25783,6 +25784,128 @@ textarea {
   padding: 13px 16px;
   border-bottom: 1px solid #dbe6f2;
   background: #f8fafc;
+}
+
+.coater-lineup-tools {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.coater-lineup-search {
+  min-width: 0;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.coater-lineup-search:focus-within {
+  border-color: #0f766e;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, .12);
+}
+
+.coater-lineup-search input {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #0f172a;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 750;
+}
+
+.coater-lineup-search button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: #e2e8f0;
+  color: #475569;
+  cursor: pointer;
+}
+
+.coater-lineup-type-filter {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #dbe6f2;
+  border-radius: 7px;
+  background: #f1f5f9;
+}
+
+.coater-lineup-type-filter button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #64748b;
+  font-size: .7rem;
+  font-weight: 950;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.coater-lineup-type-filter button span {
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: .62rem;
+  line-height: 1.25;
+}
+
+.coater-lineup-type-filter button.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .14);
+}
+
+.coater-lineup-type-filter button.active.material {
+  color: #0f766e;
+}
+
+.coater-lineup-type-filter button.active.product {
+  color: #1d4ed8;
+}
+
+.coater-lineup-result-count {
+  padding: 7px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: .67rem;
+  font-weight: 800;
+}
+
+.coater-lineup-result-count strong {
+  color: #0f172a;
 }
 
 .coater-lineup-legend {
@@ -25816,7 +25939,47 @@ textarea {
 
 .coater-unified-list {
   display: grid;
+  max-height: calc(100dvh - 370px);
+  min-height: 180px;
   min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.coater-unified-list:focus-visible {
+  outline: 3px solid rgba(15, 118, 110, .2);
+  outline-offset: -3px;
+}
+
+.coater-lineup-empty {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 24px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.coater-lineup-empty strong {
+  color: #334155;
+  font-size: .9rem;
+}
+
+.coater-lineup-empty span {
+  max-width: 360px;
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 750;
+}
+
+.coater-lineup-empty .ghost-btn {
+  margin-top: 6px;
 }
 
 .coater-lineup-row {
@@ -26373,6 +26536,14 @@ textarea {
 }
 
 @media (max-width: 1100px) {
+  .coater-lineup-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-lineup-type-filter {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .coater-lineup-row {
     grid-template-columns: 125px minmax(200px, 1fr) 130px 100px auto;
   }
@@ -26389,6 +26560,39 @@ textarea {
 @media (max-width: 720px) {
   .coater-operator-view {
     min-height: 0;
+    gap: 9px;
+  }
+
+  .coater-hero {
+    padding: 12px;
+  }
+
+  .coater-hero .ghost-btn {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+  }
+
+  .coater-press-tabs {
+    width: calc(100% + 14px);
+    margin-inline: -7px;
+    padding: 1px 7px 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .coater-press-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .coater-press-tabs button {
+    min-height: 42px;
+    flex: 0 0 auto;
+    scroll-snap-align: start;
   }
 
   .coater-hero,
@@ -26403,10 +26607,43 @@ textarea {
     grid-template-columns: 1fr 1fr;
   }
 
+  .coater-lineup-tools {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .coater-lineup-search {
+    height: 46px;
+  }
+
+  .coater-lineup-search input {
+    font-size: .88rem;
+  }
+
+  .coater-lineup-type-filter button {
+    min-width: 0;
+    min-height: 40px;
+    padding-inline: 7px;
+  }
+
+  .coater-lineup-result-count {
+    padding: 7px 11px;
+  }
+
+  .coater-unified-list {
+    max-height: max(280px, calc(100dvh - 455px));
+    min-height: 280px;
+    scrollbar-gutter: auto;
+  }
+
   .coater-lineup-row {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 7px 10px;
-    padding: 12px;
+    min-height: 0;
+    padding: 12px 11px;
   }
 
   .coater-lineup-kind {
@@ -26423,8 +26660,30 @@ textarea {
     white-space: normal;
   }
 
+  .coater-lineup-title > strong {
+    font-size: .96rem;
+    line-height: 1.25;
+  }
+
+  .coater-lineup-title > em {
+    display: -webkit-box;
+    overflow: hidden;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
   .coater-lineup-meta {
     grid-column: 1;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px 10px;
+  }
+
+  .coater-lineup-meta > strong,
+  .coater-lineup-meta > span {
+    font-size: .71rem;
   }
 
   .coater-lineup-status {
@@ -26436,6 +26695,7 @@ textarea {
     grid-column: 2;
     grid-row: 3;
     justify-self: end;
+    align-self: end;
   }
 
   .coater-job-overlay {
@@ -26564,5 +26824,27 @@ textarea {
   .coater-delete-window footer,
   .coater-delete-window > .coater-error {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .coater-unified-panel > header {
+    padding: 11px;
+  }
+
+  .coater-lineup-legend > span {
+    min-width: 0;
+    justify-content: center;
+    padding-inline: 6px;
+  }
+
+  .coater-lineup-type-filter button {
+    gap: 4px;
+    font-size: .67rem;
+  }
+
+  .coater-lineup-type-filter button span {
+    min-width: 18px;
+    padding-inline: 4px;
   }
 }
