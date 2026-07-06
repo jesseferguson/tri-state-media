@@ -163,17 +163,30 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertEqual(press.printer_darkness, "15")
         self.assertTrue(response.json()["printerSettingsSaved"])
 
+        admin_role, _ = CompanyRole.objects.get_or_create(name="Admin")
+        admin_user = CompanyUser.objects.create(
+            username="roll-delete-admin",
+            name="Roll Delete Admin",
+            password_hash="test",
+            role=admin_role,
+        )
+        delete_headers = {
+            "HTTP_X_COMPANY_USER_ID": str(admin_user.id),
+            "HTTP_X_COMPANY_USERNAME": admin_user.username,
+        }
         wrong_delete = self.client.post(
             reverse("coater-roll-tag-delete-roll", args=[tag.id]),
-            {"confirm_tag_number": "WRONG"},
+            {"confirm_delete": False},
             content_type="application/json",
+            **delete_headers,
         )
         self.assertEqual(wrong_delete.status_code, 400, wrong_delete.content)
 
         delete_response = self.client.post(
             reverse("coater-roll-tag-delete-roll", args=[tag.id]),
-            {"confirm_tag_number": tag.tag_number},
+            {"confirm_delete": True},
             content_type="application/json",
+            **delete_headers,
         )
         self.assertEqual(delete_response.status_code, 200, delete_response.content)
         self.assertFalse(CoaterRollTag.objects.filter(pk=tag.id).exists())
@@ -351,6 +364,100 @@ class CoaterRollTagPrintQueueTests(TestCase):
         row = response.json()["results"][0]
         self.assertEqual(row["location_full_path"], "Wilmington Ohio > Material Shelf 1")
         self.assertEqual(row["current_location_display"], "Wilmington Ohio > Material Shelf 1")
+
+
+class MaterialInventoryDeletionTests(TestCase):
+    def setUp(self):
+        self.material = MaterialSpec.objects.create(
+            material_type="coated_stock",
+            code="PM-DELETE",
+            name="PM Delete Test",
+        )
+        self.roll = RawMaterialInventory.objects.create(
+            material=self.material,
+            lot_number="DELETE-LOT-1",
+            length_feet=Decimal("12000"),
+            quantity=Decimal("12000"),
+            unit="lf",
+        )
+        self.usage = MaterialUsage.objects.create(
+            inventory=self.roll,
+            material=self.material,
+            usage_type="adjustment",
+            quantity=Decimal("0"),
+            reference="Inventory added",
+        )
+        ticket = JobTicket.objects.create(ticket_number="JT-DELETE-INVENTORY", job_name="Delete inventory")
+        schedule = ProductionSchedule.objects.create(job_ticket=ticket, status="running")
+        self.assignment = ProductionMaterialAssignment.objects.create(
+            production_schedule=schedule,
+            inventory=self.roll,
+            source_type="outsourced",
+            assigned_by="Test",
+        )
+        self.manager = self.create_user("Manager", "inventory-manager")
+        self.handler = self.create_user("Material Handler", "material-handler")
+        self.csr = self.create_user("CSR", "inventory-csr")
+
+    @staticmethod
+    def create_user(role_name, username):
+        role, _ = CompanyRole.objects.get_or_create(name=role_name)
+        return CompanyUser.objects.create(
+            username=username,
+            name=username.replace("-", " ").title(),
+            password_hash="test",
+            role=role,
+        )
+
+    @staticmethod
+    def headers(user):
+        return {
+            "HTTP_X_COMPANY_USER_ID": str(user.id),
+            "HTTP_X_COMPANY_USERNAME": user.username,
+        }
+
+    def test_only_allowed_roles_can_remove_roll_without_recording_usage(self):
+        unauthorized = self.client.post(
+            reverse("raw-material-remove-from-inventory", args=[self.roll.id]),
+            {"confirm_delete": True},
+            content_type="application/json",
+            **self.headers(self.csr),
+        )
+        self.assertEqual(unauthorized.status_code, 403, unauthorized.content)
+        self.assertTrue(RawMaterialInventory.objects.filter(pk=self.roll.id).exists())
+
+        unconfirmed = self.client.post(
+            reverse("raw-material-remove-from-inventory", args=[self.roll.id]),
+            {"confirm_delete": False},
+            content_type="application/json",
+            **self.headers(self.manager),
+        )
+        self.assertEqual(unconfirmed.status_code, 400, unconfirmed.content)
+        self.assertTrue(RawMaterialInventory.objects.filter(pk=self.roll.id).exists())
+
+        direct_delete = self.client.delete(
+            reverse("raw-material-detail", args=[self.roll.id]),
+            **self.headers(self.manager),
+        )
+        self.assertEqual(direct_delete.status_code, 405, direct_delete.content)
+
+        movement_id = self.roll.movement_history.get(action_type="roll_registered").id
+        usage_count = MaterialUsage.objects.count()
+        response = self.client.post(
+            reverse("raw-material-remove-from-inventory", args=[self.roll.id]),
+            {"confirm_delete": True},
+            content_type="application/json",
+            **self.headers(self.handler),
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(RawMaterialInventory.objects.filter(pk=self.roll.id).exists())
+        self.assertFalse(MaterialUsage.objects.filter(pk=self.usage.id).exists())
+        self.assertFalse(ProductionMaterialAssignment.objects.filter(pk=self.assignment.id).exists())
+        movement = MaterialMovement.objects.get(pk=movement_id)
+        self.assertIsNone(movement.roll_id)
+        self.assertEqual(movement.roll_reference, self.roll.serial_number)
+        self.assertLess(MaterialUsage.objects.count(), usage_count)
 
 
 class SkidRackWorkflowTests(TestCase):

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Pencil, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Pencil, RotateCcw, Trash2, X } from "lucide-react";
 import { formatCell, getRecordTitle, labelize } from "../lib/format";
 
 const purposeChoices = [
@@ -66,7 +66,7 @@ function UsagePanel({ rows }) {
   );
 }
 
-export default function RollWorkflowWindow({ roll, locations, usageRows = [], submitting, onClose, onEdit, onCheckOut, onReturn, onUpdateStatus }) {
+export default function RollWorkflowWindow({ roll, locations, usageRows = [], submitting, canDelete = false, onClose, onEdit, onCheckOut, onReturn, onUpdateStatus, onDelete }) {
   const [mode, setMode] = useState("details");
   const [purpose, setPurpose] = useState("coater");
   const [customPurpose, setCustomPurpose] = useState("");
@@ -136,6 +136,7 @@ export default function RollWorkflowWindow({ roll, locations, usageRows = [], su
           </div>
           <div className="roll-window-actions">
             <button className="primary-btn" type="button" onClick={onEdit}><Pencil size={15} /> Edit Roll</button>
+            {canDelete && <button className="material-remove-inventory-btn" type="button" onClick={onDelete}><Trash2 size={15} /> Remove from Inventory</button>}
             <button className="ghost-btn" type="button" onClick={onClose}><X size={16} /> Close</button>
           </div>
         </header>

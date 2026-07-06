@@ -19,11 +19,14 @@ import {
   QrCode,
   RefreshCcw,
   Search,
+  Trash2,
   Warehouse,
   X,
 } from "lucide-react";
 import { fetchCollection, requestApi } from "../api";
 import { formatInches, labelize } from "../lib/format";
+import { canDeleteMaterialRoll } from "../lib/localAuth";
+import DeleteMaterialRollDialog from "./DeleteMaterialRollDialog";
 import ScanLinkScreen from "./ScanLinkScreen";
 
 function userHeaders(user) {
@@ -411,6 +414,9 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   const [moveConfirmation, setMoveConfirmation] = useState(null);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const lastPayloadRef = useRef(null);
 
   const dataQuery = useQuery({
@@ -557,6 +563,26 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
     }
   }
 
+  async function deleteRollFromInventory() {
+    if (!deleteCandidate || !selected) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      const result = await requestApi(`raw-materials/${deleteCandidate.id}/remove-from-inventory`, {
+        method: "POST",
+        headers: userHeaders(currentUser),
+        body: JSON.stringify({ confirm_delete: true }),
+      });
+      setDeleteCandidate(null);
+      setSuccess(`${result.rollReference || rollLabel(deleteCandidate)} was removed from inventory.`);
+      await refresh(selected.id);
+    } catch (deleteFailure) {
+      setDeleteError(errorPayload(deleteFailure).detail);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   function openWorkflow(type, value = "") {
     setError("");
     setSuccess("");
@@ -686,7 +712,12 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                       <div className="storage-row-actions">
                         <button type="button" onClick={() => onOpenRoll?.(roll)}>Edit Roll</button>
                         <button type="button" onClick={() => openWorkflow("use-roll", rollLabel(roll))}>Use</button>
-                        <button type="button" onClick={() => openWorkflow("remove-roll", rollLabel(roll))}>Remove</button>
+                        <button type="button" onClick={() => openWorkflow("remove-roll", rollLabel(roll))}>Off Skid</button>
+                        {canDeleteMaterialRoll(currentUser) && (
+                          <button className="storage-delete-roll" type="button" onClick={() => { setDeleteError(""); setDeleteCandidate(roll); }} title="Remove roll from inventory">
+                            <Trash2 size={13} /> Remove Inventory
+                          </button>
+                        )}
                       </div>
                     </article>
                   )) : selected.skids?.map((skid) => (
@@ -749,6 +780,18 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           </section>
         </div>
       )}
+      <DeleteMaterialRollDialog
+        roll={deleteCandidate}
+        deleting={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
+          if (!deleteBusy) {
+            setDeleteCandidate(null);
+            setDeleteError("");
+          }
+        }}
+        onConfirm={deleteRollFromInventory}
+      />
     </section>
   );
 }

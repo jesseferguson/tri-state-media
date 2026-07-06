@@ -87,6 +87,13 @@ export function normalizeUser(user = {}) {
   };
 }
 
+export function canDeleteMaterialRoll(user = {}) {
+  const roleName = String(user?.role || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return roleName.includes("admin")
+    || roleName.includes("manager")
+    || (roleName.includes("material") && roleName.includes("hand"));
+}
+
 export function normalizeRole(role = {}) {
   const name = String(role.name || "").trim();
   const defaultRole = defaultRoleDefinitions.find((item) => item.name.toLowerCase() === name.toLowerCase());

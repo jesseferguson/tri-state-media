@@ -14,6 +14,7 @@ import FootageReportsView from "./components/FootageReportsView";
 import CustomerWorkspace from "./components/CustomerWorkspace";
 import CoaterOperatorView from "./components/CoaterOperatorView";
 import DataImportTool from "./components/DataImportTool";
+import DeleteMaterialRollDialog from "./components/DeleteMaterialRollDialog";
 import GroupedLocationView from "./components/GroupedLocationView";
 import GroupedUsageView from "./components/GroupedUsageView";
 import JobTicketGallery from "./components/JobTicketGallery";
@@ -41,6 +42,7 @@ import SupplierTable from "./components/SupplierTable";
 import ToolingItemDetailPanel from "./components/ToolingItemDetailPanel";
 import {
   clearSession,
+  canDeleteMaterialRoll,
   deleteRoleFromApi,
   loadRoles,
   loadRolesFromApi,
@@ -72,6 +74,23 @@ function labelForField(resource, key) {
   if (friendlyLabels[key]) return friendlyLabels[key];
   const field = (resource.fields ?? []).find((item) => item.name === key);
   return field?.label ?? key.replace(/_/g, " ");
+}
+
+function companyUserHeaders(user) {
+  return {
+    "X-Company-User-Id": String(user?.id || ""),
+    "X-Company-Username": String(user?.username || ""),
+  };
+}
+
+function apiErrorMessage(error) {
+  const message = String(error?.message || "");
+  try {
+    const payload = JSON.parse(message);
+    return payload.detail || Object.values(payload).flat().filter(Boolean).join(" ") || message;
+  } catch {
+    return message;
+  }
 }
 
 function getDetailKeys(resource, record) {
@@ -1240,6 +1259,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const [mobilePageSearch, setMobilePageSearch] = useState("");
   const [usageOpen, setUsageOpen] = useState(false);
   const [rollOpen, setRollOpen] = useState(false);
+  const [inventoryDeleteCandidate, setInventoryDeleteCandidate] = useState(null);
   const [finishedInventoryOpen, setFinishedInventoryOpen] = useState(false);
   const [finishedMaterialOpen, setFinishedMaterialOpen] = useState(false);
   const [finishedMaterialStartSchedule, setFinishedMaterialStartSchedule] = useState(false);
@@ -1784,6 +1804,24 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       setFormMode(null);
       setFlexDieDetailOpen(false);
       setCreateDefaults({});
+    },
+  });
+
+  const inventoryDeleteMutation = useMutation({
+    mutationFn: (roll) => postRecordAction("raw-materials", roll.id, "remove-from-inventory", {
+      confirm_delete: true,
+    }, {
+      headers: companyUserHeaders(currentUser),
+    }),
+    onSuccess: () => {
+      setInventoryDeleteCandidate(null);
+      setRollOpen(false);
+      setSelected(null);
+      queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
+      queryClient.invalidateQueries({ queryKey: ["material-handling-data"] });
+      queryClient.invalidateQueries({ queryKey: ["material-storage"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
     },
   });
 
@@ -3418,6 +3456,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
             locations={lookupQuery.data?.locations ?? []}
             usageRows={usageRows}
             submitting={rollActionMutation.isPending}
+            canDelete={canDeleteMaterialRoll(currentUserForView)}
             onClose={() => setRollOpen(false)}
             onEdit={() => {
               setRollOpen(false);
@@ -3426,8 +3465,22 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
             onCheckOut={(payload) => rollActionMutation.mutate({ action: "check-out", payload })}
             onReturn={(payload) => rollActionMutation.mutate({ action: "return-roll", payload })}
             onUpdateStatus={(payload) => rollActionMutation.mutate({ action: "status", payload })}
+            onDelete={() => setInventoryDeleteCandidate(selected)}
           />
         )}
+
+        <DeleteMaterialRollDialog
+          roll={inventoryDeleteCandidate}
+          deleting={inventoryDeleteMutation.isPending}
+          error={apiErrorMessage(inventoryDeleteMutation.error)}
+          onCancel={() => {
+            if (!inventoryDeleteMutation.isPending) {
+              setInventoryDeleteCandidate(null);
+              inventoryDeleteMutation.reset();
+            }
+          }}
+          onConfirm={() => inventoryDeleteMutation.mutate(inventoryDeleteCandidate)}
+        />
 
         {materialTypeManagerOpen && resource.key === "material-coated-stock" && (
           <MaterialTypeManager

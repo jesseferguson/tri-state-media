@@ -117,11 +117,12 @@ export async function updateRecord(endpoint, id, payload) {
   });
 }
 
-export async function postRecordAction(endpoint, id, action, payload) {
+export async function postRecordAction(endpoint, id, action, payload, options = {}) {
   const cleanAction = String(action).replace(/^\//, "").replace(/\/$/, "");
   return request(`${endpointUrl(endpoint, id)}${cleanAction}/`, {
     method: "POST",
     body: JSON.stringify(payload),
+    headers: options.headers,
   });
 }
 

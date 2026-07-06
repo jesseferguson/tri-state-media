@@ -79,6 +79,61 @@ def _request_actor(request, user=None):
     return actor
 
 
+def _can_delete_material_roll(user):
+    if not user:
+        return False
+    role_name = re.sub(r"[^a-z0-9]+", "", str(getattr(user.role, "name", "") or "").lower())
+    return (
+        "admin" in role_name
+        or "manager" in role_name
+        or ("material" in role_name and "hand" in role_name)
+    )
+
+
+def _delete_physical_roll(inventory):
+    from production.models import ProductionMaterialAssignment
+
+    roll_tag = (
+        CoaterRollTag.objects.filter(
+            Q(inventory_entries=inventory) | Q(logged_inventory=inventory)
+        )
+        .distinct()
+        .first()
+    )
+    inventory_ids = {inventory.pk}
+    if roll_tag:
+        inventory_ids.update(
+            RawMaterialInventory.objects.filter(
+                Q(source_roll_tag=roll_tag) | Q(pk=roll_tag.logged_inventory_id)
+            ).values_list("id", flat=True)
+        )
+
+    usage_query = Q(inventory_id__in=inventory_ids)
+    if roll_tag:
+        usage_query |= Q(coater_roll_tag=roll_tag)
+
+    usage_count = MaterialUsage.objects.filter(usage_query).count()
+    assignment_count = ProductionMaterialAssignment.objects.filter(inventory_id__in=inventory_ids).count()
+    inventory_count = len(inventory_ids)
+    roll_reference = inventory.serial_number or inventory.lot_number or f"Roll {inventory.pk}"
+    tag_number = roll_tag.tag_number if roll_tag and roll_tag.source_schedule_id else ""
+
+    with transaction.atomic():
+        MaterialUsage.objects.filter(usage_query).delete()
+        ProductionMaterialAssignment.objects.filter(inventory_id__in=inventory_ids).delete()
+        RawMaterialInventory.objects.filter(id__in=inventory_ids).delete()
+        if roll_tag and roll_tag.source_schedule_id:
+            roll_tag.delete()
+
+    return {
+        "rollReference": roll_reference,
+        "tagNumber": tag_number,
+        "deletedInventoryCount": inventory_count,
+        "deletedUsageCount": usage_count,
+        "deletedAssignmentCount": assignment_count,
+    }
+
+
 def _workflow_error(error):
     return Response(
         {"detail": error.message, "code": error.code, **error.details},
@@ -853,6 +908,31 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
                 **_request_actor(self.request, _verified_company_user(self.request)),
             )
 
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Use Remove from Inventory and confirm the deletion from the roll screen."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="remove-from-inventory")
+    def remove_from_inventory(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not _can_delete_material_roll(user):
+            return Response(
+                {"detail": "Only an Admin, Manager, or Material Handler can remove a roll from inventory."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        confirmed = str(request.data.get("confirm_delete") or "").strip().lower() in {"1", "true", "yes"}
+        if not confirmed:
+            return Response(
+                {"confirm_delete": ["Choose Yes to confirm permanent removal from inventory."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        inventory = self.get_object()
+        result = _delete_physical_roll(inventory)
+        return Response({"ok": True, **result})
+
     @action(detail=True, methods=["post"], url_path="consume-roll")
     def consume_roll(self, request, pk=None):
         from production.models import JobTicket, ProductionSchedule
@@ -1547,6 +1627,12 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
 
     @action(detail=True, methods=["post"], url_path="delete-roll")
     def delete_roll(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not _can_delete_material_roll(user):
+            return Response(
+                {"detail": "Only an Admin, Manager, or Material Handler can permanently delete a roll."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         roll = self.get_object()
         if not roll.source_schedule_id:
             return Response(
@@ -1554,10 +1640,10 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        confirmation = str(request.data.get("confirm_tag_number") or "").strip()
-        if confirmation != roll.tag_number:
+        confirmed = str(request.data.get("confirm_delete") or "").strip().lower() in {"1", "true", "yes"}
+        if not confirmed:
             return Response(
-                {"confirm_tag_number": [f"Enter {roll.tag_number} to confirm permanent deletion."]},
+                {"confirm_delete": ["Choose Yes to confirm permanent deletion."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, ChevronRight, History, Layers3, MapPin, PackageCheck, PackageOpen, Save, Search, Warehouse, X } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronRight, History, Layers3, MapPin, PackageCheck, PackageOpen, Save, Search, Trash2, Warehouse, X } from "lucide-react";
 import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, labelize } from "../lib/format";
+import { canDeleteMaterialRoll } from "../lib/localAuth";
+import DeleteMaterialRollDialog from "./DeleteMaterialRollDialog";
 import ScanLinkScreen from "./ScanLinkScreen";
 
 const activeJobKey = "tsm_active_material_job_v1";
@@ -11,6 +13,23 @@ const activeJobKey = "tsm_active_material_job_v1";
 function sameId(left, right) {
   if (left === null || left === undefined || right === null || right === undefined) return false;
   return String(left) === String(right);
+}
+
+function userHeaders(user) {
+  return {
+    "X-Company-User-Id": String(user?.id || ""),
+    "X-Company-Username": String(user?.username || ""),
+  };
+}
+
+function apiErrorMessage(error) {
+  const message = String(error?.message || "");
+  try {
+    const payload = JSON.parse(message);
+    return payload.detail || Object.values(payload).flat().filter(Boolean).join(" ") || message;
+  } catch {
+    return message;
+  }
 }
 
 function footage(row) {
@@ -165,7 +184,7 @@ function UsageHistory({ rows, rolls, search }) {
   );
 }
 
-function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving, error, notice, onClose, onSave, onConsume }) {
+function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving, error, notice, canDelete, onClose, onSave, onConsume, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState(() => ({
     lot_number: roll.lot_number || "",
@@ -218,9 +237,16 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
         <div><span>Status</span><strong>{labelize(roll.status)}</strong></div>
       </div>
 
-      <button className="ghost-btn" type="button" onClick={() => setEditing((value) => !value)}>
-        <Save size={15} /> {editing ? "Close Roll Editor" : "Edit Roll"}
-      </button>
+      <div className="material-roll-management-actions">
+        <button className="ghost-btn" type="button" onClick={() => setEditing((value) => !value)}>
+          <Save size={15} /> {editing ? "Close Roll Editor" : "Edit Roll"}
+        </button>
+        {canDelete && (
+          <button className="material-remove-inventory-btn" type="button" onClick={onDelete}>
+            <Trash2 size={15} /> Remove from Inventory
+          </button>
+        )}
+      </div>
       {editing && (
         <form className="material-handling-edit" onSubmit={(event) => { event.preventDefault(); onSave(editForm); }}>
           <label><span>Lot Number</span><input value={editForm.lot_number} onChange={(event) => setEditForm((form) => ({ ...form, lot_number: event.target.value }))} /></label>
@@ -288,6 +314,7 @@ export default function MaterialHandlingView({
   const [notice, setNotice] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
 
@@ -422,6 +449,25 @@ export default function MaterialHandlingView({
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (roll) => postRecordAction("raw-materials", roll.id, "remove-from-inventory", {
+      confirm_delete: true,
+    }, {
+      headers: userHeaders(currentUser),
+    }),
+    onSuccess: (result) => {
+      setDeleteCandidate(null);
+      setSelectedInventoryId("");
+      setNotice(`${result.rollReference || "Roll"} was removed from inventory.`);
+      if (linkedRollTagId || linkedInventoryId) onCloseLinkedRoll?.();
+      queryClient.invalidateQueries({ queryKey: ["material-handling-data"] });
+      queryClient.invalidateQueries({ queryKey: ["material-storage"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   function selectRoll(row) {
     setSelectedInventoryId(String(row.id));
     setNotice("");
@@ -508,15 +554,29 @@ export default function MaterialHandlingView({
             saving={editMutation.isPending || consumeMutation.isPending}
             error={editMutation.error?.message || consumeMutation.error?.message || ""}
             notice={notice}
+            canDelete={canDeleteMaterialRoll(currentUser)}
             onClose={() => {
               setSelectedInventoryId("");
               if (linkedRollTagId || linkedInventoryId) onCloseLinkedRoll?.();
             }}
             onSave={(form) => editMutation.mutate({ roll: selectedRoll, form })}
             onConsume={(form) => consumeMutation.mutate({ roll: selectedRoll, form })}
+            onDelete={() => setDeleteCandidate(selectedRoll)}
           />
         )}
       </div>
+      <DeleteMaterialRollDialog
+        roll={deleteCandidate}
+        deleting={deleteMutation.isPending}
+        error={apiErrorMessage(deleteMutation.error)}
+        onCancel={() => {
+          if (!deleteMutation.isPending) {
+            setDeleteCandidate(null);
+            deleteMutation.reset();
+          }
+        }}
+        onConfirm={() => deleteMutation.mutate(deleteCandidate)}
+      />
     </section>
   );
 }

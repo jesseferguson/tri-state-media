@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Factory, Layers3, PackageCheck, Play, Printer, RefreshCcw, Save, Search, Settings2, Trash2, X } from "lucide-react";
 import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
+import { canDeleteMaterialRoll } from "../lib/localAuth";
+import DeleteMaterialRollDialog from "./DeleteMaterialRollDialog";
 
 const activeMaterialStatuses = new Set(["scheduled", "running", "on_hold"]);
 const activeProductStatuses = new Set(["scheduled", "ready", "running", "on_hold"]);
@@ -17,6 +19,23 @@ const componentSlots = [
 function sameId(a, b) {
   if (a === null || a === undefined || b === null || b === undefined || a === "" || b === "") return false;
   return String(a) === String(b);
+}
+
+function userHeaders(user) {
+  return {
+    "X-Company-User-Id": String(user?.id || ""),
+    "X-Company-Username": String(user?.username || ""),
+  };
+}
+
+function apiErrorMessage(error) {
+  const message = String(error?.message || "");
+  try {
+    const payload = JSON.parse(message);
+    return payload.detail || Object.values(payload).flat().filter(Boolean).join(" ") || message;
+  } catch {
+    return message;
+  }
 }
 
 function numberOrNull(value) {
@@ -556,9 +575,11 @@ function ScheduleProgress({ schedule, rolls, sectionId, onOpenRoll, onDeleteRoll
               <span data-label="Date">{shortDate(roll.run_date || roll.created_at)}</span>
               <span data-label="Lot">{minimalLot(roll)}</span>
               <strong data-label="Length">{roll.length_feet ? qty(roll.length_feet, " ft") : "--"}</strong>
-              <button className="coater-roll-delete" type="button" title={`Delete ${roll.tag_number}`} onClick={() => onDeleteRoll?.(roll)}>
-                <Trash2 size={16} />
-              </button>
+              {onDeleteRoll && (
+                <button className="coater-roll-delete" type="button" title={`Remove ${roll.tag_number} from inventory`} onClick={() => onDeleteRoll(roll)}>
+                  <Trash2 size={16} />
+                </button>
+              )}
             </article>
           ))}
           {!rolls.length && <p>No rolls have been printed for this run yet.</p>}
@@ -713,41 +734,6 @@ function ProductJobDialog({ row, forms, setForms, updating, onClose, onStart, on
           />
         </main>
       </div>
-    </section>
-  );
-}
-
-function DeleteRollDialog({ roll, deleting, error, onCancel, onConfirm }) {
-  const [confirmation, setConfirmation] = useState("");
-  if (!roll) return null;
-  const ready = confirmation.trim() === roll.tag_number;
-  return (
-    <section className="coater-delete-overlay" role="alertdialog" aria-modal="true" aria-label={`Delete roll ${roll.tag_number}`}>
-      <form
-        className="coater-delete-window"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (ready) onConfirm?.(roll);
-        }}
-      >
-        <span className="coater-delete-icon"><Trash2 size={22} /></span>
-        <div>
-          <p className="eyebrow">Permanent Delete</p>
-          <h2>Delete {roll.tag_number}?</h2>
-          <p>This removes the roll tag, its inventory record, usage history, and any job assignment. This cannot be undone.</p>
-        </div>
-        <label>
-          <span>Enter {roll.tag_number} to confirm</span>
-          <input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
-        </label>
-        {error && <p className="coater-error">{error}</p>}
-        <footer>
-          <button className="ghost-btn" type="button" onClick={onCancel} disabled={deleting}>Cancel</button>
-          <button className="danger-btn" type="submit" disabled={!ready || deleting}>
-            <Trash2 size={16} /> {deleting ? "Deleting..." : "Delete Roll Permanently"}
-          </button>
-        </footer>
-      </form>
     </section>
   );
 }
@@ -1101,6 +1087,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
 
   const data = dataQuery.data ?? { tags: [], schedule: [], materials: [], supplierOptions: [], presses: [], locations: [], rawMaterials: [] };
   const operatorName = currentUser?.name || "";
+  const canDeleteRoll = canDeleteMaterialRoll(currentUser);
   const preferredPresses = useMemo(() => {
     const coater = data.presses.filter(isCoaterPress);
     return coater.length ? coater : data.presses;
@@ -1276,7 +1263,9 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
 
   const deleteRollMutation = useMutation({
     mutationFn: (roll) => postRecordAction("coater-roll-tags", roll.id, "delete-roll", {
-      confirm_tag_number: roll.tag_number,
+      confirm_delete: true,
+    }, {
+      headers: userHeaders(currentUser),
     }),
     onSuccess: (result, deletedRoll) => {
       setDeleteRollCandidate(null);
@@ -1430,7 +1419,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         }}
         onFinish={finishScheduleMutation.mutate}
         onOpenRoll={onLinkedRollTagChange}
-        onDeleteRoll={setDeleteRollCandidate}
+        onDeleteRoll={canDeleteRoll ? setDeleteRollCandidate : undefined}
       />
 
       <ProductJobDialog
@@ -1443,12 +1432,18 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         onComplete={completeProductJob}
       />
 
-      <DeleteRollDialog
+      <DeleteMaterialRollDialog
         roll={deleteRollCandidate}
         deleting={deleteRollMutation.isPending}
-        error={deleteRollMutation.error?.message}
-        onCancel={() => setDeleteRollCandidate(null)}
-        onConfirm={(roll) => deleteRollMutation.mutate(roll)}
+        error={apiErrorMessage(deleteRollMutation.error)}
+        detail="This permanently removes the printed roll, its inventory record, usage history, and job assignment."
+        onCancel={() => {
+          if (!deleteRollMutation.isPending) {
+            setDeleteRollCandidate(null);
+            deleteRollMutation.reset();
+          }
+        }}
+        onConfirm={() => deleteRollMutation.mutate(deleteRollCandidate)}
       />
 
       {linkedRollTag && (
