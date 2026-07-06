@@ -208,9 +208,13 @@ function PrintDialog({ mode, record, presses, busy, error, onPrint, onClose }) {
           <div><span>4 x 3 Zebra Label</span><h3>Print {mode === "skids" ? record.skid_number : record.rack_code}</h3></div>
           <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
         </header>
-        <div className="storage-print-preview">
-          <QrCode size={56} />
-          <div><strong>{mode === "skids" ? "SKID LABEL" : "RACK LOCATION"}</strong><b>{mode === "skids" ? record.skid_number : record.rack_code}</b><span>QR opens this material page</span></div>
+        <div className={`storage-print-preview ${mode === "skids" ? "skid-label-preview" : ""}`}>
+          <QrCode size={mode === "skids" ? 116 : 56} />
+          <div>
+            <strong>{mode === "skids" ? "SKID" : "RACK LOCATION"}</strong>
+            <b>{mode === "skids" ? record.skid_number : record.rack_code}</b>
+            <span>{mode === "skids" ? "QR opens live skid contents" : "QR opens this material page"}</span>
+          </div>
         </div>
         <div className="storage-form-grid">
           <label className="wide">

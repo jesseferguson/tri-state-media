@@ -602,7 +602,12 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(body["TYPE"], "SKID_LABEL_4X3")
         self.assertIn("^PW812", body["ZPL"])
         self.assertIn("^LL609", body["ZPL"])
+        self.assertIn("^BQN,2,10", body["ZPL"])
         self.assertIn(str(skid.qr_token), body["ZPL"])
+        self.assertNotIn("Status:", body["ZPL"])
+        self.assertNotIn("Location:", body["ZPL"])
+        self.assertNotIn("Rolls:", body["ZPL"])
+        self.assertNotIn("Created:", body["ZPL"])
 
     def test_print_and_reprint_rack_label_reuse_identifier_and_queue_4x3_zpl(self):
         rack = self.create_rack()
@@ -647,7 +652,13 @@ class SkidRackWorkflowTests(TestCase):
 
         self.assertIn("^PW812", skid_zpl)
         self.assertIn("^LL609", skid_zpl)
+        self.assertIn("^BQN,2,10", skid_zpl)
+        self.assertIn("SCAN FOR LIVE CONTENTS", skid_zpl)
         self.assertIn(str(skid.qr_token), skid_zpl)
+        self.assertNotIn("Status:", skid_zpl)
+        self.assertNotIn("Location:", skid_zpl)
+        self.assertNotIn("Rolls:", skid_zpl)
+        self.assertNotIn("Created:", skid_zpl)
         self.assertIn("^PW812", rack_zpl)
         self.assertIn("^LL609", rack_zpl)
         self.assertIn(str(rack.qr_token), rack_zpl)

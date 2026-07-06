@@ -815,6 +815,27 @@
   font-size: .68rem;
 }
 
+.storage-print-preview.skid-label-preview {
+  min-height: 190px;
+  justify-content: center;
+  border-style: solid;
+  background: #ffffff;
+}
+
+.storage-print-preview.skid-label-preview > svg {
+  width: 116px;
+  height: 116px;
+  flex: 0 0 116px;
+  padding: 7px;
+  border: 2px solid #0f172a;
+  color: #0f172a;
+}
+
+.storage-print-preview.skid-label-preview b {
+  font-size: 1.35rem;
+  font-weight: 950;
+}
+
 .storage-workflow-modal {
   width: min(540px, 100%);
 }

@@ -13,25 +13,18 @@ def zpl_copies(value):
 
 
 def skid_label_zpl(skid, scan_url, *, darkness="20", speed="5", copies=1):
-    location = skid.current_location_display
-    created = skid.created_at.strftime("%Y-%m-%d") if skid.created_at else ""
-    roll_count = skid.rolls.filter(is_active=True).exclude(status__in=["depleted", "scrapped"]).count()
     return "\n".join([
         "^XA",
         "^CI28",
         "^PW812",
         "^LL609",
+        "^LH0,0",
         f"~SD{zpl_text(darkness) or '20'}",
         f"^PR{zpl_text(speed) or '5'}",
-        "^FO30,28^A0N,42,42^FDSKID LABEL^FS",
-        f"^FO30,82^A0N,56,56^FD{zpl_text(skid.skid_number)}^FS",
-        f"^FO30,160^BQN,2,7^FDLA,{zpl_text(scan_url)}^FS",
-        f"^FO365,170^A0N,29,29^FDStatus: {zpl_text(skid.get_status_display())}^FS",
-        f"^FO365,218^A0N,29,29^FDLocation: {zpl_text(location)}^FS",
-        f"^FO365,266^A0N,29,29^FDRolls: {roll_count}^FS",
-        f"^FO365,314^A0N,27,27^FDCreated: {zpl_text(created)}^FS",
-        "^FO30,535^GB752,2,2^FS",
-        "^FO30,553^A0N,27,27^FDScan to view skid contents^FS",
+        "^FO30,16^A0N,24,24^FB752,1,0,C^FDSKID^FS",
+        f"^FO30,43^A0N,54,54^FB752,1,0,C^FD{zpl_text(skid.skid_number)}^FS",
+        f"^FO156,102^BQN,2,10^FDLA,{zpl_text(scan_url)}^FS",
+        "^FO30,565^A0N,24,24^FB752,1,0,C^FDSCAN FOR LIVE CONTENTS^FS",
         f"^PQ{zpl_copies(copies)}",
         "^XZ",
     ])
