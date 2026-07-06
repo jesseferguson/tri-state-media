@@ -17,14 +17,15 @@ function absoluteUrl(url) {
 
 async function request(url, options = {}) {
   const bodyIsFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const { headers: optionHeaders = {}, ...requestOptions } = options;
   let response;
   try {
     response = await fetch(url, {
+      ...requestOptions,
       headers: {
         ...(bodyIsFormData ? {} : { "Content-Type": "application/json" }),
-        ...(options.headers ?? {}),
+        ...optionHeaders,
       },
-      ...options,
     });
   } catch (error) {
     const target = typeof url === "string" ? url : url?.toString?.();
