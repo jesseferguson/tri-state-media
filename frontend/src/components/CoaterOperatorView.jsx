@@ -92,7 +92,14 @@ function defaultComponentId(material, tag, slot) {
 }
 
 function plantFloorLocation(locations) {
-  return (locations ?? []).find((row) => /plant\s*floor/i.test(`${row.full_path || ""} ${row.name || ""}`)) ?? null;
+  const rows = locations ?? [];
+  return rows.find((row) => {
+    const path = String(row.full_path || row.name || "").trim().toLowerCase();
+    return path === "wilmington ohio > plant floor";
+  }) ?? rows.find((row) => (
+    /wilmington\s*ohio/i.test(String(row.full_path || ""))
+    && /plant\s*floor/i.test(`${row.full_path || ""} ${row.name || ""}`)
+  )) ?? null;
 }
 
 function componentFamilyKey(row) {
@@ -132,24 +139,6 @@ function supplierChoices(supplierOptions, materialId, materials = []) {
     .sort((a, b) => supplierOptionTitle(a).localeCompare(supplierOptionTitle(b), undefined, { numeric: true }));
 }
 
-function defaultSupplierSelection(tag, finishedMaterial, slot, supplierOptions, materials) {
-  if (tag?.[slot.supplierKey]) {
-    return { supplierId: tag[slot.supplierKey], materialId: tag[slot.key] || "" };
-  }
-  const materialIds = allowedComponentIds(finishedMaterial, slot);
-  const options = new Map();
-  materialIds.forEach((materialId) => {
-    supplierChoices(supplierOptions, materialId, materials).forEach((option) => options.set(String(option.id), option));
-  });
-  if (options.size !== 1) return { supplierId: "", materialId: materialIds[0] || "" };
-  const option = Array.from(options.values())[0];
-  const matchingMaterial = (materials ?? []).find((row) => (
-    materialIds.some((id) => sameId(id, row.id))
-    && (sameId(row.id, option.material) || componentFamilyKey(row) === componentFamilyKey(option))
-  ));
-  return { supplierId: option.id, materialId: matchingMaterial?.id || materialIds[0] || "" };
-}
-
 function printerSettingsFor(press) {
   return {
     printer_ip: press?.printer_ip || "",
@@ -173,7 +162,8 @@ function noteBlock(tag, form, supplierOptions) {
 
 function defaultRollForm(tag, data, currentUser) {
   const material = (data.materials ?? []).find((row) => sameId(row.id, tag?.scheduled_material));
-  const location = tag?.location || plantFloorLocation(data.locations)?.id || "";
+  const location = plantFloorLocation(data.locations)?.id || "";
+  const loggedInOperator = currentUser?.name || currentUser?.username || "";
   const printerPress = (data.presses ?? []).find((press) => sameId(press.id, tag?.press))
     || (data.presses ?? []).find((press) => press.printer_ip)
     || (data.presses ?? [])[0];
@@ -188,16 +178,14 @@ function defaultRollForm(tag, data, currentUser) {
     weight_lbs: tag?.weight_lbs || "",
     result_lot_number: tag?.is_schedule ? "" : (tag?.result_lot_number || ""),
     location,
-    operator_notes: tag?.operator_notes || "",
-    operator: currentUser?.name || tag?.operator || "",
+    operator_notes: "",
+    operator: loggedInOperator,
     printer_press: printerPress?.id ? String(printerPress.id) : "",
     print_copies: "1",
     ...printerSettingsFor(printerPress),
   };
   componentSlots.forEach((slot) => {
-    const selection = defaultSupplierSelection(tag, material, slot, data.supplierOptions, data.materials);
-    form[slot.key] = selection.materialId || form[slot.key];
-    form[slot.supplierKey] = selection.supplierId;
+    form[slot.supplierKey] = "";
   });
   return form;
 }
@@ -313,7 +301,7 @@ function ComponentPicker({ slot, form, setForm, materials, supplierOptions, allo
       <label>
         <span>Supplier Material</span>
         <select value={form[slot.supplierKey] || ""} onChange={(event) => updateSupplier(event.target.value)} required={!slot.optional}>
-          <option value="">{selectedSupplierOptions.length ? "Select supplier material" : "No suppliers linked"}</option>
+          <option value="">{selectedSupplierOptions.length ? `Select ${slot.label.toLowerCase()} supplier` : "No suppliers linked"}</option>
           {selectedSupplierOptions.map((option) => (
             <option value={option.id} key={option.id}>{supplierChoiceLabel(option)}</option>
           ))}
@@ -423,7 +411,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
         </label>
         <label>
           <span>Operator</span>
-          <input value={form.operator} onChange={(event) => update("operator", event.target.value)} required />
+          <input className="coater-operator-locked" value={form.operator} readOnly aria-readonly="true" required />
         </label>
         <label>
           <span>Plant Location</span>
