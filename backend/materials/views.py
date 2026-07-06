@@ -1064,8 +1064,9 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
 
         inventory = self.get_object()
         available = Decimal(inventory.length_feet if inventory.length_feet is not None else inventory.quantity or 0)
+        unit = inventory.unit or "lf"
         if available <= 0:
-            return Response({"detail": "This roll has no active footage remaining."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "This inventory item has no active amount remaining."}, status=status.HTTP_400_BAD_REQUEST)
 
         mode = str(request.data.get("mode") or "partial").strip().lower()
         if mode not in ["full", "partial"]:
@@ -1085,7 +1086,7 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
                     {"used_feet": [f"Only {available} ft remains on this roll."]},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            buffer_percent = Decimal("3")
+            buffer_percent = Decimal("3") if unit == "lf" else Decimal("0")
 
         buffered_footage = min(available, (entered_footage * (Decimal("1") + buffer_percent / Decimal("100"))).quantize(Decimal("0.001")))
         buffer_footage = max(Decimal("0"), buffered_footage - entered_footage)
@@ -1124,9 +1125,9 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             usage = MaterialUsage.objects.create(
                 inventory=inventory,
                 material=inventory.material,
-                usage_type="finished",
+                usage_type="finished" if inventory.material_type == "coated_stock" else "manual",
                 quantity=buffered_footage,
-                unit="lf",
+                unit=unit,
                 used_date=timezone.localdate(),
                 used_by=operator,
                 reference=reference,

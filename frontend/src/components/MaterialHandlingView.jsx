@@ -200,6 +200,271 @@ function UsageHistory({ rows, rolls, search }) {
   );
 }
 
+const rawComponentChoices = [
+  ["face", "Face"],
+  ["liner", "Liner"],
+  ["adhesive", "Adhesive"],
+  ["silicone", "Silicone"],
+  ["coating", "Coating"],
+];
+
+function MaterialIntakeDialog({
+  materials,
+  masterTypes,
+  suppliers,
+  racks,
+  locations,
+  saving,
+  error,
+  onClose,
+  onSave,
+}) {
+  const defaultFloor = locations.find((row) => /plant floor/i.test(row.full_path || row.name || ""))?.id || "";
+  const [category, setCategory] = useState("finished");
+  const [definitionMode, setDefinitionMode] = useState("existing");
+  const [storageMode, setStorageMode] = useState("floor");
+  const [form, setForm] = useState({
+    material: "",
+    master_type: "",
+    material_type: "coated_stock",
+    name: "",
+    company: "",
+    supplier: "",
+    inventory_origin: "legacy",
+    lot_number: "",
+    width_inches: "",
+    amount: "",
+    unit: "lf",
+    received_date: new Date().toISOString().slice(0, 10),
+    direct_rack: "",
+    location: defaultFloor,
+    notes: "",
+  });
+  const availableMaterials = materials.filter((row) => (
+    row.is_active !== false
+    && (category === "finished" ? row.material_type === "coated_stock" : row.material_type !== "coated_stock")
+  ));
+  const selectedMaterial = materials.find((row) => sameId(row.id, form.material));
+  const activeMaterialType = definitionMode === "existing"
+    ? selectedMaterial?.material_type || (category === "finished" ? "coated_stock" : "face")
+    : form.material_type;
+  const liquidMaterial = ["adhesive", "silicone", "coating"].includes(activeMaterialType);
+
+  function update(name, value) {
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function chooseCategory(nextCategory) {
+    const finished = nextCategory === "finished";
+    setCategory(nextCategory);
+    setForm((current) => ({
+      ...current,
+      material: "",
+      material_type: finished ? "coated_stock" : "face",
+      unit: finished ? "lf" : "lf",
+      width_inches: "",
+      amount: "",
+    }));
+  }
+
+  function chooseMaterial(value) {
+    const material = materials.find((row) => sameId(row.id, value));
+    const liquid = ["adhesive", "silicone", "coating"].includes(material?.material_type);
+    setForm((current) => ({
+      ...current,
+      material: value,
+      supplier: material?.supplier || current.supplier,
+      unit: liquid ? "gal" : "lf",
+      width_inches: liquid ? "" : current.width_inches,
+    }));
+  }
+
+  function chooseNewMaterialType(value) {
+    const liquid = ["adhesive", "silicone", "coating"].includes(value);
+    setForm((current) => ({
+      ...current,
+      material_type: value,
+      unit: liquid ? "gal" : "lf",
+      width_inches: liquid ? "" : current.width_inches,
+    }));
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    const payload = {
+      material: definitionMode === "existing" ? form.material : null,
+      create_material: definitionMode === "new" ? {
+        material_type: category === "finished" ? "coated_stock" : form.material_type,
+        master_type: category === "finished" ? form.master_type : null,
+        name: form.name,
+        company: form.company,
+        material_family: form.name,
+        supplier: form.supplier || null,
+      } : null,
+      supplier: form.supplier || null,
+      inventory_origin: form.inventory_origin,
+      lot_number: form.lot_number,
+      width_inches: liquidMaterial ? null : (form.width_inches || null),
+      length_feet: form.unit === "lf" ? Number(form.amount) : null,
+      quantity: Number(form.amount),
+      unit: form.unit,
+      received_date: form.received_date,
+      direct_rack: storageMode === "rack" ? form.direct_rack : null,
+      location: storageMode === "floor" ? (form.location || null) : null,
+      notes: form.notes,
+    };
+    onSave(payload);
+  }
+
+  const canSubmit = Number(form.amount) > 0
+    && (definitionMode === "existing" ? Boolean(form.material) : Boolean(form.name || (category === "finished" && form.master_type)))
+    && (definitionMode !== "new" || category !== "finished" || Boolean(form.master_type))
+    && (storageMode !== "rack" || Boolean(form.direct_rack));
+
+  return (
+    <section className="material-intake-overlay" role="dialog" aria-modal="true" aria-label="Add material without QR">
+      <form className="material-intake-window" onSubmit={submit}>
+        <header>
+          <div><span>Inventory Intake</span><h2>Add Material</h2></div>
+          <button type="button" onClick={onClose} aria-label="Close material intake"><X size={19} /></button>
+        </header>
+        <main>
+          <section className="material-intake-section">
+            <header><strong>Material Category</strong><span>1</span></header>
+            <div className="material-intake-choice-grid">
+              <button className={category === "finished" ? "active" : ""} type="button" onClick={() => chooseCategory("finished")}>
+                <PackageCheck size={21} /><span><strong>Finished Material</strong><small>PM, PMDT, PET, and coated stock</small></span>
+              </button>
+              <button className={category === "raw" ? "active" : ""} type="button" onClick={() => chooseCategory("raw")}>
+                <Factory size={21} /><span><strong>Raw Component</strong><small>Face, liner, adhesive, silicone, or coating</small></span>
+              </button>
+            </div>
+          </section>
+
+          <section className="material-intake-section">
+            <header><strong>Material Identity</strong><span>2</span></header>
+            <div className="material-intake-mode">
+              <button className={definitionMode === "existing" ? "active" : ""} type="button" onClick={() => setDefinitionMode("existing")}>Existing Type</button>
+              <button className={definitionMode === "new" ? "active" : ""} type="button" onClick={() => setDefinitionMode("new")}><Plus size={14} /> New Type</button>
+            </div>
+            <div className="material-intake-fields">
+              {definitionMode === "existing" ? (
+                <label className="wide">
+                  <span>Material</span>
+                  <select value={form.material} onChange={(event) => chooseMaterial(event.target.value)} required>
+                    <option value="">Select material</option>
+                    {availableMaterials.map((row) => (
+                      <option value={row.id} key={row.id}>
+                        {[row.master_type_code || row.material_family || row.name, row.company, row.code].filter(Boolean).join(" / ")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : category === "finished" ? (
+                <>
+                  <label>
+                    <span>Material Type</span>
+                    <select value={form.master_type} onChange={(event) => {
+                      const value = event.target.value;
+                      const master = masterTypes.find((row) => sameId(row.id, value));
+                      setForm((current) => ({ ...current, master_type: value, name: current.name || master?.code || "" }));
+                    }} required>
+                      <option value="">Select type</option>
+                      {masterTypes.filter((row) => row.is_active !== false).map((row) => <option value={row.id} key={row.id}>{row.code}{row.name && row.name !== row.code ? ` / ${row.name}` : ""}</option>)}
+                    </select>
+                  </label>
+                  <label><span>Company</span><input value={form.company} onChange={(event) => update("company", event.target.value)} placeholder="RICOH" required /></label>
+                  <label className="wide"><span>Material Name</span><input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="PMDT" required /></label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    <span>Component</span>
+                    <select value={form.material_type} onChange={(event) => chooseNewMaterialType(event.target.value)}>
+                      {rawComponentChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label><span>Company</span><input value={form.company} onChange={(event) => update("company", event.target.value)} placeholder="Supplier company" /></label>
+                  <label className="wide"><span>Material Name / Type</span><input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Example: 40 SCK liner" required /></label>
+                </>
+              )}
+              <label>
+                <span>Supplier</span>
+                <select value={form.supplier} onChange={(event) => update("supplier", event.target.value)}>
+                  <option value="">No supplier selected</option>
+                  {suppliers.map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Inventory Origin</span>
+                <select value={form.inventory_origin} onChange={(event) => update("inventory_origin", event.target.value)}>
+                  <option value="legacy">Existing Stock / No QR</option>
+                  <option value="purchased">Purchased / Outsourced</option>
+                  <option value="tri_state">Tri-State Produced / Manual</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="material-intake-section">
+            <header><strong>Physical Inventory</strong><span>3</span></header>
+            <div className="material-intake-fields">
+              <label><span>Lot Number</span><input value={form.lot_number} onChange={(event) => update("lot_number", event.target.value)} placeholder="Supplier or internal lot" /></label>
+              {!liquidMaterial && <label><span>Width</span><input type="number" min="0" step="0.001" inputMode="decimal" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} placeholder="inches" /></label>}
+              <label>
+                <span>Unit</span>
+                <select value={form.unit} onChange={(event) => update("unit", event.target.value)}>
+                  <option value="lf">Linear Feet</option>
+                  <option value="gal">Gallons</option>
+                  <option value="lbs">Pounds</option>
+                  <option value="roll">Rolls</option>
+                  <option value="each">Each</option>
+                </select>
+              </label>
+              <label><span>Amount</span><input type="number" min="0.001" step="0.001" inputMode="decimal" value={form.amount} onChange={(event) => update("amount", event.target.value)} required /></label>
+              <label><span>Received</span><input type="date" value={form.received_date} onChange={(event) => update("received_date", event.target.value)} /></label>
+            </div>
+          </section>
+
+          <section className="material-intake-section">
+            <header><strong>Storage</strong><span>4</span></header>
+            <div className="material-intake-mode">
+              <button className={storageMode === "floor" ? "active" : ""} type="button" onClick={() => setStorageMode("floor")}><MapPin size={14} /> Plant Floor</button>
+              <button className={storageMode === "rack" ? "active" : ""} type="button" onClick={() => setStorageMode("rack")}><Warehouse size={14} /> Rack Space</button>
+            </div>
+            <div className="material-intake-fields">
+              {storageMode === "rack" ? (
+                <label className="wide">
+                  <span>Rack</span>
+                  <select value={form.direct_rack} onChange={(event) => update("direct_rack", event.target.value)} required>
+                    <option value="">Select rack</option>
+                    {racks.filter((row) => row.status === "active").map((row) => <option value={row.id} key={row.id}>{row.rack_code} / {row.storage_location_display || row.location_detail}</option>)}
+                  </select>
+                </label>
+              ) : (
+                <label className="wide">
+                  <span>Floor Location</span>
+                  <select value={form.location} onChange={(event) => update("location", event.target.value)}>
+                    <option value="">Wilmington Ohio / Plant Floor</option>
+                    {locations.filter((row) => row.is_active !== false).map((row) => <option value={row.id} key={row.id}>{row.full_path || row.name}</option>)}
+                  </select>
+                </label>
+              )}
+              <label className="wide"><span>Notes</span><textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Condition, supplier details, or handling notes" /></label>
+            </div>
+          </section>
+
+          {error && <div className="material-intake-error"><AlertTriangle size={17} /><span>{apiErrorMessage(error)}</span></div>}
+        </main>
+        <footer>
+          <button className="ghost-btn" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="primary-btn" type="submit" disabled={!canSubmit || saving}><PackagePlus size={17} /> {saving ? "Adding Material..." : "Add to Inventory"}</button>
+        </footer>
+      </form>
+    </section>
+  );
+}
+
 function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving, error, notice, canDelete, onClose, onSave, onConsume, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState(() => ({
@@ -217,8 +482,10 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
     notes: "",
   }));
   const available = footage(roll);
+  const unit = inventoryUnit(roll);
+  const isLinearFeet = unit === "lf";
   const entered = Number(useForm.used_feet || 0);
-  const buffered = useForm.mode === "partial" ? Math.min(available, entered * 1.03) : available;
+  const buffered = useForm.mode === "partial" ? Math.min(available, entered * (isLinearFeet ? 1.03 : 1)) : available;
   const amountTooHigh = useForm.mode === "partial" && useForm.used_feet !== "" && entered > available;
   const remainingAfterUse = Math.max(0, available - buffered);
 
@@ -244,9 +511,9 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
         </div>
       </header>
       <section className="material-live-roll-balance">
-        <div><span>Footage on roll</span><strong>{Math.round(available).toLocaleString()} ft</strong></div>
+        <div><span>Amount on hand</span><strong>{formatInventoryAmount(roll, available)}</strong></div>
         <ChevronRight size={18} />
-        <div className={remainingAfterUse <= 0 ? "empty" : ""}><span>After this use</span><strong>{Math.round(remainingAfterUse).toLocaleString()} ft</strong></div>
+        <div className={remainingAfterUse <= 0 ? "empty" : ""}><span>After this use</span><strong>{formatInventoryAmount(roll, remainingAfterUse)}</strong></div>
         <small>{remainingAfterUse <= 0 ? "The roll will leave active inventory and be removed from its skid." : "Updates live as footage is entered below."}</small>
       </section>
       <div className="material-detail-route">
@@ -297,12 +564,12 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
           </select>
         </label>
         <div className="material-consume-modes">
-          <button className={useForm.mode === "full" ? "active" : ""} type="button" onClick={() => setUseForm((form) => ({ ...form, mode: "full" }))}>Run Roll Out</button>
-          <button className={useForm.mode === "partial" ? "active" : ""} type="button" onClick={() => setUseForm((form) => ({ ...form, mode: "partial" }))}>Partial Roll</button>
+          <button className={useForm.mode === "full" ? "active" : ""} type="button" onClick={() => setUseForm((form) => ({ ...form, mode: "full" }))}>{isLinearFeet ? "Run Roll Out" : "Use Entire Item"}</button>
+          <button className={useForm.mode === "partial" ? "active" : ""} type="button" onClick={() => setUseForm((form) => ({ ...form, mode: "partial" }))}>Partial Use</button>
         </div>
         {useForm.mode === "partial" && (
           <label className={`wide material-footage-entry ${amountTooHigh ? "invalid" : ""}`}>
-            <span>Footage Used</span>
+            <span>Amount Used ({unit})</span>
             <input
               type="number"
               min="0.01"
@@ -314,20 +581,22 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
               aria-invalid={amountTooHigh}
               required
             />
-            {amountTooHigh && <small>That is too much material. This roll only has {Math.round(available).toLocaleString()} ft.</small>}
+            {amountTooHigh && <small>That is too much material. Only {formatInventoryAmount(roll, available)} is available.</small>}
           </label>
         )}
         <div className={`material-consume-preview ${remainingAfterUse <= 0 ? "empty" : ""} ${amountTooHigh ? "invalid" : ""}`}>
           <span>Remaining after use</span>
-          <strong>{Math.round(remainingAfterUse).toLocaleString()} ft</strong>
-          <small>{useForm.mode === "partial" ? `${Math.round(buffered).toLocaleString()} ft deducted including the 3% safety buffer` : "Entire roll will be recorded as used"}</small>
+          <strong>{formatInventoryAmount(roll, remainingAfterUse)}</strong>
+          <small>{useForm.mode === "partial"
+            ? `${formatInventoryAmount(roll, buffered)} deducted${isLinearFeet ? " including the 3% safety buffer" : ""}`
+            : "The entire inventory amount will be recorded as used"}</small>
         </div>
         <label><span>Operator</span><input value={useForm.used_by} onChange={(event) => setUseForm((form) => ({ ...form, used_by: event.target.value }))} /></label>
         <label className="check"><input type="checkbox" checked={useForm.poor_run} onChange={(event) => setUseForm((form) => ({ ...form, poor_run: event.target.checked }))} /><span>Poor run / needs note</span></label>
         <label className="wide"><span>Run Note</span><textarea value={useForm.notes} onChange={(event) => setUseForm((form) => ({ ...form, notes: event.target.value }))} placeholder="Why the roll came off or any quality issue" /></label>
         {(error || notice) && <p className={error ? "error" : "success"}>{error || notice}</p>}
         <button className="primary-btn wide" type="submit" disabled={saving || amountTooHigh || (useForm.mode === "partial" && entered <= 0)}>
-          {saving ? "Saving Usage..." : useForm.mode === "full" ? "Use Entire Roll" : "Save Partial Usage"}
+          {saving ? "Saving Usage..." : useForm.mode === "full" ? (isLinearFeet ? "Use Entire Roll" : "Use Entire Item") : "Save Partial Usage"}
         </button>
       </form>
     </aside>
@@ -355,18 +624,23 @@ export default function MaterialHandlingView({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [intakeOpen, setIntakeOpen] = useState(false);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
 
   const dataQuery = useQuery({
     queryKey: ["material-handling-data"],
     queryFn: async () => {
-      const [tags, inventory, usage, locations, schedules] = await Promise.all([
+      const [tags, inventory, usage, locations, schedules, materials, masterTypes, suppliers, racks] = await Promise.all([
         fetchCollection("coater-roll-tags", { ordering: "-created_at", pageSize: 1000, fetchAll: true }),
-        fetchCollection("raw-materials", { ordering: "-received_date,-id", filters: { material_type: "coated_stock" }, pageSize: 1000, fetchAll: true }),
+        fetchCollection("raw-materials", { ordering: "-received_date,-id", pageSize: 1000, fetchAll: true }),
         fetchCollection("material-usages", { ordering: "-used_date,-created_at", pageSize: 1000, fetchAll: true }),
         fetchCollection("locations", { ordering: "name", pageSize: 1000, fetchAll: true }),
         fetchCollection("production-schedule", { ordering: "scheduled_date,press_sequence", pageSize: 500, fetchAll: true }),
+        fetchCollection("materials", { ordering: "material_type,company,name", pageSize: 1000, fetchAll: true }),
+        fetchCollection("material-master-types", { ordering: "code,name", pageSize: 500, fetchAll: true }),
+        fetchCollection("suppliers", { ordering: "name", pageSize: 1000, fetchAll: true }),
+        fetchCollection("racks", { ordering: "rack_code", pageSize: 1000, fetchAll: true }),
       ]);
       return {
         tags: tags.results ?? [],
@@ -374,13 +648,17 @@ export default function MaterialHandlingView({
         usage: usage.results ?? [],
         locations: locations.results ?? [],
         schedules: (schedules.results ?? []).filter((row) => ["scheduled", "ready", "running", "on_hold"].includes(row.status)),
+        materials: materials.results ?? [],
+        masterTypes: masterTypes.results ?? [],
+        suppliers: suppliers.results ?? [],
+        racks: racks.results ?? [],
       };
     },
     staleTime: 10_000,
     refetchInterval: 60_000,
   });
 
-  const data = dataQuery.data ?? { tags: [], inventory: [], usage: [], locations: [], schedules: [] };
+  const data = dataQuery.data ?? { tags: [], inventory: [], usage: [], locations: [], schedules: [], materials: [], masterTypes: [], suppliers: [], racks: [] };
   const linkedTag = data.tags.find((tag) => sameId(tag.id, linkedRollTagId)) ?? null;
   const linkedInventory = linkedTag
     ? data.inventory.find((row) => sameId(row.source_roll_tag, linkedTag.id) || sameId(row.id, linkedTag.logged_inventory))
@@ -396,7 +674,7 @@ export default function MaterialHandlingView({
   const activeRows = data.inventory
     .filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status) && footage(row) > 0)
     .filter((row) => !focusMaterialId || sameId(row.material, focusMaterialId))
-    .filter((row) => !search || `${row.serial_number} ${row.lot_number} ${materialName(row)} ${widthName(row)} ${locationName(row)} ${row.current_skid_number || ""} ${row.current_rack_code || ""} ${row.current_rack_location_full_path || ""}`.toLowerCase().includes(search.toLowerCase()));
+    .filter((row) => !search || `${row.serial_number} ${row.lot_number} ${materialName(row)} ${row.material_type} ${row.material_company || ""} ${row.supplier_name || ""} ${row.inventory_origin || ""} ${widthName(row)} ${locationName(row)} ${row.current_skid_number || ""} ${row.current_rack_code || ""} ${row.current_rack_location_full_path || ""}`.toLowerCase().includes(search.toLowerCase()));
   const usageRows = data.usage.filter((row) => !focusMaterialId || sameId(row.material, focusMaterialId));
   const rollHistory = data.tags.filter((tag) => (
     tag.source_schedule
@@ -405,10 +683,10 @@ export default function MaterialHandlingView({
   ));
   const inventorySummary = useMemo(() => ({
     rolls: activeRows.length,
-    footage: activeRows.reduce((sum, row) => sum + footage(row), 0),
+    footage: activeRows.filter((row) => inventoryUnit(row) === "lf").reduce((sum, row) => sum + footage(row), 0),
     skids: new Set(activeRows.map((row) => row.current_skid).filter(Boolean)).size,
     racks: new Set(activeRows.map((row) => row.current_rack).filter(Boolean)).size,
-    floor: activeRows.filter((row) => !row.current_skid).length,
+    floor: activeRows.filter((row) => !row.current_skid && !row.current_rack).length,
   }), [activeRows]);
 
   useEffect(() => {
@@ -508,6 +786,23 @@ export default function MaterialHandlingView({
     },
   });
 
+  const intakeMutation = useMutation({
+    mutationFn: (payload) => requestApi("raw-materials/intake", {
+      method: "POST",
+      headers: userHeaders(currentUser),
+      body: JSON.stringify(payload),
+    }),
+    onSuccess: (saved) => {
+      setIntakeOpen(false);
+      setSelectedInventoryId(String(saved.id));
+      setNotice(`${saved.serial_number || saved.lot_number} was added to inventory.`);
+      queryClient.invalidateQueries({ queryKey: ["material-handling-data"] });
+      queryClient.invalidateQueries({ queryKey: ["material-storage"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   function selectRoll(row) {
     setSelectedInventoryId(String(row.id));
     setNotice("");
@@ -531,6 +826,7 @@ export default function MaterialHandlingView({
         </div>
         <div>
           {activeJob && <span className="material-active-job"><CheckCircle2 size={14} /> {activeJob.label}</span>}
+          <button className="ghost-btn" type="button" onClick={() => { intakeMutation.reset(); setIntakeOpen(true); }}><PackagePlus size={16} /> Add Material</button>
           <button className="primary-btn" type="button" onClick={startScanner}><Camera size={16} /> Scan Roll</button>
         </div>
       </header>
@@ -617,6 +913,24 @@ export default function MaterialHandlingView({
         }}
         onConfirm={() => deleteMutation.mutate(deleteCandidate)}
       />
+      {intakeOpen && (
+        <MaterialIntakeDialog
+          materials={data.materials}
+          masterTypes={data.masterTypes}
+          suppliers={data.suppliers}
+          racks={data.racks}
+          locations={data.locations}
+          saving={intakeMutation.isPending}
+          error={intakeMutation.error}
+          onClose={() => {
+            if (!intakeMutation.isPending) {
+              setIntakeOpen(false);
+              intakeMutation.reset();
+            }
+          }}
+          onSave={(payload) => intakeMutation.mutate(payload)}
+        />
+      )}
     </section>
   );
 }
