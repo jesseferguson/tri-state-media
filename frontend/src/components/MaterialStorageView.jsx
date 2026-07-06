@@ -3,7 +3,6 @@ import { BrowserQRCodeReader } from "@zxing/browser";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  Archive,
   Camera,
   CheckCircle2,
   ChevronRight,
@@ -298,7 +297,8 @@ function PrintDialog({ mode, record, presses, busy, error, onPrint, onClose }) {
 
 function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSubmit, onConfirmMove, onClose }) {
   const isSkidPage = mode === "skids";
-  const [scanValue, setScanValue] = useState(action?.value || "");
+  const selectedRoll = action?.roll || null;
+  const [scanValue, setScanValue] = useState(selectedRoll ? String(selectedRoll.id) : action?.value || "");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [useAll, setUseAll] = useState(false);
@@ -307,8 +307,18 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
   const isUse = action?.type === "use-roll";
   const risky = ["remove-roll", "remove-skid"].includes(action?.type) || (isUse && useAll);
   const scanName = action?.type === "move-to-rack" ? "rack" : isSkidPage ? "roll" : "skid";
+  const available = Number(selectedRoll?.length_feet ?? selectedRoll?.quantity ?? 0) || 0;
+  const enteredAmount = Number(amount || 0);
+  const amountTooHigh = isUse && !useAll && amount !== "" && enteredAmount > available;
+  const amountInvalid = isUse && !useAll && amount !== "" && enteredAmount <= 0;
+  const remaining = useAll
+    ? 0
+    : amount === ""
+      ? available
+      : Math.max(0, available - enteredAmount);
 
   function submit(value = scanValue) {
+    if (amountTooHigh || amountInvalid) return;
     if (risky && !riskyConfirmed) {
       setScanValue(value);
       setRiskyConfirmed(true);
@@ -337,31 +347,67 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
 
   return (
     <>
-      <div className={`storage-modal-overlay ${action?.type === "add-roll" ? "scan-roll-overlay" : ""}`} role="presentation" onMouseDown={onClose}>
-        <form className={`storage-modal storage-workflow-modal ${action?.type === "add-roll" ? "scan-roll-workflow" : ""}`} onSubmit={(event) => { event.preventDefault(); submit(); }} onMouseDown={(event) => event.stopPropagation()}>
+      <div className={`storage-modal-overlay ${action?.type === "add-roll" ? "scan-roll-overlay" : ""} ${selectedRoll ? "selected-roll-overlay" : ""}`} role="presentation" onMouseDown={onClose}>
+        <form className={`storage-modal storage-workflow-modal ${action?.type === "add-roll" ? "scan-roll-workflow" : ""} ${selectedRoll ? "selected-roll-workflow" : ""} ${isUse ? "use-roll-workflow" : ""}`} onSubmit={(event) => { event.preventDefault(); submit(); }} onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <div><span>{isSkidPage ? record.skid_number : record.rack_code}</span><h3>{title}</h3></div>
             <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
           </header>
-          <div className="storage-scan-entry">
-            <button className="storage-scan-button" type="button" onClick={() => setCameraOpen(true)}>
-              <Camera size={24} />
-              <span><strong>Scan {scanName} QR</strong><small>Uses the phone camera</small></span>
-            </button>
-            <label className="storage-scan-input">
-              <span>Scan or enter {scanName} ID</span>
-              <input autoFocus={action?.type !== "add-roll"} value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
-            </label>
-          </div>
+          {selectedRoll ? (
+            <section className="storage-selected-roll">
+              <div className="storage-selected-roll-name">
+                <strong>{selectedRoll.material_master_type_code || selectedRoll.material_name || selectedRoll.name || "Material Roll"}</strong>
+                <span>{rollLabel(selectedRoll)}</span>
+              </div>
+              <div className="storage-selected-roll-stats">
+                <div><span>On Roll</span><strong>{formatFeet(available)}</strong></div>
+                <div><span>Width</span><strong>{selectedRoll.width_inches ? formatInches(selectedRoll.width_inches) : "--"}</strong></div>
+              </div>
+              <p><MapPin size={14} /> {selectedRoll.current_location_display || `On ${record.skid_number}`}</p>
+            </section>
+          ) : (
+            <div className="storage-scan-entry">
+              <button className="storage-scan-button" type="button" onClick={() => setCameraOpen(true)}>
+                <Camera size={24} />
+                <span><strong>Scan {scanName} QR</strong><small>Uses the phone camera</small></span>
+              </button>
+              <label className="storage-scan-input">
+                <span>Scan or enter {scanName} ID</span>
+                <input autoFocus={action?.type !== "add-roll"} value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
+              </label>
+            </div>
+          )}
           {isUse && (
-            <>
+            <section className="storage-use-roll-panel">
               <div className="storage-use-modes">
                 <button className={!useAll ? "active" : ""} type="button" onClick={() => { setUseAll(false); setRiskyConfirmed(false); }}>Enter Footage</button>
                 <button className={useAll ? "active danger" : ""} type="button" onClick={() => { setUseAll(true); setRiskyConfirmed(false); }}>Use Entire Roll</button>
               </div>
-              {!useAll && <label className="storage-scan-input"><span>Footage used</span><input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>}
+              {!useAll && (
+                <label className={`storage-scan-input storage-footage-input ${amountTooHigh || amountInvalid ? "invalid" : ""}`}>
+                  <span>Footage used</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    max={available}
+                    step="0.01"
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(event) => { setAmount(event.target.value); setRiskyConfirmed(false); }}
+                    aria-invalid={amountTooHigh || amountInvalid}
+                    required
+                  />
+                  {amountTooHigh && <small>That is too much material. Only {formatFeet(available)} is on this roll.</small>}
+                  {amountInvalid && <small>Enter footage greater than zero, or choose Use Entire Roll.</small>}
+                </label>
+              )}
+              <div className={`storage-live-footage ${remaining <= 0 ? "empty" : ""} ${amountTooHigh ? "invalid" : ""}`}>
+                <span>Remaining on roll</span>
+                <strong>{formatFeet(remaining)}</strong>
+                <small>{remaining <= 0 ? "This roll will leave active inventory and be removed from the skid." : `${formatFeet(useAll ? available : enteredAmount)} will be recorded in material usage.`}</small>
+              </div>
               <label className="storage-scan-input"><span>Usage note</span><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Optional material or quality note" /></label>
-            </>
+            </section>
           )}
           {confirmation && (
             <div className="storage-message warning">
@@ -387,7 +433,7 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
             {confirmation ? (
               <button className="danger-btn" type="button" onClick={onConfirmMove} disabled={busy}>{busy ? "Moving..." : "Yes, Move It Here"}</button>
             ) : (
-              <button className={riskyConfirmed ? "danger-btn" : "primary-btn"} type="button" onClick={() => submit()} disabled={busy || !scanValue || (isUse && !useAll && !amount)}>
+              <button className={riskyConfirmed ? "danger-btn" : "primary-btn"} type="button" onClick={() => submit()} disabled={busy || !scanValue || amountTooHigh || amountInvalid || (isUse && !useAll && !amount)}>
                 {busy ? "Working..." : riskyConfirmed ? "Confirm Action" : title}
               </button>
             )}
@@ -583,12 +629,14 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
     }
   }
 
-  function openWorkflow(type, value = "") {
+  function openWorkflow(type, target = "") {
+    const roll = target && typeof target === "object" ? target : null;
+    const value = roll ? String(roll.id) : target;
     setError("");
     setSuccess("");
     setMoveConfirmation(null);
     setActionMenuOpen(false);
-    setWorkflow({ type, value, sessionId: window.crypto?.randomUUID?.() || String(Date.now()) });
+    setWorkflow({ type, value, roll, sessionId: window.crypto?.randomUUID?.() || String(Date.now()) });
   }
 
   if (initialToken && (dataQuery.isLoading || (!selected && !error))) {
@@ -686,8 +734,6 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                         <div className="storage-action-menu">
                           {isAdmin && <button type="button" onClick={() => { setFormRecord(selected); setError(""); setActionMenuOpen(false); }}><Edit3 size={16} /> Edit Skid</button>}
                           {isAdmin && <button type="button" onClick={() => { setPrintRecord(selected); setError(""); setActionMenuOpen(false); }}><Printer size={16} /> Print Skid Label</button>}
-                          <button type="button" onClick={() => openWorkflow("remove-roll")} disabled={!selected.roll_count}><PackageOpen size={16} /> Remove Roll</button>
-                          <button type="button" onClick={() => openWorkflow("use-roll")} disabled={!selected.roll_count}><Archive size={16} /> Use Roll</button>
                           <button type="button" onClick={() => { setHistoryOpen(true); setActionMenuOpen(false); }}><Clock3 size={16} /> History</button>
                         </div>
                       )}
@@ -711,8 +757,8 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                       <b>{formatFeet(roll.length_feet ?? roll.quantity)}</b>
                       <div className="storage-row-actions">
                         <button type="button" onClick={() => onOpenRoll?.(roll)}>Edit Roll</button>
-                        <button type="button" onClick={() => openWorkflow("use-roll", rollLabel(roll))}>Use</button>
-                        <button type="button" onClick={() => openWorkflow("remove-roll", rollLabel(roll))}>Off Skid</button>
+                        <button type="button" onClick={() => openWorkflow("use-roll", roll)}>Use</button>
+                        <button type="button" onClick={() => openWorkflow("remove-roll", roll)}>Off Skid</button>
                         {canDeleteMaterialRoll(currentUser) && (
                           <button className="storage-delete-roll" type="button" onClick={() => { setDeleteError(""); setDeleteCandidate(roll); }} title="Remove roll from inventory">
                             <Trash2 size={13} /> Remove Inventory

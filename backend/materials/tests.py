@@ -710,6 +710,14 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(self.roll.length_feet, Decimal("7500"))
         self.assertEqual(self.roll.current_skid_id, skid.id)
         self.assertTrue(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_partially_used", amount_used=2500).exists())
+        self.assertTrue(
+            MaterialUsage.objects.filter(
+                inventory=self.roll,
+                usage_type="manual",
+                quantity=Decimal("2500"),
+                reference=skid.skid_number,
+            ).exists()
+        )
 
         full = self.client.post(
             reverse("skid-use-roll", args=[skid.id]),
@@ -723,6 +731,14 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(self.roll.status, "depleted")
         self.assertIsNone(self.roll.current_skid_id)
         self.assertTrue(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_fully_used").exists())
+        self.assertEqual(
+            sum(
+                MaterialUsage.objects.filter(inventory=self.roll, usage_type="manual")
+                .values_list("quantity", flat=True),
+                Decimal("0"),
+            ),
+            Decimal("10000"),
+        )
 
     def test_cannot_use_more_than_remaining_quantity(self):
         skid = self.create_skid()

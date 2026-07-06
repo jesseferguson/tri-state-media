@@ -194,7 +194,7 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
   }));
   const [useForm, setUseForm] = useState(() => ({
     production_schedule: activeJob?.scheduleId || "",
-    mode: "full",
+    mode: "partial",
     used_feet: "",
     used_by: currentUser?.name || "",
     poor_run: false,
@@ -203,6 +203,8 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
   const available = footage(roll);
   const entered = Number(useForm.used_feet || 0);
   const buffered = useForm.mode === "partial" ? Math.min(available, entered * 1.03) : available;
+  const amountTooHigh = useForm.mode === "partial" && useForm.used_feet !== "" && entered > available;
+  const remainingAfterUse = Math.max(0, available - buffered);
 
   useEffect(() => {
     setEditForm({
@@ -216,13 +218,21 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
 
   return (
     <aside className="material-handling-detail">
-      <header>
-        <div><span>Selected Roll</span><strong>{roll.serial_number || roll.source_roll_tag_number || roll.lot_number}</strong></div>
+      <header className="material-roll-identity">
+        <div>
+          <strong title={materialName(roll)}>{materialName(roll)}</strong>
+          <span>{roll.serial_number || roll.source_roll_tag_number || roll.lot_number}</span>
+        </div>
         <div className="material-detail-head-actions">
-          <b>{Math.round(available).toLocaleString()} ft active</b>
           <button type="button" onClick={onClose} aria-label="Close roll details"><X size={18} /></button>
         </div>
       </header>
+      <section className="material-live-roll-balance">
+        <div><span>Footage on roll</span><strong>{Math.round(available).toLocaleString()} ft</strong></div>
+        <ChevronRight size={18} />
+        <div className={remainingAfterUse <= 0 ? "empty" : ""}><span>After this use</span><strong>{Math.round(remainingAfterUse).toLocaleString()} ft</strong></div>
+        <small>{remainingAfterUse <= 0 ? "The roll will leave active inventory and be removed from its skid." : "Updates live as footage is entered below."}</small>
+      </section>
       <div className="material-detail-route">
         <span><PackageOpen size={14} /><small>Skid</small><strong>{rollRoute(roll).skid}</strong></span>
         <ChevronRight size={14} />
@@ -275,18 +285,32 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
           <button className={useForm.mode === "partial" ? "active" : ""} type="button" onClick={() => setUseForm((form) => ({ ...form, mode: "partial" }))}>Partial Roll</button>
         </div>
         {useForm.mode === "partial" && (
-          <label className="wide"><span>Footage Used</span><input type="number" min="0.01" max={available} step="0.01" value={useForm.used_feet} onChange={(event) => setUseForm((form) => ({ ...form, used_feet: event.target.value }))} required /></label>
+          <label className={`wide material-footage-entry ${amountTooHigh ? "invalid" : ""}`}>
+            <span>Footage Used</span>
+            <input
+              type="number"
+              min="0.01"
+              max={available}
+              step="0.01"
+              inputMode="decimal"
+              value={useForm.used_feet}
+              onChange={(event) => setUseForm((form) => ({ ...form, used_feet: event.target.value }))}
+              aria-invalid={amountTooHigh}
+              required
+            />
+            {amountTooHigh && <small>That is too much material. This roll only has {Math.round(available).toLocaleString()} ft.</small>}
+          </label>
         )}
-        <div className="material-consume-preview">
-          <span>Inventory deduction</span>
-          <strong>{Math.round(buffered).toLocaleString()} ft</strong>
-          <small>{useForm.mode === "partial" ? `${Math.round(entered).toLocaleString()} ft entered + 3% safety buffer` : "Uses all remaining footage"}</small>
+        <div className={`material-consume-preview ${remainingAfterUse <= 0 ? "empty" : ""} ${amountTooHigh ? "invalid" : ""}`}>
+          <span>Remaining after use</span>
+          <strong>{Math.round(remainingAfterUse).toLocaleString()} ft</strong>
+          <small>{useForm.mode === "partial" ? `${Math.round(buffered).toLocaleString()} ft deducted including the 3% safety buffer` : "Entire roll will be recorded as used"}</small>
         </div>
         <label><span>Operator</span><input value={useForm.used_by} onChange={(event) => setUseForm((form) => ({ ...form, used_by: event.target.value }))} /></label>
         <label className="check"><input type="checkbox" checked={useForm.poor_run} onChange={(event) => setUseForm((form) => ({ ...form, poor_run: event.target.checked }))} /><span>Poor run / needs note</span></label>
         <label className="wide"><span>Run Note</span><textarea value={useForm.notes} onChange={(event) => setUseForm((form) => ({ ...form, notes: event.target.value }))} placeholder="Why the roll came off or any quality issue" /></label>
         {(error || notice) && <p className={error ? "error" : "success"}>{error || notice}</p>}
-        <button className="primary-btn wide" type="submit" disabled={saving || (useForm.mode === "partial" && entered <= 0)}>
+        <button className="primary-btn wide" type="submit" disabled={saving || amountTooHigh || (useForm.mode === "partial" && entered <= 0)}>
           {saving ? "Saving Usage..." : useForm.mode === "full" ? "Use Entire Roll" : "Save Partial Usage"}
         </button>
       </form>

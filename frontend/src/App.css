@@ -28078,3 +28078,338 @@ textarea {
     width: 100%;
   }
 }
+
+/* Bound-roll usage: fixed viewport, live footage, and no hidden ID entry */
+.storage-modal-overlay.selected-roll-overlay {
+  align-items: center;
+  padding: 12px;
+}
+
+.selected-roll-workflow {
+  width: min(500px, 100%);
+}
+
+.selected-roll-workflow.use-roll-workflow {
+  height: min(700px, calc(100dvh - 24px));
+}
+
+.storage-selected-roll {
+  flex: 0 0 auto;
+  padding: 15px 16px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.storage-selected-roll-name {
+  min-width: 0;
+  text-align: center;
+}
+
+.storage-selected-roll-name strong,
+.storage-selected-roll-name span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storage-selected-roll-name strong {
+  color: #0f172a;
+  font-size: 1.2rem;
+  font-weight: 950;
+}
+
+.storage-selected-roll-name span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: .7rem;
+  font-weight: 850;
+}
+
+.storage-selected-roll-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.storage-selected-roll-stats > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #dbe4ee;
+  border-radius: 7px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.storage-selected-roll-stats span,
+.storage-selected-roll-stats strong {
+  display: block;
+}
+
+.storage-selected-roll-stats span {
+  color: #64748b;
+  font-size: .6rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.storage-selected-roll-stats strong {
+  margin-top: 3px;
+  color: #0f766e;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.storage-selected-roll > p {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 9px 0 0;
+  color: #475569;
+  font-size: .68rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.storage-use-roll-panel {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 11px;
+  flex: 1 1 auto;
+  padding: 13px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.storage-use-roll-panel .storage-use-modes,
+.storage-use-roll-panel .storage-scan-input {
+  margin: 0;
+}
+
+.storage-footage-input small {
+  color: #b91c1c;
+  font-size: .68rem;
+  font-weight: 900;
+}
+
+.storage-footage-input.invalid input {
+  border-color: #dc2626;
+  background: #fff1f2;
+  color: #b91c1c;
+  outline: 2px solid rgba(220, 38, 38, .1);
+}
+
+.storage-live-footage {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid #99f6e4;
+  border-radius: 7px;
+  background: #f0fdfa;
+  text-align: center;
+}
+
+.storage-live-footage span,
+.storage-live-footage small {
+  color: #475569;
+  font-size: .66rem;
+  font-weight: 800;
+}
+
+.storage-live-footage strong {
+  color: #0f766e;
+  font-size: 1.5rem;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-live-footage.empty {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.storage-live-footage.empty strong,
+.storage-live-footage.invalid strong,
+.storage-live-footage.invalid small {
+  color: #b91c1c;
+}
+
+.selected-roll-workflow > footer {
+  flex: 0 0 auto;
+}
+
+/* Scanned roll identity and live balance */
+.material-handling-detail > header.material-roll-identity {
+  position: relative;
+  justify-content: center;
+  min-height: 52px;
+  padding: 2px 44px;
+  text-align: center;
+}
+
+.material-roll-identity > div:first-child {
+  width: 100%;
+}
+
+.material-handling-detail > header.material-roll-identity strong,
+.material-handling-detail > header.material-roll-identity span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-handling-detail > header.material-roll-identity strong {
+  font-size: 1.08rem;
+}
+
+.material-handling-detail > header.material-roll-identity span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 850;
+  text-transform: none;
+}
+
+.material-roll-identity .material-detail-head-actions {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+}
+
+.material-roll-identity .material-detail-head-actions > button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #475569;
+}
+
+.material-live-roll-balance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #99f6e4;
+  border-radius: 8px;
+  background: #f0fdfa;
+}
+
+.material-live-roll-balance > div {
+  min-width: 0;
+  text-align: center;
+}
+
+.material-live-roll-balance span,
+.material-live-roll-balance strong {
+  display: block;
+}
+
+.material-live-roll-balance span {
+  color: #64748b;
+  font-size: .58rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.material-live-roll-balance strong {
+  margin-top: 3px;
+  color: #0f766e;
+  font-size: 1.05rem;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+}
+
+.material-live-roll-balance > div.empty strong {
+  color: #b91c1c;
+}
+
+.material-live-roll-balance > svg {
+  color: #94a3b8;
+}
+
+.material-live-roll-balance > small {
+  grid-column: 1 / -1;
+  color: #475569;
+  font-size: .64rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.material-footage-entry small {
+  color: #b91c1c;
+  font-size: .68rem;
+  font-weight: 900;
+}
+
+.material-footage-entry.invalid input {
+  border-color: #dc2626;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.material-consume-preview.empty {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.material-consume-preview.empty strong,
+.material-consume-preview.invalid strong,
+.material-consume-preview.invalid small {
+  color: #b91c1c;
+}
+
+@media (max-width: 680px) {
+  .selected-roll-workflow {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+  }
+
+  .selected-roll-workflow.use-roll-workflow {
+    height: calc(100dvh - 24px);
+  }
+
+  .selected-roll-workflow input,
+  .selected-roll-workflow textarea,
+  .selected-roll-workflow select,
+  .material-handling-detail input,
+  .material-handling-detail textarea,
+  .material-handling-detail select {
+    font-size: 16px;
+  }
+
+  .selected-roll-workflow button,
+  .material-handling-detail button {
+    touch-action: manipulation;
+  }
+
+  .storage-selected-roll {
+    padding: 12px;
+  }
+
+  .storage-selected-roll-name strong {
+    font-size: 1.05rem;
+  }
+
+  .storage-use-roll-panel {
+    padding: 11px 12px;
+  }
+
+  .material-handling-detail {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    overscroll-behavior: contain;
+  }
+}
