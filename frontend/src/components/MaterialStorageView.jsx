@@ -11,6 +11,8 @@ import {
   Clock3,
   Edit3,
   MapPin,
+  Layers3,
+  Menu,
   PackageOpen,
   Plus,
   Printer,
@@ -162,14 +164,22 @@ function MovementHistory({ rows = [], loading }) {
   );
 }
 
-function StorageForm({ mode, record, busy, error, onSave, onClose }) {
+function StorageForm({ mode, record, locations = [], busy, error, onSave, onClose }) {
   const isSkid = mode === "skids";
+  const rackLocations = locations.filter((location) => (
+    location.is_active !== false
+    && (
+      ["company", "shop", "room", "rack", "shelf"].includes(location.location_type)
+      || String(location.id) === String(record?.location || "")
+    )
+  ));
   const [form, setForm] = useState(() => isSkid ? {
     status: record?.status || "active",
     other_location: record?.other_location || "",
     notes: record?.notes || "",
   } : {
     rack_code: record?.rack_code || "",
+    location: record?.location || "",
     aisle: record?.aisle || "",
     bay: record?.bay || "",
     level: record?.level || "",
@@ -191,6 +201,17 @@ function StorageForm({ mode, record, busy, error, onSave, onClose }) {
         <div className="storage-form-grid">
           {!isSkid && (
             <label className="wide"><span>Rack ID</span><input value={form.rack_code} onChange={(event) => setForm((current) => ({ ...current, rack_code: event.target.value.toUpperCase() }))} placeholder="RACK-03-A" required /></label>
+          )}
+          {!isSkid && (
+            <label className="wide">
+              <span>Warehouse Location</span>
+              <select value={form.location || ""} onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))} required>
+                <option value="">Select warehouse location</option>
+                {rackLocations.map((location) => (
+                  <option value={location.id} key={location.id}>{location.full_path || location.name}</option>
+                ))}
+              </select>
+            </label>
           )}
           {!isSkid && <label><span>Aisle</span><input value={form.aisle} onChange={(event) => setForm((current) => ({ ...current, aisle: event.target.value }))} /></label>}
           {!isSkid && <label><span>Bay</span><input value={form.bay} onChange={(event) => setForm((current) => ({ ...current, bay: event.target.value }))} /></label>}
@@ -313,7 +334,7 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
 
   return (
     <>
-      <div className="storage-modal-overlay" role="presentation" onMouseDown={onClose}>
+      <div className={`storage-modal-overlay ${action?.type === "add-roll" ? "scan-roll-overlay" : ""}`} role="presentation" onMouseDown={onClose}>
         <form className={`storage-modal storage-workflow-modal ${action?.type === "add-roll" ? "scan-roll-workflow" : ""}`} onSubmit={(event) => { event.preventDefault(); submit(); }} onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <div><span>{isSkidPage ? record.skid_number : record.rack_code}</span><h3>{title}</h3></div>
@@ -326,7 +347,7 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
             </button>
             <label className="storage-scan-input">
               <span>Scan or enter {scanName} ID</span>
-              <input autoFocus value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
+              <input autoFocus={action?.type !== "add-roll"} value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
             </label>
           </div>
           {isUse && (
@@ -375,7 +396,7 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
   );
 }
 
-export default function MaterialStorageView({ mode, currentUser, initialToken = "", onClearToken = () => {} }) {
+export default function MaterialStorageView({ mode, currentUser, initialToken = "", onClearToken = () => {}, onNavigate, onOpenRoll }) {
   const isSkidPage = mode === "skids";
   const endpoint = isSkidPage ? "skids" : "racks";
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
@@ -388,16 +409,19 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [moveConfirmation, setMoveConfirmation] = useState(null);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const lastPayloadRef = useRef(null);
 
   const dataQuery = useQuery({
     queryKey: ["material-storage", mode],
     queryFn: async () => {
-      const [records, presses] = await Promise.all([
+      const [records, presses, locations] = await Promise.all([
         fetchCollection(endpoint, { ordering: isSkidPage ? "-created_at" : "rack_code", pageSize: 1000, fetchAll: true }),
         fetchCollection("presses", { ordering: "name", pageSize: 500, fetchAll: true }),
+        fetchCollection("locations", { ordering: "name", pageSize: 1000, fetchAll: true }),
       ]);
-      return { records: records.results || [], presses: presses.results || [] };
+      return { records: records.results || [], presses: presses.results || [], locations: locations.results || [] };
     },
     staleTime: 10_000,
     refetchInterval: 60_000,
@@ -426,6 +450,26 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
       })
       .catch((scanError) => setError(errorPayload(scanError).detail));
   }, [initialToken, dataQuery.isLoading, mode]);
+
+  useEffect(() => {
+    if (!actionMenuOpen) return undefined;
+    function closeMenu(event) {
+      if (event.key === "Escape" || (event.type === "pointerdown" && !event.target.closest(".storage-action-menu-wrap"))) {
+        setActionMenuOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", closeMenu);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", closeMenu);
+    };
+  }, [actionMenuOpen]);
+
+  useEffect(() => {
+    setActionMenuOpen(false);
+    setHistoryOpen(false);
+  }, [selectedId]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -517,6 +561,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
     setError("");
     setSuccess("");
     setMoveConfirmation(null);
+    setActionMenuOpen(false);
     setWorkflow({ type, value, sessionId: window.crypto?.randomUUID?.() || String(Date.now()) });
   }
 
@@ -537,6 +582,12 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           {isAdmin && <button className="primary-btn" type="button" onClick={() => { setFormRecord(null); setError(""); }}><Plus size={17} /> {isSkidPage ? "New Skid" : "New Rack"}</button>}
         </div>
       </header>
+
+      <nav className="material-storage-links" aria-label="Material inventory views">
+        <button type="button" onClick={() => onNavigate?.("material-handling")}><Layers3 size={16} /> Material</button>
+        <button className={isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("skids")}><PackageOpen size={16} /> Skids</button>
+        <button className={!isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("racks")}><Warehouse size={16} /> Racks</button>
+      </nav>
 
       {initialToken && selected && (
         <div className="storage-scan-arrival">
@@ -559,7 +610,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                   <span className={`storage-status-dot ${row.status}`} />
                   <div>
                     <strong>{isSkidPage ? row.skid_number : row.rack_code}</strong>
-                    <span>{isSkidPage ? row.current_location_display : row.location_detail || "Rack location"}</span>
+                    <span>{isSkidPage ? row.current_location_display : row.storage_location_display || row.location_detail || "Location not assigned"}</span>
                     <small>{isSkidPage ? `${row.roll_count} rolls / ${formatFeet(row.total_remaining_feet)}` : `${row.skid_count} skids / ${row.roll_count} rolls`}</small>
                   </div>
                   <ChevronRight size={17} />
@@ -570,7 +621,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           </div>
         </aside>
 
-        <main className="storage-detail-panel">
+        <main className={`storage-detail-panel ${isSkidPage ? "skid-detail-panel" : ""}`}>
           {!selected ? (
             <div className="storage-welcome">
               {isSkidPage ? <PackageOpen size={36} /> : <Warehouse size={36} />}
@@ -583,12 +634,12 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                 <div>
                   <span className={`storage-state ${selected.status}`}>{labelize(selected.status)}</span>
                   <h3>{isSkidPage ? selected.skid_number : selected.rack_code}</h3>
-                  <p><MapPin size={15} /> {isSkidPage ? selected.current_location_display : selected.location_detail || "Rack location"}</p>
+                  <p><MapPin size={15} /> {isSkidPage ? selected.current_location_display : selected.storage_location_display || selected.location_detail || "Location not assigned"}</p>
                 </div>
-                <div>
+                {!isSkidPage && <div>
                   {isAdmin && <button className="icon-command" type="button" onClick={() => { setFormRecord(selected); setError(""); }} title="Edit"><Edit3 size={18} /><span>Edit</span></button>}
                   {isAdmin && <button className="icon-command" type="button" onClick={() => { setPrintRecord(selected); setError(""); }} title="Print label"><Printer size={18} /><span>Print</span></button>}
-                </div>
+                </div>}
               </header>
 
               <section className="storage-facts">
@@ -602,9 +653,19 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                 {isSkidPage ? (
                   <>
                     <button className="primary" type="button" onClick={() => openWorkflow("add-roll")} disabled={selected.status !== "active"}><Camera size={20} /><span><strong>Scan Roll</strong><small>Add directly to skid</small></span></button>
-                    <button type="button" onClick={() => openWorkflow("remove-roll")} disabled={!selected.roll_count}><PackageOpen size={20} /><span><strong>Remove Roll</strong><small>Return to floor</small></span></button>
-                    <button type="button" onClick={() => openWorkflow("use-roll")} disabled={!selected.roll_count}><Archive size={20} /><span><strong>Use Roll</strong><small>Partial or all</small></span></button>
-                    <button type="button" onClick={() => openWorkflow("move-to-rack")} disabled={selected.status !== "active"}><Warehouse size={20} /><span><strong>Move Skid</strong><small>Scan rack QR</small></span></button>
+                    <button className="storage-move-primary" type="button" onClick={() => openWorkflow("move-to-rack")} disabled={selected.status !== "active"}><Warehouse size={20} /><span><strong>Move Skid</strong><small>Scan rack QR</small></span></button>
+                    <div className="storage-action-menu-wrap">
+                      <button className="storage-menu-trigger" type="button" onClick={() => setActionMenuOpen((open) => !open)} aria-label="More skid actions" aria-expanded={actionMenuOpen}><Menu size={22} /></button>
+                      {actionMenuOpen && (
+                        <div className="storage-action-menu">
+                          {isAdmin && <button type="button" onClick={() => { setFormRecord(selected); setError(""); setActionMenuOpen(false); }}><Edit3 size={16} /> Edit Skid</button>}
+                          {isAdmin && <button type="button" onClick={() => { setPrintRecord(selected); setError(""); setActionMenuOpen(false); }}><Printer size={16} /> Print Skid Label</button>}
+                          <button type="button" onClick={() => openWorkflow("remove-roll")} disabled={!selected.roll_count}><PackageOpen size={16} /> Remove Roll</button>
+                          <button type="button" onClick={() => openWorkflow("use-roll")} disabled={!selected.roll_count}><Archive size={16} /> Use Roll</button>
+                          <button type="button" onClick={() => { setHistoryOpen(true); setActionMenuOpen(false); }}><Clock3 size={16} /> History</button>
+                        </div>
+                      )}
+                    </div>
                   </>
                 ) : (
                   <>
@@ -623,6 +684,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                       <div><strong>{rollLabel(roll)}</strong><span>{[roll.material_master_type_code || roll.material_name, roll.width_inches ? `${formatInches(roll.width_inches)} wide` : "", roll.usage_state === "partially_used" ? "Partially used" : ""].filter(Boolean).join(" / ")}</span></div>
                       <b>{formatFeet(roll.length_feet ?? roll.quantity)}</b>
                       <div className="storage-row-actions">
+                        <button type="button" onClick={() => onOpenRoll?.(roll)}>Edit Roll</button>
                         <button type="button" onClick={() => openWorkflow("use-roll", rollLabel(roll))}>Use</button>
                         <button type="button" onClick={() => openWorkflow("remove-roll", rollLabel(roll))}>Remove</button>
                       </div>
@@ -655,16 +717,16 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                 </section>
               )}
 
-              <section className="storage-history-section">
+              {!isSkidPage && <section className="storage-history-section">
                 <header><strong>Movement History</strong><span>Permanent audit trail</span></header>
                 <MovementHistory rows={historyQuery.data || []} loading={historyQuery.isLoading} />
-              </section>
+              </section>}
             </>
           )}
         </main>
       </div>
 
-      {formRecord !== undefined && <StorageForm mode={mode} record={formRecord} busy={busy} error={error} onSave={saveRecord} onClose={() => { setFormRecord(undefined); setError(""); }} />}
+      {formRecord !== undefined && <StorageForm mode={mode} record={formRecord} locations={dataQuery.data?.locations || []} busy={busy} error={error} onSave={saveRecord} onClose={() => { setFormRecord(undefined); setError(""); }} />}
       {printRecord && <PrintDialog mode={mode} record={printRecord} presses={dataQuery.data?.presses || []} busy={busy} error={error} onPrint={printLabel} onClose={() => { setPrintRecord(null); setError(""); }} />}
       {workflow && selected && (
         <WorkflowDialog
@@ -678,6 +740,14 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           onConfirmMove={() => runWorkflow(lastPayloadRef.current || {}, true)}
           onClose={() => { setWorkflow(null); setMoveConfirmation(null); setError(""); }}
         />
+      )}
+      {historyOpen && selected && (
+        <div className="storage-modal-overlay storage-history-overlay" role="presentation" onMouseDown={() => setHistoryOpen(false)}>
+          <section className="storage-modal storage-history-window" role="dialog" aria-modal="true" aria-label={`${selected.skid_number} history`} onMouseDown={(event) => event.stopPropagation()}>
+            <header><div><span>{selected.skid_number}</span><h3>Movement History</h3></div><button type="button" onClick={() => setHistoryOpen(false)} aria-label="Close history"><X size={19} /></button></header>
+            <MovementHistory rows={historyQuery.data || []} loading={historyQuery.isLoading} />
+          </section>
+        </div>
       )}
     </section>
   );

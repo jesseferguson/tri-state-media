@@ -411,6 +411,17 @@ class SkidRackWorkflowTests(TestCase):
             printer_speed="6",
             printer_darkness="18",
         )
+        self.wilmington = ToolingLocation.objects.create(
+            name="Wilmington Ohio",
+            code="TEST-WILMINGTON",
+            location_type="shop",
+        )
+        self.warehouse = ToolingLocation.objects.create(
+            name="Warehouse",
+            code="TEST-WAREHOUSE",
+            location_type="room",
+            parent=self.wilmington,
+        )
 
     def create_skid(self):
         response = self.client.post(
@@ -425,7 +436,7 @@ class SkidRackWorkflowTests(TestCase):
     def create_rack(self, code="RACK-03-A"):
         response = self.client.post(
             reverse("rack-list"),
-            {"rack_code": code, "aisle": "03", "bay": "A", "status": "active"},
+            {"rack_code": code, "location": self.warehouse.id, "aisle": "03", "bay": "A", "status": "active"},
             content_type="application/json",
             **self.admin_headers,
         )
@@ -449,6 +460,8 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(rack.rack_code, "RACK-03-A")
         self.assertTrue(skid.qr_token)
         self.assertTrue(rack.qr_token)
+        self.assertEqual(rack.location_id, self.warehouse.id)
+        self.assertEqual(rack.storage_location_display, "Wilmington Ohio > Warehouse > Aisle 03 > Bay A")
         self.assertTrue(MaterialMovement.objects.filter(skid=skid, action_type="skid_created").exists())
         self.assertTrue(MaterialMovement.objects.filter(rack=rack, action_type="rack_created").exists())
 

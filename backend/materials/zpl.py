@@ -31,7 +31,7 @@ def skid_label_zpl(skid, scan_url, *, darkness="20", speed="5", copies=1):
 
 
 def rack_label_zpl(rack, scan_url, *, darkness="20", speed="5", copies=1):
-    detail = rack.location_detail or "Plant material storage"
+    detail = rack.storage_location_display
     return "\n".join([
         "^XA",
         "^CI28",

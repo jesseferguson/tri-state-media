@@ -200,7 +200,7 @@ class MaterialSkidViewSet(BaseMaterialsViewSet):
 
     def get_queryset(self):
         return (
-            MaterialSkid.objects.select_related("current_rack")
+            MaterialSkid.objects.select_related("current_rack", "current_rack__location")
             .prefetch_related(
                 "movement_history",
                 "rolls",
@@ -211,6 +211,7 @@ class MaterialSkidViewSet(BaseMaterialsViewSet):
                 "rolls__source_roll_tag",
                 "rolls__current_skid",
                 "rolls__current_skid__current_rack",
+                "rolls__current_skid__current_rack__location",
             )
             .all()
             .distinct()
@@ -441,6 +442,8 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
     serializer_class = MaterialRackSerializer
     search_fields = [
         "rack_code",
+        "location__name",
+        "location__code",
         "aisle",
         "bay",
         "level",
@@ -449,11 +452,11 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
         "notes",
         "skids__skid_number",
     ]
-    ordering_fields = ["rack_code", "aisle", "bay", "level", "position", "status", "created_at"]
+    ordering_fields = ["rack_code", "location__name", "aisle", "bay", "level", "position", "status", "created_at"]
 
     def get_queryset(self):
         return (
-            MaterialRack.objects.prefetch_related(
+            MaterialRack.objects.select_related("location").prefetch_related(
                 "movement_history",
                 "skids",
                 "skids__movement_history",
@@ -465,6 +468,7 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
                 "skids__rolls__source_roll_tag",
                 "skids__rolls__current_skid",
                 "skids__rolls__current_skid__current_rack",
+                "skids__rolls__current_skid__current_rack__location",
             )
             .all()
             .distinct()
@@ -500,10 +504,10 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
                 {"detail": "Remove active skids before deactivating this rack."},
                 status=status.HTTP_409_CONFLICT,
             )
-        before_detail = rack.location_detail
+        before_detail = rack.storage_location_display
         before_values = {
             key: getattr(rack, key)
-            for key in ["rack_code", "aisle", "bay", "level", "position", "status", "notes"]
+            for key in ["rack_code", "location_id", "aisle", "bay", "level", "position", "status", "notes"]
         }
         partial = kwargs.pop("partial", False)
         serializer = self.get_serializer(rack, data=request.data, partial=partial)
@@ -515,7 +519,7 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
                 action_type="manual_edit",
                 rack=rack,
                 from_location=before_detail or rack.rack_code,
-                to_location=rack.location_detail or rack.rack_code,
+                to_location=rack.storage_location_display,
                 notes=f"Updated rack fields: {', '.join(changed) or 'details'}.",
                 source="manual",
                 **_request_actor(request, user),
@@ -781,6 +785,9 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
         "material__master_type__name",
         "supplier__name",
         "location__name",
+        "current_skid__skid_number",
+        "current_skid__current_rack__rack_code",
+        "current_skid__current_rack__location__name",
         "status",
         "notes",
     ]
@@ -807,6 +814,7 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
                 "source_roll_tag",
                 "current_skid",
                 "current_skid__current_rack",
+                "current_skid__current_rack__location",
             )
             .all()
             .order_by("material_type", "name", "serial_number")

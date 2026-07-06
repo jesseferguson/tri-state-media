@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, Filter, History, MapPin, PackageCheck, Save, Search, X } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronRight, History, Layers3, MapPin, PackageCheck, PackageOpen, Save, Search, Warehouse, X } from "lucide-react";
 import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, labelize } from "../lib/format";
 import ScanLinkScreen from "./ScanLinkScreen";
@@ -19,6 +19,18 @@ function footage(row) {
 
 function locationName(row) {
   return row?.current_location_display || row?.location_full_path || row?.location_name || "Plant Floor";
+}
+
+function rollRoute(row) {
+  return {
+    skid: row?.current_skid_number || "Plant Floor",
+    rack: row?.current_rack_code || "No rack",
+    location: row?.current_rack_location_full_path || row?.location_full_path || row?.location_name || "Wilmington Ohio > Plant Floor",
+  };
+}
+
+function warehouseLocation(row) {
+  return row?.current_rack_location_full_path || row?.location_full_path || row?.location_name || "Wilmington Ohio > Plant Floor";
 }
 
 function widthName(row) {
@@ -61,7 +73,7 @@ function extractRollTagId(value) {
 function inventoryGroups(rows, mode) {
   const groups = new Map();
   rows.forEach((row) => {
-    const key = mode === "location" ? locationName(row) : widthName(row);
+    const key = mode === "location" ? warehouseLocation(row) : materialName(row);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   });
@@ -74,7 +86,7 @@ function ActiveInventory({ rows, groupMode, selectedId, relatedRollIds, onSelect
       {inventoryGroups(rows, groupMode).map(([group, groupRows]) => (
         <section key={group}>
           <header>
-            <div>{groupMode === "location" ? <MapPin size={15} /> : <Filter size={15} />}<strong>{group}</strong></div>
+            <div>{groupMode === "location" ? <MapPin size={15} /> : <Layers3 size={15} />}<strong>{group}</strong></div>
             <span>{groupRows.length} roll{groupRows.length === 1 ? "" : "s"}</span>
             <b>{Math.round(groupRows.reduce((sum, row) => sum + footage(row), 0)).toLocaleString()} ft</b>
           </header>
@@ -82,9 +94,16 @@ function ActiveInventory({ rows, groupMode, selectedId, relatedRollIds, onSelect
             {groupRows.map((row) => (
               <button className={sameId(row.id, selectedId) ? "active" : ""} type="button" key={row.id} onClick={() => onSelect(row)}>
                 <span className={`material-roll-status ${row.status}`} />
-                <div>
+                <div className="material-roll-main">
                   <strong>{row.serial_number || row.source_roll_tag_number || row.lot_number}</strong>
-                  <span>{[materialName(row), widthName(row), locationName(row)].join(" / ")}</span>
+                  <span>{[groupMode === "location" ? materialName(row) : "", row.lot_number, widthName(row)].filter(Boolean).join(" / ")}</span>
+                  <div className="material-roll-route">
+                    <span><PackageOpen size={12} /> {rollRoute(row).skid}</span>
+                    <ChevronRight size={11} />
+                    <span><Warehouse size={12} /> {rollRoute(row).rack}</span>
+                    <ChevronRight size={11} />
+                    <span><MapPin size={12} /> {rollRoute(row).location}</span>
+                  </div>
                 </div>
                 <b>{Math.round(footage(row)).toLocaleString()} ft</b>
                 <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
@@ -146,7 +165,7 @@ function UsageHistory({ rows, rolls, search }) {
   );
 }
 
-function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving, error, notice, onSave, onConsume }) {
+function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving, error, notice, onClose, onSave, onConsume }) {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState(() => ({
     lot_number: roll.lot_number || "",
@@ -180,8 +199,18 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
     <aside className="material-handling-detail">
       <header>
         <div><span>Selected Roll</span><strong>{roll.serial_number || roll.source_roll_tag_number || roll.lot_number}</strong></div>
-        <b>{Math.round(available).toLocaleString()} ft active</b>
+        <div className="material-detail-head-actions">
+          <b>{Math.round(available).toLocaleString()} ft active</b>
+          <button type="button" onClick={onClose} aria-label="Close roll details"><X size={18} /></button>
+        </div>
       </header>
+      <div className="material-detail-route">
+        <span><PackageOpen size={14} /><small>Skid</small><strong>{rollRoute(roll).skid}</strong></span>
+        <ChevronRight size={14} />
+        <span><Warehouse size={14} /><small>Rack</small><strong>{rollRoute(roll).rack}</strong></span>
+        <ChevronRight size={14} />
+        <span><MapPin size={14} /><small>Location</small><strong>{rollRoute(roll).location}</strong></span>
+      </div>
       <div className="material-handling-roll-facts">
         <div><span>Material</span><strong>{materialName(roll)}</strong></div>
         <div><span>Width</span><strong>{widthName(roll)}</strong></div>
@@ -196,7 +225,11 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
         <form className="material-handling-edit" onSubmit={(event) => { event.preventDefault(); onSave(editForm); }}>
           <label><span>Lot Number</span><input value={editForm.lot_number} onChange={(event) => setEditForm((form) => ({ ...form, lot_number: event.target.value }))} /></label>
           <label><span>Width</span><input type="number" step="0.001" value={editForm.width_inches} onChange={(event) => setEditForm((form) => ({ ...form, width_inches: event.target.value }))} /></label>
-          <label className="wide"><span>Location</span><select value={editForm.location || ""} onChange={(event) => setEditForm((form) => ({ ...form, location: event.target.value }))}><option value="">No location</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.full_path || location.name}</option>)}</select></label>
+          {roll.current_skid ? (
+            <div className="material-location-locked wide"><Warehouse size={15} /><span>This roll’s location follows its skid and rack.</span></div>
+          ) : (
+            <label className="wide"><span>Plant Floor Location</span><select value={editForm.location || ""} onChange={(event) => setEditForm((form) => ({ ...form, location: event.target.value }))}><option value="">Wilmington Ohio &gt; Plant Floor</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.full_path || location.name}</option>)}</select></label>
+          )}
           <label className="wide"><span>Roll Notes</span><textarea value={editForm.notes} onChange={(event) => setEditForm((form) => ({ ...form, notes: event.target.value }))} /></label>
           <button className="primary-btn wide" type="submit" disabled={saving}>Save Roll</button>
         </form>
@@ -235,10 +268,20 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
   );
 }
 
-export default function MaterialHandlingView({ currentUser, linkedRollTagId = "", onLinkedRollTagChange }) {
+export default function MaterialHandlingView({
+  currentUser,
+  linkedRollTagId = "",
+  linkedInventoryId = "",
+  onLinkedRollTagChange,
+  onCloseLinkedRoll,
+  onOpenStorage,
+}) {
   const queryClient = useQueryClient();
   const [selectedInventoryId, setSelectedInventoryId] = useState("");
-  const [groupMode, setGroupMode] = useState(() => window.localStorage.getItem("tsm_material_group_mode") || "width");
+  const [groupMode, setGroupMode] = useState(() => {
+    const saved = window.localStorage.getItem("tsm_material_group_mode");
+    return saved === "location" ? "location" : "material";
+  });
   const [view, setView] = useState("active");
   const [search, setSearch] = useState("");
   const [activeJob, setActiveJob] = useState(() => readActiveJob());
@@ -275,8 +318,9 @@ export default function MaterialHandlingView({ currentUser, linkedRollTagId = ""
   const linkedInventory = linkedTag
     ? data.inventory.find((row) => sameId(row.source_roll_tag, linkedTag.id) || sameId(row.id, linkedTag.logged_inventory))
     : null;
-  const selectedRoll = data.inventory.find((row) => sameId(row.id, selectedInventoryId)) || linkedInventory || null;
-  const focusMaterialId = selectedRoll?.material || linkedTag?.produced_material || linkedTag?.scheduled_material || "";
+  const linkedInventoryRecord = data.inventory.find((row) => sameId(row.id, linkedInventoryId)) || null;
+  const selectedRoll = data.inventory.find((row) => sameId(row.id, selectedInventoryId)) || linkedInventory || linkedInventoryRecord || null;
+  const focusMaterialId = linkedTag?.produced_material || linkedTag?.scheduled_material || "";
   const relatedTags = linkedTag
     ? data.tags.filter((tag) => sameId(tag.source_schedule, linkedTag.source_schedule || linkedTag.id))
     : [];
@@ -285,17 +329,25 @@ export default function MaterialHandlingView({ currentUser, linkedRollTagId = ""
   const activeRows = data.inventory
     .filter((row) => row.is_active !== false && !["depleted", "scrapped"].includes(row.status) && footage(row) > 0)
     .filter((row) => !focusMaterialId || sameId(row.material, focusMaterialId))
-    .filter((row) => !search || `${row.serial_number} ${row.lot_number} ${materialName(row)} ${widthName(row)} ${locationName(row)}`.toLowerCase().includes(search.toLowerCase()));
+    .filter((row) => !search || `${row.serial_number} ${row.lot_number} ${materialName(row)} ${widthName(row)} ${locationName(row)} ${row.current_skid_number || ""} ${row.current_rack_code || ""} ${row.current_rack_location_full_path || ""}`.toLowerCase().includes(search.toLowerCase()));
   const usageRows = data.usage.filter((row) => !focusMaterialId || sameId(row.material, focusMaterialId));
   const rollHistory = data.tags.filter((tag) => (
     tag.source_schedule
     && tag.status === "complete"
     && (!focusMaterialId || sameId(tag.produced_material || tag.scheduled_material, focusMaterialId))
   ));
+  const inventorySummary = useMemo(() => ({
+    rolls: activeRows.length,
+    footage: activeRows.reduce((sum, row) => sum + footage(row), 0),
+    skids: new Set(activeRows.map((row) => row.current_skid).filter(Boolean)).size,
+    racks: new Set(activeRows.map((row) => row.current_rack).filter(Boolean)).size,
+    floor: activeRows.filter((row) => !row.current_skid).length,
+  }), [activeRows]);
 
   useEffect(() => {
-    if (linkedInventory) setSelectedInventoryId(String(linkedInventory.id));
-  }, [linkedInventory?.id]);
+    const directInventory = linkedInventory || linkedInventoryRecord;
+    if (directInventory) setSelectedInventoryId(String(directInventory.id));
+  }, [linkedInventory?.id, linkedInventoryRecord?.id]);
 
   useEffect(() => () => scannerRef.current?.stop?.(), []);
 
@@ -373,10 +425,9 @@ export default function MaterialHandlingView({ currentUser, linkedRollTagId = ""
   function selectRoll(row) {
     setSelectedInventoryId(String(row.id));
     setNotice("");
-    if (row.source_roll_tag) onLinkedRollTagChange?.(row.source_roll_tag);
   }
 
-  if (linkedRollTagId && dataQuery.isLoading) {
+  if ((linkedRollTagId || linkedInventoryId) && dataQuery.isLoading) {
     return <ScanLinkScreen kind="roll" />;
   }
 
@@ -384,12 +435,12 @@ export default function MaterialHandlingView({ currentUser, linkedRollTagId = ""
     <section className="material-handling-view">
       <header className="material-handling-hero">
         <div>
-          <span>Material Handling</span>
-          <h2>{selectedRoll ? materialName(selectedRoll) : "Active Material Rolls"}</h2>
+          <span>Material Inventory</span>
+          <h2>{linkedTag && selectedRoll ? materialName(selectedRoll) : "Plant Material"}</h2>
           <p>{[
             majorityRunDate ? `Mostly ran ${majorityRunDate}` : "",
             linkedTag?.schedule_tag_number ? `Schedule ${linkedTag.schedule_tag_number}` : "",
-            `${activeRows.length} active roll${activeRows.length === 1 ? "" : "s"}`,
+            `${inventorySummary.rolls} active roll${inventorySummary.rolls === 1 ? "" : "s"}`,
           ].filter(Boolean).join(" / ")}</p>
         </div>
         <div>
@@ -397,6 +448,19 @@ export default function MaterialHandlingView({ currentUser, linkedRollTagId = ""
           <button className="primary-btn" type="button" onClick={startScanner}><Camera size={16} /> Scan Roll</button>
         </div>
       </header>
+
+      <section className="material-inventory-summary">
+        <article><span>Active Material</span><strong>{Math.round(inventorySummary.footage).toLocaleString()} ft</strong><small>{inventorySummary.rolls} rolls</small></article>
+        <article><span>On Skids</span><strong>{inventorySummary.skids}</strong><small>active skids</small></article>
+        <article><span>In Racks</span><strong>{inventorySummary.racks}</strong><small>storage racks</small></article>
+        <article><span>Plant Floor</span><strong>{inventorySummary.floor}</strong><small>loose rolls</small></article>
+      </section>
+
+      <nav className="material-storage-links" aria-label="Material storage views">
+        <button className="active" type="button"><Layers3 size={16} /> Material</button>
+        <button type="button" onClick={() => onOpenStorage?.("skids")}><PackageOpen size={16} /> Skids</button>
+        <button type="button" onClick={() => onOpenStorage?.("racks")}><Warehouse size={16} /> Racks</button>
+      </nav>
 
       {linkedTag && !linkedInventory && (
         <div className="material-pending-tag">
@@ -420,7 +484,7 @@ export default function MaterialHandlingView({ currentUser, linkedRollTagId = ""
         <label><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={view === "active" ? "Search roll, lot, width, or location" : "Search date, job, schedule, or operator"} /></label>
         {view === "active" && (
           <div>
-            <button className={groupMode === "width" ? "active" : ""} type="button" onClick={() => { setGroupMode("width"); window.localStorage.setItem("tsm_material_group_mode", "width"); }}>By Width</button>
+            <button className={groupMode === "material" ? "active" : ""} type="button" onClick={() => { setGroupMode("material"); window.localStorage.setItem("tsm_material_group_mode", "material"); }}>By Material</button>
             <button className={groupMode === "location" ? "active" : ""} type="button" onClick={() => { setGroupMode("location"); window.localStorage.setItem("tsm_material_group_mode", "location"); }}>By Location</button>
           </div>
         )}
@@ -444,6 +508,10 @@ export default function MaterialHandlingView({ currentUser, linkedRollTagId = ""
             saving={editMutation.isPending || consumeMutation.isPending}
             error={editMutation.error?.message || consumeMutation.error?.message || ""}
             notice={notice}
+            onClose={() => {
+              setSelectedInventoryId("");
+              if (linkedRollTagId || linkedInventoryId) onCloseLinkedRoll?.();
+            }}
             onSave={(form) => editMutation.mutate({ roll: selectedRoll, form })}
             onConsume={(form) => consumeMutation.mutate({ roll: selectedRoll, form })}
           />

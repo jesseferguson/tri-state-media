@@ -142,6 +142,8 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
     current_skid_number = serializers.CharField(source="current_skid.skid_number", read_only=True)
     current_rack = serializers.IntegerField(source="current_skid.current_rack_id", read_only=True)
     current_rack_code = serializers.CharField(source="current_skid.current_rack.rack_code", read_only=True)
+    current_rack_location_name = serializers.CharField(source="current_skid.current_rack.location.name", read_only=True)
+    current_rack_location_full_path = serializers.SerializerMethodField()
     current_location_type = serializers.SerializerMethodField()
     current_location_display = serializers.SerializerMethodField()
     usage_state = serializers.SerializerMethodField()
@@ -162,6 +164,10 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
 
     def get_location_full_path(self, obj):
         return obj.location.full_path() if obj.location_id else ""
+
+    def get_current_rack_location_full_path(self, obj):
+        rack = obj.current_skid.current_rack if obj.current_skid_id else None
+        return rack.location.full_path() if rack and rack.location_id else ""
 
     def get_current_location_display(self, obj):
         return roll_location(obj)
@@ -231,6 +237,9 @@ class MaterialSkidSerializer(serializers.ModelSerializer):
 
 class MaterialRackSerializer(serializers.ModelSerializer):
     location_detail = serializers.ReadOnlyField()
+    storage_location_display = serializers.ReadOnlyField()
+    location_name = serializers.CharField(source="location.name", read_only=True)
+    location_full_path = serializers.SerializerMethodField()
     skid_count = serializers.SerializerMethodField()
     roll_count = serializers.SerializerMethodField()
     total_remaining_feet = serializers.SerializerMethodField()
@@ -241,6 +250,9 @@ class MaterialRackSerializer(serializers.ModelSerializer):
         model = MaterialRack
         fields = "__all__"
         read_only_fields = ["qr_token", "created_by", "created_at", "updated_at"]
+
+    def get_location_full_path(self, obj):
+        return obj.location.full_path() if obj.location_id else ""
 
     def active_skids(self, obj):
         prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("skids")

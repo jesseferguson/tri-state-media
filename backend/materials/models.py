@@ -234,6 +234,13 @@ class MaterialRack(models.Model):
 
     rack_code = models.CharField(max_length=80, unique=True)
     qr_token = models.UUIDField(default=uuid4, unique=True, editable=False)
+    location = models.ForeignKey(
+        ToolingLocation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="material_racks",
+    )
     aisle = models.CharField(max_length=40, blank=True)
     bay = models.CharField(max_length=40, blank=True)
     level = models.CharField(max_length=40, blank=True)
@@ -255,7 +262,13 @@ class MaterialRack(models.Model):
             f"Level {self.level}" if self.level else "",
             f"Position {self.position}" if self.position else "",
         ]
-        return " / ".join(part for part in parts if part)
+        return " > ".join(part for part in parts if part)
+
+    @property
+    def storage_location_display(self):
+        warehouse = self.location.full_path() if self.location_id else ""
+        detail = self.location_detail
+        return " > ".join(part for part in [warehouse, detail] if part) or "Location not assigned"
 
     def __str__(self):
         return self.rack_code
@@ -302,7 +315,7 @@ class MaterialSkid(models.Model):
         if self.status != "active":
             return "Inactive" if self.status == "inactive" else "Retired"
         if self.current_rack_id:
-            return self.current_rack.rack_code
+            return f"{self.current_rack.rack_code} > {self.current_rack.storage_location_display}"
         return self.other_location or "Plant Floor"
 
     def save(self, *args, **kwargs):

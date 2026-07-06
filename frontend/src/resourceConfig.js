@@ -775,15 +775,15 @@ export const resources = [
 
   {
     key: "material-handling",
-    label: "Material Handling",
-    singular: "Material Handling",
+    label: "Material Inventory",
+    singular: "Material Inventory",
     group: "production-material",
     icon: PackageCheck,
     accent: "#0f766e",
     staticView: true,
     viewMode: "materialHandling",
     disableCreate: true,
-    tagline: "Scan, locate, edit, and consume active coated-stock rolls.",
+    tagline: "Find and manage material through its roll, skid, rack, and warehouse location.",
     columns: [],
     fields: [],
   },
@@ -1445,6 +1445,7 @@ export const resources = [
     fetchAll: true,
     tagline: "Physical material inventory by material, lot, width, length, and location.",
     viewMode: "materialInventory",
+    hideFromNav: true,
     columns: [
       "serial_number",
       "material_code",

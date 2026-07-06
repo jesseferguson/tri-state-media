@@ -498,7 +498,7 @@ function SignInScreen({ onSignIn }) {
     if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
     if (params.get("skidToken")) return { label: "Skid", detail: "Sign in to open this skid." };
-    if (params.get("rollTagId")) return { label: "Roll", detail: "Sign in to open this material roll." };
+    if (params.get("rollTagId") || params.get("inventoryId")) return { label: "Roll", detail: "Sign in to open this material roll." };
     if (params.get("rackToken")) return { label: "Rack", detail: "Sign in to open this rack." };
     return null;
   })();
@@ -1212,12 +1212,15 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       const params = new URLSearchParams(window.location.search);
       if (params.get("skidToken")) return "skids";
       if (params.get("rackToken")) return "racks";
-      if (params.get("rollTagId")) return "material-handling";
+      if (params.get("rollTagId") || params.get("inventoryId")) return "material-handling";
     }
     return defaultResourceKeyForRole(roleDefinitions, currentUser?.role);
   });
   const [linkedRollTagId, setLinkedRollTagId] = useState(() => (
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("rollTagId") || "" : ""
+  ));
+  const [linkedInventoryId, setLinkedInventoryId] = useState(() => (
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("inventoryId") || "" : ""
   ));
   const [scannedSkidToken, setScannedSkidToken] = useState(() => (
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("skidToken") || "" : ""
@@ -1275,7 +1278,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     ? "skids"
     : scannedRackToken
       ? "racks"
-      : linkedRollTagId
+      : linkedRollTagId || linkedInventoryId
         ? "material-handling"
         : "";
   const allowedResources = useMemo(() => {
@@ -1320,13 +1323,13 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   }, [activeKeyAllowed, viewRoleName, roleDefinitions]);
 
   useEffect(() => {
-    if (!linkedRollTagId) return;
+    if (!linkedRollTagId && !linkedInventoryId) return;
     if (allowedResources.some((item) => item.key === "material-handling")) {
       setActiveKey("material-handling");
       setSelected(null);
       setFormMode(null);
     }
-  }, [allowedResources, linkedRollTagId]);
+  }, [allowedResources, linkedInventoryId, linkedRollTagId]);
 
   useEffect(() => {
     const targetKey = scannedSkidToken ? "skids" : scannedRackToken ? "racks" : "";
@@ -2691,7 +2694,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
             onLinkedRollTagChange={(rollTagId) => {
               setLinkedRollTagId(String(rollTagId));
               const url = new URL(window.location.href);
-              url.searchParams.set("rollTagId", String(rollTagId));
+              if (rollTagId) url.searchParams.set("rollTagId", String(rollTagId));
+              else url.searchParams.delete("rollTagId");
               window.history.replaceState({}, "", url);
             }}
             onLinkedRollTagClose={() => {
@@ -2705,10 +2709,34 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           <MaterialHandlingView
             currentUser={currentUserForView}
             linkedRollTagId={linkedRollTagId}
+            linkedInventoryId={linkedInventoryId}
+            onOpenStorage={(key) => {
+              setLinkedRollTagId("");
+              setLinkedInventoryId("");
+              const url = new URL(window.location.href);
+              url.searchParams.delete("rollTagId");
+              url.searchParams.delete("inventoryId");
+              window.history.replaceState({}, "", url);
+              setActiveKey(key);
+            }}
+            onCloseLinkedRoll={() => {
+              setLinkedRollTagId("");
+              setLinkedInventoryId("");
+              const url = new URL(window.location.href);
+              url.searchParams.delete("rollTagId");
+              url.searchParams.delete("inventoryId");
+              window.history.replaceState({}, "", url);
+            }}
             onLinkedRollTagChange={(rollTagId) => {
               setLinkedRollTagId(String(rollTagId));
+              setLinkedInventoryId("");
               const url = new URL(window.location.href);
-              url.searchParams.set("rollTagId", String(rollTagId));
+              url.searchParams.delete("inventoryId");
+              if (rollTagId) {
+                url.searchParams.set("rollTagId", String(rollTagId));
+              } else {
+                url.searchParams.delete("rollTagId");
+              }
               window.history.replaceState({}, "", url);
             }}
           />
@@ -2716,6 +2744,18 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           <MaterialStorageView
             mode={resource.viewMode === "materialStorageSkids" ? "skids" : "racks"}
             currentUser={currentUserForView}
+            onNavigate={(key) => setActiveKey(key)}
+            onOpenRoll={(roll) => {
+              setLinkedRollTagId("");
+              setLinkedInventoryId(String(roll.id));
+              setScannedSkidToken("");
+              const url = new URL(window.location.href);
+              url.searchParams.delete("rollTagId");
+              url.searchParams.delete("skidToken");
+              url.searchParams.set("inventoryId", String(roll.id));
+              window.history.replaceState({}, "", url);
+              setActiveKey("material-handling");
+            }}
             initialToken={resource.viewMode === "materialStorageSkids" ? scannedSkidToken : scannedRackToken}
             onClearToken={() => {
               const isSkid = resource.viewMode === "materialStorageSkids";

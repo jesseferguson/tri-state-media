@@ -24,7 +24,7 @@ def roll_amount(roll):
 
 def skid_location(skid):
     if skid.current_rack_id:
-        return f"Rack {skid.current_rack.rack_code}"
+        return f"Rack {skid.current_rack.rack_code} > {skid.current_rack.storage_location_display}"
     return skid.other_location or "Plant Floor"
 
 
@@ -33,7 +33,8 @@ def roll_location(roll):
         return "Used / Consumed" if roll.status == "depleted" else "Scrapped"
     if roll.current_skid_id:
         if roll.current_skid.current_rack_id:
-            return f"Skid {roll.current_skid.skid_number} / Rack {roll.current_skid.current_rack.rack_code}"
+            rack = roll.current_skid.current_rack
+            return f"Skid {roll.current_skid.skid_number} > Rack {rack.rack_code} > {rack.storage_location_display}"
         return f"Skid {roll.current_skid.skid_number} / Plant Floor"
     if roll.location_id:
         return roll.location.full_path()
@@ -163,7 +164,7 @@ def resolve_skid_scan(value, *, for_update=False):
             candidates.append(parsed.path.rstrip("/").split("/")[-1])
     except ValueError:
         pass
-    queryset = MaterialSkid.objects.select_related("current_rack")
+    queryset = MaterialSkid.objects.select_related("current_rack", "current_rack__location")
     if for_update:
         queryset = queryset.select_for_update(of=("self",))
     for candidate in dict.fromkeys(str(item).strip() for item in candidates if str(item).strip()):
