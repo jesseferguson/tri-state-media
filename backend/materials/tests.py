@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from production.models import CompanyRole, CompanyUser, JobTicket, ProductionMaterialAssignment, ProductionSchedule
-from tooling.models import Press
+from tooling.models import Press, ToolingLocation
 
 from .models import (
     CoaterRollTag,
@@ -328,6 +328,26 @@ class CoaterRollTagPrintQueueTests(TestCase):
         usage = MaterialUsage.objects.get(pk=consumption.json()["usage"]["id"])
         self.assertEqual(usage.job_ticket_id, ticket.id)
         self.assertEqual(usage.production_schedule_id, production_schedule.id)
+
+    def test_raw_material_endpoint_serializes_location_paths(self):
+        root = ToolingLocation.objects.create(name="Wilmington Ohio", code="WIL", location_type="company")
+        shelf = ToolingLocation.objects.create(name="Material Shelf 1", code="WIL-SHELF-1", parent=root)
+        material = MaterialSpec.objects.create(material_type="coated_stock", code="PM", name="PM")
+        RawMaterialInventory.objects.create(
+            material=material,
+            lot_number="LOT-LOCATION",
+            width_inches=Decimal("12.75"),
+            length_feet=Decimal("10000"),
+            location=shelf,
+            status="available",
+        )
+
+        response = self.client.get(reverse("raw-material-list"), {"material_type": "coated_stock", "page_size": 10})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        row = response.json()["results"][0]
+        self.assertEqual(row["location_full_path"], "Wilmington Ohio > Material Shelf 1")
+        self.assertEqual(row["current_location_display"], "Wilmington Ohio > Material Shelf 1")
 
 
 class SkidRackWorkflowTests(TestCase):

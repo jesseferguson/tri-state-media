@@ -36,7 +36,7 @@ def roll_location(roll):
             return f"Skid {roll.current_skid.skid_number} / Rack {roll.current_skid.current_rack.rack_code}"
         return f"Skid {roll.current_skid.skid_number} / Plant Floor"
     if roll.location_id:
-        return roll.location.full_path
+        return roll.location.full_path()
     return "Plant Floor"
 
 

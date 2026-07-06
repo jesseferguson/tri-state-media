@@ -137,7 +137,7 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
     material_liner_pounds = serializers.DecimalField(source="material.liner_pounds", max_digits=7, decimal_places=2, read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
-    location_full_path = serializers.ReadOnlyField(source="location.full_path")
+    location_full_path = serializers.SerializerMethodField()
     source_roll_tag_number = serializers.CharField(source="source_roll_tag.tag_number", read_only=True)
     current_skid_number = serializers.CharField(source="current_skid.skid_number", read_only=True)
     current_rack = serializers.IntegerField(source="current_skid.current_rack_id", read_only=True)
@@ -159,6 +159,9 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
         if obj.current_skid_id:
             return "skid"
         return "plant_floor"
+
+    def get_location_full_path(self, obj):
+        return obj.location.full_path() if obj.location_id else ""
 
     def get_current_location_display(self, obj):
         return roll_location(obj)
