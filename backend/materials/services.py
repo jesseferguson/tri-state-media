@@ -94,7 +94,7 @@ def resolve_roll_scan(value, *, for_update=False, materialize_printed_tag=False)
         "source_roll_tag",
     )
     if for_update:
-        queryset = queryset.select_for_update()
+        queryset = queryset.select_for_update(of=("self",))
     for candidate in _scan_candidates(value):
         filters = (
             Q(serial_number__iexact=candidate)
@@ -116,7 +116,7 @@ def resolve_roll_scan(value, *, for_update=False, materialize_printed_tag=False)
             "scheduled_material",
         )
         if for_update:
-            tag_queryset = tag_queryset.select_for_update()
+            tag_queryset = tag_queryset.select_for_update(of=("self",))
         for candidate in _scan_candidates(value):
             filters = (
                 Q(tag_number__iexact=candidate)
@@ -165,7 +165,7 @@ def resolve_skid_scan(value, *, for_update=False):
         pass
     queryset = MaterialSkid.objects.select_related("current_rack")
     if for_update:
-        queryset = queryset.select_for_update()
+        queryset = queryset.select_for_update(of=("self",))
     for candidate in dict.fromkeys(str(item).strip() for item in candidates if str(item).strip()):
         filters = Q(skid_number__iexact=candidate) | Q(qr_token__iexact=candidate)
         if candidate.isdigit():
@@ -204,7 +204,7 @@ def resolve_rack_scan(value, *, for_update=False):
 
 @transaction.atomic
 def add_roll_to_skid(*, skid_id, scan_value, actor, allow_move=False, source="scan"):
-    skid = MaterialSkid.objects.select_for_update().select_related("current_rack").get(pk=skid_id)
+    skid = MaterialSkid.objects.select_for_update(of=("self",)).get(pk=skid_id)
     if skid.status != "active":
         raise MaterialWorkflowError(f"{skid.skid_number} is not active.", code="inactive_skid", status_code=409)
     roll = resolve_roll_scan(scan_value, for_update=True, materialize_printed_tag=True)
@@ -251,7 +251,7 @@ def add_roll_to_skid(*, skid_id, scan_value, actor, allow_move=False, source="sc
 
 @transaction.atomic
 def remove_roll_from_skid(*, skid_id, roll_value, actor, source="scan"):
-    skid = MaterialSkid.objects.select_for_update().select_related("current_rack").get(pk=skid_id)
+    skid = MaterialSkid.objects.select_for_update(of=("self",)).get(pk=skid_id)
     roll = resolve_roll_scan(roll_value, for_update=True)
     if roll.current_skid_id != skid.id:
         raise MaterialWorkflowError(
@@ -282,7 +282,7 @@ def remove_roll_from_skid(*, skid_id, roll_value, actor, source="scan"):
 
 @transaction.atomic
 def use_roll_from_skid(*, skid_id, roll_value, actor, use_all=False, amount_used=None, notes="", source="scan"):
-    skid = MaterialSkid.objects.select_for_update().select_related("current_rack").get(pk=skid_id)
+    skid = MaterialSkid.objects.select_for_update(of=("self",)).get(pk=skid_id)
     roll = resolve_roll_scan(roll_value, for_update=True)
     if roll.current_skid_id != skid.id:
         raise MaterialWorkflowError(
