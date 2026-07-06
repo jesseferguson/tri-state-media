@@ -17698,6 +17698,149 @@ textarea {
   }
 }
 
+/* Phone-first scanned skid and rack workspace */
+@media (max-width: 680px) {
+  .app-shell.storage-scan-shell {
+    gap: 0;
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    background: #eef2f6;
+  }
+
+  .storage-scan-shell .mobile-shell-bar,
+  .storage-scan-shell .topbar {
+    display: none !important;
+  }
+
+  .storage-scan-shell .work-area {
+    width: 100%;
+    gap: 0;
+  }
+
+  .scanned-storage-view {
+    width: 100%;
+    min-height: 100dvh;
+    gap: 0;
+  }
+
+  .scanned-storage-view .storage-hero,
+  .scanned-storage-view .storage-list-panel {
+    display: none;
+  }
+
+  .scanned-storage-view .storage-scan-arrival {
+    position: sticky;
+    top: 0;
+    z-index: 80;
+    margin: 0;
+    padding: 11px 13px;
+    border: 0;
+    border-bottom: 1px solid #bfdbfe;
+    border-radius: 0;
+    background: rgba(239, 246, 255, .97);
+    backdrop-filter: blur(12px);
+  }
+
+  .scanned-storage-view .storage-layout {
+    display: block;
+  }
+
+  .scanned-storage-view .storage-detail-panel {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .scanned-storage-view .storage-detail-header {
+    align-items: center;
+    padding: 22px 16px 18px;
+    text-align: center;
+  }
+
+  .scanned-storage-view .storage-detail-header p {
+    justify-content: center;
+  }
+
+  .scanned-storage-view .storage-detail-header > div:last-child {
+    justify-content: center;
+  }
+
+  .scanned-storage-view .storage-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    background: #ffffff;
+  }
+
+  .scanned-storage-view .storage-facts > div {
+    min-height: 74px;
+    display: grid;
+    align-content: center;
+    padding: 12px 14px;
+  }
+
+  .scanned-storage-view .storage-facts strong {
+    font-size: 1rem;
+  }
+
+  .scanned-storage-view .storage-quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    padding: 14px;
+    background: #f8fafc;
+  }
+
+  .scanned-storage-view .storage-quick-actions > button {
+    min-height: 76px;
+    justify-content: flex-start;
+    padding: 11px;
+  }
+
+  .scanned-storage-view .storage-quick-actions > button.primary {
+    grid-column: 1 / -1;
+    min-height: 82px;
+    justify-content: center;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, .2);
+  }
+
+  .scanned-storage-view .storage-quick-actions strong {
+    font-size: .84rem;
+  }
+
+  .scanned-storage-view .storage-contents > header,
+  .scanned-storage-view .storage-history-section > header {
+    padding: 14px;
+  }
+
+  .scanned-storage-view .storage-contents > div > article {
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    gap: 9px;
+    padding: 13px 14px;
+  }
+
+  .scanned-storage-view .storage-row-actions {
+    grid-column: 2 / -1;
+  }
+
+  .storage-camera-overlay {
+    align-items: stretch;
+  }
+
+  .storage-camera-overlay > section {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .storage-camera-overlay video {
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
+  }
+}
+
 /* Job ticket sheet layout */
 .job-tab-action-row {
   display: flex;

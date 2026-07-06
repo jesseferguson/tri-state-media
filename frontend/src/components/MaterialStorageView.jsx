@@ -244,7 +244,7 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [useAll, setUseAll] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(action?.type === "add-roll");
   const [riskyConfirmed, setRiskyConfirmed] = useState(false);
   const isUse = action?.type === "use-roll";
   const risky = ["remove-roll", "remove-skid"].includes(action?.type) || (isUse && useAll);
@@ -477,7 +477,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   }
 
   return (
-    <section className="material-storage-view">
+    <section className={`material-storage-view ${initialToken && selected ? "scanned-storage-view" : ""}`}>
       <header className="storage-hero">
         <div>
           <span>{isSkidPage ? "Material movement" : "Plant locations"}</span>
@@ -553,7 +553,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
               <section className="storage-quick-actions">
                 {isSkidPage ? (
                   <>
-                    <button className="primary" type="button" onClick={() => openWorkflow("add-roll")} disabled={selected.status !== "active"}><Plus size={20} /><span><strong>Add Roll</strong><small>Scan onto skid</small></span></button>
+                    <button className="primary" type="button" onClick={() => openWorkflow("add-roll")} disabled={selected.status !== "active"}><Camera size={20} /><span><strong>Scan Roll</strong><small>Add directly to skid</small></span></button>
                     <button type="button" onClick={() => openWorkflow("remove-roll")} disabled={!selected.roll_count}><PackageOpen size={20} /><span><strong>Remove Roll</strong><small>Return to floor</small></span></button>
                     <button type="button" onClick={() => openWorkflow("use-roll")} disabled={!selected.roll_count}><Archive size={20} /><span><strong>Use Roll</strong><small>Partial or all</small></span></button>
                     <button type="button" onClick={() => openWorkflow("move-to-rack")} disabled={selected.status !== "active"}><Warehouse size={20} /><span><strong>Move Skid</strong><small>Scan rack QR</small></span></button>

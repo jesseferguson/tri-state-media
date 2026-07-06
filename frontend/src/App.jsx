@@ -2449,7 +2449,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const liveFootageFullView = resource.viewMode === "liveFootage" && liveFootageTvMode;
 
   return (
-    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""}`}>
+    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${scannedSkidToken || scannedRackToken ? "storage-scan-shell" : ""}`}>
       <section className="mobile-shell-bar compact-card">
         <div>
           <p className="eyebrow">Tri-State Media</p>

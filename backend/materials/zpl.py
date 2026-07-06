@@ -23,7 +23,7 @@ def skid_label_zpl(skid, scan_url, *, darkness="20", speed="5", copies=1):
         f"^PR{zpl_text(speed) or '5'}",
         "^FO30,16^A0N,24,24^FB752,1,0,C^FDSKID^FS",
         f"^FO30,43^A0N,54,54^FB752,1,0,C^FD{zpl_text(skid.skid_number)}^FS",
-        f"^FO156,102^BQN,2,10^FDLA,{zpl_text(scan_url)}^FS",
+        f"^FO200,102^BQN,2,10^FDLA,{zpl_text(scan_url)}^FS",
         "^FO30,565^A0N,24,24^FB752,1,0,C^FDSCAN FOR LIVE CONTENTS^FS",
         f"^PQ{zpl_copies(copies)}",
         "^XZ",

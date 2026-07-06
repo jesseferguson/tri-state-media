@@ -126,7 +126,10 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertEqual(body["Width"], '13"')
         self.assertEqual(body["Lot Number"], "LOT-2026-1")
         self.assertEqual(body["ID"], "CRT-TEST-1")
-        self.assertEqual(body["Roll Tag URL"], f"https://plant.example.com/?rollTagId={tag.id}")
+        self.assertEqual(
+            body["Roll Tag URL"],
+            f"https://plant.example.com/?rollTagId={tag.id}&lot=LOT-2026-1",
+        )
         self.assertIn("Easy Release", body["Note"])
         tag.refresh_from_db()
         self.assertEqual(tag.print_status, "queued")
@@ -473,6 +476,41 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(added_back.status_code, 200, added_back.content)
         self.assertTrue(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_added_back_to_skid").exists())
 
+    def test_roll_detail_qr_url_adds_the_linked_roll_to_a_skid(self):
+        face = MaterialSpec.objects.create(material_type="face", code="FACE-QR", name="QR Face")
+        liner = MaterialSpec.objects.create(material_type="liner", code="LINER-QR", name="QR Liner")
+        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="ADH-QR", name="QR Adhesive")
+        silicone = MaterialSpec.objects.create(material_type="silicone", code="SIL-QR", name="QR Silicone")
+        tag = CoaterRollTag.objects.create(
+            name="PM roll",
+            status="complete",
+            result_lot_number=self.roll.lot_number,
+            face=face,
+            liner=liner,
+            adhesive=adhesive,
+            silicone=silicone,
+        )
+        self.roll.source_roll_tag = tag
+        self.roll.save(update_fields=["source_roll_tag"])
+        skid = self.create_skid()
+
+        response = self.client.post(
+            reverse("skid-add-roll", args=[skid.id]),
+            {
+                "scan_value": (
+                    f"https://plant.example.com/?rollTagId={tag.id}"
+                    f"&lot={self.roll.lot_number}"
+                ),
+                "performed_by": self.operator.name,
+            },
+            content_type="application/json",
+            **self.operator_headers,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.roll.refresh_from_db()
+        self.assertEqual(self.roll.current_skid_id, skid.id)
+
     def test_add_and_remove_skid_from_rack_updates_derived_roll_location(self):
         skid = self.create_skid()
         rack = self.create_rack()
@@ -652,6 +690,7 @@ class SkidRackWorkflowTests(TestCase):
 
         self.assertIn("^PW812", skid_zpl)
         self.assertIn("^LL609", skid_zpl)
+        self.assertIn("^FO200,102^BQN,2,10", skid_zpl)
         self.assertIn("^BQN,2,10", skid_zpl)
         self.assertIn("SCAN FOR LIVE CONTENTS", skid_zpl)
         self.assertIn(str(skid.qr_token), skid_zpl)

@@ -1,7 +1,7 @@
 import re
 from decimal import Decimal
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from django.conf import settings
 from django.db import transaction
@@ -1444,7 +1444,10 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         frontend_base = _print_text(request.data, "frontend_url", settings.FRONTEND_PUBLIC_URL).rstrip("/")
         if urlparse(frontend_base).hostname in {"localhost", "127.0.0.1"}:
             frontend_base = settings.FRONTEND_PUBLIC_URL
-        roll_tag_url = f"{frontend_base}/?rollTagId={tag.pk}"
+        roll_tag_url = f"{frontend_base}/?{urlencode({
+            'rollTagId': tag.pk,
+            'lot': tag.result_lot_number or '',
+        })}"
         width_text = self.print_measurement(tag.width_inches, '"')
         payload = {
             "TYPE": "COATER",
