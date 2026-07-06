@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Camera, CheckCircle2, Filter, History, MapPin, PackageCheck, Save, Search, X } from "lucide-react";
 import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, labelize } from "../lib/format";
+import ScanLinkScreen from "./ScanLinkScreen";
 
 const activeJobKey = "tsm_active_material_job_v1";
 
@@ -373,6 +374,10 @@ export default function MaterialHandlingView({ currentUser, linkedRollTagId = ""
     setSelectedInventoryId(String(row.id));
     setNotice("");
     if (row.source_roll_tag) onLinkedRollTagChange?.(row.source_roll_tag);
+  }
+
+  if (linkedRollTagId && dataQuery.isLoading) {
+    return <ScanLinkScreen kind="roll" />;
   }
 
   return (

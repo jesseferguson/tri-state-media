@@ -17698,6 +17698,164 @@ textarea {
   }
 }
 
+.auth-scan-request {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.auth-scan-request > svg {
+  flex: 0 0 auto;
+}
+
+.auth-scan-request strong,
+.auth-scan-request span {
+  display: block;
+}
+
+.auth-scan-request strong {
+  font-size: .82rem;
+  font-weight: 950;
+}
+
+.auth-scan-request span {
+  margin-top: 2px;
+  color: #475569;
+  font-size: .7rem;
+  font-weight: 750;
+}
+
+.scan-link-screen {
+  width: 100%;
+  min-height: calc(100dvh - 20px);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 20px;
+  padding: 28px;
+  background: #f8fafc;
+  color: #0f172a;
+  text-align: center;
+}
+
+.scan-link-loader {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+}
+
+.scan-link-loader-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2563eb;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .1);
+}
+
+.scan-link-spinner {
+  position: absolute;
+  inset: 17px;
+  color: #2563eb;
+  animation: scan-link-spin .9s linear infinite;
+}
+
+.scan-link-screen > div:nth-child(2) > span {
+  color: #2563eb;
+  font-size: .68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.scan-link-screen h1 {
+  margin: 5px 0 0;
+  font-size: 1.55rem;
+}
+
+.scan-link-screen p {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.scan-link-loading-bars {
+  width: min(280px, 76vw);
+  display: grid;
+  gap: 7px;
+}
+
+.scan-link-loading-bars i {
+  height: 7px;
+  display: block;
+  border-radius: 4px;
+  background: #dbe4ee;
+  animation: scan-link-pulse 1.2s ease-in-out infinite;
+}
+
+.scan-link-loading-bars i:nth-child(2) {
+  width: 78%;
+  animation-delay: .12s;
+}
+
+.scan-link-loading-bars i:nth-child(3) {
+  width: 58%;
+  animation-delay: .24s;
+}
+
+.storage-workflow-modal.scan-roll-workflow {
+  height: min(540px, calc(100dvh - 40px));
+}
+
+.storage-scan-entry {
+  min-height: 190px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 18px;
+}
+
+.storage-scan-entry .storage-scan-button,
+.storage-scan-entry .storage-scan-input {
+  margin: 0;
+}
+
+.storage-workflow-modal.scan-roll-workflow > footer {
+  margin-top: auto;
+}
+
+@keyframes scan-link-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes scan-link-pulse {
+  0%, 100% { opacity: .45; transform: scaleX(.96); transform-origin: left; }
+  50% { opacity: 1; transform: scaleX(1); transform-origin: left; }
+}
+
+@media (max-width: 680px) {
+  .scan-link-screen {
+    min-height: 100dvh;
+  }
+
+  .storage-workflow-modal.scan-roll-workflow {
+    width: 100%;
+    height: min(560px, 94dvh);
+    min-height: min(560px, 94dvh);
+  }
+}
+
 /* Phone-first scanned skid and rack workspace */
 @media (max-width: 680px) {
   .app-shell.storage-scan-shell {

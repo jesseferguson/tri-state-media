@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, Building2, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Menu, Plus, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
+import { BadgeCheck, Building2, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Menu, Plus, QrCode, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
 import { createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
@@ -494,6 +494,14 @@ function SignInScreen({ onSignIn }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const scanRequest = (() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("skidToken")) return { label: "Skid", detail: "Sign in to open this skid." };
+    if (params.get("rollTagId")) return { label: "Roll", detail: "Sign in to open this material roll." };
+    if (params.get("rackToken")) return { label: "Rack", detail: "Sign in to open this rack." };
+    return null;
+  })();
 
   async function submit(event) {
     event.preventDefault();
@@ -506,6 +514,12 @@ function SignInScreen({ onSignIn }) {
   return (
     <main className="auth-screen">
       <section className="auth-card compact-card">
+        {scanRequest && (
+          <div className="auth-scan-request">
+            <QrCode size={22} />
+            <div><strong>{scanRequest.label} scan ready</strong><span>{scanRequest.detail}</span></div>
+          </div>
+        )}
         <div>
           <p className="eyebrow">Tri-State Media</p>
           <h1>Sign In</h1>
@@ -1193,7 +1207,15 @@ export default function App() {
 
 function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
   const queryClient = useQueryClient();
-  const [activeKey, setActiveKey] = useState(() => defaultResourceKeyForRole(roleDefinitions, currentUser?.role));
+  const [activeKey, setActiveKey] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("skidToken")) return "skids";
+      if (params.get("rackToken")) return "racks";
+      if (params.get("rollTagId")) return "material-handling";
+    }
+    return defaultResourceKeyForRole(roleDefinitions, currentUser?.role);
+  });
   const [linkedRollTagId, setLinkedRollTagId] = useState(() => (
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("rollTagId") || "" : ""
   ));
@@ -1249,11 +1271,22 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     if (!roleExists) setPreviewRoleName("");
   }, [canPreviewRoles, previewRoleName, roleDefinitions]);
 
-  const allowedResources = useMemo(
-    () => visibleResourcesForRole(roleDefinitions, viewRoleName),
-    [roleDefinitions, viewRoleName]
-  );
-  const activeKeyAllowed = resourceAvailableForRole(roleDefinitions, viewRoleName, activeKey);
+  const directScanResourceKey = scannedSkidToken
+    ? "skids"
+    : scannedRackToken
+      ? "racks"
+      : linkedRollTagId
+        ? "material-handling"
+        : "";
+  const allowedResources = useMemo(() => {
+    const visible = visibleResourcesForRole(roleDefinitions, viewRoleName);
+    const directResource = directScanResourceKey ? resourceMap[directScanResourceKey] : null;
+    if (directResource && !visible.some((item) => item.key === directResource.key)) {
+      return [...visible, directResource];
+    }
+    return visible;
+  }, [directScanResourceKey, roleDefinitions, viewRoleName]);
+  const activeKeyAllowed = allowedResources.some((item) => item.key === activeKey);
   const resource = activeKeyAllowed
     ? resourceMap[activeKey]
     : allowedResources[0] ?? resourceMap["quote-calculator"] ?? resources[0];
@@ -1288,20 +1321,20 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
 
   useEffect(() => {
     if (!linkedRollTagId) return;
-    if (resourceAvailableForRole(roleDefinitions, viewRoleName, "material-handling")) {
+    if (allowedResources.some((item) => item.key === "material-handling")) {
       setActiveKey("material-handling");
       setSelected(null);
       setFormMode(null);
     }
-  }, [linkedRollTagId, roleDefinitions, viewRoleName]);
+  }, [allowedResources, linkedRollTagId]);
 
   useEffect(() => {
     const targetKey = scannedSkidToken ? "skids" : scannedRackToken ? "racks" : "";
-    if (!targetKey || !resourceAvailableForRole(roleDefinitions, viewRoleName, targetKey)) return;
+    if (!targetKey || !allowedResources.some((item) => item.key === targetKey)) return;
     setActiveKey(targetKey);
     setSelected(null);
     setFormMode(null);
-  }, [scannedSkidToken, scannedRackToken, roleDefinitions, viewRoleName]);
+  }, [allowedResources, scannedRackToken, scannedSkidToken]);
 
   const listQuery = useQuery({
     queryKey: collectionQueryKey,
@@ -2449,7 +2482,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const liveFootageFullView = resource.viewMode === "liveFootage" && liveFootageTvMode;
 
   return (
-    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${scannedSkidToken || scannedRackToken ? "storage-scan-shell" : ""}`}>
+    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${directScanResourceKey ? "storage-scan-shell" : ""}`}>
       <section className="mobile-shell-bar compact-card">
         <div>
           <p className="eyebrow">Tri-State Media</p>

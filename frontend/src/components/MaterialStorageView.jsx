@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { fetchCollection, requestApi } from "../api";
 import { formatInches, labelize } from "../lib/format";
+import ScanLinkScreen from "./ScanLinkScreen";
 
 function userHeaders(user) {
   return {
@@ -313,19 +314,21 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
   return (
     <>
       <div className="storage-modal-overlay" role="presentation" onMouseDown={onClose}>
-        <form className="storage-modal storage-workflow-modal" onSubmit={(event) => { event.preventDefault(); submit(); }} onMouseDown={(event) => event.stopPropagation()}>
+        <form className={`storage-modal storage-workflow-modal ${action?.type === "add-roll" ? "scan-roll-workflow" : ""}`} onSubmit={(event) => { event.preventDefault(); submit(); }} onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <div><span>{isSkidPage ? record.skid_number : record.rack_code}</span><h3>{title}</h3></div>
             <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
           </header>
-          <button className="storage-scan-button" type="button" onClick={() => setCameraOpen(true)}>
-            <Camera size={24} />
-            <span><strong>Scan {scanName} QR</strong><small>Uses the phone camera</small></span>
-          </button>
-          <label className="storage-scan-input">
-            <span>Scan or enter {scanName} ID</span>
-            <input autoFocus value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
-          </label>
+          <div className="storage-scan-entry">
+            <button className="storage-scan-button" type="button" onClick={() => setCameraOpen(true)}>
+              <Camera size={24} />
+              <span><strong>Scan {scanName} QR</strong><small>Uses the phone camera</small></span>
+            </button>
+            <label className="storage-scan-input">
+              <span>Scan or enter {scanName} ID</span>
+              <input autoFocus value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
+            </label>
+          </div>
           {isUse && (
             <>
               <div className="storage-use-modes">
@@ -515,6 +518,10 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
     setSuccess("");
     setMoveConfirmation(null);
     setWorkflow({ type, value, sessionId: window.crypto?.randomUUID?.() || String(Date.now()) });
+  }
+
+  if (initialToken && (dataQuery.isLoading || (!selected && !error))) {
+    return <ScanLinkScreen kind={isSkidPage ? "skid" : "rack"} />;
   }
 
   return (
