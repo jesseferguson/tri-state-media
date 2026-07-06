@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Camera,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   CircleOff,
   Clock3,
@@ -54,6 +55,15 @@ function errorPayload(error) {
 
 function formatFeet(value) {
   return `${Math.round(Number(value || 0)).toLocaleString()} ft`;
+}
+
+function formatInventoryTotals(rows = [], fallback = 0) {
+  if (!rows.length) return formatFeet(fallback);
+  if (rows.length === 1) {
+    const row = rows[0];
+    return `${Number(row.amount || 0).toLocaleString(undefined, { maximumFractionDigits: row.unit === "lf" ? 0 : 2 })} ${row.unit}`;
+  }
+  return `${rows.length} units`;
 }
 
 function formatDate(value, includeTime = false) {
@@ -481,6 +491,10 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
   const records = dataQuery.data?.records || [];
   const selected = records.find((row) => String(row.id) === String(selectedId)) || null;
+  const rackRolls = !isSkidPage && selected ? [
+    ...(selected.loose_rolls || []).map((roll) => ({ ...roll, storage_skid_number: "" })),
+    ...(selected.skids || []).flatMap((skid) => (skid.rolls || []).map((roll) => ({ ...roll, storage_skid_number: skid.skid_number }))),
+  ] : [];
   const historyQuery = useQuery({
     queryKey: ["material-storage-history", mode, selected?.id],
     queryFn: () => requestApi(`${endpoint}/${selected.id}/history`, { headers: userHeaders(currentUser) }),
@@ -695,7 +709,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           </div>
         </aside>
 
-        <main className={`storage-detail-panel ${isSkidPage ? "skid-detail-panel" : ""}`}>
+        <main className={`storage-detail-panel ${isSkidPage ? "skid-detail-panel" : ""} ${selected ? "has-selection" : ""}`}>
           {!selected ? (
             <div className="storage-welcome">
               {isSkidPage ? <PackageOpen size={36} /> : <Warehouse size={36} />}
@@ -705,6 +719,12 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           ) : (
             <>
               <header className="storage-detail-header">
+                <button className="storage-mobile-back" type="button" onClick={() => {
+                  setSelectedId("");
+                  setSuccess("");
+                  setError("");
+                  if (initialToken) onClearToken();
+                }} aria-label={`Back to ${isSkidPage ? "skids" : "racks"}`}><ChevronLeft size={20} /></button>
                 <div>
                   <span className={`storage-state ${selected.status}`}>{labelize(selected.status)}</span>
                   <h3>{isSkidPage ? selected.skid_number : selected.rack_code}</h3>
@@ -719,7 +739,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
               <section className="storage-facts">
                 <div><span>{isSkidPage ? "Rolls" : "Skids"}</span><strong>{isSkidPage ? selected.roll_count : selected.skid_count}</strong></div>
                 <div><span>{isSkidPage ? "Rack" : "Total Rolls"}</span><strong>{isSkidPage ? selected.current_rack_code || "Floor" : selected.roll_count}</strong></div>
-                <div><span>Material</span><strong>{formatFeet(selected.total_remaining_feet)}</strong></div>
+                <div><span>Material</span><strong>{isSkidPage ? formatFeet(selected.total_remaining_feet) : formatInventoryTotals(selected.inventory_totals, selected.total_remaining_feet)}</strong></div>
                 <div><span>Last Move</span><strong>{formatDate(selected.last_movement?.created_at)}</strong></div>
               </section>
 
@@ -780,15 +800,21 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
               {!isSkidPage && (
                 <section className="storage-contents">
-                  <header><div><strong>Rolls in this rack</strong><span>All active rolls through the skids above</span></div><b>{selected.roll_count}</b></header>
+                  <header><div><strong>Material in this rack</strong><span>Loose material and rolls stored on skids</span></div><b>{selected.roll_count}</b></header>
                   <div>
-                    {selected.skids?.flatMap((skid) => (skid.rolls || []).map((roll) => (
-                      <article key={`${skid.id}-${roll.id}`}>
+                    {rackRolls.map((roll) => (
+                      <article key={`${roll.storage_skid_number || "loose"}-${roll.id}`}>
                         <span className={`storage-status-dot ${roll.status}`} />
-                        <div><strong>{rollLabel(roll)}</strong><span>{[skid.skid_number, roll.material_master_type_code || roll.material_name, roll.width_inches ? `${formatInches(roll.width_inches)} wide` : ""].filter(Boolean).join(" / ")}</span></div>
-                        <b>{formatFeet(roll.length_feet ?? roll.quantity)}</b>
+                        <div><strong>{rollLabel(roll)}</strong><span>{[roll.storage_skid_number || "Direct in rack", roll.material_master_type_code || roll.material_name, roll.width_inches ? `${formatInches(roll.width_inches)} wide` : ""].filter(Boolean).join(" / ")}</span></div>
+                        <b>{roll.unit === "lf" ? formatFeet(roll.length_feet ?? roll.quantity) : `${Number(roll.quantity || 0).toLocaleString()} ${roll.unit}`}</b>
+                        <div className="storage-row-actions">
+                          <button type="button" onClick={() => onOpenRoll?.(roll)}>Edit Roll</button>
+                          {canDeleteMaterialRoll(currentUser) && (
+                            <button className="storage-delete-roll" type="button" onClick={() => { setDeleteError(""); setDeleteCandidate(roll); }}><Trash2 size={13} /> Remove Inventory</button>
+                          )}
+                        </div>
                       </article>
-                    )))}
+                    ))}
                     {!selected.roll_count && <p className="storage-empty">No active rolls in this rack.</p>}
                   </div>
                 </section>

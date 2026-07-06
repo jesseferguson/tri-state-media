@@ -26,7 +26,12 @@ function apiErrorMessage(error) {
   const message = String(error?.message || "");
   try {
     const payload = JSON.parse(message);
-    return payload.detail || Object.values(payload).flat().filter(Boolean).join(" ") || message;
+    const collect = (value) => {
+      if (Array.isArray(value)) return value.flatMap(collect);
+      if (value && typeof value === "object") return Object.values(value).flatMap(collect);
+      return value ? [String(value)] : [];
+    };
+    return payload.detail || collect(payload).join(" ") || message;
   } catch {
     return message;
   }
@@ -65,7 +70,7 @@ function groupAmount(rows) {
 }
 
 function warehouseLocation(row) {
-  return row?.current_rack_location_full_path || row?.location_full_path || row?.location_name || "Wilmington Ohio > Plant Floor";
+  return row?.current_location_display || row?.current_rack_location_full_path || row?.location_full_path || row?.location_name || "Wilmington Ohio > Plant Floor";
 }
 
 function widthName(row) {
@@ -122,7 +127,7 @@ function ActiveInventory({ rows, groupMode, selectedId, relatedRollIds, onSelect
         <section key={group}>
           <header>
             <div>{groupMode === "location" ? <MapPin size={15} /> : <Layers3 size={15} />}<strong>{group}</strong></div>
-            <span>{groupRows.length} roll{groupRows.length === 1 ? "" : "s"}</span>
+            <span>{groupRows.length} item{groupRows.length === 1 ? "" : "s"}</span>
             <b>{groupAmount(groupRows)}</b>
           </header>
           <div>
@@ -147,7 +152,7 @@ function ActiveInventory({ rows, groupMode, selectedId, relatedRollIds, onSelect
           </div>
         </section>
       ))}
-      {!rows.length && <p className="material-handling-empty">No active rolls match these filters.</p>}
+      {!rows.length && <p className="material-handling-empty">No active material matches these filters.</p>}
     </div>
   );
 }
@@ -226,6 +231,7 @@ function MaterialIntakeDialog({
   const [form, setForm] = useState({
     material: "",
     master_type: "",
+    master_type_code: "",
     material_type: "coated_stock",
     name: "",
     company: "",
@@ -295,7 +301,8 @@ function MaterialIntakeDialog({
       material: definitionMode === "existing" ? form.material : null,
       create_material: definitionMode === "new" ? {
         material_type: category === "finished" ? "coated_stock" : form.material_type,
-        master_type: category === "finished" ? form.master_type : null,
+        master_type: category === "finished" && form.master_type !== "__new__" ? form.master_type : null,
+        master_type_code: category === "finished" && form.master_type === "__new__" ? form.master_type_code : "",
         name: form.name,
         company: form.company,
         material_family: form.name,
@@ -318,7 +325,7 @@ function MaterialIntakeDialog({
 
   const canSubmit = Number(form.amount) > 0
     && (definitionMode === "existing" ? Boolean(form.material) : Boolean(form.name || (category === "finished" && form.master_type)))
-    && (definitionMode !== "new" || category !== "finished" || Boolean(form.master_type))
+    && (definitionMode !== "new" || category !== "finished" || (Boolean(form.master_type) && (form.master_type !== "__new__" || Boolean(form.master_type_code.trim()))))
     && (storageMode !== "rack" || Boolean(form.direct_rack));
 
   return (
@@ -371,9 +378,14 @@ function MaterialIntakeDialog({
                     }} required>
                       <option value="">Select type</option>
                       {masterTypes.filter((row) => row.is_active !== false).map((row) => <option value={row.id} key={row.id}>{row.code}{row.name && row.name !== row.code ? ` / ${row.name}` : ""}</option>)}
+                      <option value="__new__">+ Add a new material type</option>
                     </select>
                   </label>
                   <label><span>Company</span><input value={form.company} onChange={(event) => update("company", event.target.value)} placeholder="RICOH" required /></label>
+                  {form.master_type === "__new__" && <label className="wide"><span>New Type Code</span><input value={form.master_type_code} onChange={(event) => {
+                    const value = event.target.value.toUpperCase();
+                    setForm((current) => ({ ...current, master_type_code: value, name: current.name || value }));
+                  }} placeholder="PMDT" required /></label>}
                   <label className="wide"><span>Material Name</span><input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="PMDT" required /></label>
                 </>
               ) : (
@@ -465,12 +477,14 @@ function MaterialIntakeDialog({
   );
 }
 
-function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving, error, notice, canDelete, onClose, onSave, onConsume, onDelete }) {
+function RollDetail({ roll, locations, racks, schedules, activeJob, currentUser, saving, error, notice, canDelete, onClose, onSave, onConsume, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState(() => ({
     lot_number: roll.lot_number || "",
     width_inches: roll.width_inches || "",
     location: roll.location || "",
+    direct_rack: roll.direct_rack || "",
+    storage_mode: roll.direct_rack ? "rack" : "floor",
     notes: roll.notes || "",
   }));
   const [useForm, setUseForm] = useState(() => ({
@@ -494,6 +508,8 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
       lot_number: roll.lot_number || "",
       width_inches: roll.width_inches || "",
       location: roll.location || "",
+      direct_rack: roll.direct_rack || "",
+      storage_mode: roll.direct_rack ? "rack" : "floor",
       notes: roll.notes || "",
     });
     setEditing(false);
@@ -547,7 +563,17 @@ function RollDetail({ roll, locations, schedules, activeJob, currentUser, saving
           {roll.current_skid ? (
             <div className="material-location-locked wide"><Warehouse size={15} /><span>This roll’s location follows its skid and rack.</span></div>
           ) : (
-            <label className="wide"><span>Plant Floor Location</span><select value={editForm.location || ""} onChange={(event) => setEditForm((form) => ({ ...form, location: event.target.value }))}><option value="">Wilmington Ohio &gt; Plant Floor</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.full_path || location.name}</option>)}</select></label>
+            <>
+              <div className="material-edit-location-mode wide">
+                <button className={editForm.storage_mode === "floor" ? "active" : ""} type="button" onClick={() => setEditForm((form) => ({ ...form, storage_mode: "floor", direct_rack: "" }))}><MapPin size={14} /> Plant Floor</button>
+                <button className={editForm.storage_mode === "rack" ? "active" : ""} type="button" onClick={() => setEditForm((form) => ({ ...form, storage_mode: "rack", location: "" }))}><Warehouse size={14} /> Rack</button>
+              </div>
+              {editForm.storage_mode === "rack" ? (
+                <label className="wide"><span>Rack</span><select value={editForm.direct_rack || ""} onChange={(event) => setEditForm((form) => ({ ...form, direct_rack: event.target.value }))}><option value="">Select rack</option>{racks.filter((rack) => rack.status === "active").map((rack) => <option value={rack.id} key={rack.id}>{rack.rack_code} / {rack.storage_location_display}</option>)}</select></label>
+              ) : (
+                <label className="wide"><span>Plant Floor Location</span><select value={editForm.location || ""} onChange={(event) => setEditForm((form) => ({ ...form, location: event.target.value }))}><option value="">Wilmington Ohio &gt; Plant Floor</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.full_path || location.name}</option>)}</select></label>
+              )}
+            </>
           )}
           <label className="wide"><span>Roll Notes</span><textarea value={editForm.notes} onChange={(event) => setEditForm((form) => ({ ...form, notes: event.target.value }))} /></label>
           <button className="primary-btn wide" type="submit" disabled={saving}>Save Roll</button>
@@ -726,7 +752,8 @@ export default function MaterialHandlingView({
       const payload = {
         lot_number: form.lot_number,
         width_inches: form.width_inches ? Number(form.width_inches) : null,
-        location: form.location ? Number(form.location) : null,
+        location: form.storage_mode === "floor" && form.location ? Number(form.location) : null,
+        direct_rack: form.storage_mode === "rack" && form.direct_rack ? Number(form.direct_rack) : null,
         notes: form.notes,
       };
       const saved = await updateRecord("raw-materials", roll.id, payload);
@@ -821,7 +848,7 @@ export default function MaterialHandlingView({
           <p>{[
             majorityRunDate ? `Mostly ran ${majorityRunDate}` : "",
             linkedTag?.schedule_tag_number ? `Schedule ${linkedTag.schedule_tag_number}` : "",
-            `${inventorySummary.rolls} active roll${inventorySummary.rolls === 1 ? "" : "s"}`,
+            `${inventorySummary.rolls} active item${inventorySummary.rolls === 1 ? "" : "s"}`,
           ].filter(Boolean).join(" / ")}</p>
         </div>
         <div>
@@ -831,18 +858,18 @@ export default function MaterialHandlingView({
         </div>
       </header>
 
-      <section className="material-inventory-summary">
-        <article><span>Active Material</span><strong>{Math.round(inventorySummary.footage).toLocaleString()} ft</strong><small>{inventorySummary.rolls} rolls</small></article>
-        <article><span>On Skids</span><strong>{inventorySummary.skids}</strong><small>active skids</small></article>
-        <article><span>In Racks</span><strong>{inventorySummary.racks}</strong><small>storage racks</small></article>
-        <article><span>Plant Floor</span><strong>{inventorySummary.floor}</strong><small>loose rolls</small></article>
-      </section>
-
       <nav className="material-storage-links" aria-label="Material storage views">
         <button className="active" type="button"><Layers3 size={16} /> Material</button>
         <button type="button" onClick={() => onOpenStorage?.("skids")}><PackageOpen size={16} /> Skids</button>
         <button type="button" onClick={() => onOpenStorage?.("racks")}><Warehouse size={16} /> Racks</button>
       </nav>
+
+      <section className="material-inventory-summary">
+        <article><span>Active Material</span><strong>{Math.round(inventorySummary.footage).toLocaleString()} ft</strong><small>{inventorySummary.rolls} items</small></article>
+        <article><span>On Skids</span><strong>{inventorySummary.skids}</strong><small>active skids</small></article>
+        <article><span>In Racks</span><strong>{inventorySummary.racks}</strong><small>storage racks</small></article>
+        <article><span>Plant Floor</span><strong>{inventorySummary.floor}</strong><small>loose items</small></article>
+      </section>
 
       {linkedTag && !linkedInventory && (
         <div className="material-pending-tag">
@@ -858,12 +885,12 @@ export default function MaterialHandlingView({
       {cameraError && <p className="coater-error">{cameraError}</p>}
 
       <nav className="material-handling-tabs">
-        <button className={view === "active" ? "active" : ""} type="button" onClick={() => setView("active")}><PackageCheck size={15} /> Active Rolls</button>
-        <button className={view === "history" ? "active" : ""} type="button" onClick={() => setView("history")}><History size={15} /> Run History</button>
+        <button className={view === "active" ? "active" : ""} type="button" onClick={() => setView("active")}><PackageCheck size={15} /> Active Inventory</button>
+        <button className={view === "history" ? "active" : ""} type="button" onClick={() => setView("history")}><History size={15} /> Usage History</button>
       </nav>
 
       <section className="material-handling-toolbar">
-        <label><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={view === "active" ? "Search roll, lot, width, or location" : "Search date, job, schedule, or operator"} /></label>
+        <label><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={view === "active" ? "Search material, lot, supplier, or location" : "Search date, job, schedule, or operator"} /></label>
         {view === "active" && (
           <div>
             <button className={groupMode === "material" ? "active" : ""} type="button" onClick={() => { setGroupMode("material"); window.localStorage.setItem("tsm_material_group_mode", "material"); }}>By Material</button>
@@ -884,6 +911,7 @@ export default function MaterialHandlingView({
             key={selectedRoll.id}
             roll={selectedRoll}
             locations={data.locations}
+            racks={data.racks}
             schedules={data.schedules}
             activeJob={activeJob}
             currentUser={currentUser}

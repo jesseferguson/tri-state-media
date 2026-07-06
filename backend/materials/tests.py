@@ -488,13 +488,12 @@ class MaterialInventoryIntakeTests(TestCase):
         self.ricoh = Supplier.objects.create(name="RICOH")
 
     def test_purchased_finished_material_can_be_created_directly_in_rack_without_qr(self):
-        master_type = MaterialMasterType.objects.create(code="PMDT", name="PMDT")
         response = self.client.post(
             reverse("raw-material-intake"),
             {
                 "create_material": {
                     "material_type": "coated_stock",
-                    "master_type": master_type.id,
+                    "master_type_code": "PMDT",
                     "name": "PMDT",
                     "company": "RICOH",
                     "supplier": self.ricoh.id,
@@ -513,6 +512,7 @@ class MaterialInventoryIntakeTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201, response.content)
+        master_type = MaterialMasterType.objects.get(code="PMDT")
         inventory = RawMaterialInventory.objects.select_related("material", "direct_rack").get(pk=response.json()["id"])
         self.assertEqual(inventory.material.master_type, master_type)
         self.assertEqual(inventory.material.company, "RICOH")

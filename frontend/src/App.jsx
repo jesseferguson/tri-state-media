@@ -2521,9 +2521,10 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     : selected;
 
   const liveFootageFullView = resource.viewMode === "liveFootage" && liveFootageTvMode;
+  const materialWorkspaceView = ["material-handling", "skids", "racks"].includes(resource.key);
 
   return (
-    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${directScanResourceKey ? "storage-scan-shell" : ""}`}>
+    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${directScanResourceKey ? "storage-scan-shell" : ""} ${materialWorkspaceView ? "material-workspace-shell" : ""}`}>
       <section className="mobile-shell-bar compact-card">
         <div>
           <p className="eyebrow">Tri-State Media</p>

@@ -929,6 +929,12 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             company = str(create_material.get("company") or "").strip()
             master_type_id = create_material.get("master_type")
             master_type = MaterialMasterType.objects.filter(pk=master_type_id).first() if master_type_id else None
+            master_type_code = str(create_material.get("master_type_code") or "").strip().upper()
+            if material_type == "coated_stock" and not master_type and master_type_code:
+                master_type, _ = MaterialMasterType.objects.get_or_create(
+                    code=master_type_code,
+                    defaults={"name": master_type_code},
+                )
             if material_type == "coated_stock" and not master_type:
                 return Response(
                     {"create_material": {"master_type": ["Select the finished material type, such as PMDT."]}},

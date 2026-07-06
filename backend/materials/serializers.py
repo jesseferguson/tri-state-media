@@ -272,6 +272,7 @@ class MaterialRackSerializer(serializers.ModelSerializer):
     total_remaining_feet = serializers.SerializerMethodField()
     skids = serializers.SerializerMethodField()
     loose_rolls = serializers.SerializerMethodField()
+    inventory_totals = serializers.SerializerMethodField()
     last_movement = serializers.SerializerMethodField()
 
     class Meta:
@@ -320,17 +321,39 @@ class MaterialRackSerializer(serializers.ModelSerializer):
                 roll_amount(roll)
                 for skid in self.active_skids(obj)
                 for roll in skid.rolls.all()
-                if roll.is_active and roll.status not in {"depleted", "scrapped"} and roll_amount(roll) > 0
+                if roll.is_active
+                and roll.status not in {"depleted", "scrapped"}
+                and roll.unit == "lf"
+                and roll_amount(roll) > 0
             ),
             Decimal("0"),
         )
-        return skid_total + sum((roll_amount(roll) for roll in self.active_loose_rolls(obj)), Decimal("0"))
+        return skid_total + sum(
+            (roll_amount(roll) for roll in self.active_loose_rolls(obj) if roll.unit == "lf"),
+            Decimal("0"),
+        )
 
     def get_skids(self, obj):
         return MaterialSkidSerializer(self.active_skids(obj), many=True).data
 
     def get_loose_rolls(self, obj):
         return RawMaterialInventorySerializer(self.active_loose_rolls(obj), many=True).data
+
+    def get_inventory_totals(self, obj):
+        totals = {}
+        rolls = list(self.active_loose_rolls(obj))
+        rolls.extend(
+            roll
+            for skid in self.active_skids(obj)
+            for roll in skid.rolls.all()
+            if roll.is_active and roll.status not in {"depleted", "scrapped"} and roll_amount(roll) > 0
+        )
+        for roll in rolls:
+            totals[roll.unit] = totals.get(roll.unit, Decimal("0")) + roll_amount(roll)
+        return [
+            {"unit": unit, "amount": amount}
+            for unit, amount in sorted(totals.items())
+        ]
 
     def get_last_movement(self, obj):
         event = obj.movement_history.first()
