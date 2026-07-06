@@ -763,3 +763,8 @@ class FinishedInventorySerializer(serializers.ModelSerializer):
     class Meta:
         model = FinishedInventory
         fields = "__all__"
+
+    def validate_location(self, value):
+        if value and value.inventory_scope == "raw_material":
+            raise serializers.ValidationError("Choose a Finished Product or Shared location.")
+        return value

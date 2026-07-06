@@ -504,6 +504,7 @@ class MaterialInventoryIntakeTests(TestCase):
                 "width_inches": 12.75,
                 "length_feet": 50000,
                 "quantity": 50000,
+                "roll_count": 3,
                 "unit": "lf",
                 "direct_rack": self.rack.id,
             },
@@ -522,11 +523,13 @@ class MaterialInventoryIntakeTests(TestCase):
         self.assertIsNone(inventory.source_roll_tag_id)
         self.assertTrue(inventory.serial_number)
         self.assertEqual(response.json()["current_rack_code"], self.rack.rack_code)
+        self.assertEqual(response.json()["created_count"], 3)
+        self.assertEqual(RawMaterialInventory.objects.filter(lot_number="RICOH-LOT-44").count(), 3)
 
         rack_response = self.client.get(reverse("rack-detail", args=[self.rack.id]))
         self.assertEqual(rack_response.status_code, 200, rack_response.content)
-        self.assertEqual(rack_response.json()["roll_count"], 1)
-        self.assertEqual(rack_response.json()["loose_rolls"][0]["id"], inventory.id)
+        self.assertEqual(rack_response.json()["roll_count"], 3)
+        self.assertIn(inventory.id, [row["id"] for row in rack_response.json()["loose_rolls"]])
 
     def test_legacy_raw_component_can_be_added_to_floor_without_qr(self):
         face = MaterialSpec.objects.create(

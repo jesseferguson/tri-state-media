@@ -39,6 +39,12 @@ class Supplier(models.Model):
 
 
 class ToolingLocation(models.Model):
+    INVENTORY_SCOPE_CHOICES = [
+        ("shared", "Shared / All Inventory"),
+        ("finished_product", "Finished Product"),
+        ("raw_material", "Raw Material"),
+    ]
+
     LOCATION_TYPE_CHOICES = [
         ("company", "Company"),
         ("shop", "Shop"),
@@ -58,6 +64,12 @@ class ToolingLocation(models.Model):
         max_length=20,
         choices=LOCATION_TYPE_CHOICES,
         default="position",
+    )
+    inventory_scope = models.CharField(
+        max_length=30,
+        choices=INVENTORY_SCOPE_CHOICES,
+        default="shared",
+        help_text="Controls whether this location is offered for finished product, raw material, or both.",
     )
 
     parent = models.ForeignKey(

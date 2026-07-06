@@ -135,6 +135,10 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
     material_company = serializers.CharField(source="material.company", read_only=True)
     material_gsm = serializers.DecimalField(source="material.gsm", max_digits=8, decimal_places=2, read_only=True)
     material_liner_pounds = serializers.DecimalField(source="material.liner_pounds", max_digits=7, decimal_places=2, read_only=True)
+    material_liner_name = serializers.CharField(source="material.liner_material.name", read_only=True)
+    material_liner_family = serializers.CharField(source="material.liner_material.material_family", read_only=True)
+    material_adhesive_name = serializers.CharField(source="material.adhesive_material.name", read_only=True)
+    material_adhesive_family = serializers.CharField(source="material.adhesive_material.material_family", read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     location_name = serializers.CharField(source="location.name", read_only=True)
     location_full_path = serializers.SerializerMethodField()
@@ -156,8 +160,13 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         current_skid = attrs.get("current_skid", getattr(self.instance, "current_skid", None))
         direct_rack = attrs.get("direct_rack", getattr(self.instance, "direct_rack", None))
+        location = attrs.get("location", getattr(self.instance, "location", None))
         if current_skid and direct_rack:
             raise serializers.ValidationError({"direct_rack": "Material cannot be on a skid and directly in a rack at the same time."})
+        if location and location.inventory_scope == "finished_product":
+            raise serializers.ValidationError({"location": "Choose a Raw Material or Shared location."})
+        if direct_rack and direct_rack.location_id and direct_rack.location.inventory_scope == "finished_product":
+            raise serializers.ValidationError({"direct_rack": "Choose a rack assigned to Raw Material or Shared inventory."})
         return attrs
 
     @staticmethod
@@ -266,6 +275,7 @@ class MaterialRackSerializer(serializers.ModelSerializer):
     location_detail = serializers.ReadOnlyField()
     storage_location_display = serializers.ReadOnlyField()
     location_name = serializers.CharField(source="location.name", read_only=True)
+    location_inventory_scope = serializers.CharField(source="location.inventory_scope", read_only=True)
     location_full_path = serializers.SerializerMethodField()
     skid_count = serializers.SerializerMethodField()
     roll_count = serializers.SerializerMethodField()
@@ -279,6 +289,11 @@ class MaterialRackSerializer(serializers.ModelSerializer):
         model = MaterialRack
         fields = "__all__"
         read_only_fields = ["qr_token", "created_by", "created_at", "updated_at"]
+
+    def validate_location(self, value):
+        if value and value.inventory_scope == "finished_product":
+            raise serializers.ValidationError("Material racks require a Raw Material or Shared location.")
+        return value
 
     def get_location_full_path(self, obj):
         return obj.location.full_path() if obj.location_id else ""

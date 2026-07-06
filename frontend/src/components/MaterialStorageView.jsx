@@ -180,6 +180,7 @@ function StorageForm({ mode, record, locations = [], busy, error, onSave, onClos
   const isSkid = mode === "skids";
   const rackLocations = locations.filter((location) => (
     location.is_active !== false
+    && location.inventory_scope !== "finished_product"
     && (
       ["company", "shop", "room", "rack", "shelf"].includes(location.location_type)
       || String(location.id) === String(record?.location || "")

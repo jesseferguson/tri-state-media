@@ -111,7 +111,7 @@ function defaultComponentId(material, tag, slot) {
 }
 
 function plantFloorLocation(locations) {
-  const rows = locations ?? [];
+  const rows = (locations ?? []).filter((row) => row.inventory_scope !== "finished_product");
   return rows.find((row) => {
     const path = String(row.full_path || row.name || "").trim().toLowerCase();
     return path === "wilmington ohio > plant floor";
@@ -436,7 +436,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
           <span>Plant Location</span>
           <select value={form.location || ""} onChange={(event) => update("location", event.target.value)} required>
             <option value="">Select location</option>
-            {(data.locations ?? []).map((location) => (
+            {(data.locations ?? []).filter((location) => location.inventory_scope !== "finished_product").map((location) => (
               <option value={location.id} key={location.id}>{location.full_path || location.name}</option>
             ))}
           </select>
@@ -929,7 +929,7 @@ function RollTagDetailDialog({ tag, schedule, relatedRolls = [], inventoryRows =
               <span>Plant Location</span>
               <select value={form.location || ""} onChange={(event) => update("location", event.target.value)}>
                 <option value="">No location</option>
-                {(data.locations ?? []).map((location) => <option value={location.id} key={location.id}>{location.full_path || location.name}</option>)}
+                {(data.locations ?? []).filter((location) => location.inventory_scope !== "finished_product").map((location) => <option value={location.id} key={location.id}>{location.full_path || location.name}</option>)}
               </select>
             </label>
             <label className="wide">

@@ -69,8 +69,16 @@ class ToolingLocationViewSet(BaseToolingViewSet):
         .order_by("name", "code")
     )
     serializer_class = ToolingLocationSerializer
-    search_fields = ["name", "code", "location_type", "notes", "supplier__name", "parent__name"]
-    ordering_fields = ["name", "code", "location_type", "is_active"]
+    search_fields = ["name", "code", "location_type", "inventory_scope", "notes", "supplier__name", "parent__name"]
+    ordering_fields = ["name", "code", "location_type", "inventory_scope", "is_active"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        inventory_scope = self.request.query_params.get("inventory_scope")
+        if inventory_scope:
+            scopes = [value.strip() for value in inventory_scope.split(",") if value.strip()]
+            qs = qs.filter(inventory_scope__in=scopes)
+        return qs
 
 
 class PressViewSet(BaseToolingViewSet):

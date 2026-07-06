@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { Boxes, ChevronDown, ChevronRight, PackageCheck, Pencil, Trash2 } from "lucide-react";
 import { labelize } from "../lib/format";
 
 function pathParts(row) {
@@ -42,7 +42,7 @@ function LocationRow({ row, selected, onSelect, onEdit, onDelete }) {
         <span>{row.full_path || row.name}</span>
       </div>
       <span>{row.code || "--"}</span>
-      <em>{labelize(row.location_type)}</em>
+      <em>{labelize(row.location_type)} / {row.inventory_scope === "finished_product" ? "Finished Product" : row.inventory_scope === "raw_material" ? "Raw Material" : "Shared"}</em>
       <div className="row-actions" onClick={(event) => event.stopPropagation()}>
         <button className="ghost-btn xs" type="button" onClick={() => onEdit(row)}><Pencil size={13} /> Edit</button>
         <button className="danger-btn xs" type="button" onClick={() => onDelete(row)}><Trash2 size={13} /> Delete</button>
@@ -79,13 +79,24 @@ function SecondGroup({ name, rows, selectedId, onSelect, onEdit, onDelete }) {
 }
 
 export default function GroupedLocationView({ rows, selectedId, onSelect, onEdit, onDelete }) {
-  const grouped = useMemo(() => groupRows(rows), [rows]);
+  const [scope, setScope] = useState("all");
+  const filteredRows = useMemo(
+    () => (rows ?? []).filter((row) => scope === "all" || row.inventory_scope === scope),
+    [rows, scope]
+  );
+  const grouped = useMemo(() => groupRows(filteredRows), [filteredRows]);
   const [openRoots, setOpenRoots] = useState({});
 
   if (!rows?.length) return <p className="empty-row">No locations match this view.</p>;
 
   return (
     <div className="location-tree-view">
+      <nav className="location-scope-tabs" aria-label="Location inventory type">
+        <button className={scope === "all" ? "active" : ""} type="button" onClick={() => setScope("all")}><Boxes size={15} /> All <span>{rows.length}</span></button>
+        <button className={scope === "finished_product" ? "active" : ""} type="button" onClick={() => setScope("finished_product")}><PackageCheck size={15} /> Finished Product <span>{rows.filter((row) => row.inventory_scope === "finished_product").length}</span></button>
+        <button className={scope === "raw_material" ? "active" : ""} type="button" onClick={() => setScope("raw_material")}><Boxes size={15} /> Raw Material <span>{rows.filter((row) => row.inventory_scope === "raw_material").length}</span></button>
+      </nav>
+      {!filteredRows.length && <p className="empty-row">No locations are assigned to this inventory type.</p>}
       {Object.entries(grouped).map(([root, seconds]) => {
         const open = openRoots[root] ?? true;
         const count = Object.values(seconds).reduce((sum, list) => sum + list.length, 0);

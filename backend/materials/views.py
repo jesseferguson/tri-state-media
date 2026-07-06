@@ -955,6 +955,10 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             }
             if master_type:
                 lookup["master_type"] = master_type
+            if create_material.get("liner_material"):
+                lookup["liner_material_id"] = create_material.get("liner_material")
+            if create_material.get("adhesive_material"):
+                lookup["adhesive_material_id"] = create_material.get("adhesive_material")
             material = MaterialSpec.objects.filter(**lookup).first()
             if not material:
                 material = MaterialSpec.objects.create(
@@ -964,6 +968,8 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
                     material_family=str(create_material.get("material_family") or name).strip(),
                     master_type=master_type,
                     supplier_id=create_material.get("supplier") or None,
+                    liner_material_id=create_material.get("liner_material") or None,
+                    adhesive_material_id=create_material.get("adhesive_material") or None,
                     code=str(create_material.get("code") or "").strip(),
                     notes=str(create_material.get("notes") or "").strip(),
                 )
@@ -986,6 +992,12 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
         if amount_value <= 0:
             field = "length_feet" if str(payload.get("unit") or "lf") == "lf" else "quantity"
             return Response({field: ["Enter an amount greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            roll_count = int(payload.get("roll_count") or 1)
+        except (TypeError, ValueError):
+            roll_count = 0
+        if roll_count < 1 or roll_count > 500:
+            return Response({"roll_count": ["Enter between 1 and 500 physical rolls or containers."]}, status=status.HTTP_400_BAD_REQUEST)
 
         inventory_payload = {
             "material": material.pk,
@@ -1004,17 +1016,24 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             "notes": str(payload.get("notes") or "").strip(),
             "is_active": True,
         }
-        serializer = self.get_serializer(data=inventory_payload)
-        serializer.is_valid(raise_exception=True)
         with transaction.atomic():
-            inventory = serializer.save()
-            inventory.movement_history.filter(action_type="roll_registered").update(
-                actor_name=user.name or user.username,
-                actor_user_id=str(user.pk),
-                source="manual",
-                notes=f"Material added through manual intake ({inventory.get_inventory_origin_display()}).",
-            )
-        return Response(self.get_serializer(inventory).data, status=status.HTTP_201_CREATED)
+            created = []
+            for _index in range(roll_count):
+                serializer = self.get_serializer(data=inventory_payload)
+                serializer.is_valid(raise_exception=True)
+                inventory = serializer.save()
+                inventory.movement_history.filter(action_type="roll_registered").update(
+                    actor_name=user.name or user.username,
+                    actor_user_id=str(user.pk),
+                    source="manual",
+                    notes=f"Material added through manual intake ({inventory.get_inventory_origin_display()}).",
+                )
+                created.append(inventory)
+        response_data = dict(self.get_serializer(created[0]).data)
+        response_data["created_count"] = len(created)
+        response_data["created_inventory"] = self.get_serializer(created, many=True).data
+        response_data["total_received"] = amount_value * roll_count
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     def perform_update(self, serializer):
         roll = serializer.instance
