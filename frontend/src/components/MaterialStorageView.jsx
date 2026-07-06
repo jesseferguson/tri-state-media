@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BrowserQRCodeReader } from "@zxing/browser";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -56,28 +56,53 @@ function rollLabel(roll) {
   return roll?.serial_number || roll?.source_roll_tag_number || roll?.lot_number || `Roll ${roll?.id}`;
 }
 
+function normalizedRollScan(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    return url.searchParams.get("rollTagId")
+      || url.searchParams.get("inventoryId")
+      || url.searchParams.get("rollId")
+      || text;
+  } catch {
+    return text;
+  }
+}
+
 function ScannerOverlay({ title, onScan, onClose }) {
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
+  const scannedRef = useRef(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     async function start() {
       try {
-        const reader = new BrowserMultiFormatReader();
+        const reader = new BrowserQRCodeReader();
         const controls = await reader.decodeFromConstraints(
-          { video: { facingMode: { ideal: "environment" } }, audio: false },
+          {
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+            audio: false,
+          },
           videoRef.current,
           (result, _scanError, activeControls) => {
             const value = result?.getText?.();
-            if (!value || cancelled) return;
+            if (!value || cancelled || scannedRef.current) return;
+            scannedRef.current = true;
             activeControls?.stop?.();
             controlsRef.current = null;
+            window.navigator?.vibrate?.(80);
             onScan(value);
           }
         );
-        controlsRef.current = controls;
+        if (cancelled || scannedRef.current) controls.stop?.();
+        else controlsRef.current = controls;
       } catch (scanError) {
         setError(scanError?.message || "Camera scanning is unavailable. Use the scan field instead.");
       }
@@ -97,7 +122,7 @@ function ScannerOverlay({ title, onScan, onClose }) {
           <button type="button" onClick={onClose} aria-label="Close scanner"><X size={19} /></button>
         </header>
         <video ref={videoRef} playsInline muted />
-        <p>Hold the QR or barcode inside the camera view.</p>
+        <p>Point the camera at the roll QR. It will be added automatically.</p>
         {error && <div className="storage-message error"><AlertTriangle size={17} /><span>{error}</span></div>}
       </section>
     </div>
@@ -260,10 +285,12 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
   }
 
   function handleScan(value) {
+    const normalizedValue = normalizedRollScan(value);
+    if (!normalizedValue) return;
     setCameraOpen(false);
-    setScanValue(value);
+    setScanValue(normalizedValue);
     if (risky) setRiskyConfirmed(true);
-    else onSubmit({ scan_value: value, amount_used: amount, use_all: useAll, notes });
+    else onSubmit({ scan_value: normalizedValue, amount_used: amount, use_all: useAll, notes });
   }
 
   const title = {
