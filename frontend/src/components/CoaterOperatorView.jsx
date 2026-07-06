@@ -308,14 +308,10 @@ function ComponentPicker({ slot, form, setForm, materials, supplierOptions, allo
     <section className="coater-component-card">
       <header>
         <strong>{slot.label}</strong>
-        {slot.optional && <span>Optional</span>}
+        <span>{slot.optional ? "Optional" : familyLabels.join(" / ") || "Type not configured"}</span>
       </header>
-      <div className="coater-required-family">
-        <span>Compatible Type</span>
-        <strong>{familyLabels.join(" / ") || "Not configured"}</strong>
-      </div>
       <label>
-        <span>{slot.label} Supplier</span>
+        <span>Supplier Material</span>
         <select value={form[slot.supplierKey] || ""} onChange={(event) => updateSupplier(event.target.value)} required={!slot.optional}>
           <option value="">{selectedSupplierOptions.length ? "Select supplier material" : "No suppliers linked"}</option>
           {selectedSupplierOptions.map((option) => (
@@ -323,26 +319,21 @@ function ComponentPicker({ slot, form, setForm, materials, supplierOptions, allo
           ))}
         </select>
       </label>
-      {materialOptions.length > 0 && (
-        <div className="coater-supplier-options">
-          <span>Compatible Supplier Material</span>
-          {selectedSupplier ? (
-            <div className="coater-supplier-option selected">
-              <strong>{supplierOptionTitle(selectedSupplier)}</strong>
-              {supplierOptionMeta(selectedSupplier) && <em>{supplierOptionMeta(selectedSupplier)}</em>}
-            </div>
-          ) : selectedSupplierOptions.length ? (
-            <em>{selectedSupplierOptions.length} compatible option{selectedSupplierOptions.length === 1 ? "" : "s"} available</em>
-          ) : (
-            <em>No suppliers are linked to this {slot.label.toLowerCase()} type.</em>
-          )}
-        </div>
-      )}
+      {selectedSupplier && supplierOptionMeta(selectedSupplier) ? (
+        <div className="coater-component-spec">{supplierOptionMeta(selectedSupplier)}</div>
+      ) : null}
+      {!selectedSupplier && materialOptions.length > 0 ? (
+        <p className={`coater-component-help ${selectedSupplierOptions.length ? "" : "warning"}`}>
+          {selectedSupplierOptions.length
+            ? `${selectedSupplierOptions.length} compatible supplier option${selectedSupplierOptions.length === 1 ? "" : "s"}`
+            : `No suppliers are linked to this ${slot.label.toLowerCase()} type.`}
+        </p>
+      ) : null}
     </section>
   );
 }
 
-function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, onSave }) {
+function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, setupSectionId, rollSectionId, onSave }) {
   const [form, setForm] = useState(() => defaultRollForm(tag, data, currentUser));
   const [printerSettingsOpen, setPrinterSettingsOpen] = useState(false);
   const missing = validateRollForm(form, data);
@@ -385,7 +376,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, onS
   }
 
   return (
-    <form className="coater-roll-form" onSubmit={submit}>
+    <form className="coater-roll-form" id={setupSectionId} onSubmit={submit}>
       <header>
         <div>
           <span>1 / Material Setup</span>
@@ -409,7 +400,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, onS
         ))}
       </div>
 
-      <section className="coater-roll-print-step">
+      <section className="coater-roll-print-step" id={rollSectionId}>
         <header>
           <div>
             <span>2 / New Physical Roll</span>
@@ -522,7 +513,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, onS
   );
 }
 
-function ScheduleProgress({ schedule, rolls, onOpenRoll, onDeleteRoll }) {
+function ScheduleProgress({ schedule, rolls, sectionId, onOpenRoll, onDeleteRoll }) {
   const documented = rolls.filter((roll) => roll.status === "complete");
   const pending = rolls.filter((roll) => roll.status === "tag_printed");
   const target = Number(schedule?.schedule_target_footage ?? schedule?.length_feet ?? 0);
@@ -531,7 +522,7 @@ function ScheduleProgress({ schedule, rolls, onOpenRoll, onDeleteRoll }) {
   const percent = target > 0 ? Math.min(100, (footage / target) * 100) : 0;
 
   return (
-    <section className="coater-schedule-dashboard">
+    <section className="coater-schedule-dashboard" id={sectionId}>
       <header>
         <div>
           <span>Run Progress</span>
@@ -556,14 +547,16 @@ function ScheduleProgress({ schedule, rolls, onOpenRoll, onDeleteRoll }) {
           </div>
           {pending.length > 0 && <em><AlertTriangle size={14} /> {pending.length} print attempt{pending.length === 1 ? "" : "s"} need attention</em>}
         </header>
-        <div className="coater-ran-roll-head" aria-hidden="true">
-          <span>Roll</span>
-          <span>Operator</span>
-          <span>Date</span>
-          <span>Lot</span>
-          <span>Length</span>
-          <span />
-        </div>
+        {rolls.length > 0 && (
+          <div className="coater-ran-roll-head" aria-hidden="true">
+            <span>Roll</span>
+            <span>Operator</span>
+            <span>Date</span>
+            <span>Lot</span>
+            <span>Length</span>
+            <span />
+          </div>
+        )}
         <div className="coater-ran-roll-list">
           {rolls.map((roll) => (
             <article className={roll.status === "complete" ? "" : "pending"} key={roll.id}>
@@ -637,6 +630,15 @@ function MaterialJobDialog({
   onDeleteRoll,
 }) {
   if (!tag) return null;
+  const sectionPrefix = `coater-run-${tag.id}`;
+  const progressSectionId = `${sectionPrefix}-progress`;
+  const setupSectionId = `${sectionPrefix}-setup`;
+  const rollSectionId = `${sectionPrefix}-new-roll`;
+
+  function moveTo(sectionId) {
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <section className="coater-job-overlay" role="dialog" aria-modal="true" aria-label={`Material run ${tag.tag_number}`}>
       <div className="coater-material-window">
@@ -663,10 +665,22 @@ function MaterialJobDialog({
         </header>
 
         <main className="coater-material-window-body">
+          <nav className="coater-run-nav" aria-label="Material run sections">
+            <button type="button" onClick={() => moveTo(progressSectionId)}>
+              <span>1</span> Progress
+            </button>
+            <button type="button" onClick={() => moveTo(setupSectionId)}>
+              <span>2</span> Material Setup
+            </button>
+            <button type="button" onClick={() => moveTo(rollSectionId)}>
+              <span>3</span> New Roll
+            </button>
+          </nav>
           {notice && <div className="coater-print-success"><CheckCircle2 size={16} /><span>{notice}</span></div>}
           <ScheduleProgress
             schedule={tag}
             rolls={rolls}
+            sectionId={progressSectionId}
             onOpenRoll={onOpenRoll}
             onDeleteRoll={onDeleteRoll}
           />
@@ -677,6 +691,8 @@ function MaterialJobDialog({
             saving={creating}
             error={createError}
             createdRollId={createdRollId}
+            setupSectionId={setupSectionId}
+            rollSectionId={rollSectionId}
             onSave={onCreateRoll}
           />
         </main>

@@ -19847,75 +19847,37 @@ textarea {
   gap: 8px;
 }
 
-.coater-required-family {
+.coater-component-card header > span {
   min-width: 0;
-  display: grid;
-  gap: 3px;
-  padding: 8px 9px;
-  border: 1px solid #dce7ef;
-  border-left: 3px solid #0f766e;
-  border-radius: 7px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #dff7ef;
+  color: #0f766e;
+  font-size: .66rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coater-component-spec {
+  padding: 6px 8px;
+  border-radius: 6px;
   background: #ffffff;
-}
-
-.coater-required-family span {
-  color: #64748b;
-  font-size: .64rem;
-  font-weight: 950;
-  text-transform: uppercase;
-}
-
-.coater-required-family strong {
-  color: #0f172a;
-  font-size: .8rem;
-  font-weight: 950;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-}
-
-.coater-supplier-options {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  padding-top: 2px;
-}
-
-.coater-supplier-options > span {
-  color: #667085;
-  font-size: .68rem;
-  font-weight: 950;
-  text-transform: uppercase;
-}
-
-.coater-supplier-option {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding: 7px 8px;
-  border: 1px solid #dcefe8;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.coater-supplier-option.selected {
-  border-color: rgba(15, 118, 110, .3);
-  background: #f0fdfa;
-}
-
-.coater-supplier-option strong {
-  min-width: 0;
-  color: #0f172a;
-  font-size: .74rem;
-  font-weight: 950;
-  overflow-wrap: anywhere;
-}
-
-.coater-supplier-options em,
-.coater-supplier-options small {
-  color: #667085;
-  font-size: .7rem;
-  font-style: normal;
+  color: #475569;
+  font-size: .69rem;
   font-weight: 850;
+}
+
+.coater-component-help {
+  margin: 0;
+  color: #667085;
+  font-size: .69rem;
+  font-weight: 800;
+}
+
+.coater-component-help.warning {
+  color: #b45309;
 }
 
 .coater-roll-details-grid {
@@ -26141,6 +26103,15 @@ textarea {
   box-shadow: 0 28px 80px rgba(15, 23, 42, .32);
 }
 
+.coater-material-window {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
 .coater-product-window {
   width: min(1120px, calc(100vw - 24px));
   height: auto;
@@ -26156,6 +26127,13 @@ textarea {
   padding: 14px 16px;
   border-bottom: 1px solid #d7e0e8;
   background: #ffffff;
+}
+
+.coater-material-window > .coater-job-window-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-shadow: 0 5px 14px rgba(15, 23, 42, .08);
 }
 
 .coater-job-window-head > div:first-child {
@@ -26223,6 +26201,74 @@ textarea {
   overflow-y: auto;
 }
 
+.coater-material-window-body {
+  min-height: auto;
+  flex: 0 0 auto;
+  overflow: visible;
+  scroll-behavior: smooth;
+}
+
+.coater-run-nav {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #d7e0e8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 5px 14px rgba(15, 23, 42, .08);
+  backdrop-filter: blur(10px);
+}
+
+.coater-run-nav button {
+  min-width: 0;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #334155;
+  font-size: .72rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.coater-run-nav button:hover,
+.coater-run-nav button:focus-visible {
+  outline: 0;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.coater-run-nav button > span {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: .64rem;
+}
+
+.coater-run-nav button:hover > span,
+.coater-run-nav button:focus-visible > span {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.coater-schedule-dashboard,
+.coater-roll-form,
+.coater-roll-print-step {
+  scroll-margin-top: 138px;
+}
+
 .coater-material-window .coater-schedule-dashboard,
 .coater-material-window .coater-roll-form {
   border: 1px solid #d7e0e8;
@@ -26237,7 +26283,7 @@ textarea {
 
 .coater-material-window .coater-roll-form {
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .coater-material-window .coater-roll-form > header {
@@ -26300,9 +26346,14 @@ textarea {
 }
 
 .coater-material-window .coater-roll-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
   padding: 12px 16px;
   border-top: 1px solid #dbe6f2;
-  background: #f8fafc;
+  background: rgba(248, 250, 252, .96);
+  box-shadow: 0 -8px 18px rgba(15, 23, 42, .08);
+  backdrop-filter: blur(10px);
 }
 
 .coater-material-window .coater-roll-actions .primary-btn {
@@ -26725,6 +26776,24 @@ textarea {
 
   .coater-material-window-body {
     padding: 8px;
+  }
+
+  .coater-run-nav button {
+    gap: 5px;
+    padding-inline: 5px;
+    font-size: .68rem;
+  }
+
+  .coater-run-nav button > span {
+    width: 20px;
+    height: 20px;
+    flex-basis: 20px;
+  }
+
+  .coater-schedule-dashboard,
+  .coater-roll-form,
+  .coater-roll-print-step {
+    scroll-margin-top: 178px;
   }
 
   .coater-progress-metrics {
