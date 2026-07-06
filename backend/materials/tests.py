@@ -6,10 +6,11 @@ from django.test import TestCase
 from django.urls import reverse
 
 from production.models import CompanyRole, CompanyUser, JobTicket, ProductionMaterialAssignment, ProductionSchedule
-from tooling.models import Press, ToolingLocation
+from tooling.models import Press, Supplier, ToolingLocation
 
 from .models import (
     CoaterRollTag,
+    MaterialMasterType,
     MaterialMovement,
     MaterialRack,
     MaterialSkid,
@@ -458,6 +459,105 @@ class MaterialInventoryDeletionTests(TestCase):
         self.assertIsNone(movement.roll_id)
         self.assertEqual(movement.roll_reference, self.roll.serial_number)
         self.assertLess(MaterialUsage.objects.count(), usage_count)
+
+
+class MaterialInventoryIntakeTests(TestCase):
+    def setUp(self):
+        role, _ = CompanyRole.objects.get_or_create(name="Material Handler")
+        self.user = CompanyUser.objects.create(
+            username="intake-handler",
+            name="Inventory Handler",
+            password_hash="test",
+            role=role,
+        )
+        self.headers = {
+            "HTTP_X_COMPANY_USER_ID": str(self.user.id),
+            "HTTP_X_COMPANY_USERNAME": self.user.username,
+        }
+        self.location = ToolingLocation.objects.create(
+            name="Warehouse A",
+            code="WH-A",
+            location_type="room",
+        )
+        self.rack = MaterialRack.objects.create(
+            rack_code="RACK-PM-DT",
+            location=self.location,
+            aisle="2",
+            bay="4",
+        )
+        self.ricoh = Supplier.objects.create(name="RICOH")
+
+    def test_purchased_finished_material_can_be_created_directly_in_rack_without_qr(self):
+        master_type = MaterialMasterType.objects.create(code="PMDT", name="PMDT")
+        response = self.client.post(
+            reverse("raw-material-intake"),
+            {
+                "create_material": {
+                    "material_type": "coated_stock",
+                    "master_type": master_type.id,
+                    "name": "PMDT",
+                    "company": "RICOH",
+                    "supplier": self.ricoh.id,
+                },
+                "supplier": self.ricoh.id,
+                "inventory_origin": "purchased",
+                "lot_number": "RICOH-LOT-44",
+                "width_inches": 12.75,
+                "length_feet": 50000,
+                "quantity": 50000,
+                "unit": "lf",
+                "direct_rack": self.rack.id,
+            },
+            content_type="application/json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        inventory = RawMaterialInventory.objects.select_related("material", "direct_rack").get(pk=response.json()["id"])
+        self.assertEqual(inventory.material.master_type, master_type)
+        self.assertEqual(inventory.material.company, "RICOH")
+        self.assertEqual(inventory.inventory_origin, "purchased")
+        self.assertEqual(inventory.direct_rack, self.rack)
+        self.assertIsNone(inventory.current_skid_id)
+        self.assertIsNone(inventory.source_roll_tag_id)
+        self.assertTrue(inventory.serial_number)
+        self.assertEqual(response.json()["current_rack_code"], self.rack.rack_code)
+
+        rack_response = self.client.get(reverse("rack-detail", args=[self.rack.id]))
+        self.assertEqual(rack_response.status_code, 200, rack_response.content)
+        self.assertEqual(rack_response.json()["roll_count"], 1)
+        self.assertEqual(rack_response.json()["loose_rolls"][0]["id"], inventory.id)
+
+    def test_legacy_raw_component_can_be_added_to_floor_without_qr(self):
+        face = MaterialSpec.objects.create(
+            material_type="face",
+            code="FACE-PM-LEGACY",
+            name="PM Face",
+            company="Legacy Supplier",
+        )
+        response = self.client.post(
+            reverse("raw-material-intake"),
+            {
+                "material": face.id,
+                "inventory_origin": "legacy",
+                "lot_number": "OLD-FACE-1",
+                "width_inches": 40,
+                "length_feet": 18000,
+                "unit": "lf",
+                "location": self.location.id,
+            },
+            content_type="application/json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        inventory = RawMaterialInventory.objects.get(pk=response.json()["id"])
+        self.assertEqual(inventory.material_type, "face")
+        self.assertEqual(inventory.inventory_origin, "legacy")
+        self.assertIsNone(inventory.source_roll_tag_id)
+        self.assertIsNone(inventory.current_skid_id)
+        self.assertIsNone(inventory.direct_rack_id)
+        self.assertEqual(inventory.location, self.location)
 
 
 class SkidRackWorkflowTests(TestCase):

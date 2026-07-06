@@ -333,6 +333,12 @@ class MaterialSkid(models.Model):
 
 
 class RawMaterialInventory(models.Model):
+    ORIGIN_CHOICES = [
+        ("tri_state", "Tri-State Produced"),
+        ("purchased", "Purchased / Outsourced"),
+        ("legacy", "Existing Stock / No QR"),
+    ]
+
     STATUS_CHOICES = [
         ("available", "Available"),
         ("scheduled", "Scheduled"),
@@ -393,6 +399,14 @@ class RawMaterialInventory(models.Model):
         blank=True,
         related_name="rolls",
     )
+    direct_rack = models.ForeignKey(
+        MaterialRack,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="loose_rolls",
+        help_text="Rack holding this material when it is not stored on a skid.",
+    )
 
     width_inches = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     original_length_feet = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -402,6 +416,7 @@ class RawMaterialInventory(models.Model):
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default="lf")
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="available")
+    inventory_origin = models.CharField(max_length=20, choices=ORIGIN_CHOICES, default="tri_state")
     received_date = models.DateField(null=True, blank=True)
 
     source_roll_tag = models.ForeignKey(
@@ -421,6 +436,11 @@ class RawMaterialInventory(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         needs_serial = not self.serial_number
+        update_fields = kwargs.get("update_fields")
+        if self.current_skid_id and self.direct_rack_id:
+            self.direct_rack = None
+            if update_fields is not None:
+                kwargs["update_fields"] = list(set(update_fields) | {"direct_rack"})
         if self.original_length_feet is None and self.length_feet is not None and not self.pk:
             self.original_length_feet = self.length_feet
         if self.material:
@@ -437,11 +457,18 @@ class RawMaterialInventory(models.Model):
             self.serial_number = f"{prefix}-{self.pk:06d}"
             super().save(update_fields=["serial_number"])
         if is_new:
+            if self.direct_rack_id:
+                initial_location = f"Rack {self.direct_rack.rack_code} > {self.direct_rack.storage_location_display}"
+            elif self.location_id:
+                initial_location = self.location.full_path()
+            else:
+                initial_location = "Plant Floor"
             MaterialMovement.objects.create(
                 action_type="roll_registered",
                 roll=self,
+                rack=self.direct_rack,
                 from_location="",
-                to_location="Plant Floor",
+                to_location=initial_location,
                 quantity_before=0,
                 quantity_after=self.length_feet if self.length_feet is not None else self.quantity,
                 notes="Roll registered in material inventory.",

@@ -140,9 +140,9 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
     location_full_path = serializers.SerializerMethodField()
     source_roll_tag_number = serializers.CharField(source="source_roll_tag.tag_number", read_only=True)
     current_skid_number = serializers.CharField(source="current_skid.skid_number", read_only=True)
-    current_rack = serializers.IntegerField(source="current_skid.current_rack_id", read_only=True)
-    current_rack_code = serializers.CharField(source="current_skid.current_rack.rack_code", read_only=True)
-    current_rack_location_name = serializers.CharField(source="current_skid.current_rack.location.name", read_only=True)
+    current_rack = serializers.SerializerMethodField()
+    current_rack_code = serializers.SerializerMethodField()
+    current_rack_location_name = serializers.SerializerMethodField()
     current_rack_location_full_path = serializers.SerializerMethodField()
     current_location_type = serializers.SerializerMethodField()
     current_location_display = serializers.SerializerMethodField()
@@ -153,6 +153,31 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["current_skid", "original_length_feet"]
 
+    def validate(self, attrs):
+        current_skid = attrs.get("current_skid", getattr(self.instance, "current_skid", None))
+        direct_rack = attrs.get("direct_rack", getattr(self.instance, "direct_rack", None))
+        if current_skid and direct_rack:
+            raise serializers.ValidationError({"direct_rack": "Material cannot be on a skid and directly in a rack at the same time."})
+        return attrs
+
+    @staticmethod
+    def rack_for(obj):
+        if obj.current_skid_id and obj.current_skid.current_rack_id:
+            return obj.current_skid.current_rack
+        return obj.direct_rack if obj.direct_rack_id else None
+
+    def get_current_rack(self, obj):
+        rack = self.rack_for(obj)
+        return rack.pk if rack else None
+
+    def get_current_rack_code(self, obj):
+        rack = self.rack_for(obj)
+        return rack.rack_code if rack else ""
+
+    def get_current_rack_location_name(self, obj):
+        rack = self.rack_for(obj)
+        return rack.location.name if rack and rack.location_id else ""
+
     def get_current_location_type(self, obj):
         if obj.status in {"depleted", "scrapped"} or roll_amount(obj) <= 0:
             return "consumed"
@@ -160,13 +185,15 @@ class RawMaterialInventorySerializer(serializers.ModelSerializer):
             return "rack"
         if obj.current_skid_id:
             return "skid"
+        if obj.direct_rack_id:
+            return "rack"
         return "plant_floor"
 
     def get_location_full_path(self, obj):
         return obj.location.full_path() if obj.location_id else ""
 
     def get_current_rack_location_full_path(self, obj):
-        rack = obj.current_skid.current_rack if obj.current_skid_id else None
+        rack = self.rack_for(obj)
         return rack.location.full_path() if rack and rack.location_id else ""
 
     def get_current_location_display(self, obj):
@@ -244,6 +271,7 @@ class MaterialRackSerializer(serializers.ModelSerializer):
     roll_count = serializers.SerializerMethodField()
     total_remaining_feet = serializers.SerializerMethodField()
     skids = serializers.SerializerMethodField()
+    loose_rolls = serializers.SerializerMethodField()
     last_movement = serializers.SerializerMethodField()
 
     class Meta:
@@ -259,11 +287,27 @@ class MaterialRackSerializer(serializers.ModelSerializer):
         queryset = prefetched if prefetched is not None else obj.skids.prefetch_related("rolls").all()
         return [skid for skid in queryset if skid.status == "active"]
 
+    def active_loose_rolls(self, obj):
+        prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("loose_rolls")
+        queryset = prefetched if prefetched is not None else obj.loose_rolls.select_related(
+            "material",
+            "material__master_type",
+            "supplier",
+            "location",
+            "source_roll_tag",
+            "direct_rack",
+            "direct_rack__location",
+        ).all()
+        return [
+            roll for roll in queryset
+            if roll.is_active and roll.status not in {"depleted", "scrapped"} and roll_amount(roll) > 0
+        ]
+
     def get_skid_count(self, obj):
         return len(self.active_skids(obj))
 
     def get_roll_count(self, obj):
-        return sum(
+        return len(self.active_loose_rolls(obj)) + sum(
             1
             for skid in self.active_skids(obj)
             for roll in skid.rolls.all()
@@ -271,7 +315,7 @@ class MaterialRackSerializer(serializers.ModelSerializer):
         )
 
     def get_total_remaining_feet(self, obj):
-        return sum(
+        skid_total = sum(
             (
                 roll_amount(roll)
                 for skid in self.active_skids(obj)
@@ -280,9 +324,13 @@ class MaterialRackSerializer(serializers.ModelSerializer):
             ),
             Decimal("0"),
         )
+        return skid_total + sum((roll_amount(roll) for roll in self.active_loose_rolls(obj)), Decimal("0"))
 
     def get_skids(self, obj):
         return MaterialSkidSerializer(self.active_skids(obj), many=True).data
+
+    def get_loose_rolls(self, obj):
+        return RawMaterialInventorySerializer(self.active_loose_rolls(obj), many=True).data
 
     def get_last_movement(self, obj):
         event = obj.movement_history.first()

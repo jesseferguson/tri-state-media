@@ -506,6 +506,9 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
         "status",
         "notes",
         "skids__skid_number",
+        "loose_rolls__serial_number",
+        "loose_rolls__lot_number",
+        "loose_rolls__material__name",
     ]
     ordering_fields = ["rack_code", "location__name", "aisle", "bay", "level", "position", "status", "created_at"]
 
@@ -524,6 +527,14 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
                 "skids__rolls__current_skid",
                 "skids__rolls__current_skid__current_rack",
                 "skids__rolls__current_skid__current_rack__location",
+                "loose_rolls",
+                "loose_rolls__material",
+                "loose_rolls__material__master_type",
+                "loose_rolls__supplier",
+                "loose_rolls__location",
+                "loose_rolls__source_roll_tag",
+                "loose_rolls__direct_rack",
+                "loose_rolls__direct_rack__location",
             )
             .all()
             .distinct()
@@ -554,9 +565,12 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
             return Response({"detail": "Only an Admin can edit racks."}, status=status.HTTP_403_FORBIDDEN)
         rack = self.get_object()
         requested_status = request.data.get("status", rack.status)
-        if requested_status == "inactive" and rack.skids.filter(status="active").exists():
+        if requested_status == "inactive" and (
+            rack.skids.filter(status="active").exists()
+            or rack.loose_rolls.filter(is_active=True).exclude(status__in=["depleted", "scrapped"]).exists()
+        ):
             return Response(
-                {"detail": "Remove active skids before deactivating this rack."},
+                {"detail": "Remove active skids and loose material before deactivating this rack."},
                 status=status.HTTP_409_CONFLICT,
             )
         before_detail = rack.storage_location_display
@@ -597,7 +611,9 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
     @action(detail=True, methods=["get"])
     def history(self, request, pk=None):
         rack = self.get_object()
-        rows = MaterialMovement.objects.filter(Q(rack=rack) | Q(skid__current_rack=rack)).select_related("roll", "skid", "rack")
+        rows = MaterialMovement.objects.filter(
+            Q(rack=rack) | Q(skid__current_rack=rack) | Q(roll__direct_rack=rack)
+        ).select_related("roll", "skid", "rack")
         return Response(MaterialMovementSerializer(rows.distinct(), many=True).data)
 
     @action(detail=True, methods=["post"], url_path="add-skid")
@@ -843,6 +859,9 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
         "current_skid__skid_number",
         "current_skid__current_rack__rack_code",
         "current_skid__current_rack__location__name",
+        "direct_rack__rack_code",
+        "direct_rack__location__name",
+        "inventory_origin",
         "status",
         "notes",
     ]
@@ -870,6 +889,8 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
                 "current_skid",
                 "current_skid__current_rack",
                 "current_skid__current_rack__location",
+                "direct_rack",
+                "direct_rack__location",
             )
             .all()
             .order_by("material_type", "name", "serial_number")
@@ -885,11 +906,115 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             qs = qs.filter(material__master_type_id=master_type)
         return qs
 
+    @action(detail=False, methods=["post"], url_path="intake")
+    def intake(self, request):
+        user = _verified_company_user(request)
+        if not user:
+            return Response(
+                {"detail": "Sign in as an active user to add material inventory."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        payload = request.data.copy()
+        material_id = payload.get("material")
+        create_material = payload.get("create_material")
+        if not material_id and create_material:
+            material_type = str(create_material.get("material_type") or "").strip()
+            if material_type not in dict(MaterialSpec.MATERIAL_TYPE_CHOICES):
+                return Response(
+                    {"create_material": {"material_type": ["Choose a valid material category."]}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            name = str(create_material.get("name") or "").strip()
+            company = str(create_material.get("company") or "").strip()
+            master_type_id = create_material.get("master_type")
+            master_type = MaterialMasterType.objects.filter(pk=master_type_id).first() if master_type_id else None
+            if material_type == "coated_stock" and not master_type:
+                return Response(
+                    {"create_material": {"master_type": ["Select the finished material type, such as PMDT."]}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not name:
+                name = master_type.code if master_type else ""
+            if not name:
+                return Response(
+                    {"create_material": {"name": ["Enter the material name or type."]}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            lookup = {
+                "material_type": material_type,
+                "name__iexact": name,
+                "company__iexact": company,
+            }
+            if master_type:
+                lookup["master_type"] = master_type
+            material = MaterialSpec.objects.filter(**lookup).first()
+            if not material:
+                material = MaterialSpec.objects.create(
+                    material_type=material_type,
+                    name=name,
+                    company=company,
+                    material_family=str(create_material.get("material_family") or name).strip(),
+                    master_type=master_type,
+                    supplier_id=create_material.get("supplier") or None,
+                    code=str(create_material.get("code") or "").strip(),
+                    notes=str(create_material.get("notes") or "").strip(),
+                )
+            material_id = material.pk
+
+        material = MaterialSpec.objects.filter(pk=material_id, is_active=True).first() if material_id else None
+        if not material:
+            return Response({"material": ["Select or create a material."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        direct_rack_id = payload.get("direct_rack")
+        direct_rack = MaterialRack.objects.filter(pk=direct_rack_id, status="active").first() if direct_rack_id else None
+        if direct_rack_id and not direct_rack:
+            return Response({"direct_rack": ["Select an active rack."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        amount = payload.get("length_feet") if str(payload.get("unit") or "lf") == "lf" else payload.get("quantity")
+        try:
+            amount_value = Decimal(str(amount))
+        except Exception:
+            amount_value = Decimal("-1")
+        if amount_value <= 0:
+            field = "length_feet" if str(payload.get("unit") or "lf") == "lf" else "quantity"
+            return Response({field: ["Enter an amount greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        inventory_payload = {
+            "material": material.pk,
+            "supplier": payload.get("supplier") or material.supplier_id,
+            "lot_number": str(payload.get("lot_number") or "").strip(),
+            "width_inches": payload.get("width_inches") or None,
+            "length_feet": payload.get("length_feet") if str(payload.get("unit") or "lf") == "lf" else None,
+            "quantity": amount_value,
+            "weight_lbs": payload.get("weight_lbs") or None,
+            "unit": str(payload.get("unit") or "lf"),
+            "status": "available",
+            "inventory_origin": str(payload.get("inventory_origin") or "legacy"),
+            "received_date": payload.get("received_date") or timezone.localdate(),
+            "direct_rack": direct_rack.pk if direct_rack else None,
+            "location": None if direct_rack else (payload.get("location") or None),
+            "notes": str(payload.get("notes") or "").strip(),
+            "is_active": True,
+        }
+        serializer = self.get_serializer(data=inventory_payload)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            inventory = serializer.save()
+            inventory.movement_history.filter(action_type="roll_registered").update(
+                actor_name=user.name or user.username,
+                actor_user_id=str(user.pk),
+                source="manual",
+                notes=f"Material added through manual intake ({inventory.get_inventory_origin_display()}).",
+            )
+        return Response(self.get_serializer(inventory).data, status=status.HTTP_201_CREATED)
+
     def perform_update(self, serializer):
         roll = serializer.instance
         before_location = roll_location(roll)
         before_amount = roll_amount(roll)
-        tracked_fields = ["lot_number", "width_inches", "location_id", "status", "notes", "is_active"]
+        tracked_fields = ["lot_number", "width_inches", "location_id", "direct_rack_id", "status", "notes", "is_active"]
         before_values = {field: getattr(roll, field) for field in tracked_fields}
         roll = serializer.save()
         changed = [field.replace("_id", "") for field, value in before_values.items() if value != getattr(roll, field)]
@@ -992,7 +1117,7 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             if part
         )
         skid = inventory.current_skid
-        rack = skid.current_rack if skid and skid.current_rack_id else None
+        rack = skid.current_rack if skid and skid.current_rack_id else inventory.direct_rack
         before_location = roll_location(inventory)
 
         with transaction.atomic():
@@ -1014,12 +1139,13 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             inventory.status = "depleted" if remaining <= 0 else "available"
             if remaining <= 0:
                 inventory.current_skid = None
+                inventory.direct_rack = None
             if poor_run or note:
                 event_note = f"{timezone.localdate()}: {operator or 'Operator'} / {usage_note}"
                 inventory.notes = "\n".join(part for part in [inventory.notes, event_note] if part)
             update_fields = ["status"]
             if remaining <= 0:
-                update_fields.append("current_skid")
+                update_fields.extend(["current_skid", "direct_rack"])
             if poor_run or note:
                 update_fields.append("notes")
             inventory.save(update_fields=update_fields)

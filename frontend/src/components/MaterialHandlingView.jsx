@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, ChevronRight, History, Layers3, MapPin, PackageCheck, PackageOpen, Save, Search, Trash2, Warehouse, X } from "lucide-react";
-import { fetchCollection, postRecordAction, updateRecord } from "../api";
+import { AlertTriangle, Camera, CheckCircle2, ChevronRight, Factory, History, Layers3, MapPin, PackageCheck, PackageOpen, PackagePlus, Plus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
+import { fetchCollection, postRecordAction, requestApi, updateRecord } from "../api";
 import { formatInches, labelize } from "../lib/format";
 import { canDeleteMaterialRoll } from "../lib/localAuth";
 import DeleteMaterialRollDialog from "./DeleteMaterialRollDialog";
@@ -36,16 +36,32 @@ function footage(row) {
   return Number(row?.length_feet ?? row?.quantity ?? 0) || 0;
 }
 
+function inventoryUnit(row) {
+  return row?.unit || "lf";
+}
+
+function formatInventoryAmount(row, value = footage(row)) {
+  const unit = inventoryUnit(row);
+  const maximumFractionDigits = unit === "lf" ? 0 : 2;
+  return `${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits })} ${unit}`;
+}
+
 function locationName(row) {
   return row?.current_location_display || row?.location_full_path || row?.location_name || "Plant Floor";
 }
 
 function rollRoute(row) {
   return {
-    skid: row?.current_skid_number || "Plant Floor",
+    skid: row?.current_skid_number || (row?.current_rack_code ? "No skid" : "Plant Floor"),
     rack: row?.current_rack_code || "No rack",
     location: row?.current_rack_location_full_path || row?.location_full_path || row?.location_name || "Wilmington Ohio > Plant Floor",
   };
+}
+
+function groupAmount(rows) {
+  const units = new Set(rows.map(inventoryUnit));
+  if (units.size !== 1) return `${rows.length} items`;
+  return formatInventoryAmount(rows[0], rows.reduce((sum, row) => sum + footage(row), 0));
 }
 
 function warehouseLocation(row) {
@@ -107,7 +123,7 @@ function ActiveInventory({ rows, groupMode, selectedId, relatedRollIds, onSelect
           <header>
             <div>{groupMode === "location" ? <MapPin size={15} /> : <Layers3 size={15} />}<strong>{group}</strong></div>
             <span>{groupRows.length} roll{groupRows.length === 1 ? "" : "s"}</span>
-            <b>{Math.round(groupRows.reduce((sum, row) => sum + footage(row), 0)).toLocaleString()} ft</b>
+            <b>{groupAmount(groupRows)}</b>
           </header>
           <div>
             {groupRows.map((row) => (
@@ -124,7 +140,7 @@ function ActiveInventory({ rows, groupMode, selectedId, relatedRollIds, onSelect
                     <span><MapPin size={12} /> {rollRoute(row).location}</span>
                   </div>
                 </div>
-                <b>{Math.round(footage(row)).toLocaleString()} ft</b>
+                <b>{formatInventoryAmount(row)}</b>
                 <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
               </button>
             ))}

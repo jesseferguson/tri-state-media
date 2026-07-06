@@ -36,6 +36,9 @@ def roll_location(roll):
             rack = roll.current_skid.current_rack
             return f"Skid {roll.current_skid.skid_number} > Rack {rack.rack_code} > {rack.storage_location_display}"
         return f"Skid {roll.current_skid.skid_number} / Plant Floor"
+    if roll.direct_rack_id:
+        rack = roll.direct_rack
+        return f"Rack {rack.rack_code} > {rack.storage_location_display}"
     if roll.location_id:
         return roll.location.full_path()
     return "Plant Floor"
@@ -93,6 +96,8 @@ def resolve_roll_scan(value, *, for_update=False, materialize_printed_tag=False)
         "current_skid",
         "current_skid__current_rack",
         "source_roll_tag",
+        "direct_rack",
+        "direct_rack__location",
     )
     if for_update:
         queryset = queryset.select_for_update(of=("self",))
@@ -232,8 +237,9 @@ def add_roll_to_skid(*, skid_id, scan_value, actor, allow_move=False, source="sc
         action_type="roll_removed_from_skid",
     ).exists()
     roll.current_skid = skid
+    roll.direct_rack = None
     roll.location = None
-    roll.save(update_fields=["current_skid", "location"])
+    roll.save(update_fields=["current_skid", "direct_rack", "location"])
     movement(
         action_type="roll_added_back_to_skid" if was_removed else "roll_assigned_to_skid",
         roll=roll,
@@ -324,8 +330,9 @@ def use_roll_from_skid(*, skid_id, roll_value, actor, use_all=False, amount_used
     fully_used = after <= 0
     if fully_used:
         roll.current_skid = None
+        roll.direct_rack = None
         roll.status = "depleted"
-        roll.save(update_fields=["current_skid", "status"])
+        roll.save(update_fields=["current_skid", "direct_rack", "status"])
     else:
         roll.status = "available"
         roll.save(update_fields=["status"])
