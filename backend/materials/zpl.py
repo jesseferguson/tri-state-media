@@ -12,7 +12,7 @@ def zpl_copies(value):
         return 1
 
 
-STORAGE_QR_ORIGIN = "^FO90,98"
+STORAGE_QR_ORIGIN = "^FO110,98"
 STORAGE_QR_COMMAND = "^BQN,2,10"
 
 
