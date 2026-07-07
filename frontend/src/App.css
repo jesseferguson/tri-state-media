@@ -7,6 +7,7 @@
 
 /* Skid and rack material movement */
 .material-storage-view {
+  width: 100%;
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -107,11 +108,9 @@
 }
 
 .storage-layout {
+  width: 100%;
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
+  display: block;
 }
 
 .storage-list-panel,
@@ -123,8 +122,7 @@
 }
 
 .storage-list-panel {
-  position: sticky;
-  top: 10px;
+  width: 100%;
   overflow: hidden;
 }
 
@@ -147,8 +145,8 @@
 }
 
 .storage-list {
-  max-height: calc(100vh - 245px);
-  overflow-y: auto;
+  max-height: none;
+  overflow-y: visible;
 }
 
 .storage-list > button {
@@ -17830,6 +17828,57 @@ textarea {
   color: #ffffff;
 }
 
+.material-storage-view .storage-layout,
+.material-storage-view .storage-list-panel {
+  width: 100%;
+}
+
+.material-storage-view .storage-layout {
+  display: block;
+}
+
+.material-storage-view .storage-list-panel {
+  position: static;
+}
+
+.material-storage-view .storage-list {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.material-storage-view .storage-detail-panel:not(.has-selection) {
+  display: none;
+}
+
+.material-storage-view .storage-detail-panel.has-selection {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 6200;
+  width: min(1040px, calc(100vw - 36px));
+  max-height: calc(100dvh - 36px);
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  transform: translate(-50%, -50%);
+  box-shadow:
+    0 0 0 9999px rgba(15, 23, 42, .68),
+    0 28px 80px rgba(15, 23, 42, .34);
+}
+
+.material-storage-view .storage-detail-panel.has-selection .storage-mobile-back {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+}
+
 .storage-history-window {
   width: min(720px, 100%);
 }
@@ -18208,6 +18257,17 @@ textarea {
     width: 100%;
     border: 0;
     border-radius: 0;
+    box-shadow: none;
+  }
+
+  .scanned-storage-view .storage-detail-panel.has-selection {
+    position: static;
+    top: auto;
+    left: auto;
+    z-index: auto;
+    width: 100%;
+    max-height: none;
+    transform: none;
     box-shadow: none;
   }
 
@@ -24831,6 +24891,7 @@ textarea {
 }
 
 .material-loading-screen {
+  width: 100%;
   min-height: 360px;
   display: grid;
   place-items: center;
@@ -24898,6 +24959,7 @@ textarea {
 }
 
 .material-tree {
+  width: 100%;
   display: grid;
   gap: 8px;
 }
@@ -25015,22 +25077,22 @@ textarea {
 
 .material-handling-layout {
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(320px, .65fr);
-  align-items: start;
-  gap: 10px;
+  width: 100%;
+  display: block;
 }
 
 .material-handling-layout.history {
-  grid-template-columns: 1fr;
+  width: 100%;
 }
 
 .material-handling-layout > main {
+  width: 100%;
   min-width: 0;
 }
 
 .material-handling-groups,
 .material-handling-history {
+  width: 100%;
   display: grid;
   gap: 8px;
 }
@@ -25150,7 +25212,8 @@ textarea {
 
 .material-roll-essentials {
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(84px, auto) minmax(0, .75fr) minmax(0, 1.6fr);
   align-items: center;
   gap: 6px;
   margin-top: 4px;
@@ -25169,10 +25232,6 @@ textarea {
   white-space: nowrap;
 }
 
-.material-roll-essentials span:last-child {
-  flex: 1 1 auto;
-}
-
 .material-roll-essentials svg {
   flex: 0 0 auto;
   color: #0f766e;
@@ -25188,70 +25247,6 @@ textarea {
   font-weight: 950;
   text-transform: uppercase;
   white-space: nowrap;
-}
-
-.material-trace-toggle {
-  min-width: 72px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  margin: 8px 9px 8px 0;
-  padding: 0 8px;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
-  background: #ffffff;
-  color: #334155;
-  font-size: .65rem;
-  font-weight: 900;
-}
-
-.material-trace-toggle[aria-expanded="true"] {
-  border-color: #0f766e;
-  background: #f0fdfa;
-  color: #0f766e;
-}
-
-.material-trace-sheet {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  padding: 8px 10px 10px 27px;
-  border-top: 1px solid #e2e8f0;
-  background: #f8fafc;
-}
-
-.material-trace-sheet > div {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-  padding: 7px 8px;
-  border: 1px solid #e2e8f0;
-  border-radius: 7px;
-  background: #ffffff;
-}
-
-.material-trace-sheet span,
-.material-trace-sheet strong {
-  min-width: 0;
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.material-trace-sheet span {
-  color: #64748b;
-  font-size: .57rem;
-  font-weight: 950;
-  text-transform: uppercase;
-}
-
-.material-trace-sheet strong {
-  color: #0f172a;
-  font-size: .68rem;
-  font-weight: 900;
 }
 
 .material-handling-groups > section > div > button {
@@ -25350,17 +25345,30 @@ textarea {
   text-align: right;
 }
 
+.material-roll-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, .68);
+  backdrop-filter: blur(6px);
+}
+
 .material-handling-detail {
-  position: sticky;
-  top: 10px;
   min-width: 0;
+  width: min(920px, 100%);
+  max-height: calc(100dvh - 36px);
   display: grid;
   gap: 9px;
   padding: 11px;
+  overflow-y: auto;
   border: 1px solid #cbd5e1;
   border-top: 4px solid #0f766e;
   border-radius: 8px;
   background: #ffffff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, .34);
 }
 
 .material-handling-detail > header {
@@ -25761,16 +25769,6 @@ textarea {
   font: inherit;
 }
 
-@media (max-width: 980px) {
-  .material-handling-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .material-handling-detail {
-    position: static;
-  }
-}
-
 @media (max-width: 640px) {
   .material-handling-hero,
   .material-handling-hero > div:last-child,
@@ -25846,10 +25844,17 @@ textarea {
     display: none;
   }
 
-  .material-handling-detail {
-    position: fixed;
-    inset: 0;
-    z-index: 3600;
+  .material-roll-overlay {
+    place-items: stretch;
+    padding: 0;
+  }
+
+  .material-roll-overlay .material-handling-detail {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    width: 100%;
+    height: 100dvh;
     max-height: 100dvh;
     align-content: start;
     overflow-x: hidden;
@@ -28771,7 +28776,12 @@ textarea {
     padding: 11px 12px;
   }
 
-  .material-handling-detail {
+  .material-roll-overlay {
+    place-items: stretch;
+    padding: 0;
+  }
+
+  .material-roll-overlay .material-handling-detail {
     width: 100vw;
     height: 100dvh;
     max-height: 100dvh;
@@ -29193,7 +29203,7 @@ textarea {
   .material-workspace-shell .storage-detail-panel.has-selection {
     position: fixed;
     inset: 0;
-    z-index: 3000;
+    z-index: 6200;
     width: 100vw;
     height: 100dvh;
     display: flex;
@@ -29203,7 +29213,7 @@ textarea {
     border: 0;
     border-radius: 0;
     background: #ffffff;
-    animation: material-phone-slide-in .2s ease-out;
+    animation: none;
     overscroll-behavior: contain;
   }
 
@@ -29253,11 +29263,11 @@ textarea {
 
   .material-workspace-shell .material-handling-tabs,
   .material-workspace-shell .material-handling-toolbar {
-    margin: 8px 9px 0;
+    margin: 8px 0 0;
   }
 
   .material-workspace-shell .material-handling-layout {
-    padding: 8px 9px 14px;
+    padding: 8px 0 14px;
   }
 
   .material-workspace-shell .material-handling-groups > section,
@@ -29730,8 +29740,10 @@ textarea {
 
   .material-loading-screen {
     min-height: calc(100dvh - 210px);
-    margin: 8px;
-    border-radius: 8px;
+    margin: 0;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
   }
 
   .material-tree {
@@ -29807,18 +29819,6 @@ textarea {
   .material-roll-essentials span:last-child {
     grid-column: 1 / -1;
     white-space: normal;
-  }
-
-  .material-trace-toggle {
-    width: auto;
-    min-height: 32px;
-    justify-self: end;
-    margin: 0 11px 8px;
-  }
-
-  .material-trace-sheet {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 8px 11px 11px;
   }
 
   .location-scope-tabs {

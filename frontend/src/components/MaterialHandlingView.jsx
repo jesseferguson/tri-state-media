@@ -157,25 +157,14 @@ function MaterialLoadingScreen({ title = "Loading Material", detail = "Pulling i
   );
 }
 
-function tagSupplierLabel(tag, key) {
-  const supplier = tag?.[`${key}_supplier_name`];
-  const item = tag?.[`${key}_supplier_item_number`];
-  return [supplier, item].filter(Boolean).join(" / ");
-}
-
 function materialMaker(row, tag) {
   if (row?.inventory_origin === "tri_state" || row?.source_roll_tag || tag) return "Tri-State Media";
   return row?.supplier_name || row?.material_company || row?.company || "Unknown maker";
 }
 
-function hasRunTrace(row, tag) {
-  return Boolean(tag || row?.inventory_origin === "tri_state" || row?.source_roll_tag);
-}
-
 function MaterialInventoryTree({ rows, tags = [], selectedId, relatedRollIds, onSelect }) {
   const [section, setSection] = useState("finished");
   const [expanded, setExpanded] = useState({});
-  const [traceOpen, setTraceOpen] = useState({});
   const finishedRows = rows.filter((row) => row.material_type === "coated_stock");
   const rawRows = rows.filter((row) => row.material_type !== "coated_stock");
   const visibleRows = section === "finished" ? finishedRows : rawRows;
@@ -198,10 +187,6 @@ function MaterialInventoryTree({ rows, tags = [], selectedId, relatedRollIds, on
 
   function toggle(key) {
     setExpanded((current) => ({ ...current, [key]: !(current[key] ?? true) }));
-  }
-
-  function toggleTrace(id) {
-    setTraceOpen((current) => ({ ...current, [id]: !current[id] }));
   }
 
   return (
@@ -232,8 +217,6 @@ function MaterialInventoryTree({ rows, tags = [], selectedId, relatedRollIds, on
                   {group.rows.map((row) => {
                     const tag = tagById.get(String(row.source_roll_tag || ""));
                     const route = rollRoute(row);
-                    const trace = hasRunTrace(row, tag);
-                    const openTrace = Boolean(traceOpen[row.id]);
                     return (
                       <article className={`material-compact-roll ${sameId(row.id, selectedId) ? "active" : ""}`} key={row.id}>
                         <button className="material-roll-summary" type="button" onClick={() => onSelect(row)}>
@@ -245,29 +228,13 @@ function MaterialInventoryTree({ rows, tags = [], selectedId, relatedRollIds, on
                             </div>
                             <div className="material-roll-essentials">
                               <span><Factory size={12} /> {materialMaker(row, tag)}</span>
+                              <span><Layers3 size={12} /> {widthName(row)}</span>
                               <span><PackageOpen size={12} /> {route.skid}</span>
                               <span><MapPin size={12} /> {route.location}</span>
                             </div>
                           </div>
                           <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
                         </button>
-                        {trace && (
-                          <button className="material-trace-toggle" type="button" onClick={() => toggleTrace(row.id)} aria-expanded={openTrace}>
-                            {openTrace ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Details
-                          </button>
-                        )}
-                        {trace && openTrace && (
-                          <div className="material-trace-sheet">
-                            <div><span>Lot</span><strong>{row.lot_number || tag?.result_lot_number || "--"}</strong></div>
-                            <div><span>Ran By</span><strong>{tag?.operator || "--"}</strong></div>
-                            <div><span>Run Date</span><strong>{formatDate(tag?.run_date || row.received_date)}</strong></div>
-                            <div><span>Width</span><strong>{widthName(row)}</strong></div>
-                            <div><span>Face</span><strong>{tagSupplierLabel(tag, "face") || tag?.face_name || "--"}</strong></div>
-                            <div><span>Liner</span><strong>{tagSupplierLabel(tag, "liner") || tag?.liner_name || "--"}</strong></div>
-                            <div><span>Adhesive</span><strong>{tagSupplierLabel(tag, "adhesive") || tag?.adhesive_name || "--"}</strong></div>
-                            <div><span>Silicone</span><strong>{tagSupplierLabel(tag, "silicone") || tag?.silicone_name || "--"}</strong></div>
-                          </div>
-                        )}
                       </article>
                     );
                   })}
@@ -715,7 +682,7 @@ function RollDetail({ roll, locations, racks, schedules, activeJob, currentUser,
   }, [roll.id]);
 
   return (
-    <aside className="material-handling-detail">
+    <aside className="material-handling-detail" role="dialog" aria-modal="true" aria-label={`${materialName(roll)} inventory detail`} onMouseDown={(event) => event.stopPropagation()}>
       <header className="material-roll-identity">
         <div>
           <strong title={materialName(roll)}>{materialName(roll)}</strong>
@@ -1095,7 +1062,12 @@ export default function MaterialHandlingView({
               ? <MaterialInventoryTree rows={activeRows} tags={data.tags} selectedId={selectedRoll?.id} relatedRollIds={relatedRollIds} onSelect={selectRoll} />
               : <UsageHistory rows={usageRows} rolls={rollHistory} search={search} />}
         </main>
-        {view === "active" && selectedRoll && (
+      </div>
+      {view === "active" && selectedRoll && (
+        <div className="material-roll-overlay" role="presentation" onMouseDown={() => {
+          setSelectedInventoryId("");
+          if (linkedRollTagId || linkedInventoryId) onCloseLinkedRoll?.();
+        }}>
           <RollDetail
             key={selectedRoll.id}
             roll={selectedRoll}
@@ -1116,8 +1088,8 @@ export default function MaterialHandlingView({
             onConsume={(form) => consumeMutation.mutate({ roll: selectedRoll, form })}
             onDelete={() => setDeleteCandidate(selectedRoll)}
           />
-        )}
-      </div>
+        </div>
+      )}
       <DeleteMaterialRollDialog
         roll={deleteCandidate}
         deleting={deleteMutation.isPending}
