@@ -470,7 +470,7 @@ class MaterialSkidViewSet(BaseMaterialsViewSet):
         try:
             result = _storage_print_job(
                 request,
-                label_type="SKID_LABEL_4X3",
+                label_type="SKID_LABEL_3X3",
                 scan_url=scan_url,
                 zpl=zpl,
             )
@@ -680,7 +680,7 @@ class MaterialRackViewSet(BaseMaterialsViewSet):
         try:
             result = _storage_print_job(
                 request,
-                label_type="RACK_LABEL_4X3",
+                label_type="RACK_LABEL_3X3",
                 scan_url=scan_url,
                 zpl=zpl,
             )

@@ -176,6 +176,19 @@ function MovementHistory({ rows = [], loading }) {
   );
 }
 
+function MaterialLoadingScreen({ title, detail }) {
+  return (
+    <section className="material-loading-screen" aria-live="polite">
+      <div>
+        <span><PackageOpen size={24} /></span>
+        <strong>{title}</strong>
+        <p>{detail}</p>
+        <i />
+      </div>
+    </section>
+  );
+}
+
 function StorageForm({ mode, record, locations = [], busy, error, onSave, onClose }) {
   const isSkid = mode === "skids";
   const rackLocations = locations.filter((location) => (
@@ -273,11 +286,11 @@ function PrintDialog({ mode, record, presses, busy, error, onPrint, onClose }) {
     <div className="storage-modal-overlay" role="presentation" onMouseDown={onClose}>
       <form className="storage-modal storage-print-modal" onSubmit={(event) => { event.preventDefault(); onPrint(form); }} onMouseDown={(event) => event.stopPropagation()}>
         <header>
-          <div><span>4 x 3 Zebra Label</span><h3>Print {mode === "skids" ? record.skid_number : record.rack_code}</h3></div>
+          <div><span>3 x 3 Zebra Label</span><h3>Print {mode === "skids" ? record.skid_number : record.rack_code}</h3></div>
           <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
         </header>
-        <div className={`storage-print-preview ${mode === "skids" ? "skid-label-preview" : ""}`}>
-          <QrCode size={mode === "skids" ? 116 : 56} />
+        <div className="storage-print-preview skid-label-preview">
+          <QrCode size={116} />
           <div>
             <strong>{mode === "skids" ? "SKID" : "RACK LOCATION"}</strong>
             <b>{mode === "skids" ? record.skid_number : record.rack_code}</b>
@@ -688,6 +701,12 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
       {success && <div className="storage-completed"><CheckCircle2 size={24} /><div><strong>{success}</strong><span>The location and history have been updated.</span></div><button type="button" onClick={() => setSuccess("")}><X size={17} /></button></div>}
       {error && !formRecord && !workflow && !printRecord && <div className="storage-message error"><AlertTriangle size={18} /><span>{error}</span></div>}
 
+      {dataQuery.isLoading && !records.length ? (
+        <MaterialLoadingScreen
+          title={`Loading ${isSkidPage ? "Skids" : "Racks"}`}
+          detail={isSkidPage ? "Pulling current skid contents, roll counts, and rack positions." : "Pulling rack locations, skids, and material stored inside."}
+        />
+      ) : (
       <div className="storage-layout">
         <aside className="storage-list-panel">
           <label className="storage-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${isSkidPage ? "skid, roll, or rack" : "rack or skid"}...`} /></label>
@@ -829,6 +848,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           )}
         </main>
       </div>
+      )}
 
       {formRecord !== undefined && <StorageForm mode={mode} record={formRecord} locations={dataQuery.data?.locations || []} busy={busy} error={error} onSave={saveRecord} onClose={() => { setFormRecord(undefined); setError(""); }} />}
       {printRecord && <PrintDialog mode={mode} record={printRecord} presses={dataQuery.data?.presses || []} busy={busy} error={error} onPrint={printLabel} onClose={() => { setPrintRecord(null); setError(""); }} />}

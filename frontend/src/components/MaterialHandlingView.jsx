@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, ChevronRight, Factory, History, Layers3, MapPin, PackageCheck, PackageOpen, PackagePlus, Plus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronRight, Factory, History, Layers3, MapPin, PackageCheck, PackageOpen, PackagePlus, Plus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
 import { fetchCollection, postRecordAction, requestApi, updateRecord } from "../api";
 import { formatInches, labelize } from "../lib/format";
 import { canDeleteMaterialRoll } from "../lib/localAuth";
@@ -69,10 +69,6 @@ function groupAmount(rows) {
   return formatInventoryAmount(rows[0], rows.reduce((sum, row) => sum + footage(row), 0));
 }
 
-function warehouseLocation(row) {
-  return row?.current_location_display || row?.current_rack_location_full_path || row?.location_full_path || row?.location_name || "Wilmington Ohio > Plant Floor";
-}
-
 function widthName(row) {
   return row?.width_inches ? `${formatInches(row.width_inches)} wide` : "No width";
 }
@@ -115,49 +111,132 @@ function extractRollTagId(value) {
   }
 }
 
-function inventoryGroups(rows, mode) {
-  const groups = new Map();
-  rows.forEach((row) => {
-    const key = mode === "location" ? warehouseLocation(row) : materialName(row);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
-  });
-  return Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
+const rawComponentChoices = [
+  ["face", "Face"],
+  ["liner", "Liner"],
+  ["adhesive", "Adhesive"],
+  ["silicone", "Silicone"],
+  ["coating", "Coating"],
+];
+
+const rawComponentOrder = rawComponentChoices.map(([value]) => value);
+const rawComponentLabels = Object.fromEntries(rawComponentChoices);
+
+function rawComponentLabel(value) {
+  return rawComponentLabels[value] || labelize(value || "Raw Material");
 }
 
-function ActiveInventory({ rows, groupMode, selectedId, relatedRollIds, onSelect }) {
+function materialTreeGroups(rows, section) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = section === "finished" ? materialName(row) : (row.material_type || "other");
+    const label = section === "finished" ? key : rawComponentLabel(key);
+    if (!groups.has(key)) groups.set(key, { key, label, rows: [] });
+    groups.get(key).rows.push(row);
+  });
+  return Array.from(groups.values()).sort((left, right) => {
+    if (section === "raw") {
+      const leftOrder = rawComponentOrder.indexOf(left.key);
+      const rightOrder = rawComponentOrder.indexOf(right.key);
+      if (leftOrder !== rightOrder) return (leftOrder === -1 ? 999 : leftOrder) - (rightOrder === -1 ? 999 : rightOrder);
+    }
+    return left.label.localeCompare(right.label, undefined, { numeric: true });
+  });
+}
+
+function MaterialLoadingScreen({ title = "Loading Material", detail = "Pulling inventory, locations, skids, and racks." }) {
   return (
-    <div className="material-handling-groups">
-      {inventoryGroups(rows, groupMode).map(([group, groupRows]) => (
-        <section key={group}>
-          <header>
-            <div>{groupMode === "location" ? <MapPin size={15} /> : <Layers3 size={15} />}<strong>{group}</strong></div>
-            <span>{groupRows.length} item{groupRows.length === 1 ? "" : "s"}</span>
-            <b>{groupAmount(groupRows)}</b>
-          </header>
-          <div>
-            {groupRows.map((row) => (
-              <button className={sameId(row.id, selectedId) ? "active" : ""} type="button" key={row.id} onClick={() => onSelect(row)}>
-                <span className={`material-roll-status ${row.status}`} />
-                <div className="material-roll-main">
-                  <strong>{row.serial_number || row.source_roll_tag_number || row.lot_number}</strong>
-                  <span>{[groupMode === "location" ? materialName(row) : "", row.lot_number, widthName(row)].filter(Boolean).join(" / ")}</span>
-                  <div className="material-roll-route">
-                    <span><PackageOpen size={12} /> {rollRoute(row).skid}</span>
-                    <ChevronRight size={11} />
-                    <span><Warehouse size={12} /> {rollRoute(row).rack}</span>
-                    <ChevronRight size={11} />
-                    <span><MapPin size={12} /> {rollRoute(row).location}</span>
-                  </div>
-                </div>
-                <b>{formatInventoryAmount(row)}</b>
-                <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
+    <section className="material-loading-screen" aria-live="polite">
+      <div>
+        <span><Layers3 size={24} /></span>
+        <strong>{title}</strong>
+        <p>{detail}</p>
+        <i />
+      </div>
+    </section>
+  );
+}
+
+function MaterialInventoryTree({ rows, selectedId, relatedRollIds, onSelect }) {
+  const [section, setSection] = useState("finished");
+  const [expanded, setExpanded] = useState({});
+  const finishedRows = rows.filter((row) => row.material_type === "coated_stock");
+  const rawRows = rows.filter((row) => row.material_type !== "coated_stock");
+  const visibleRows = section === "finished" ? finishedRows : rawRows;
+  const groups = useMemo(() => materialTreeGroups(visibleRows, section), [visibleRows, section]);
+  const summary = {
+    finished: {
+      count: finishedRows.length,
+      amount: groupAmount(finishedRows),
+    },
+    raw: {
+      count: rawRows.length,
+      amount: groupAmount(rawRows),
+    },
+  };
+
+  function toggle(key) {
+    setExpanded((current) => ({ ...current, [key]: !(current[key] ?? true) }));
+  }
+
+  return (
+    <div className="material-tree">
+      <nav className="material-tree-tabs" aria-label="Inventory material class">
+        <button className={section === "finished" ? "active" : ""} type="button" onClick={() => setSection("finished")}>
+          <PackageCheck size={17} />
+          <span><strong>Finished Material</strong><small>{summary.finished.count} items / {summary.finished.amount}</small></span>
+        </button>
+        <button className={section === "raw" ? "active" : ""} type="button" onClick={() => setSection("raw")}>
+          <Factory size={17} />
+          <span><strong>Raw Material</strong><small>{summary.raw.count} items / {summary.raw.amount}</small></span>
+        </button>
+      </nav>
+      <div className="material-handling-groups material-tree-groups">
+        {groups.map((group) => {
+          const open = expanded[group.key] ?? true;
+          return (
+            <section className={open ? "open" : ""} key={group.key}>
+              <button className="material-tree-group-head" type="button" onClick={() => toggle(group.key)} aria-expanded={open}>
+                <div>{section === "finished" ? <Layers3 size={15} /> : <Factory size={15} />}<strong>{group.label}</strong></div>
+                <span>{group.rows.length} item{group.rows.length === 1 ? "" : "s"}</span>
+                <b>{groupAmount(group.rows)}</b>
+                {open ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
               </button>
-            ))}
-          </div>
-        </section>
-      ))}
-      {!rows.length && <p className="material-handling-empty">No active material matches these filters.</p>}
+              {open && (
+                <div>
+                  {group.rows.map((row) => (
+                    <button className={sameId(row.id, selectedId) ? "active" : ""} type="button" key={row.id} onClick={() => onSelect(row)}>
+                      <span className={`material-roll-status ${row.status}`} />
+                      <div className="material-roll-main">
+                        <strong>{row.serial_number || row.source_roll_tag_number || row.lot_number || materialName(row)}</strong>
+                        <span>{[
+                          section === "finished" ? row.lot_number : materialName(row),
+                          row.supplier_name,
+                          widthName(row),
+                        ].filter(Boolean).join(" / ")}</span>
+                        <div className="material-roll-route">
+                          <span><PackageOpen size={12} /> {rollRoute(row).skid}</span>
+                          <ChevronRight size={11} />
+                          <span><Warehouse size={12} /> {rollRoute(row).rack}</span>
+                          <ChevronRight size={11} />
+                          <span><MapPin size={12} /> {rollRoute(row).location}</span>
+                        </div>
+                      </div>
+                      <b>{formatInventoryAmount(row)}</b>
+                      <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+        {!groups.length && (
+          <p className="material-handling-empty">
+            No {section === "finished" ? "finished material" : "raw material"} matches these filters.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -209,14 +288,6 @@ function UsageHistory({ rows, rolls, search }) {
     </div>
   );
 }
-
-const rawComponentChoices = [
-  ["face", "Face"],
-  ["liner", "Liner"],
-  ["adhesive", "Adhesive"],
-  ["silicone", "Silicone"],
-  ["coating", "Coating"],
-];
 
 function IntakeSearchPicker({ label, options, value, onChange, getLabel, placeholder, required = false }) {
   const selected = options.find((option) => sameId(option.id, value));
@@ -644,7 +715,7 @@ function RollDetail({ roll, locations, racks, schedules, activeJob, currentUser,
           <label><span>Lot Number</span><input value={editForm.lot_number} onChange={(event) => setEditForm((form) => ({ ...form, lot_number: event.target.value }))} /></label>
           <label><span>Width</span><input type="number" step="0.001" value={editForm.width_inches} onChange={(event) => setEditForm((form) => ({ ...form, width_inches: event.target.value }))} /></label>
           {roll.current_skid ? (
-            <div className="material-location-locked wide"><Warehouse size={15} /><span>This roll’s location follows its skid and rack.</span></div>
+            <div className="material-location-locked wide"><Warehouse size={15} /><span>This roll's location follows its skid and rack.</span></div>
           ) : (
             <>
               <div className="material-edit-location-mode wide">
@@ -722,10 +793,6 @@ export default function MaterialHandlingView({
 }) {
   const queryClient = useQueryClient();
   const [selectedInventoryId, setSelectedInventoryId] = useState("");
-  const [groupMode, setGroupMode] = useState(() => {
-    const saved = window.localStorage.getItem("tsm_material_group_mode");
-    return saved === "location" ? "location" : "material";
-  });
   const [view, setView] = useState("active");
   const [search, setSearch] = useState("");
   const [activeJob, setActiveJob] = useState(() => readActiveJob());
@@ -972,21 +1039,15 @@ export default function MaterialHandlingView({
         <button className={view === "history" ? "active" : ""} type="button" onClick={() => setView("history")}><History size={15} /> Usage History</button>
       </nav>
 
-      <section className="material-handling-toolbar">
+      <section className="material-handling-toolbar single">
         <label><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={view === "active" ? "Search material, lot, supplier, or location" : "Search date, job, schedule, or operator"} /></label>
-        {view === "active" && (
-          <div>
-            <button className={groupMode === "material" ? "active" : ""} type="button" onClick={() => { setGroupMode("material"); window.localStorage.setItem("tsm_material_group_mode", "material"); }}>By Material</button>
-            <button className={groupMode === "location" ? "active" : ""} type="button" onClick={() => { setGroupMode("location"); window.localStorage.setItem("tsm_material_group_mode", "location"); }}>By Location</button>
-          </div>
-        )}
       </section>
 
       <div className={`material-handling-layout ${view === "history" ? "history" : ""}`}>
         <main>
-          {dataQuery.isLoading ? <p className="material-handling-empty">Loading material inventory...</p>
+          {dataQuery.isLoading ? <MaterialLoadingScreen title="Loading Material Inventory" detail="Pulling active rolls, supplier names, skids, racks, and plant locations." />
             : view === "active"
-              ? <ActiveInventory rows={activeRows} groupMode={groupMode} selectedId={selectedRoll?.id} relatedRollIds={relatedRollIds} onSelect={selectRoll} />
+              ? <MaterialInventoryTree rows={activeRows} selectedId={selectedRoll?.id} relatedRollIds={relatedRollIds} onSelect={selectRoll} />
               : <UsageHistory rows={usageRows} rolls={rollHistory} search={search} />}
         </main>
         {view === "active" && selectedRoll && (

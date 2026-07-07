@@ -859,7 +859,7 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(self.roll.length_feet, Decimal("10000"))
         self.assertFalse(MaterialMovement.objects.filter(roll=self.roll, action_type="roll_partially_used").exists())
 
-    def test_print_and_reprint_skid_label_reuse_identifier_and_queue_4x3_zpl(self):
+    def test_print_and_reprint_skid_label_reuse_identifier_and_queue_3x3_zpl(self):
         skid = self.create_skid()
         original_number = skid.skid_number
         original_token = skid.qr_token
@@ -892,17 +892,17 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(skid.skid_number, original_number)
         self.assertEqual(skid.qr_token, original_token)
         body = json.loads(mocked_urlopen.call_args.args[0].data.decode("utf-8"))
-        self.assertEqual(body["TYPE"], "SKID_LABEL_4X3")
-        self.assertIn("^PW812", body["ZPL"])
+        self.assertEqual(body["TYPE"], "SKID_LABEL_3X3")
+        self.assertIn("^PW609", body["ZPL"])
         self.assertIn("^LL609", body["ZPL"])
-        self.assertIn("^BQN,2,10", body["ZPL"])
+        self.assertIn("^BQN,2,8", body["ZPL"])
         self.assertIn(str(skid.qr_token), body["ZPL"])
         self.assertNotIn("Status:", body["ZPL"])
         self.assertNotIn("Location:", body["ZPL"])
         self.assertNotIn("Rolls:", body["ZPL"])
         self.assertNotIn("Created:", body["ZPL"])
 
-    def test_print_and_reprint_rack_label_reuse_identifier_and_queue_4x3_zpl(self):
+    def test_print_and_reprint_rack_label_reuse_identifier_and_queue_3x3_zpl(self):
         rack = self.create_rack()
         original_token = rack.qr_token
         payload = {
@@ -932,8 +932,8 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(rack.rack_code, "RACK-03-A")
         self.assertEqual(rack.qr_token, original_token)
         body = json.loads(mocked_urlopen.call_args.args[0].data.decode("utf-8"))
-        self.assertEqual(body["TYPE"], "RACK_LABEL_4X3")
-        self.assertIn("^PW812", body["ZPL"])
+        self.assertEqual(body["TYPE"], "RACK_LABEL_3X3")
+        self.assertIn("^PW609", body["ZPL"])
         self.assertIn("^LL609", body["ZPL"])
         self.assertIn(str(rack.qr_token), body["ZPL"])
 
@@ -943,16 +943,17 @@ class SkidRackWorkflowTests(TestCase):
         skid_zpl = skid_label_zpl(skid, f"https://plant.example.com/?skidToken={skid.qr_token}")
         rack_zpl = rack_label_zpl(rack, f"https://plant.example.com/?rackToken={rack.qr_token}")
 
-        self.assertIn("^PW812", skid_zpl)
+        self.assertIn("^PW609", skid_zpl)
         self.assertIn("^LL609", skid_zpl)
-        self.assertIn("^FO200,102^BQN,2,10", skid_zpl)
-        self.assertIn("^BQN,2,10", skid_zpl)
+        self.assertIn("^FO103,105^BQN,2,8", skid_zpl)
+        self.assertIn("^BQN,2,8", skid_zpl)
         self.assertIn("SCAN FOR LIVE CONTENTS", skid_zpl)
         self.assertIn(str(skid.qr_token), skid_zpl)
         self.assertNotIn("Status:", skid_zpl)
         self.assertNotIn("Location:", skid_zpl)
         self.assertNotIn("Rolls:", skid_zpl)
         self.assertNotIn("Created:", skid_zpl)
-        self.assertIn("^PW812", rack_zpl)
+        self.assertIn("^PW609", rack_zpl)
         self.assertIn("^LL609", rack_zpl)
+        self.assertIn("^FO103,105^BQN,2,8", rack_zpl)
         self.assertIn(str(rack.qr_token), rack_zpl)

@@ -16,36 +16,32 @@ def skid_label_zpl(skid, scan_url, *, darkness="20", speed="5", copies=1):
     return "\n".join([
         "^XA",
         "^CI28",
-        "^PW812",
+        "^PW609",
         "^LL609",
         "^LH0,0",
         f"~SD{zpl_text(darkness) or '20'}",
         f"^PR{zpl_text(speed) or '5'}",
-        "^FO30,16^A0N,24,24^FB752,1,0,C^FDSKID^FS",
-        f"^FO30,43^A0N,54,54^FB752,1,0,C^FD{zpl_text(skid.skid_number)}^FS",
-        f"^FO200,102^BQN,2,10^FDLA,{zpl_text(scan_url)}^FS",
-        "^FO30,565^A0N,24,24^FB752,1,0,C^FDSCAN FOR LIVE CONTENTS^FS",
+        "^FO30,18^A0N,24,24^FB549,1,0,C^FDSKID^FS",
+        f"^FO30,48^A0N,46,46^FB549,1,0,C^FD{zpl_text(skid.skid_number)}^FS",
+        f"^FO103,105^BQN,2,8^FDLA,{zpl_text(scan_url)}^FS",
+        "^FO30,558^A0N,23,23^FB549,1,0,C^FDSCAN FOR LIVE CONTENTS^FS",
         f"^PQ{zpl_copies(copies)}",
         "^XZ",
     ])
 
 
 def rack_label_zpl(rack, scan_url, *, darkness="20", speed="5", copies=1):
-    detail = rack.storage_location_display
     return "\n".join([
         "^XA",
         "^CI28",
-        "^PW812",
+        "^PW609",
         "^LL609",
         f"~SD{zpl_text(darkness) or '20'}",
         f"^PR{zpl_text(speed) or '5'}",
-        "^FO30,28^A0N,42,42^FDRACK LOCATION^FS",
-        f"^FO30,82^A0N,62,62^FD{zpl_text(rack.rack_code)}^FS",
-        f"^FO30,170^BQN,2,8^FDLA,{zpl_text(scan_url)}^FS",
-        f"^FO390,185^A0N,30,30^FD{zpl_text(detail)}^FS",
-        f"^FO390,240^A0N,28,28^FDStatus: {zpl_text(rack.get_status_display())}^FS",
-        "^FO30,535^GB752,2,2^FS",
-        "^FO30,553^A0N,27,27^FDScan to assign skid^FS",
+        "^FO30,18^A0N,24,24^FB549,1,0,C^FDRACK^FS",
+        f"^FO30,48^A0N,46,46^FB549,1,0,C^FD{zpl_text(rack.rack_code)}^FS",
+        f"^FO103,105^BQN,2,8^FDLA,{zpl_text(scan_url)}^FS",
+        "^FO30,558^A0N,23,23^FB549,1,0,C^FDSCAN TO MOVE SKIDS^FS",
         f"^PQ{zpl_copies(copies)}",
         "^XZ",
     ])
