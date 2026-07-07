@@ -95,6 +95,62 @@ function normalizedRollScan(value) {
 
 const CAMERA_FIRST_WORKFLOWS = new Set(["add-roll", "add-skid", "move-to-rack"]);
 
+function storageRackLabel(row) {
+  return [row?.rack_code, row?.storage_location_display || row?.location_detail].filter(Boolean).join(" / ");
+}
+
+function StorageSearchPicker({ label, options, value, onChange, getLabel, placeholder }) {
+  const selected = options.find((option) => String(option.id) === String(value) || option.qr_token === value || option.rack_code === value);
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visible = options
+    .filter((option) => !normalizedQuery || [getLabel(option), option.rack_code, option.qr_token].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery))
+    .slice(0, 30);
+
+  return (
+    <label className="storage-scan-input storage-search-picker">
+      <span>{label}</span>
+      <div className={open ? "open" : ""}>
+        <Search size={15} />
+        <input
+          value={open ? query : selected ? getLabel(selected) : query}
+          onFocus={() => { setQuery(""); setOpen(true); }}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+            if (value) onChange("");
+          }}
+          placeholder={placeholder}
+          autoComplete="off"
+        />
+        {value && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(""); setQuery(""); setOpen(true); }} aria-label={`Clear ${label}`}><X size={14} /></button>}
+        {open && (
+          <div>
+            {visible.map((option) => (
+              <button
+                className={String(option.id) === String(value) ? "active" : ""}
+                type="button"
+                key={option.id}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(String(option.id));
+                  setQuery("");
+                  setOpen(false);
+                }}
+              >
+                <strong>{getLabel(option)}</strong>
+              </button>
+            ))}
+            {!visible.length && <p>No racks found.</p>}
+          </div>
+        )}
+      </div>
+    </label>
+  );
+}
+
 function ScannerOverlay({ title, instruction = "Point the camera at the QR. The action will continue automatically.", onScan, onClose }) {
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
@@ -321,7 +377,48 @@ function PrintDialog({ mode, record, presses, busy, error, onPrint, onClose }) {
   );
 }
 
-function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSubmit, onConfirmMove, onClose }) {
+function OfflineMovementForms({ onClose }) {
+  const today = new Date().toLocaleDateString();
+  return (
+    <div className="storage-modal-overlay offline-form-overlay" role="presentation" onMouseDown={onClose}>
+      <section className="storage-modal offline-form-window" role="dialog" aria-modal="true" aria-label="Offline movement forms" onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <div><span>Wifi Backup</span><h3>Offline Material Forms</h3></div>
+          <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
+        </header>
+        <div className="offline-form-actions">
+          <p>Print these before working in the off-site area. When wifi is back, enter the sheet into Add Material, Skids, or Racks.</p>
+          <button className="primary-btn" type="button" onClick={() => window.print()}><Printer size={16} /> Print Forms</button>
+        </div>
+        <main className="offline-print-pack">
+          {[
+            ["Material Receiving", ["Material Type", "Supplier / Company", "Shipment Lot", "Width", "Length per Roll", "Roll Count", "Storage: Plant Floor / Off-Site Floor / Rack", "Notes"]],
+            ["Skid Movement", ["Skid #", "From Location", "To Rack / Floor", "Moved By", "Date / Time", "Notes"]],
+            ["Roll Usage / Hold", ["Roll ID / Lot", "Job / Press", "Feet Used", "Remaining Estimate", "Use Entire Roll?", "Hold / Damage Notes", "Operator"]],
+          ].map(([title, fields]) => (
+            <article className="offline-form-sheet" key={title}>
+              <header>
+                <strong>{title}</strong>
+                <span>{today}</span>
+              </header>
+              <div>
+                {fields.map((field) => (
+                  <label key={field}><span>{field}</span><i /></label>
+                ))}
+              </div>
+              <footer>
+                <label><span>Entered in system by</span><i /></label>
+                <label><span>Date entered</span><i /></label>
+              </footer>
+            </article>
+          ))}
+        </main>
+      </section>
+    </div>
+  );
+}
+
+function WorkflowDialog({ mode, action, record, racks = [], busy, error, confirmation, onSubmit, onConfirmMove, onClose }) {
   const isSkidPage = mode === "skids";
   const selectedRoll = action?.roll || null;
   const cameraFirst = CAMERA_FIRST_WORKFLOWS.has(action?.type);
@@ -363,6 +460,12 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
     else onSubmit({ scan_value: normalizedValue, amount_used: amount, use_all: useAll, notes });
   }
 
+  function chooseRack(value) {
+    setCameraOpen(false);
+    setScanValue(value);
+    setRiskyConfirmed(false);
+  }
+
   const title = {
     "add-roll": "Add Roll",
     "remove-roll": "Remove Roll",
@@ -402,6 +505,16 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
                 <span>Scan or enter {scanName} ID</span>
                 <input autoFocus={!cameraFirst} value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
               </label>
+              {action?.type === "move-to-rack" && (
+                <StorageSearchPicker
+                  label="Or Search Rack"
+                  options={racks.filter((row) => row.status === "active")}
+                  value={scanValue}
+                  onChange={chooseRack}
+                  getLabel={storageRackLabel}
+                  placeholder="Rack code or location"
+                />
+              )}
             </div>
           )}
           {isUse && (
@@ -488,6 +601,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   const [formRecord, setFormRecord] = useState(undefined);
   const [workflow, setWorkflow] = useState(null);
   const [printRecord, setPrintRecord] = useState(null);
+  const [offlineFormsOpen, setOfflineFormsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -502,12 +616,20 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   const dataQuery = useQuery({
     queryKey: ["material-storage", mode],
     queryFn: async () => {
-      const [records, presses, locations] = await Promise.all([
+      const [records, presses, locations, rackRecords] = await Promise.all([
         fetchCollection(endpoint, { ordering: isSkidPage ? "-created_at" : "rack_code", pageSize: 1000, fetchAll: true }),
         fetchCollection("presses", { ordering: "name", pageSize: 500, fetchAll: true }),
         fetchCollection("locations", { ordering: "name", pageSize: 1000, fetchAll: true }),
+        isSkidPage
+          ? fetchCollection("racks", { ordering: "rack_code", pageSize: 1000, fetchAll: true })
+          : Promise.resolve({ results: [] }),
       ]);
-      return { records: records.results || [], presses: presses.results || [], locations: locations.results || [] };
+      return {
+        records: records.results || [],
+        presses: presses.results || [],
+        locations: locations.results || [],
+        racks: isSkidPage ? rackRecords.results || [] : records.results || [],
+      };
     },
     staleTime: 10_000,
     refetchInterval: 60_000,
@@ -727,6 +849,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
         </div>
         <div>
           <button className="ghost-btn" type="button" onClick={() => dataQuery.refetch()}><RefreshCcw size={16} /> Refresh</button>
+          <button className="ghost-btn" type="button" onClick={() => setOfflineFormsOpen(true)}><Printer size={16} /> Offline Forms</button>
           {isAdmin && <button className="primary-btn" type="button" onClick={() => { setFormRecord(null); setError(""); }}><Plus size={17} /> {isSkidPage ? "New Skid" : "New Rack"}</button>}
         </div>
       </header>
@@ -894,11 +1017,13 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
       {formRecord !== undefined && <StorageForm mode={mode} record={formRecord} locations={dataQuery.data?.locations || []} busy={busy} error={error} onSave={saveRecord} onClose={() => { setFormRecord(undefined); setError(""); }} />}
       {printRecord && <PrintDialog mode={mode} record={printRecord} presses={dataQuery.data?.presses || []} busy={busy} error={error} onPrint={printLabel} onClose={() => { setPrintRecord(null); setError(""); }} />}
+      {offlineFormsOpen && <OfflineMovementForms onClose={() => setOfflineFormsOpen(false)} />}
       {workflow && selected && (
         <WorkflowDialog
           mode={mode}
           action={workflow}
           record={selected}
+          racks={dataQuery.data?.racks || []}
           busy={busy}
           error={error}
           confirmation={moveConfirmation}

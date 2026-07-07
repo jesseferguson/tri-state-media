@@ -55,6 +55,26 @@ function locationName(row) {
   return row?.current_location_display || row?.location_full_path || row?.location_name || "Plant Floor";
 }
 
+function locationLabel(row) {
+  return row?.full_path || row?.location_full_path || row?.name || row?.code || "";
+}
+
+function rackLabel(row) {
+  return [row?.rack_code, row?.storage_location_display || row?.location_detail].filter(Boolean).join(" / ");
+}
+
+function locationSearchText(row) {
+  return [locationLabel(row), row?.code, row?.location_type, row?.inventory_scope].filter(Boolean).join(" ");
+}
+
+function findFloorLocation(locations, pattern) {
+  return (locations ?? []).find((row) => (
+    row.is_active !== false
+    && row.inventory_scope !== "finished_product"
+    && pattern.test(`${row.full_path || ""} ${row.name || ""} ${row.code || ""}`)
+  ));
+}
+
 function rollRoute(row) {
   return {
     skid: row?.current_skid_number || (row?.current_rack_code ? "No skid" : "Plant Floor"),
@@ -301,13 +321,13 @@ function UsageHistory({ rows, rolls, search }) {
   );
 }
 
-function IntakeSearchPicker({ label, options, value, onChange, getLabel, placeholder, required = false }) {
+function IntakeSearchPicker({ label, options, value, onChange, getLabel, getSearchText = getLabel, placeholder, required = false }) {
   const selected = options.find((option) => sameId(option.id, value));
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
   const visible = options
-    .filter((option) => !normalizedQuery || getLabel(option).toLowerCase().includes(normalizedQuery))
+    .filter((option) => !normalizedQuery || getSearchText(option).toLowerCase().includes(normalizedQuery))
     .slice(0, 40);
 
   return (
@@ -368,7 +388,15 @@ function MaterialIntakeDialog({
   onClose,
   onSave,
 }) {
-  const defaultFloor = locations.find((row) => row.inventory_scope !== "finished_product" && /plant floor/i.test(row.full_path || row.name || ""))?.id || "";
+  const materialLocations = locations.filter((row) => row.is_active !== false && row.inventory_scope !== "finished_product");
+  const activeRacks = racks.filter((row) => row.status === "active" && row.location_inventory_scope !== "finished_product");
+  const plantFloor = findFloorLocation(materialLocations, /wilmington.*plant\s*floor|plant\s*floor/i);
+  const offsiteFloor = findFloorLocation(materialLocations, /off[\s-]*site.*floor/i);
+  const defaultFloor = plantFloor?.id || materialLocations[0]?.id || "";
+  const floorShortcuts = [
+    plantFloor && { key: "plant", label: "Wilmington", detail: "Plant Floor", location: plantFloor },
+    offsiteFloor && { key: "offsite", label: "Wilmington", detail: "Off-Site Floor", location: offsiteFloor },
+  ].filter(Boolean);
   const [category, setCategory] = useState("finished");
   const [definitionMode, setDefinitionMode] = useState("existing");
   const [storageMode, setStorageMode] = useState("floor");
@@ -415,6 +443,16 @@ function MaterialIntakeDialog({
 
   function update(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function chooseFloor(locationId) {
+    setStorageMode("floor");
+    setForm((current) => ({ ...current, location: String(locationId || ""), direct_rack: "" }));
+  }
+
+  function chooseRack(rackId) {
+    setStorageMode("rack");
+    setForm((current) => ({ ...current, direct_rack: String(rackId || ""), location: "" }));
   }
 
   function chooseCategory(nextCategory) {
@@ -601,6 +639,7 @@ function MaterialIntakeDialog({
                 <strong>{linearTotal.toLocaleString(undefined, { maximumFractionDigits: form.unit === "lf" ? 0 : 2 })} {form.unit}</strong>
                 <small>{Number(form.roll_count || 0).toLocaleString()} x {Number(form.amount || 0).toLocaleString()} {form.unit}</small>
               </div>
+              <p className="wide material-intake-note">Supplier lot is optional here. For outside material, enter the shipment once with roll count and add the exact lot details later when that process happens.</p>
             </div>
           </section>
 
@@ -612,21 +651,44 @@ function MaterialIntakeDialog({
             </div>
             <div className="material-intake-fields">
               {storageMode === "rack" ? (
-                <label className="wide">
-                  <span>Rack</span>
-                  <select value={form.direct_rack} onChange={(event) => update("direct_rack", event.target.value)} required>
-                    <option value="">Select rack</option>
-                    {racks.filter((row) => row.status === "active" && row.location_inventory_scope !== "finished_product").map((row) => <option value={row.id} key={row.id}>{row.rack_code} / {row.storage_location_display || row.location_detail}</option>)}
-                  </select>
-                </label>
+                <div className="wide">
+                  <IntakeSearchPicker
+                    label="Rack"
+                    options={activeRacks}
+                    value={form.direct_rack}
+                    onChange={chooseRack}
+                    getLabel={rackLabel}
+                    placeholder="Search rack code or location"
+                    required
+                  />
+                </div>
               ) : (
-                <label className="wide">
-                  <span>Floor Location</span>
-                  <select value={form.location} onChange={(event) => update("location", event.target.value)}>
-                    <option value="">Wilmington Ohio / Plant Floor</option>
-                    {locations.filter((row) => row.is_active !== false && row.inventory_scope !== "finished_product").map((row) => <option value={row.id} key={row.id}>{row.full_path || row.name}</option>)}
-                  </select>
-                </label>
+                <>
+                  <div className="wide material-floor-shortcuts">
+                    {floorShortcuts.map((shortcut) => (
+                      <button
+                        className={sameId(form.location, shortcut.location.id) ? "active" : ""}
+                        type="button"
+                        key={shortcut.key}
+                        onClick={() => chooseFloor(shortcut.location.id)}
+                      >
+                        <MapPin size={16} />
+                        <span><strong>{shortcut.label}</strong><small>{shortcut.detail}</small></span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="wide">
+                    <IntakeSearchPicker
+                      label="Other Floor Location"
+                      options={materialLocations}
+                      value={form.location}
+                      onChange={chooseFloor}
+                      getLabel={locationLabel}
+                      getSearchText={locationSearchText}
+                      placeholder="Search floor, warehouse, shelf, or code"
+                    />
+                  </div>
+                </>
               )}
               <label className="wide"><span>Notes</span><textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Condition, supplier details, or handling notes" /></label>
             </div>

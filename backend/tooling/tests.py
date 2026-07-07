@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.urls import reverse
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -149,6 +150,31 @@ class ToolingModelValidationTests(TestCase):
                 event_type="note",
                 summary="Too many linked tools",
             )
+
+
+class ToolingLocationApiTests(TestCase):
+    def test_location_search_matches_visible_full_path_terms(self):
+        root = ToolingLocation.objects.create(name="Test Warehouse", code="TEST-WH", location_type="shop")
+        ToolingLocation.objects.create(
+            name="Annex Material Floor",
+            code="TEST-ANNEX-FLOOR",
+            location_type="position",
+            inventory_scope="raw_material",
+            parent=root,
+        )
+        ToolingLocation.objects.create(
+            name="Finished Goods",
+            code="FG",
+            location_type="room",
+            inventory_scope="finished_product",
+            parent=root,
+        )
+
+        response = APIClient().get(reverse("location-list"), {"search": "Test Warehouse > Annex Material Floor"})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        codes = [row["code"] for row in response.json()["results"]]
+        self.assertEqual(codes, ["TEST-ANNEX-FLOOR"])
 
 
 class ToolingApiTests(TestCase):

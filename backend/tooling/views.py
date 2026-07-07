@@ -1,3 +1,6 @@
+import re
+
+from django.db.models import Q
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -79,6 +82,29 @@ class ToolingLocationViewSet(BaseToolingViewSet):
             scopes = [value.strip() for value in inventory_scope.split(",") if value.strip()]
             qs = qs.filter(inventory_scope__in=scopes)
         return qs
+
+    def filter_queryset(self, queryset):
+        search = str(self.request.query_params.get("search") or "").strip()
+        if not search:
+            return super().filter_queryset(queryset)
+
+        terms = [term for term in re.split(r"[\s>/]+", search) if term]
+        for term in terms:
+            queryset = queryset.filter(
+                Q(name__icontains=term)
+                | Q(code__icontains=term)
+                | Q(location_type__icontains=term)
+                | Q(inventory_scope__icontains=term)
+                | Q(notes__icontains=term)
+                | Q(supplier__name__icontains=term)
+                | Q(parent__name__icontains=term)
+                | Q(parent__code__icontains=term)
+                | Q(parent__parent__name__icontains=term)
+                | Q(parent__parent__code__icontains=term)
+                | Q(parent__parent__parent__name__icontains=term)
+                | Q(parent__parent__parent__code__icontains=term)
+            )
+        return filters.OrderingFilter().filter_queryset(self.request, queryset.distinct(), self)
 
 
 class PressViewSet(BaseToolingViewSet):

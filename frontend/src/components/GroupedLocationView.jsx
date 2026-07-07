@@ -81,7 +81,9 @@ function SecondGroup({ name, rows, selectedId, onSelect, onEdit, onDelete }) {
 export default function GroupedLocationView({ rows, selectedId, onSelect, onEdit, onDelete }) {
   const [scope, setScope] = useState("all");
   const filteredRows = useMemo(
-    () => (rows ?? []).filter((row) => scope === "all" || row.inventory_scope === scope),
+    () => (rows ?? [])
+      .filter((row) => scope === "all" || row.inventory_scope === scope)
+      .sort((a, b) => String(a.full_path || a.name || "").localeCompare(String(b.full_path || b.name || ""), undefined, { numeric: true })),
     [rows, scope]
   );
   const grouped = useMemo(() => groupRows(filteredRows), [filteredRows]);
@@ -96,7 +98,7 @@ export default function GroupedLocationView({ rows, selectedId, onSelect, onEdit
         <button className={scope === "finished_product" ? "active" : ""} type="button" onClick={() => setScope("finished_product")}><PackageCheck size={15} /> Finished Product <span>{rows.filter((row) => row.inventory_scope === "finished_product").length}</span></button>
         <button className={scope === "raw_material" ? "active" : ""} type="button" onClick={() => setScope("raw_material")}><Boxes size={15} /> Raw Material <span>{rows.filter((row) => row.inventory_scope === "raw_material").length}</span></button>
       </nav>
-      {!filteredRows.length && <p className="empty-row">No locations are assigned to this inventory type.</p>}
+      {!filteredRows.length && <p className="empty-row">No locations match this search or inventory type.</p>}
       {Object.entries(grouped).map(([root, seconds]) => {
         const open = openRoots[root] ?? true;
         const count = Object.values(seconds).reduce((sum, list) => sum + list.length, 0);

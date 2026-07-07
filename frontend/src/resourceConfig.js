@@ -3011,6 +3011,7 @@ export const resources = [
         searchFields: [
           "name",
           "code",
+          "full_path",
           "location_type",
           "parent_name",
         ],
