@@ -157,13 +157,34 @@ function MaterialLoadingScreen({ title = "Loading Material", detail = "Pulling i
   );
 }
 
-function MaterialInventoryTree({ rows, selectedId, relatedRollIds, onSelect }) {
+function tagSupplierLabel(tag, key) {
+  const supplier = tag?.[`${key}_supplier_name`];
+  const item = tag?.[`${key}_supplier_item_number`];
+  return [supplier, item].filter(Boolean).join(" / ");
+}
+
+function materialMaker(row, tag) {
+  if (row?.inventory_origin === "tri_state" || row?.source_roll_tag || tag) return "Tri-State Media";
+  return row?.supplier_name || row?.material_company || row?.company || "Unknown maker";
+}
+
+function hasRunTrace(row, tag) {
+  return Boolean(tag || row?.inventory_origin === "tri_state" || row?.source_roll_tag);
+}
+
+function MaterialInventoryTree({ rows, tags = [], selectedId, relatedRollIds, onSelect }) {
   const [section, setSection] = useState("finished");
   const [expanded, setExpanded] = useState({});
+  const [traceOpen, setTraceOpen] = useState({});
   const finishedRows = rows.filter((row) => row.material_type === "coated_stock");
   const rawRows = rows.filter((row) => row.material_type !== "coated_stock");
   const visibleRows = section === "finished" ? finishedRows : rawRows;
   const groups = useMemo(() => materialTreeGroups(visibleRows, section), [visibleRows, section]);
+  const tagById = useMemo(() => {
+    const map = new Map();
+    tags.forEach((tag) => map.set(String(tag.id), tag));
+    return map;
+  }, [tags]);
   const summary = {
     finished: {
       count: finishedRows.length,
@@ -177,6 +198,10 @@ function MaterialInventoryTree({ rows, selectedId, relatedRollIds, onSelect }) {
 
   function toggle(key) {
     setExpanded((current) => ({ ...current, [key]: !(current[key] ?? true) }));
+  }
+
+  function toggleTrace(id) {
+    setTraceOpen((current) => ({ ...current, [id]: !current[id] }));
   }
 
   return (
@@ -204,28 +229,48 @@ function MaterialInventoryTree({ rows, selectedId, relatedRollIds, onSelect }) {
               </button>
               {open && (
                 <div>
-                  {group.rows.map((row) => (
-                    <button className={sameId(row.id, selectedId) ? "active" : ""} type="button" key={row.id} onClick={() => onSelect(row)}>
-                      <span className={`material-roll-status ${row.status}`} />
-                      <div className="material-roll-main">
-                        <strong>{row.serial_number || row.source_roll_tag_number || row.lot_number || materialName(row)}</strong>
-                        <span>{[
-                          section === "finished" ? row.lot_number : materialName(row),
-                          row.supplier_name,
-                          widthName(row),
-                        ].filter(Boolean).join(" / ")}</span>
-                        <div className="material-roll-route">
-                          <span><PackageOpen size={12} /> {rollRoute(row).skid}</span>
-                          <ChevronRight size={11} />
-                          <span><Warehouse size={12} /> {rollRoute(row).rack}</span>
-                          <ChevronRight size={11} />
-                          <span><MapPin size={12} /> {rollRoute(row).location}</span>
-                        </div>
-                      </div>
-                      <b>{formatInventoryAmount(row)}</b>
-                      <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
-                    </button>
-                  ))}
+                  {group.rows.map((row) => {
+                    const tag = tagById.get(String(row.source_roll_tag || ""));
+                    const route = rollRoute(row);
+                    const trace = hasRunTrace(row, tag);
+                    const openTrace = Boolean(traceOpen[row.id]);
+                    return (
+                      <article className={`material-compact-roll ${sameId(row.id, selectedId) ? "active" : ""}`} key={row.id}>
+                        <button className="material-roll-summary" type="button" onClick={() => onSelect(row)}>
+                          <span className={`material-roll-status ${row.status}`} />
+                          <div className="material-roll-main">
+                            <div className="material-roll-line">
+                              <strong>{materialName(row)}</strong>
+                              <b>{formatInventoryAmount(row)}</b>
+                            </div>
+                            <div className="material-roll-essentials">
+                              <span><Factory size={12} /> {materialMaker(row, tag)}</span>
+                              <span><PackageOpen size={12} /> {route.skid}</span>
+                              <span><MapPin size={12} /> {route.location}</span>
+                            </div>
+                          </div>
+                          <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
+                        </button>
+                        {trace && (
+                          <button className="material-trace-toggle" type="button" onClick={() => toggleTrace(row.id)} aria-expanded={openTrace}>
+                            {openTrace ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Details
+                          </button>
+                        )}
+                        {trace && openTrace && (
+                          <div className="material-trace-sheet">
+                            <div><span>Lot</span><strong>{row.lot_number || tag?.result_lot_number || "--"}</strong></div>
+                            <div><span>Ran By</span><strong>{tag?.operator || "--"}</strong></div>
+                            <div><span>Run Date</span><strong>{formatDate(tag?.run_date || row.received_date)}</strong></div>
+                            <div><span>Width</span><strong>{widthName(row)}</strong></div>
+                            <div><span>Face</span><strong>{tagSupplierLabel(tag, "face") || tag?.face_name || "--"}</strong></div>
+                            <div><span>Liner</span><strong>{tagSupplierLabel(tag, "liner") || tag?.liner_name || "--"}</strong></div>
+                            <div><span>Adhesive</span><strong>{tagSupplierLabel(tag, "adhesive") || tag?.adhesive_name || "--"}</strong></div>
+                            <div><span>Silicone</span><strong>{tagSupplierLabel(tag, "silicone") || tag?.silicone_name || "--"}</strong></div>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -1047,7 +1092,7 @@ export default function MaterialHandlingView({
         <main>
           {dataQuery.isLoading ? <MaterialLoadingScreen title="Loading Material Inventory" detail="Pulling active rolls, supplier names, skids, racks, and plant locations." />
             : view === "active"
-              ? <MaterialInventoryTree rows={activeRows} selectedId={selectedRoll?.id} relatedRollIds={relatedRollIds} onSelect={selectRoll} />
+              ? <MaterialInventoryTree rows={activeRows} tags={data.tags} selectedId={selectedRoll?.id} relatedRollIds={relatedRollIds} onSelect={selectRoll} />
               : <UsageHistory rows={usageRows} rolls={rollHistory} search={search} />}
         </main>
         {view === "active" && selectedRoll && (

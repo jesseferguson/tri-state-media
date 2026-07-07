@@ -25090,6 +25090,170 @@ textarea {
   display: grid;
 }
 
+.material-compact-roll {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  border-bottom: 1px solid #edf2f7;
+  background: #ffffff;
+}
+
+.material-compact-roll:last-child {
+  border-bottom: 0;
+}
+
+.material-compact-roll.active,
+.material-compact-roll:hover {
+  background: #f0fdfa;
+}
+
+.material-roll-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: #334155;
+  text-align: left;
+}
+
+.material-roll-line {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.material-roll-line strong,
+.material-roll-line b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: .78rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-roll-line strong {
+  color: #0f172a;
+}
+
+.material-roll-line b {
+  color: #0f766e;
+  font-variant-numeric: tabular-nums;
+}
+
+.material-roll-essentials {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: #64748b;
+}
+
+.material-roll-essentials span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  font-size: .64rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-roll-essentials span:last-child {
+  flex: 1 1 auto;
+}
+
+.material-roll-essentials svg {
+  flex: 0 0 auto;
+  color: #0f766e;
+}
+
+.material-roll-summary > em {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: .58rem;
+  font-style: normal;
+  font-weight: 950;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.material-trace-toggle {
+  min-width: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin: 8px 9px 8px 0;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font-size: .65rem;
+  font-weight: 900;
+}
+
+.material-trace-toggle[aria-expanded="true"] {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.material-trace-sheet {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px 10px 10px 27px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.material-trace-sheet > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.material-trace-sheet span,
+.material-trace-sheet strong {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-trace-sheet span {
+  color: #64748b;
+  font-size: .57rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.material-trace-sheet strong {
+  color: #0f172a;
+  font-size: .68rem;
+  font-weight: 900;
+}
+
 .material-handling-groups > section > div > button {
   min-width: 0;
   display: grid;
@@ -29612,6 +29776,49 @@ textarea {
 
   .material-tree-group-head b {
     font-size: .68rem;
+  }
+
+  .material-compact-roll {
+    grid-template-columns: 1fr;
+  }
+
+  .material-roll-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    padding: 10px 11px 6px;
+  }
+
+  .material-roll-summary > em {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 2px;
+  }
+
+  .material-roll-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .material-roll-essentials {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 7px;
+  }
+
+  .material-roll-essentials span:last-child {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+
+  .material-trace-toggle {
+    width: auto;
+    min-height: 32px;
+    justify-self: end;
+    margin: 0 11px 8px;
+  }
+
+  .material-trace-sheet {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 8px 11px 11px;
   }
 
   .location-scope-tabs {
