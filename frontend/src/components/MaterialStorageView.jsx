@@ -706,6 +706,13 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
     setWorkflow({ type, value, roll, sessionId: window.crypto?.randomUUID?.() || String(Date.now()) });
   }
 
+  function closeSelectedDetail() {
+    setSelectedId("");
+    setSuccess("");
+    setError("");
+    if (initialToken) onClearToken();
+  }
+
   if (initialToken && (dataQuery.isLoading || (!selected && !error))) {
     return <ScanLinkScreen kind={isSkidPage ? "skid" : "rack"} />;
   }
@@ -767,23 +774,20 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
             {!dataQuery.isLoading && !filtered.length && <p className="storage-empty">No {isSkidPage ? "skids" : "racks"} match this search.</p>}
           </div>
         </aside>
+      </div>
+      )}
 
-        <main className={`storage-detail-panel ${isSkidPage ? "skid-detail-panel" : ""} ${selected ? "has-selection" : ""}`}>
-          {!selected ? (
-            <div className="storage-welcome">
-              {isSkidPage ? <PackageOpen size={36} /> : <Warehouse size={36} />}
-              <strong>Select a {isSkidPage ? "skid" : "rack"}</strong>
-              <span>Its current contents, location, and movement actions will appear here.</span>
-            </div>
-          ) : (
-            <>
+      {selected && (
+        <div className="storage-detail-overlay" role="presentation" onMouseDown={closeSelectedDetail}>
+          <main
+            className={`storage-detail-panel ${isSkidPage ? "skid-detail-panel" : ""} has-selection`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${isSkidPage ? selected.skid_number : selected.rack_code} details`}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
               <header className="storage-detail-header">
-                <button className="storage-mobile-back" type="button" onClick={() => {
-                  setSelectedId("");
-                  setSuccess("");
-                  setError("");
-                  if (initialToken) onClearToken();
-                }} aria-label={`Back to ${isSkidPage ? "skids" : "racks"}`}><ChevronLeft size={20} /></button>
+                <button className="storage-mobile-back" type="button" onClick={closeSelectedDetail} aria-label={`Back to ${isSkidPage ? "skids" : "racks"}`}><ChevronLeft size={20} /></button>
                 <div>
                   <span className={`storage-state ${selected.status}`}>{labelize(selected.status)}</span>
                   <h3>{isSkidPage ? selected.skid_number : selected.rack_code}</h3>
@@ -884,10 +888,8 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                 <header><strong>Movement History</strong><span>Permanent audit trail</span></header>
                 <MovementHistory rows={historyQuery.data || []} loading={historyQuery.isLoading} />
               </section>}
-            </>
-          )}
-        </main>
-      </div>
+          </main>
+        </div>
       )}
 
       {formRecord !== undefined && <StorageForm mode={mode} record={formRecord} locations={dataQuery.data?.locations || []} busy={busy} error={error} onSave={saveRecord} onClose={() => { setFormRecord(undefined); setError(""); }} />}

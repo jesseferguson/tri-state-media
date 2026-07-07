@@ -17850,21 +17850,26 @@ textarea {
   display: none;
 }
 
-.material-storage-view .storage-detail-panel.has-selection {
+.storage-detail-overlay {
   position: fixed;
-  top: 50%;
-  left: 50%;
+  inset: 0;
   z-index: 6200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, .68);
+  backdrop-filter: blur(6px);
+}
+
+.material-storage-view .storage-detail-panel.has-selection {
+  position: relative;
   width: min(1040px, calc(100vw - 36px));
   max-height: calc(100dvh - 36px);
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
-  transform: translate(-50%, -50%);
-  box-shadow:
-    0 0 0 9999px rgba(15, 23, 42, .68),
-    0 28px 80px rgba(15, 23, 42, .34);
+  box-shadow: 0 28px 80px rgba(15, 23, 42, .34);
 }
 
 .material-storage-view .storage-detail-panel.has-selection .storage-mobile-back {
@@ -18253,6 +18258,16 @@ textarea {
     display: block;
   }
 
+  .scanned-storage-view .storage-detail-overlay {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    display: block;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
   .scanned-storage-view .storage-detail-panel {
     width: 100%;
     border: 0;
@@ -18260,7 +18275,7 @@ textarea {
     box-shadow: none;
   }
 
-  .scanned-storage-view .storage-detail-panel.has-selection {
+  .scanned-storage-view .storage-detail-overlay .storage-detail-panel.has-selection {
     position: static;
     top: auto;
     left: auto;
@@ -29200,10 +29215,19 @@ textarea {
     display: none;
   }
 
-  .material-workspace-shell .storage-detail-panel.has-selection {
+  .material-workspace-shell .storage-detail-overlay {
     position: fixed;
     inset: 0;
     z-index: 6200;
+    display: grid;
+    place-items: stretch;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .material-workspace-shell .storage-detail-panel.has-selection {
+    position: relative;
     width: 100vw;
     height: 100dvh;
     display: flex;
@@ -29213,6 +29237,7 @@ textarea {
     border: 0;
     border-radius: 0;
     background: #ffffff;
+    box-shadow: none;
     animation: none;
     overscroll-behavior: contain;
   }
