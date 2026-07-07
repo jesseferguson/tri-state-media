@@ -93,7 +93,9 @@ function normalizedRollScan(value) {
   }
 }
 
-function ScannerOverlay({ title, onScan, onClose }) {
+const CAMERA_FIRST_WORKFLOWS = new Set(["add-roll", "add-skid", "move-to-rack"]);
+
+function ScannerOverlay({ title, instruction = "Point the camera at the QR. The action will continue automatically.", onScan, onClose }) {
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
   const scannedRef = useRef(false);
@@ -145,7 +147,7 @@ function ScannerOverlay({ title, onScan, onClose }) {
           <button type="button" onClick={onClose} aria-label="Close scanner"><X size={19} /></button>
         </header>
         <video ref={videoRef} playsInline muted />
-        <p>Point the camera at the roll QR. It will be added automatically.</p>
+        <p>{instruction}</p>
         {error && <div className="storage-message error"><AlertTriangle size={17} /><span>{error}</span></div>}
       </section>
     </div>
@@ -322,11 +324,12 @@ function PrintDialog({ mode, record, presses, busy, error, onPrint, onClose }) {
 function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSubmit, onConfirmMove, onClose }) {
   const isSkidPage = mode === "skids";
   const selectedRoll = action?.roll || null;
+  const cameraFirst = CAMERA_FIRST_WORKFLOWS.has(action?.type);
   const [scanValue, setScanValue] = useState(selectedRoll ? String(selectedRoll.id) : action?.value || "");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [useAll, setUseAll] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(action?.type === "add-roll");
+  const [cameraOpen, setCameraOpen] = useState(cameraFirst);
   const [riskyConfirmed, setRiskyConfirmed] = useState(false);
   const isUse = action?.type === "use-roll";
   const risky = ["remove-roll", "remove-skid"].includes(action?.type) || (isUse && useAll);
@@ -371,8 +374,8 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
 
   return (
     <>
-      <div className={`storage-modal-overlay ${action?.type === "add-roll" ? "scan-roll-overlay" : ""} ${selectedRoll ? "selected-roll-overlay" : ""}`} role="presentation" onMouseDown={onClose}>
-        <form className={`storage-modal storage-workflow-modal ${action?.type === "add-roll" ? "scan-roll-workflow" : ""} ${selectedRoll ? "selected-roll-workflow" : ""} ${isUse ? "use-roll-workflow" : ""}`} onSubmit={(event) => { event.preventDefault(); submit(); }} onMouseDown={(event) => event.stopPropagation()}>
+      <div className={`storage-modal-overlay ${cameraFirst ? "scan-roll-overlay" : ""} ${selectedRoll ? "selected-roll-overlay" : ""}`} role="presentation" onMouseDown={onClose}>
+        <form className={`storage-modal storage-workflow-modal ${cameraFirst ? "scan-roll-workflow" : ""} ${selectedRoll ? "selected-roll-workflow" : ""} ${isUse ? "use-roll-workflow" : ""}`} onSubmit={(event) => { event.preventDefault(); submit(); }} onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <div><span>{isSkidPage ? record.skid_number : record.rack_code}</span><h3>{title}</h3></div>
             <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
@@ -397,7 +400,7 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
               </button>
               <label className="storage-scan-input">
                 <span>Scan or enter {scanName} ID</span>
-                <input autoFocus={action?.type !== "add-roll"} value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
+                <input autoFocus={!cameraFirst} value={scanValue} onChange={(event) => { setScanValue(event.target.value); setRiskyConfirmed(false); }} placeholder={`Scan ${scanName} now`} required />
               </label>
             </div>
           )}
@@ -464,7 +467,14 @@ function WorkflowDialog({ mode, action, record, busy, error, confirmation, onSub
           </footer>
         </form>
       </div>
-      {cameraOpen && <ScannerOverlay title={`Scan ${scanName} QR`} onScan={handleScan} onClose={() => setCameraOpen(false)} />}
+      {cameraOpen && (
+        <ScannerOverlay
+          title={`Scan ${scanName} QR`}
+          instruction={`Point the camera at the ${scanName} QR. The action will continue automatically.`}
+          onScan={handleScan}
+          onClose={() => setCameraOpen(false)}
+        />
+      )}
     </>
   );
 }

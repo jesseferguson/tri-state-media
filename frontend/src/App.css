@@ -646,7 +646,7 @@
 .storage-camera-overlay {
   position: fixed;
   inset: 0;
-  z-index: 3700;
+  z-index: 7000;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -901,7 +901,7 @@
 }
 
 .storage-camera-overlay {
-  z-index: 3900;
+  z-index: 7100;
 }
 
 .storage-camera-overlay > section {
