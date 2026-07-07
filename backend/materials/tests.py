@@ -798,6 +798,37 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(skid.current_rack_id, rack.id)
         self.assertIn(rack.rack_code, response.json()["completed"])
 
+    def test_skid_page_can_move_skid_to_production_floor(self):
+        skid = self.create_skid()
+        rack = self.create_rack()
+        self.client.post(
+            reverse("rack-add-skid", args=[rack.id]),
+            {"scan_value": skid.skid_number, "performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+        skid.refresh_from_db()
+        self.assertEqual(skid.current_rack_id, rack.id)
+
+        response = self.client.post(
+            reverse("skid-move-to-floor", args=[skid.id]),
+            {"performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        skid.refresh_from_db()
+        self.assertIsNone(skid.current_rack_id)
+        self.assertEqual(skid.other_location, "Wilmington Ohio > Plant Floor")
+        self.assertIn("Wilmington Ohio > Plant Floor", response.json()["completed"])
+        self.assertTrue(MaterialMovement.objects.filter(
+            skid=skid,
+            action_type="skid_removed_from_rack",
+            from_location__icontains=rack.rack_code,
+            to_location="Wilmington Ohio > Plant Floor",
+        ).exists())
+
     def test_partial_and_full_roll_usage_keep_inventory_consistent(self):
         skid = self.create_skid()
         self.add_roll(skid)

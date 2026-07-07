@@ -141,6 +141,9 @@ def _workflow_error(error):
     )
 
 
+PRODUCTION_FLOOR_LOCATION = "Wilmington Ohio > Plant Floor"
+
+
 def _storage_print_job(request, *, label_type, scan_url, zpl):
     from production.views import (
         FIREBASE_PRINT_QUEUE_BASE,
@@ -447,6 +450,45 @@ class MaterialSkidViewSet(BaseMaterialsViewSet):
             "completed": f"Completed: {skid.skid_number} moved to {rack.rack_code}",
             "skid": self.get_serializer(self.get_queryset().get(pk=skid.pk)).data,
             "rack": MaterialRackSerializer(rack).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="move-to-floor")
+    def move_to_floor(self, request, pk=None):
+        user = _verified_company_user(request)
+        if not user:
+            return Response({"detail": "Sign in as an active user to move skids."}, status=status.HTTP_403_FORBIDDEN)
+        skid = self.get_object()
+        if skid.status != "active":
+            return Response(
+                {"detail": f"{skid.skid_number} is not active."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if not skid.current_rack_id and not skid.other_location:
+            return Response({
+                "ok": True,
+                "completed": f"{skid.skid_number} is already on the production floor.",
+                "skid": self.get_serializer(skid).data,
+            })
+        before_location = skid_location(skid)
+        rack = skid.current_rack
+        with transaction.atomic():
+            skid.current_rack = None
+            skid.other_location = PRODUCTION_FLOOR_LOCATION
+            skid.save(update_fields=["current_rack", "other_location", "updated_at"])
+            movement(
+                action_type="skid_removed_from_rack" if rack else "manual_edit",
+                skid=skid,
+                rack=rack,
+                from_location=before_location,
+                to_location=PRODUCTION_FLOOR_LOCATION,
+                notes=f"{skid.skid_number} moved to the production floor.",
+                source="manual",
+                **_request_actor(request, user),
+            )
+        return Response({
+            "ok": True,
+            "completed": f"Completed: {skid.skid_number} moved to {PRODUCTION_FLOOR_LOCATION}",
+            "skid": self.get_serializer(self.get_queryset().get(pk=skid.pk)).data,
         })
 
     @action(detail=True, methods=["post"], url_path="print-label")

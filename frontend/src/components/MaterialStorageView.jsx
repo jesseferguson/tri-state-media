@@ -505,6 +505,15 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
   const records = dataQuery.data?.records || [];
   const selected = records.find((row) => String(row.id) === String(selectedId)) || null;
+  const selectedIsProductionFloor = Boolean(
+    selected && !selected.current_rack && /(?:plant|production)\s+floor/i.test(String(selected.other_location || selected.current_location_display || ""))
+  );
+  const canMoveSelectedSkidToFloor = Boolean(
+    isSkidPage
+    && selected
+    && selected.status === "active"
+    && (selected.current_rack || (selected.other_location && !selectedIsProductionFloor))
+  );
   const rackRolls = !isSkidPage && selected ? [
     ...(selected.loose_rolls || []).map((roll) => ({ ...roll, storage_skid_number: "" })),
     ...(selected.skids || []).flatMap((skid) => (skid.rolls || []).map((roll) => ({ ...roll, storage_skid_number: skid.skid_number }))),
@@ -632,6 +641,26 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
       await refresh(printRecord.id);
     } catch (printError) {
       setError(errorPayload(printError).detail);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function moveSelectedSkidToFloor() {
+    if (!selected || !isSkidPage) return;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const result = await requestApi(`${endpoint}/${selected.id}/move-to-floor`, {
+        method: "POST",
+        headers: userHeaders(currentUser),
+        body: JSON.stringify({ performed_by: currentUser?.name || "" }),
+      });
+      setSuccess(result.completed || `${selected.skid_number} moved to the production floor.`);
+      await refresh(selected.id);
+    } catch (moveError) {
+      setError(errorPayload(moveError).detail);
     } finally {
       setBusy(false);
     }
@@ -767,7 +796,8 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                 {isSkidPage ? (
                   <>
                     <button className="primary" type="button" onClick={() => openWorkflow("add-roll")} disabled={selected.status !== "active"}><Camera size={20} /><span><strong>Scan Roll</strong><small>Add directly to skid</small></span></button>
-                    <button className="storage-move-primary" type="button" onClick={() => openWorkflow("move-to-rack")} disabled={selected.status !== "active"}><Warehouse size={20} /><span><strong>Move Skid</strong><small>Scan rack QR</small></span></button>
+                    <button className="storage-move-primary" type="button" onClick={() => openWorkflow("move-to-rack")} disabled={selected.status !== "active"}><Warehouse size={20} /><span><strong>To Rack</strong><small>Scan rack QR</small></span></button>
+                    <button className="storage-floor-primary" type="button" onClick={moveSelectedSkidToFloor} disabled={busy || !canMoveSelectedSkidToFloor}><MapPin size={20} /><span><strong>To Floor</strong><small>Wilmington Ohio</small></span></button>
                     <div className="storage-action-menu-wrap">
                       <button className="storage-menu-trigger" type="button" onClick={() => setActionMenuOpen((open) => !open)} aria-label="More skid actions" aria-expanded={actionMenuOpen}><Menu size={22} /></button>
                       {actionMenuOpen && (
