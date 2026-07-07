@@ -3008,6 +3008,9 @@ export const resources = [
         type: "searchRelation",
         relation: "locations",
         searchable: true,
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
+        display: (row) => row.full_path || [row.parent_name, row.name].filter(Boolean).join(" > ") || row.code,
         searchFields: [
           "name",
           "code",
