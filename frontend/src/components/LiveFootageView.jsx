@@ -1321,17 +1321,23 @@ export default function LiveFootageView({
                 <div className="press-qr-label-list">
                   {presses.map((press) => {
                     const printing = qrLabelStatus.printingKey === press.key;
+                    const dashboardUrl = typeof window !== "undefined" ? `${window.location.origin}/?pressDashboard=${press.key}` : `?pressDashboard=${press.key}`;
                     return (
                       <article key={press.key}>
                         <div>
                           <span>{press.key}</span>
                           <strong>{press.name}</strong>
-                          <em>{typeof window !== "undefined" ? `${window.location.origin}/?pressDashboard=${press.key}` : `?pressDashboard=${press.key}`}</em>
+                          <em>{dashboardUrl}</em>
                         </div>
-                        <button type="button" onClick={() => printDashboardQrLabel(press)} disabled={Boolean(qrLabelStatus.printingKey)}>
-                          {printing ? <Activity className="live-device-settings-spin" size={16} /> : <Printer size={16} />}
-                          {printing ? "Queueing..." : "Print QR"}
-                        </button>
+                        <div className="press-qr-label-actions">
+                          <a href={dashboardUrl} target="_blank" rel="noreferrer">
+                            <QrCode size={16} /> Open Link
+                          </a>
+                          <button type="button" onClick={() => printDashboardQrLabel(press)} disabled={Boolean(qrLabelStatus.printingKey)}>
+                            {printing ? <Activity className="live-device-settings-spin" size={16} /> : <Printer size={16} />}
+                            {printing ? "Queueing..." : "Print QR"}
+                          </button>
+                        </div>
                       </article>
                     );
                   })}

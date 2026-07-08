@@ -616,7 +616,8 @@ def press_dashboard_qr_label(request):
         copies=copies,
     )
     payload = {
-        "TYPE": "PRESS_DASHBOARD_QR_4X3",
+        "TYPE": "SKID_LABEL_4X3",
+        "Label Purpose": "PRESS_DASHBOARD_QR_4X3",
         "Printer": printer_ip,
         "Printer Port": _positive_int(request.data.get("printer_port") or getattr(printer_press, "printer_port", None), 9100),
         "SPEED": speed,
