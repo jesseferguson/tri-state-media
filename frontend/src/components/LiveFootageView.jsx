@@ -1261,7 +1261,7 @@ export default function LiveFootageView({
                 <strong>Loading printer settings...</strong>
               </div>
             ) : (
-              <>
+              <div className="press-qr-label-content">
                 <div className="press-qr-printer-card">
                   <div className="press-qr-printer-title">
                     <Printer size={18} />
@@ -1342,7 +1342,7 @@ export default function LiveFootageView({
                     );
                   })}
                 </div>
-              </>
+              </div>
             )}
           </section>
         </div>

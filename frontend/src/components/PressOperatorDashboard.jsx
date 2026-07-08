@@ -272,6 +272,54 @@ function statusHelp(status, metrics) {
     : "Waiting for the first footage reading this shift.";
 }
 
+function PressFootageMix({ totals = [], currentKey = "" }) {
+  const totalFootage = totals.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  const current = totals.find((item) => item.key === currentKey) || totals[0] || { name: "This press", total: 0 };
+  const others = totals.filter((item) => item.key !== currentKey);
+
+  return (
+    <section className="pod-panel pod-press-mix-panel">
+      <header>
+        <div>
+          <span><Activity size={15} /> Press Footage</span>
+          <strong>Your press is highlighted</strong>
+        </div>
+        <em>Other presses are shown for shop context.</em>
+      </header>
+      <div className="pod-current-press-total">
+        <span>{current.name}</span>
+        <strong>{formatInt(current.total)} ft</strong>
+        <em>Current press footage</em>
+      </div>
+      <div className="pod-press-mix-bar" aria-label="Footage by press">
+        {totals.map((item) => {
+          const width = totalFootage > 0 ? Math.max(4, (Number(item.total || 0) / totalFootage) * 100) : (100 / Math.max(1, totals.length));
+          return (
+            <span
+              className={item.key === currentKey ? "active" : ""}
+              style={{ width: `${width}%` }}
+              title={`${item.name}: ${formatInt(item.total)} ft`}
+              key={item.key}
+            />
+          );
+        })}
+      </div>
+      <div className="pod-press-mix-list">
+        <article className="active">
+          <span>{current.name}</span>
+          <strong>{formatInt(current.total)} ft</strong>
+        </article>
+        {others.map((item) => (
+          <article key={item.key}>
+            <span>{item.name}</span>
+            <strong>{formatInt(item.total)} ft</strong>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function HourlyLineChart({ buckets = [], targetHourlyFootage = 0 }) {
   const visibleBuckets = buckets.slice(-12);
   const width = 360;
@@ -376,6 +424,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
     refreshing: false,
     error: "",
     rows: [],
+    pressTotals: pressDashboardPresses.map((item) => ({ key: item.key, name: item.name, total: 0 })),
     speed: 0,
     speedUpdatedAt: "",
     updatedAt: "",
@@ -390,16 +439,31 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
     const now = new Date();
     const { start, end } = getShiftWindow(now);
     try {
-      const [dailyPayload, speedPayload] = await Promise.all([
-        fetchJson(dailyUrl(press.dailyNode), controller.signal),
+      const [dailyPayloads, speedPayload] = await Promise.all([
+        Promise.all(pressDashboardPresses.map((item) => (
+          fetchJson(dailyUrl(item.dailyNode), controller.signal).catch((error) => {
+            if (error.name === "AbortError") throw error;
+            return null;
+          })
+        ))),
         fetchJson(speedUrl(press.speedNode), controller.signal).catch(() => null),
       ]);
-      const rows = filterDailyRows(normalizeDailyList(dailyPayload), start, end);
+      let rows = [];
+      const pressTotals = pressDashboardPresses.map((item, index) => {
+        const itemRows = filterDailyRows(normalizeDailyList(dailyPayloads[index]), start, end);
+        if (item.key === press.key) rows = itemRows;
+        return {
+          key: item.key,
+          name: item.name,
+          total: itemRows.reduce((sum, row) => sum + Number(row.footage || 0), 0),
+        };
+      });
       setState({
         loading: false,
         refreshing: false,
         error: "",
         rows,
+        pressTotals,
         speed: extractSpeed(speedPayload),
         speedUpdatedAt: extractUpdatedAt(speedPayload),
         updatedAt: formatTime(new Date()),
@@ -431,8 +495,12 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
   const totalShiftMinutes = Math.max(1, (metrics.end.getTime() - metrics.start.getTime()) / 60000);
   const perPressTargetFpm = companyGoalFootage / pressDashboardPresses.length / totalShiftMinutes;
   const targetHourlyFootage = perPressTargetFpm * 60;
-  const currentPacePercent = Math.max(0, (Number(state.speed || 0) / Math.max(1, perPressTargetFpm)) * 100);
-  const movingPacePercent = Math.max(0, (Number(metrics.runningAverageFpm || 0) / Math.max(1, perPressTargetFpm)) * 100);
+  const pressGoalFootage = companyGoalFootage / pressDashboardPresses.length;
+  const projectedFootage = metrics.averageFpm * totalShiftMinutes;
+  const remainingToGoal = Math.max(0, pressGoalFootage - metrics.totalFootage);
+  const projectedGap = projectedFootage - pressGoalFootage;
+  const currentGoalWidth = Math.min(100, Math.max(0, (metrics.totalFootage / Math.max(1, pressGoalFootage)) * 100));
+  const projectedGoalWidth = Math.min(100, Math.max(0, (projectedFootage / Math.max(1, pressGoalFootage)) * 100));
   const status = metrics.status;
   const downRisk = metrics.minutesSinceFootage >= 20 ? "bad" : metrics.minutesSinceFootage >= 8 ? "warn" : "good";
 
@@ -489,7 +557,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
             <article className="pod-metric-card runtime">
               <span><Zap size={16} /> Runtime</span>
               <strong>{formatDuration(metrics.runtimeMinutes)}</strong>
-              <em>{formatOne(metrics.uptimePercent)}% of shift</em>
+              <em>Time with footage moving</em>
             </article>
             <article className={`pod-metric-card downtime ${downRisk}`}>
               <span><Timer size={16} /> Downtime</span>
@@ -499,32 +567,39 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
             <article className="pod-metric-card">
               <span><Gauge size={16} /> Avg Speed</span>
               <strong>{formatInt(metrics.averageFpm)} FPM</strong>
-              <em>Need {formatInt(perPressTargetFpm)} FPM per press</em>
+              <em>Average across the shift</em>
             </article>
             <article className="pod-metric-card">
               <span><TrendingUp size={16} /> Moving Avg</span>
               <strong>{formatInt(metrics.runningAverageFpm)} FPM</strong>
-              <em>{formatInt(movingPacePercent)}% of company share pace</em>
+              <em>Only when footage is moving</em>
             </article>
           </section>
 
-          <section className={`pod-pace-compare ${state.speed >= perPressTargetFpm ? "good" : "behind"}`}>
+          <section className={`pod-forecast-card ${projectedFootage >= pressGoalFootage ? "good" : "behind"}`}>
             <div>
-              <span><Goal size={16} /> Company goal pace</span>
-              <strong>{formatInt(perPressTargetFpm)} FPM</strong>
-              <em>Each tracked press share to hit {formatInt(companyGoalFootage)} ft</em>
+              <span><Goal size={16} /> Goal forecast</span>
+              <strong>{formatInt(projectedFootage)} ft</strong>
+              <em>{projectedGap >= 0 ? `Projected over target by ${formatInt(projectedGap)} ft` : `Projected short by ${formatInt(Math.abs(projectedGap))} ft`}</em>
             </div>
-            <div className="pod-pace-bars">
-              <label>
-                <span>Current</span>
-                <i><b style={{ width: `${Math.min(140, currentPacePercent)}%` }} /></i>
-                <strong>{formatInt(currentPacePercent)}%</strong>
-              </label>
-              <label>
-                <span>Moving avg</span>
-                <i><b style={{ width: `${Math.min(140, movingPacePercent)}%` }} /></i>
-                <strong>{formatInt(movingPacePercent)}%</strong>
-              </label>
+            <div className="pod-forecast-details">
+              <article>
+                <span>Made</span>
+                <strong>{formatInt(metrics.totalFootage)} ft</strong>
+              </article>
+              <article>
+                <span>Target</span>
+                <strong>{formatInt(pressGoalFootage)} ft</strong>
+              </article>
+              <article>
+                <span>Still needed</span>
+                <strong>{formatInt(remainingToGoal)} ft</strong>
+              </article>
+              <div className="pod-goal-track">
+                <i style={{ width: `${currentGoalWidth}%` }} />
+                <b style={{ left: `${projectedGoalWidth}%` }} />
+              </div>
+              <small>Filled bar is made so far. Marker is projected finish.</small>
             </div>
           </section>
 
@@ -558,10 +633,12 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
                 <span><Goal size={15} /> Hourly Footage</span>
                 <strong>Production trend</strong>
               </div>
-              <em>Line compared to share target</em>
+              <em>Red line is this press target pace.</em>
             </header>
             <HourlyLineChart buckets={metrics.hourly} targetHourlyFootage={targetHourlyFootage} />
           </section>
+
+          <PressFootageMix totals={state.pressTotals} currentKey={press.key} />
 
           <section className="pod-shift-card">
             <div className="pod-shift-header">
