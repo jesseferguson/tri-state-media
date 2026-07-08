@@ -12,6 +12,7 @@ import {
   Edit3,
   MapPin,
   Layers3,
+  LoaderCircle,
   Menu,
   PackageOpen,
   Plus,
@@ -412,10 +413,18 @@ function MovementHistory({ rows = [], loading }) {
 function MaterialLoadingScreen({ title, detail }) {
   return (
     <section className="material-loading-screen" aria-live="polite">
+      <div className="scan-link-loader">
+        <span className="scan-link-loader-icon"><PackageOpen size={30} /></span>
+        <LoaderCircle className="scan-link-spinner" size={58} />
+      </div>
       <div>
-        <span><PackageOpen size={24} /></span>
-        <strong>{title}</strong>
+        <span>Secure plant inventory</span>
+        <h1>{title}</h1>
         <p>{detail}</p>
+      </div>
+      <div className="scan-link-loading-bars" aria-hidden="true">
+        <i />
+        <i />
         <i />
       </div>
     </section>

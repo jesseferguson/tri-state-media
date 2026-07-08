@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronRight, Factory, History, Layers3, MapPin, PackageCheck, PackageOpen, PackagePlus, Plus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronRight, Factory, History, Layers3, LoaderCircle, MapPin, PackageCheck, PackageOpen, PackagePlus, Plus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
 import { fetchCollection, postRecordAction, requestApi, updateRecord } from "../api";
 import { formatInches, labelize } from "../lib/format";
 import { canDeleteMaterialRoll } from "../lib/localAuth";
@@ -164,13 +164,31 @@ function materialTreeGroups(rows, section) {
   });
 }
 
+function materialSizeGroups(rows = []) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = widthName(row);
+    if (!groups.has(key)) groups.set(key, { key, label: key, rows: [] });
+    groups.get(key).rows.push(row);
+  });
+  return Array.from(groups.values()).sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+}
+
 function MaterialLoadingScreen({ title = "Loading Material", detail = "Pulling inventory, locations, skids, and racks." }) {
   return (
     <section className="material-loading-screen" aria-live="polite">
+      <div className="scan-link-loader">
+        <span className="scan-link-loader-icon"><Layers3 size={30} /></span>
+        <LoaderCircle className="scan-link-spinner" size={58} />
+      </div>
       <div>
-        <span><Layers3 size={24} /></span>
-        <strong>{title}</strong>
+        <span>Secure plant inventory</span>
+        <h1>{title}</h1>
         <p>{detail}</p>
+      </div>
+      <div className="scan-link-loading-bars" aria-hidden="true">
+        <i />
+        <i />
         <i />
       </div>
     </section>
@@ -206,7 +224,7 @@ function MaterialInventoryTree({ rows, tags = [], selectedId, relatedRollIds, on
   };
 
   function toggle(key) {
-    setExpanded((current) => ({ ...current, [key]: !(current[key] ?? true) }));
+    setExpanded((current) => ({ ...current, [key]: !(current[key] ?? false) }));
   }
 
   return (
@@ -223,7 +241,8 @@ function MaterialInventoryTree({ rows, tags = [], selectedId, relatedRollIds, on
       </nav>
       <div className="material-handling-groups material-tree-groups">
         {groups.map((group) => {
-          const open = expanded[group.key] ?? true;
+          const open = expanded[group.key] ?? false;
+          const sizeGroups = materialSizeGroups(group.rows);
           return (
             <section className={open ? "open" : ""} key={group.key}>
               <button className="material-tree-group-head" type="button" onClick={() => toggle(group.key)} aria-expanded={open}>
@@ -233,29 +252,47 @@ function MaterialInventoryTree({ rows, tags = [], selectedId, relatedRollIds, on
                 {open ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
               </button>
               {open && (
-                <div>
-                  {group.rows.map((row) => {
-                    const tag = tagById.get(String(row.source_roll_tag || ""));
-                    const route = rollRoute(row);
+                <div className="material-size-groups">
+                  {sizeGroups.map((sizeGroup) => {
+                    const sizeKey = `${group.key}:${sizeGroup.key}`;
+                    const sizeOpen = expanded[sizeKey] ?? false;
                     return (
-                      <article className={`material-compact-roll ${sameId(row.id, selectedId) ? "active" : ""}`} key={row.id}>
-                        <button className="material-roll-summary" type="button" onClick={() => onSelect(row)}>
-                          <span className={`material-roll-status ${row.status}`} />
-                          <div className="material-roll-main">
-                            <div className="material-roll-line">
-                              <strong>{materialName(row)}</strong>
-                              <b>{formatInventoryAmount(row)}</b>
-                            </div>
-                            <div className="material-roll-essentials">
-                              <span><Factory size={12} /> {materialMaker(row, tag)}</span>
-                              <span><Layers3 size={12} /> {widthName(row)}</span>
-                              <span><PackageOpen size={12} /> {route.skid}</span>
-                              <span><MapPin size={12} /> {route.location}</span>
-                            </div>
-                          </div>
-                          <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
+                      <section className={sizeOpen ? "open" : ""} key={sizeKey}>
+                        <button className="material-size-group-head" type="button" onClick={() => toggle(sizeKey)} aria-expanded={sizeOpen}>
+                          <div><Layers3 size={14} /><strong>{sizeGroup.label}</strong></div>
+                          <span>{sizeGroup.rows.length} item{sizeGroup.rows.length === 1 ? "" : "s"}</span>
+                          <b>{groupAmount(sizeGroup.rows)}</b>
+                          {sizeOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </button>
-                      </article>
+                        {sizeOpen && (
+                          <div>
+                            {sizeGroup.rows.map((row) => {
+                              const tag = tagById.get(String(row.source_roll_tag || ""));
+                              const route = rollRoute(row);
+                              return (
+                                <article className={`material-compact-roll ${sameId(row.id, selectedId) ? "active" : ""}`} key={row.id}>
+                                  <button className="material-roll-summary" type="button" onClick={() => onSelect(row)}>
+                                    <span className={`material-roll-status ${row.status}`} />
+                                    <div className="material-roll-main">
+                                      <div className="material-roll-line">
+                                        <strong>{materialName(row)}</strong>
+                                        <b>{formatInventoryAmount(row)}</b>
+                                      </div>
+                                      <div className="material-roll-essentials">
+                                        <span><Factory size={12} /> {materialMaker(row, tag)}</span>
+                                        <span><Layers3 size={12} /> {widthName(row)}</span>
+                                        <span><PackageOpen size={12} /> {route.skid}</span>
+                                        <span><MapPin size={12} /> {route.location}</span>
+                                      </div>
+                                    </div>
+                                    <em>{relatedRollIds.has(String(row.source_roll_tag || "")) ? "Same run" : labelize(row.status)}</em>
+                                  </button>
+                                </article>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </section>
                     );
                   })}
                 </div>
@@ -1094,13 +1131,6 @@ export default function MaterialHandlingView({
         </div>
       ) : (
         <>
-          <section className="material-inventory-summary">
-            <article><span>Active Material</span><strong>{Math.round(inventorySummary.footage).toLocaleString()} ft</strong><small>{inventorySummary.rolls} items</small></article>
-            <article><span>On Skids</span><strong>{inventorySummary.skids}</strong><small>active skids</small></article>
-            <article><span>In Racks</span><strong>{inventorySummary.racks}</strong><small>storage racks</small></article>
-            <article><span>Plant Floor</span><strong>{inventorySummary.floor}</strong><small>loose items</small></article>
-          </section>
-
           {linkedTag && !linkedInventory && (
             <div className="material-pending-tag">
               <AlertTriangle size={18} />
