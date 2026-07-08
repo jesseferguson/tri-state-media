@@ -19,7 +19,6 @@ import {
   ShieldCheck,
   Store,
   UploadCloud,
-  Warehouse,
   Wrench,
 } from "lucide-react";
 
@@ -805,15 +804,15 @@ export const resources = [
 
   {
     key: "racks",
-    label: "Racks",
-    singular: "Rack Tracking",
+    label: "Locations",
+    singular: "Material Location",
     group: "production-material",
-    icon: Warehouse,
+    icon: MapPin,
     accent: "#c2410c",
     staticView: true,
     viewMode: "materialStorageRacks",
     disableCreate: true,
-    tagline: "Move skids into rack locations and see every roll stored inside.",
+    tagline: "See floor areas, rack locations, and every material movement point.",
     columns: [],
     fields: [],
   },

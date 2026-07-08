@@ -171,6 +171,76 @@ function locationMatches(row, pattern) {
     && pattern.test(`${locationPath(row)} ${row?.code || ""}`);
 }
 
+function isFloorLocation(row) {
+  return locationMatches(row, /floor/i);
+}
+
+function sameFloor(left, right) {
+  const clean = (value) => String(value || "")
+    .trim()
+    .replace(/^wilmington ohio\s*>\s*/i, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  const a = clean(left);
+  const b = clean(right);
+  if (!a || !b) return false;
+  return a === b || a.endsWith(b) || b.endsWith(a);
+}
+
+function floorSearchText(row) {
+  return [
+    row.name,
+    row.full_path,
+    row.code,
+    row.skids?.map((skid) => skid.skid_number).join(" "),
+    row.rolls?.map((roll) => `${roll.serial_number || ""} ${roll.lot_number || ""} ${roll.material_name || ""} ${roll.material_master_type_code || ""}`).join(" "),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function activeRolls(rows = []) {
+  return rows.filter((row) => row?.is_active !== false && !["depleted", "scrapped"].includes(row?.status));
+}
+
+function floorLocationRows(locations = [], skids = [], inventory = []) {
+  return locations
+    .filter(isFloorLocation)
+    .sort((a, b) => naturalCompare(locationPath(a), locationPath(b)))
+    .map((location) => {
+      const fullPath = locationPath(location);
+      const floorSkids = skids.filter((skid) => (
+        skid.status === "active"
+        && !skid.current_rack
+        && sameFloor(skid.other_location || skid.current_location_display || "Plant Floor", fullPath)
+      ));
+      const looseRolls = activeRolls(inventory).filter((roll) => (
+        !roll.current_skid
+        && !roll.current_rack
+        && !roll.direct_rack
+        && (
+          String(roll.location || "") === String(location.id)
+          || sameFloor(roll.location_full_path || roll.current_location_display || "Plant Floor", fullPath)
+        )
+      ));
+      const skidRolls = floorSkids.flatMap((skid) => skid.rolls || []);
+      const rolls = [...looseRolls, ...skidRolls];
+      const totalFeet = rolls.reduce((sum, roll) => sum + (Number(roll.length_feet ?? roll.quantity ?? 0) || 0), 0);
+      return {
+        id: `floor-${location.id}`,
+        storage_kind: "floor",
+        location_id: location.id,
+        name: location.name,
+        code: location.code,
+        full_path: fullPath,
+        status: location.is_active === false ? "inactive" : "active",
+        skid_count: floorSkids.length,
+        roll_count: rolls.length,
+        total_remaining_feet: totalFeet,
+        skids: floorSkids,
+        rolls,
+      };
+    });
+}
+
 function floorDestinationOptions(locations = [], racks = []) {
   const options = [];
   const pushOption = (key, label, value, detail = "") => {
@@ -540,7 +610,7 @@ function OfflineMovementForms({ onClose }) {
           <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
         </header>
         <div className="offline-form-actions">
-          <p>Print these before working in the off-site area. When wifi is back, enter the sheet into Add Material, Skids, or Racks.</p>
+          <p>Print these before working in the off-site area. When wifi is back, enter the sheet into Add Material, Skids, or Locations.</p>
           <button className="primary-btn" type="button" onClick={() => window.print()}><Printer size={16} /> Print Forms</button>
         </div>
         <main className="offline-print-pack">
@@ -791,6 +861,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   const isAdmin = String(currentUser?.role || "").toLowerCase() === "admin";
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
+  const [locationTab, setLocationTab] = useState("all");
   const [formRecord, setFormRecord] = useState(undefined);
   const [workflow, setWorkflow] = useState(null);
   const [printRecord, setPrintRecord] = useState(null);
@@ -810,19 +881,27 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   const dataQuery = useQuery({
     queryKey: ["material-storage", mode],
     queryFn: async () => {
-      const [records, presses, locations, rackRecords] = await Promise.all([
+      const [records, presses, locations, rackRecords, skidRecords, inventoryRecords] = await Promise.all([
         fetchCollection(endpoint, { ordering: isSkidPage ? "-created_at" : "rack_code", pageSize: 1000, fetchAll: true }),
         fetchCollection("presses", { ordering: "name", pageSize: 500, fetchAll: true }),
         fetchCollection("locations", { ordering: "name", pageSize: 1000, fetchAll: true }),
         isSkidPage
           ? fetchCollection("racks", { ordering: "rack_code", pageSize: 1000, fetchAll: true })
           : Promise.resolve({ results: [] }),
+        isSkidPage
+          ? Promise.resolve({ results: [] })
+          : fetchCollection("skids", { ordering: "-created_at", pageSize: 1000, fetchAll: true }),
+        isSkidPage
+          ? Promise.resolve({ results: [] })
+          : fetchCollection("raw-materials", { ordering: "material_type,name,serial_number", pageSize: 1000, fetchAll: true }),
       ]);
       return {
         records: records.results || [],
         presses: presses.results || [],
         locations: locations.results || [],
         racks: isSkidPage ? rackRecords.results || [] : records.results || [],
+        skids: skidRecords.results || [],
+        inventory: inventoryRecords.results || [],
       };
     },
     staleTime: 10_000,
@@ -830,7 +909,14 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   });
 
   const records = dataQuery.data?.records || [];
-  const selected = records.find((row) => String(row.id) === String(selectedId)) || null;
+  const floorRows = useMemo(
+    () => isSkidPage ? [] : floorLocationRows(dataQuery.data?.locations || [], dataQuery.data?.skids || [], dataQuery.data?.inventory || []),
+    [isSkidPage, dataQuery.data?.locations, dataQuery.data?.skids, dataQuery.data?.inventory]
+  );
+  const selectedFloor = floorRows.find((row) => String(row.id) === String(selectedId)) || null;
+  const selectedRack = records.find((row) => String(row.id) === String(selectedId)) || null;
+  const selected = selectedFloor || selectedRack;
+  const selectedIsFloor = Boolean(selected?.storage_kind === "floor");
   const floorOptions = useMemo(
     () => floorDestinationOptions(dataQuery.data?.locations || [], dataQuery.data?.racks || []),
     [dataQuery.data?.locations, dataQuery.data?.racks]
@@ -847,7 +933,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   const historyQuery = useQuery({
     queryKey: ["material-storage-history", mode, selected?.id],
     queryFn: () => requestApi(`${endpoint}/${selected.id}/history`, { headers: userHeaders(currentUser) }),
-    enabled: Boolean(selected?.id),
+    enabled: Boolean(selected?.id && !selectedIsFloor),
     staleTime: 5_000,
   });
 
@@ -889,8 +975,14 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
+    if (!isSkidPage && locationTab === "floor") return [];
     return records.filter((row) => !query || (isSkidPage ? JSON.stringify(row).toLowerCase().includes(query) : rackSearchText(row).includes(query)));
-  }, [records, search, isSkidPage]);
+  }, [records, search, isSkidPage, locationTab]);
+  const filteredFloors = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (locationTab === "racks") return [];
+    return floorRows.filter((row) => !query || floorSearchText(row).includes(query));
+  }, [floorRows, search, locationTab]);
   const rackGroups = useMemo(() => groupedRacks(filtered), [filtered]);
 
   async function refresh(recordId = selectedId) {
@@ -1079,20 +1171,20 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
       <header className="storage-hero">
         <div>
           <span>{isSkidPage ? "Material movement" : "Plant locations"}</span>
-          <h2>{isSkidPage ? "Skids" : "Racks"}</h2>
-          <p>{isSkidPage ? "Scan rolls onto skids and follow every movement." : "Scan skids into rack locations and see the material inside."}</p>
+          <h2>{isSkidPage ? "Skids" : "Locations"}</h2>
+          <p>{isSkidPage ? "Scan rolls onto skids and follow every movement." : "See floor areas, rack locations, and the material stored there."}</p>
         </div>
         <div>
           <button className="ghost-btn" type="button" onClick={() => dataQuery.refetch()}><RefreshCcw size={16} /> Refresh</button>
           <button className="ghost-btn" type="button" onClick={() => setOfflineFormsOpen(true)}><Printer size={16} /> Offline Forms</button>
-          {isAdmin && <button className="primary-btn" type="button" onClick={() => { setFormRecord(null); setError(""); }}><Plus size={17} /> {isSkidPage ? "New Skid" : "New Rack"}</button>}
+          {isAdmin && <button className="primary-btn" type="button" onClick={() => { setFormRecord(null); setError(""); }}><Plus size={17} /> {isSkidPage ? "New Skid" : "New Location"}</button>}
         </div>
       </header>
 
       <nav className="material-storage-links" aria-label="Material inventory views">
         <button type="button" onClick={() => onNavigate?.("material-handling")}><Layers3 size={16} /> Material</button>
         <button className={isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("skids")}><PackageOpen size={16} /> Skids</button>
-        <button className={!isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("racks")}><Warehouse size={16} /> Racks</button>
+        <button className={!isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("racks")}><MapPin size={16} /> Locations</button>
       </nav>
 
       {initialToken && selected && (
@@ -1107,13 +1199,20 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
       {dataQuery.isLoading && !records.length ? (
         <MaterialLoadingScreen
-          title={`Loading ${isSkidPage ? "Skids" : "Racks"}`}
-          detail={isSkidPage ? "Pulling current skid contents, roll counts, and rack positions." : "Pulling rack locations, skids, and material stored inside."}
+          title={`Loading ${isSkidPage ? "Skids" : "Locations"}`}
+          detail={isSkidPage ? "Pulling current skid contents, roll counts, and rack positions." : "Pulling floor areas, rack positions, skids, and material stored inside."}
         />
       ) : (
       <div className="storage-layout">
         <aside className="storage-list-panel">
-          <label className="storage-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${isSkidPage ? "skid, roll, or rack" : "rack or skid"}...`} /></label>
+          <label className="storage-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${isSkidPage ? "skid, roll, or rack" : "floor, rack, skid, or roll"}...`} /></label>
+          {!isSkidPage && (
+            <div className="storage-location-tabs" role="tablist" aria-label="Location groups">
+              <button className={locationTab === "all" ? "active" : ""} type="button" onClick={() => setLocationTab("all")}>All</button>
+              <button className={locationTab === "floor" ? "active" : ""} type="button" onClick={() => setLocationTab("floor")}>Floor</button>
+              <button className={locationTab === "racks" ? "active" : ""} type="button" onClick={() => setLocationTab("racks")}>Racks</button>
+            </div>
+          )}
           <div className="storage-list">
             {isSkidPage ? filtered.map((row) => {
                 const active = String(row.id) === String(selected?.id);
@@ -1130,6 +1229,31 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                 );
               }) : (
                 <div className="rack-grouped-list">
+                  {filteredFloors.length > 0 && (
+                    <details className="rack-aisle-group floor-location-group" defaultOpen>
+                      <summary>
+                        <span>Group</span>
+                        <strong>Floor</strong>
+                        <em>{filteredFloors.length} floor location{filteredFloors.length === 1 ? "" : "s"}</em>
+                      </summary>
+                      <div className="floor-location-items rack-number-items">
+                        {filteredFloors.map((row) => {
+                          const active = String(row.id) === String(selected?.id);
+                          return (
+                            <button className={active ? "active" : ""} type="button" onClick={() => { setSelectedId(String(row.id)); setSuccess(""); setError(""); }} key={row.id}>
+                              <span className={`storage-status-dot ${row.status}`} />
+                              <div>
+                                <strong>{row.name}</strong>
+                                <span>{row.full_path || "Floor location"}</span>
+                                <small>{row.skid_count} skids / {row.roll_count} rolls / {formatFeet(row.total_remaining_feet)}</small>
+                              </div>
+                              <ChevronRight size={17} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  )}
                   {rackGroups.map((aisle) => (
                     <details className="rack-aisle-group" defaultOpen key={aisle.key}>
                       <summary>
@@ -1166,7 +1290,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                   ))}
                 </div>
               )}
-            {!dataQuery.isLoading && !filtered.length && <p className="storage-empty">No {isSkidPage ? "skids" : "racks"} match this search.</p>}
+            {!dataQuery.isLoading && !filtered.length && (isSkidPage || !filteredFloors.length) && <p className="storage-empty">No {isSkidPage ? "skids" : "locations"} match this search.</p>}
           </div>
         </aside>
       </div>
@@ -1178,17 +1302,17 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
             className={`storage-detail-panel ${isSkidPage ? "skid-detail-panel" : ""} has-selection`}
             role="dialog"
             aria-modal="true"
-            aria-label={`${isSkidPage ? selected.skid_number : selected.rack_code} details`}
+            aria-label={`${isSkidPage ? selected.skid_number : selectedIsFloor ? selected.name : selected.rack_code} details`}
             onMouseDown={(event) => event.stopPropagation()}
           >
               <header className="storage-detail-header">
-                <button className="storage-mobile-back" type="button" onClick={closeSelectedDetail} aria-label={`Back to ${isSkidPage ? "skids" : "racks"}`}><ChevronLeft size={20} /></button>
+                <button className="storage-mobile-back" type="button" onClick={closeSelectedDetail} aria-label={`Back to ${isSkidPage ? "skids" : "locations"}`}><ChevronLeft size={20} /></button>
                 <div>
-                  <span className={`storage-state ${selected.status}`}>{labelize(selected.status)}</span>
-                  <h3>{isSkidPage ? selected.skid_number : selected.rack_code}</h3>
-                  <p><MapPin size={15} /> {isSkidPage ? selected.current_location_display : selected.storage_location_display || selected.location_detail || "Location not assigned"}</p>
+                  <span className={`storage-state ${selected.status}`}>{selectedIsFloor ? "Floor" : labelize(selected.status)}</span>
+                  <h3>{isSkidPage ? selected.skid_number : selectedIsFloor ? selected.name : selected.rack_code}</h3>
+                  <p><MapPin size={15} /> {isSkidPage ? selected.current_location_display : selectedIsFloor ? selected.full_path : selected.storage_location_display || selected.location_detail || "Location not assigned"}</p>
                 </div>
-                {!isSkidPage && <div>
+                {!isSkidPage && !selectedIsFloor && <div>
                   {isAdmin && <button className="icon-command" type="button" onClick={() => { setFormRecord(selected); setError(""); }} title="Edit"><Edit3 size={18} /><span>Edit</span></button>}
                   {isAdmin && <button className="icon-command" type="button" onClick={() => { setPrintRecord(selected); setError(""); }} title="Print label"><Printer size={18} /><span>Print</span></button>}
                 </div>}
@@ -1197,11 +1321,11 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
               <section className="storage-facts">
                 <div><span>{isSkidPage ? "Rolls" : "Skids"}</span><strong>{isSkidPage ? selected.roll_count : selected.skid_count}</strong></div>
                 <div><span>{isSkidPage ? "Rack" : "Total Rolls"}</span><strong>{isSkidPage ? selected.current_rack_code || "Floor" : selected.roll_count}</strong></div>
-                <div><span>Material</span><strong>{isSkidPage ? formatFeet(selected.total_remaining_feet) : formatInventoryTotals(selected.inventory_totals, selected.total_remaining_feet)}</strong></div>
-                <div><span>Last Move</span><strong>{formatDate(selected.last_movement?.created_at)}</strong></div>
+                <div><span>Material</span><strong>{isSkidPage ? formatFeet(selected.total_remaining_feet) : selectedIsFloor ? formatFeet(selected.total_remaining_feet) : formatInventoryTotals(selected.inventory_totals, selected.total_remaining_feet)}</strong></div>
+                <div><span>{selectedIsFloor ? "Type" : "Last Move"}</span><strong>{selectedIsFloor ? "Floor" : formatDate(selected.last_movement?.created_at)}</strong></div>
               </section>
 
-              <section className="storage-quick-actions">
+              {!selectedIsFloor && <section className="storage-quick-actions">
                 {isSkidPage ? (
                   <>
                     <button className="primary" type="button" onClick={() => openWorkflow("add-roll")} disabled={selected.status !== "active"}><Camera size={20} /><span><strong>Scan Roll</strong><small>Add directly to skid</small></span></button>
@@ -1224,10 +1348,10 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                     <button type="button" onClick={() => openWorkflow("remove-skid")} disabled={!selected.skid_count}><CircleOff size={20} /><span><strong>Remove Skid</strong><small>Move to floor</small></span></button>
                   </>
                 )}
-              </section>
+              </section>}
 
               <section className="storage-contents">
-                <header><div><strong>{isSkidPage ? "Rolls on this skid" : "Skids in this rack"}</strong><span>Current active contents</span></div><b>{isSkidPage ? selected.roll_count : selected.skid_count}</b></header>
+                <header><div><strong>{isSkidPage ? "Rolls on this skid" : selectedIsFloor ? "Skids on this floor" : "Skids in this rack"}</strong><span>Current active contents</span></div><b>{isSkidPage ? selected.roll_count : selected.skid_count}</b></header>
                 <div>
                   {isSkidPage ? selected.rolls?.map((roll) => (
                     <article key={roll.id}>
@@ -1250,7 +1374,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                       <span className={`storage-status-dot ${skid.status}`} />
                       <div><strong>{skid.skid_number}</strong><span>{skid.roll_count} rolls / {formatFeet(skid.total_remaining_feet)}</span></div>
                       <b>{skid.roll_count} rolls</b>
-                      <div className="storage-row-actions"><button type="button" onClick={() => openWorkflow("remove-skid", skid.skid_number)}>Remove</button></div>
+                      {!selectedIsFloor && <div className="storage-row-actions"><button type="button" onClick={() => openWorkflow("remove-skid", skid.skid_number)}>Remove</button></div>}
                     </article>
                   ))}
                   {!(isSkidPage ? selected.rolls?.length : selected.skids?.length) && <p className="storage-empty">No active contents.</p>}
@@ -1259,12 +1383,12 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
               {!isSkidPage && (
                 <section className="storage-contents">
-                  <header><div><strong>Material in this rack</strong><span>Loose material and rolls stored on skids</span></div><b>{selected.roll_count}</b></header>
+                  <header><div><strong>{selectedIsFloor ? "Material on this floor" : "Material in this rack"}</strong><span>{selectedIsFloor ? "Loose material and rolls sitting on floor skids" : "Loose material and rolls stored on skids"}</span></div><b>{selected.roll_count}</b></header>
                   <div>
-                    {rackRolls.map((roll) => (
+                    {(selectedIsFloor ? selected.rolls || [] : rackRolls).map((roll) => (
                       <article key={`${roll.storage_skid_number || "loose"}-${roll.id}`}>
                         <span className={`storage-status-dot ${roll.status}`} />
-                        <div><strong>{rollLabel(roll)}</strong><span>{[roll.storage_skid_number || "Direct in rack", roll.material_master_type_code || roll.material_name, roll.width_inches ? `${formatInches(roll.width_inches)} wide` : ""].filter(Boolean).join(" / ")}</span></div>
+                        <div><strong>{rollLabel(roll)}</strong><span>{[roll.storage_skid_number || (selectedIsFloor ? "Direct on floor" : "Direct in rack"), roll.material_master_type_code || roll.material_name, roll.width_inches ? `${formatInches(roll.width_inches)} wide` : ""].filter(Boolean).join(" / ")}</span></div>
                         <b>{roll.unit === "lf" ? formatFeet(roll.length_feet ?? roll.quantity) : `${Number(roll.quantity || 0).toLocaleString()} ${roll.unit}`}</b>
                         <div className="storage-row-actions">
                           <button type="button" onClick={() => onOpenRoll?.(roll)}>Edit Roll</button>
@@ -1274,12 +1398,12 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                         </div>
                       </article>
                     ))}
-                    {!selected.roll_count && <p className="storage-empty">No active rolls in this rack.</p>}
+                    {!selected.roll_count && <p className="storage-empty">No active rolls in this {selectedIsFloor ? "floor location" : "rack"}.</p>}
                   </div>
                 </section>
               )}
 
-              {!isSkidPage && <section className="storage-history-section">
+              {!isSkidPage && !selectedIsFloor && <section className="storage-history-section">
                 <header><strong>Movement History</strong><span>Permanent audit trail</span></header>
                 <MovementHistory rows={historyQuery.data || []} loading={historyQuery.isLoading} />
               </section>}

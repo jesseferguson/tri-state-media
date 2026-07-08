@@ -2543,6 +2543,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   return (
     <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${directScanResourceKey ? "storage-scan-shell" : ""} ${materialWorkspaceView ? "material-workspace-shell" : ""} ${mobilePageMenuOpen ? "mobile-nav-open" : ""}`}>
       <section className="mobile-shell-bar compact-card">
+        {!singleResourceMode && (
+          <button className="mobile-page-menu-trigger" type="button" onClick={() => setMobilePageMenuOpen(true)} aria-label="Open navigation menu">
+            <Menu size={22} />
+            <span><small>Menu</small><strong>Pages</strong></span>
+          </button>
+        )}
         <div className="mobile-user-block">
           <AccountMenu
             currentUser={currentUser}
@@ -2562,12 +2568,6 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         </div>
         <div className="mobile-shell-actions">
           <MessagesCenter currentUser={currentUser} users={users} compact showToast={false} />
-          {!singleResourceMode && (
-            <button className="mobile-page-menu-trigger" type="button" onClick={() => setMobilePageMenuOpen(true)} aria-label="Open navigation menu">
-              <Menu size={22} />
-              <span><small>Menu</small><strong>Pages</strong></span>
-            </button>
-          )}
         </div>
       </section>
 
