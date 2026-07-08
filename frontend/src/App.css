@@ -25549,6 +25549,26 @@ textarea {
   color: #ffffff;
 }
 
+.material-workspace-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.material-workspace-actions .material-active-job {
+  margin-right: auto;
+}
+
+.material-workspace-actions button {
+  min-height: 38px;
+}
+
 .material-pending-tag {
   display: flex;
   align-items: center;
@@ -30862,6 +30882,17 @@ textarea {
     display: none !important;
   }
 
+  .app-shell.material-workspace-shell .work-area {
+    padding: 0;
+    gap: 0;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view,
+  .app-shell.material-workspace-shell .material-storage-view {
+    gap: 0;
+    padding: 0;
+  }
+
   .app-shell.material-workspace-shell .material-storage-links {
     position: sticky;
     top: 64px;
@@ -30892,6 +30923,30 @@ textarea {
   .app-shell.material-workspace-shell .material-storage-links button > svg {
     width: 16px;
     height: 16px;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions {
+    gap: 6px;
+    order: -10;
+    padding: 8px;
+    border: 0;
+    border-bottom: 1px solid #dbe4ee;
+    border-radius: 0;
+    background: #ffffff;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 42px;
+    justify-content: center;
+    padding-inline: 8px;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions .material-active-job {
+    flex: 1 0 100%;
+    justify-content: center;
+    margin-right: 0;
   }
 
   .app-shell.material-workspace-shell .storage-hero,

@@ -1177,19 +1177,6 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
   return (
     <section className={`material-storage-view ${initialToken && selected ? "scanned-storage-view" : ""}`}>
-      <header className="storage-hero">
-        <div>
-          <span>{isSkidPage ? "Material movement" : "Plant locations"}</span>
-          <h2>{isSkidPage ? "Skids" : "Locations"}</h2>
-          <p>{isSkidPage ? "Scan rolls onto skids and follow every movement." : "See floor areas, rack locations, and the material stored there."}</p>
-        </div>
-        <div>
-          <button className="ghost-btn" type="button" onClick={() => dataQuery.refetch()}><RefreshCcw size={16} /> Refresh</button>
-          <button className="ghost-btn" type="button" onClick={() => setOfflineFormsOpen(true)}><Printer size={16} /> Offline Forms</button>
-          {isAdmin && <button className="primary-btn" type="button" onClick={() => { setFormRecord(null); setError(""); }}><Plus size={17} /> {isSkidPage ? "New Skid" : "New Location"}</button>}
-        </div>
-      </header>
-
       <nav className="material-storage-links" aria-label="Material inventory views">
         <button type="button" onClick={() => onNavigate?.("material-handling")}><Layers3 size={16} /> Material</button>
         <button className={isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("skids")}><PackageOpen size={16} /> Skids</button>
@@ -1212,6 +1199,12 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           detail={isSkidPage ? "Pulling current skid contents, roll counts, and rack positions." : "Pulling floor areas, rack positions, skids, and material stored inside."}
         />
       ) : (
+      <>
+      <section className="material-workspace-actions">
+        <button className="ghost-btn" type="button" onClick={() => dataQuery.refetch()}><RefreshCcw size={16} /> Refresh</button>
+        <button className="ghost-btn" type="button" onClick={() => setOfflineFormsOpen(true)}><Printer size={16} /> Offline Forms</button>
+        {isAdmin && <button className="primary-btn" type="button" onClick={() => { setFormRecord(null); setError(""); }}><Plus size={17} /> {isSkidPage ? "New Skid" : "New Location"}</button>}
+      </section>
       <div className="storage-layout">
         <aside className="storage-list-panel">
           <label className="storage-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${isSkidPage ? "skid, roll, or rack" : "floor, rack, skid, or roll"}...`} /></label>
@@ -1303,6 +1296,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
           </div>
         </aside>
       </div>
+      </>
       )}
 
       {selected && (

@@ -1102,23 +1102,6 @@ export default function MaterialHandlingView({
 
   return (
     <section className="material-handling-view">
-      <header className="material-handling-hero">
-        <div>
-          <span>Material Inventory</span>
-          <h2>{linkedTag && selectedRoll ? materialName(selectedRoll) : "Plant Material"}</h2>
-          <p>{[
-            majorityRunDate ? `Mostly ran ${majorityRunDate}` : "",
-            linkedTag?.schedule_tag_number ? `Schedule ${linkedTag.schedule_tag_number}` : "",
-            `${inventorySummary.rolls} active item${inventorySummary.rolls === 1 ? "" : "s"}`,
-          ].filter(Boolean).join(" / ")}</p>
-        </div>
-        <div>
-          {activeJob && <span className="material-active-job"><CheckCircle2 size={14} /> {activeJob.label}</span>}
-          <button className="ghost-btn" type="button" onClick={() => { intakeMutation.reset(); setIntakeOpen(true); }}><PackagePlus size={16} /> Add Material</button>
-          <button className="primary-btn" type="button" onClick={startScanner}><Camera size={16} /> Scan Roll</button>
-        </div>
-      </header>
-
       <nav className="material-storage-links" aria-label="Material storage views">
         <button className="active" type="button"><Layers3 size={16} /> Material</button>
         <button type="button" onClick={() => onOpenStorage?.("skids")}><PackageOpen size={16} /> Skids</button>
@@ -1131,6 +1114,12 @@ export default function MaterialHandlingView({
         </div>
       ) : (
         <>
+          <section className="material-workspace-actions">
+            {activeJob && <span className="material-active-job"><CheckCircle2 size={14} /> {activeJob.label}</span>}
+            <button className="ghost-btn" type="button" onClick={() => { intakeMutation.reset(); setIntakeOpen(true); }}><PackagePlus size={16} /> Add Material</button>
+            <button className="primary-btn" type="button" onClick={startScanner}><Camera size={16} /> Scan Roll</button>
+          </section>
+
           {linkedTag && !linkedInventory && (
             <div className="material-pending-tag">
               <AlertTriangle size={18} />
