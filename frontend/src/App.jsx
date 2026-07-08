@@ -1338,6 +1338,23 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   }, [allowedResources, mobilePageSearch]);
 
   useEffect(() => {
+    if (!mobilePageMenuOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function closeOnEscape(event) {
+      if (event.key === "Escape") {
+        setMobilePageMenuOpen(false);
+        setMobilePageSearch("");
+      }
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobilePageMenuOpen]);
+
+  useEffect(() => {
     if (activeKeyAllowed) return;
     setActiveKey(defaultResourceKeyForRole(roleDefinitions, viewRoleName));
   }, [activeKeyAllowed, viewRoleName, roleDefinitions]);
@@ -2524,53 +2541,58 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const materialWorkspaceView = ["material-handling", "skids", "racks"].includes(resource.key);
 
   return (
-    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${directScanResourceKey ? "storage-scan-shell" : ""} ${materialWorkspaceView ? "material-workspace-shell" : ""}`}>
+    <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${directScanResourceKey ? "storage-scan-shell" : ""} ${materialWorkspaceView ? "material-workspace-shell" : ""} ${mobilePageMenuOpen ? "mobile-nav-open" : ""}`}>
       <section className="mobile-shell-bar compact-card">
-        <div>
-          <p className="eyebrow">Tri-State Media</p>
-          <strong>{resource.label}</strong>
-          <span>{currentUser.name} / {activePreviewRoleName ? `Viewing ${activePreviewRoleName}` : currentUser.role}</span>
+        <div className="mobile-user-block">
+          <AccountMenu
+            currentUser={currentUser}
+            canManageUsers={canManageUsers}
+            roleDefinitions={roleDefinitions}
+            previewRoleName={activePreviewRoleName}
+            onPreviewRoleChange={setPreviewRoleName}
+            onOpenUserAdmin={onOpenUserAdmin}
+            onQuoteCompanyChange={onQuoteCompanyChange}
+            onSignOut={onSignOut}
+          />
+          <div>
+            <p className="eyebrow">Tri-State Media</p>
+            <strong>{currentUser.name}</strong>
+            <span>{activePreviewRoleName ? `Viewing ${activePreviewRoleName}` : currentUser.role} / {resource.label}</span>
+          </div>
         </div>
-        <AccountMenu
-          currentUser={currentUser}
-          canManageUsers={canManageUsers}
-          roleDefinitions={roleDefinitions}
-          previewRoleName={activePreviewRoleName}
-          onPreviewRoleChange={setPreviewRoleName}
-          onOpenUserAdmin={onOpenUserAdmin}
-          onQuoteCompanyChange={onQuoteCompanyChange}
-          onSignOut={onSignOut}
-        />
-        <MessagesCenter currentUser={currentUser} users={users} compact showToast={false} />
-        {!singleResourceMode && (
-          <button className="mobile-page-menu-trigger" type="button" onClick={() => setMobilePageMenuOpen(true)}>
-            <Menu size={18} />
-            <span><small>Pages</small><strong>Browse all screens</strong></span>
-            <ChevronRight size={17} />
-          </button>
-        )}
+        <div className="mobile-shell-actions">
+          <MessagesCenter currentUser={currentUser} users={users} compact showToast={false} />
+          {!singleResourceMode && (
+            <button className="mobile-page-menu-trigger" type="button" onClick={() => setMobilePageMenuOpen(true)} aria-label="Open navigation menu">
+              <Menu size={22} />
+              <span><small>Menu</small><strong>Pages</strong></span>
+            </button>
+          )}
+        </div>
       </section>
 
       {mobilePageMenuOpen && (
         <section className="mobile-page-menu-overlay" role="dialog" aria-modal="true" aria-label="Choose a page">
+          <button className="mobile-page-menu-backdrop" type="button" onClick={() => { setMobilePageMenuOpen(false); setMobilePageSearch(""); }} aria-label="Close navigation menu" />
           <div className="mobile-page-menu-window">
             <header>
               <div>
-                <span>Navigation</span>
-                <strong>Choose a page</strong>
+                <span>{currentUser.name}</span>
+                <strong>Navigation</strong>
+                <em>{activePreviewRoleName ? `Viewing ${activePreviewRoleName}` : currentUser.role}</em>
               </div>
-              <button className="ghost-btn" type="button" onClick={() => { setMobilePageMenuOpen(false); setMobilePageSearch(""); }}>
-                <X size={17} /> Close
+              <button type="button" onClick={() => { setMobilePageMenuOpen(false); setMobilePageSearch(""); }} aria-label="Close navigation menu">
+                <X size={18} />
               </button>
             </header>
             <label className="mobile-page-search">
               <Search size={17} />
-              <input autoFocus value={mobilePageSearch} onChange={(event) => setMobilePageSearch(event.target.value)} placeholder="Search pages..." />
+              <input value={mobilePageSearch} onChange={(event) => setMobilePageSearch(event.target.value)} placeholder="Search pages..." />
             </label>
             <div className="mobile-page-groups">
               {mobileMenuGroups.map((group) => (
-                <section className="mobile-page-group" key={group.key}>
-                  <header><strong>{group.label}</strong><span>{group.items.length}</span></header>
+                <details className="mobile-page-group" key={group.key} open={Boolean(mobilePageSearch.trim()) || group.defaultOpen || group.items.some((item) => item.key === resource.key)}>
+                  <summary><strong>{group.label}</strong><span>{group.items.length}</span></summary>
                   <div>
                     {group.items.map((item) => {
                       const Icon = item.icon;
@@ -2583,7 +2605,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                       );
                     })}
                   </div>
-                </section>
+                </details>
               ))}
               {!mobileMenuGroups.length && <p className="mobile-page-empty">No pages match that search.</p>}
             </div>
