@@ -25666,9 +25666,7 @@ textarea {
   padding: 24px;
   border: 1px solid #dbe3ec;
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(240, 253, 250, .95), rgba(255, 255, 255, .98)),
-    #ffffff;
+  background: #ffffff;
 }
 
 .material-loading-screen > div {
@@ -25685,10 +25683,22 @@ textarea {
   height: 52px;
   display: grid;
   place-items: center;
-  border: 1px solid #99f6e4;
-  border-radius: 50%;
-  background: #f0fdfa;
+  position: relative;
+  border: 1px solid #ccfbf1;
+  border-radius: 16px;
+  background: #f8fffd;
   color: #0f766e;
+  box-shadow: 0 12px 28px rgba(15, 118, 110, .12);
+}
+
+.material-loading-screen span::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 2px solid transparent;
+  border-top-color: #0f766e;
+  border-radius: 20px;
+  animation: material-loading-spin 1.1s linear infinite;
 }
 
 .material-loading-screen strong {
@@ -25709,11 +25719,11 @@ textarea {
 .material-loading-screen i {
   position: relative;
   width: min(260px, 80%);
-  height: 8px;
+  height: 5px;
   margin-top: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #dbeafe;
+  background: #e2e8f0;
 }
 
 .material-loading-screen i::before {
@@ -25841,6 +25851,10 @@ textarea {
   0% { transform: translateX(-110%); }
   50% { transform: translateX(72%); }
   100% { transform: translateX(230%); }
+}
+
+@keyframes material-loading-spin {
+  to { transform: rotate(360deg); }
 }
 
 .material-handling-layout {
@@ -30797,5 +30811,77 @@ textarea {
   .app-shell .mobile-page-menu-trigger > span,
   .app-shell.material-workspace-shell .mobile-page-menu-trigger > span {
     display: none;
+  }
+}
+
+/* Material inventory phone polish: icon-only account button, fixed storage tabs, full loader */
+@media (max-width: 760px) {
+  .app-shell.material-workspace-shell .mobile-user-block .account-menu-trigger {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    flex: 0 0 44px;
+    overflow: hidden;
+  }
+
+  .app-shell.material-workspace-shell .mobile-user-block .account-menu-trigger span,
+  .app-shell.material-workspace-shell .mobile-user-block .account-menu-trigger em,
+  .app-shell.material-workspace-shell .mobile-user-block .account-menu-trigger svg:last-child {
+    display: none !important;
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links {
+    position: sticky;
+    top: 64px;
+    z-index: 1150;
+    order: -20;
+    height: 52px;
+    min-height: 52px;
+    max-height: 52px;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 6px 8px;
+    border: 0;
+    border-bottom: 1px solid #dbe4ee;
+    border-radius: 0;
+    background: rgba(255, 255, 255, .98);
+    box-shadow: 0 6px 16px rgba(15, 23, 42, .06);
+    backdrop-filter: blur(12px);
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button {
+    height: 40px;
+    min-height: 40px;
+    border-radius: 9px;
+    font-size: .74rem;
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button > svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .app-shell.material-workspace-shell .storage-hero,
+  .app-shell.material-workspace-shell .material-handling-hero {
+    order: -10;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-loading-slot,
+  .app-shell.material-workspace-shell .material-storage-view > .material-loading-screen {
+    order: -15;
+  }
+
+  .app-shell.material-workspace-shell .material-loading-screen {
+    min-height: calc(100dvh - 116px);
+    margin: 0;
+    border: 0;
+    border-bottom: 1px solid #dbe4ee;
+    border-radius: 0;
+    background: #f8fafc;
+  }
+
+  .app-shell.material-workspace-shell .material-loading-screen > div {
+    gap: 10px;
   }
 }

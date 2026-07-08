@@ -1184,7 +1184,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
       <nav className="material-storage-links" aria-label="Material inventory views">
         <button type="button" onClick={() => onNavigate?.("material-handling")}><Layers3 size={16} /> Material</button>
         <button className={isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("skids")}><PackageOpen size={16} /> Skids</button>
-        <button className={!isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("racks")}><MapPin size={16} /> Locations</button>
+        <button className={!isSkidPage ? "active" : ""} type="button" onClick={() => onNavigate?.("racks")}><Warehouse size={16} /> Racks</button>
       </nav>
 
       {initialToken && selected && (

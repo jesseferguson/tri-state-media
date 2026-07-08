@@ -1088,43 +1088,50 @@ export default function MaterialHandlingView({
         <button type="button" onClick={() => onOpenStorage?.("racks")}><Warehouse size={16} /> Racks</button>
       </nav>
 
-      <section className="material-inventory-summary">
-        <article><span>Active Material</span><strong>{Math.round(inventorySummary.footage).toLocaleString()} ft</strong><small>{inventorySummary.rolls} items</small></article>
-        <article><span>On Skids</span><strong>{inventorySummary.skids}</strong><small>active skids</small></article>
-        <article><span>In Racks</span><strong>{inventorySummary.racks}</strong><small>storage racks</small></article>
-        <article><span>Plant Floor</span><strong>{inventorySummary.floor}</strong><small>loose items</small></article>
-      </section>
-
-      {linkedTag && !linkedInventory && (
-        <div className="material-pending-tag">
-          <AlertTriangle size={18} />
-          <div><strong>{linkedTag.tag_number} is printed but not documented.</strong><span>The coater operator must enter the actual master-roll footage before this appears in active inventory.</span></div>
+      {dataQuery.isLoading ? (
+        <div className="material-handling-loading-slot">
+          <MaterialLoadingScreen title="Loading Material Inventory" detail="Pulling active rolls, supplier names, skids, racks, and plant locations." />
         </div>
+      ) : (
+        <>
+          <section className="material-inventory-summary">
+            <article><span>Active Material</span><strong>{Math.round(inventorySummary.footage).toLocaleString()} ft</strong><small>{inventorySummary.rolls} items</small></article>
+            <article><span>On Skids</span><strong>{inventorySummary.skids}</strong><small>active skids</small></article>
+            <article><span>In Racks</span><strong>{inventorySummary.racks}</strong><small>storage racks</small></article>
+            <article><span>Plant Floor</span><strong>{inventorySummary.floor}</strong><small>loose items</small></article>
+          </section>
+
+          {linkedTag && !linkedInventory && (
+            <div className="material-pending-tag">
+              <AlertTriangle size={18} />
+              <div><strong>{linkedTag.tag_number} is printed but not documented.</strong><span>The coater operator must enter the actual master-roll footage before this appears in active inventory.</span></div>
+            </div>
+          )}
+          {cameraOpen && (
+            <section className="material-camera-overlay">
+              <div><video ref={videoRef} playsInline muted /><button className="ghost-btn" type="button" onClick={() => { scannerRef.current?.stop?.(); setCameraOpen(false); }}><X size={16} /> Close Camera</button></div>
+            </section>
+          )}
+          {cameraError && <p className="coater-error">{cameraError}</p>}
+
+          <nav className="material-handling-tabs">
+            <button className={view === "active" ? "active" : ""} type="button" onClick={() => setView("active")}><PackageCheck size={15} /> Active Inventory</button>
+            <button className={view === "history" ? "active" : ""} type="button" onClick={() => setView("history")}><History size={15} /> Usage History</button>
+          </nav>
+
+          <section className="material-handling-toolbar single">
+            <label><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={view === "active" ? "Search material, lot, supplier, or location" : "Search date, job, schedule, or operator"} /></label>
+          </section>
+
+          <div className={`material-handling-layout ${view === "history" ? "history" : ""}`}>
+            <main>
+              {view === "active"
+                ? <MaterialInventoryTree rows={activeRows} tags={data.tags} selectedId={selectedRoll?.id} relatedRollIds={relatedRollIds} onSelect={selectRoll} />
+                : <UsageHistory rows={usageRows} rolls={rollHistory} search={search} />}
+            </main>
+          </div>
+        </>
       )}
-      {cameraOpen && (
-        <section className="material-camera-overlay">
-          <div><video ref={videoRef} playsInline muted /><button className="ghost-btn" type="button" onClick={() => { scannerRef.current?.stop?.(); setCameraOpen(false); }}><X size={16} /> Close Camera</button></div>
-        </section>
-      )}
-      {cameraError && <p className="coater-error">{cameraError}</p>}
-
-      <nav className="material-handling-tabs">
-        <button className={view === "active" ? "active" : ""} type="button" onClick={() => setView("active")}><PackageCheck size={15} /> Active Inventory</button>
-        <button className={view === "history" ? "active" : ""} type="button" onClick={() => setView("history")}><History size={15} /> Usage History</button>
-      </nav>
-
-      <section className="material-handling-toolbar single">
-        <label><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={view === "active" ? "Search material, lot, supplier, or location" : "Search date, job, schedule, or operator"} /></label>
-      </section>
-
-      <div className={`material-handling-layout ${view === "history" ? "history" : ""}`}>
-        <main>
-          {dataQuery.isLoading ? <MaterialLoadingScreen title="Loading Material Inventory" detail="Pulling active rolls, supplier names, skids, racks, and plant locations." />
-            : view === "active"
-              ? <MaterialInventoryTree rows={activeRows} tags={data.tags} selectedId={selectedRoll?.id} relatedRollIds={relatedRollIds} onSelect={selectRoll} />
-              : <UsageHistory rows={usageRows} rolls={rollHistory} search={search} />}
-        </main>
-      </div>
       {view === "active" && selectedRoll && (
         <div className="material-roll-overlay" role="presentation" onMouseDown={() => {
           setSelectedInventoryId("");
