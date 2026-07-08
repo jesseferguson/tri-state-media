@@ -21,6 +21,7 @@ const shiftEndMinute = 59;
 const archiveEndpoint = "live-footage-archives";
 const etiDailyNode = "/ETI_SPEED";
 const etiSettingsEndpoint = "live-footage/eti-settings";
+const pressGoalSharesEndpoint = "live-footage/press-goal-shares";
 const defaultEtiSettings = {
   wheelDiameterInches: 3,
   pulsesPerRevolution: 1,
@@ -51,6 +52,32 @@ const presses = [
 ];
 
 const palette = ["#c600e0", "#16a34a", "#ef4444", "#2563eb", "#eab308", "#f97316"];
+
+function buildEqualGoalShares() {
+  const shares = {};
+  const equalShare = Number((100 / Math.max(1, presses.length)).toFixed(2));
+  let remaining = 100;
+  presses.forEach((press, index) => {
+    const value = index === presses.length - 1 ? Number(remaining.toFixed(2)) : equalShare;
+    shares[press.key] = value;
+    remaining -= value;
+  });
+  return shares;
+}
+
+function normalizeGoalShares(payload = {}) {
+  const source = payload?.shares && typeof payload.shares === "object" ? payload.shares : payload;
+  const defaults = buildEqualGoalShares();
+  return presses.reduce((acc, press) => {
+    const value = Number(source?.[press.key]);
+    acc[press.key] = Number.isFinite(value) && value >= 0 ? Number(value.toFixed(2)) : defaults[press.key];
+    return acc;
+  }, {});
+}
+
+function sumGoalShares(shares = {}) {
+  return presses.reduce((sum, press) => sum + (Number(shares?.[press.key]) || 0), 0);
+}
 
 function formatInt(value) {
   const number = Number(value);
@@ -530,6 +557,15 @@ export default function LiveFootageView({
     error: "",
     notice: "",
   });
+  const [goalSharesOpen, setGoalSharesOpen] = useState(false);
+  const [goalShareForm, setGoalShareForm] = useState(buildEqualGoalShares);
+  const [goalShareStatus, setGoalShareStatus] = useState({
+    loading: false,
+    saving: false,
+    error: "",
+    notice: "",
+    exists: true,
+  });
   const [snapshot, setSnapshot] = useState({
     state: "loading",
     error: "",
@@ -582,6 +618,82 @@ export default function LiveFootageView({
     () => printerPresses.find((press) => String(press.id) === String(qrLabelForm.printer_press)),
     [printerPresses, qrLabelForm.printer_press]
   );
+  const goalShareTotalPercent = useMemo(() => sumGoalShares(goalShareForm), [goalShareForm]);
+  const goalSharesBalanced = Math.abs(goalShareTotalPercent - 100) <= 0.05;
+
+  async function openGoalShares() {
+    setGoalSharesOpen(true);
+    setGoalShareStatus({ loading: true, saving: false, error: "", notice: "", exists: true });
+    try {
+      const payload = await requestApi(pressGoalSharesEndpoint, { headers: settingsHeaders });
+      setGoalShareForm(normalizeGoalShares(payload));
+      setGoalShareStatus({
+        loading: false,
+        saving: false,
+        error: "",
+        notice: payload?.exists === false ? "Using an even split until you save a custom goal split." : "",
+        exists: payload?.exists !== false,
+      });
+    } catch (error) {
+      setGoalShareStatus({
+        loading: false,
+        saving: false,
+        error: readableApiError(error, "Could not load press goal split settings."),
+        notice: "",
+        exists: true,
+      });
+    }
+  }
+
+  function updateGoalShare(key, value) {
+    setGoalShareForm((current) => ({ ...current, [key]: value }));
+    setGoalShareStatus((current) => ({ ...current, error: "", notice: "" }));
+  }
+
+  function resetGoalSharesEvenly() {
+    setGoalShareForm(buildEqualGoalShares());
+    setGoalShareStatus((current) => ({ ...current, error: "", notice: "Even split loaded. Save to apply it." }));
+  }
+
+  async function saveGoalShares(event) {
+    event.preventDefault();
+    const shares = presses.reduce((acc, press) => {
+      acc[press.key] = Number(goalShareForm[press.key]) || 0;
+      return acc;
+    }, {});
+    const total = sumGoalShares(shares);
+    if (Math.abs(total - 100) > 0.05) {
+      setGoalShareStatus((current) => ({
+        ...current,
+        error: `Press goal split must total 100%. It is currently ${total.toFixed(1)}%.`,
+        notice: "",
+      }));
+      return;
+    }
+    setGoalShareStatus((current) => ({ ...current, saving: true, error: "", notice: "" }));
+    try {
+      const payload = await requestApi(pressGoalSharesEndpoint, {
+        method: "PUT",
+        headers: settingsHeaders,
+        body: JSON.stringify({ shares }),
+      });
+      setGoalShareForm(normalizeGoalShares(payload));
+      setGoalShareStatus({
+        loading: false,
+        saving: false,
+        error: "",
+        notice: "Saved. Press phone dashboards will use this split on their next refresh.",
+        exists: true,
+      });
+    } catch (error) {
+      setGoalShareStatus((current) => ({
+        ...current,
+        saving: false,
+        error: readableApiError(error, "Could not save press goal split settings."),
+        notice: "",
+      }));
+    }
+  }
 
   async function openSettings() {
     setSettingsOpen(true);
@@ -925,13 +1037,17 @@ export default function LiveFootageView({
   }, [tvMode]);
 
   useEffect(() => {
-    if (!settingsOpen) return undefined;
+    if (!settingsOpen && !qrLabelsOpen && !goalSharesOpen) return undefined;
     const closeOnEscape = (event) => {
-      if (event.key === "Escape") setSettingsOpen(false);
+      if (event.key === "Escape") {
+        setSettingsOpen(false);
+        setQrLabelsOpen(false);
+        setGoalSharesOpen(false);
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [settingsOpen]);
+  }, [settingsOpen, qrLabelsOpen, goalSharesOpen]);
 
   return (
     <section className="live-footage-view">
@@ -944,6 +1060,9 @@ export default function LiveFootageView({
         <div className="live-footage-hero-actions">
           {canManageSettings && !tvMode && (
             <>
+              <button className="live-footage-settings-btn" type="button" onClick={openGoalShares}>
+                <Goal size={15} /> Goal Split
+              </button>
               <button className="live-footage-settings-btn" type="button" onClick={openQrLabels}>
                 <QrCode size={15} /> Press QR Labels
               </button>
@@ -1042,6 +1161,100 @@ export default function LiveFootageView({
           <p className="live-footage-note">Speeds and daily rows over {maxValidSpeedFpm} FPM are ignored. The browser saves the finished shift locally once it reaches 2:59 AM.</p>
         </article>
       </div>
+
+      {goalSharesOpen && canManageSettings && (
+        <div className="live-device-settings-overlay" role="presentation" onMouseDown={() => setGoalSharesOpen(false)}>
+          <section
+            className="live-device-settings-window press-goal-share-window"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="press-goal-share-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="live-device-settings-header">
+              <div>
+                <span className="live-device-settings-kicker"><Goal size={15} /> Admin goal control</span>
+                <h3 id="press-goal-share-title">Press Goal Split</h3>
+                <p>Assign each press a fair slice of the {formatInt(goalFootage)} ft company goal.</p>
+              </div>
+              <button className="live-device-settings-close" type="button" onClick={() => setGoalSharesOpen(false)} aria-label="Close press goal split">
+                <X size={19} />
+              </button>
+            </header>
+
+            {goalShareStatus.loading ? (
+              <div className="live-device-settings-loading">
+                <Activity size={20} />
+                <strong>Loading goal split...</strong>
+              </div>
+            ) : (
+              <form className="press-goal-share-content" onSubmit={saveGoalShares}>
+                <div className={`press-goal-share-summary ${goalSharesBalanced ? "balanced" : "unbalanced"}`}>
+                  <div>
+                    <span>Total assigned</span>
+                    <strong>{goalShareTotalPercent.toFixed(1)}%</strong>
+                  </div>
+                  <p>
+                    {goalSharesBalanced
+                      ? "Balanced against the company goal."
+                      : "Adjust the percentages until the total is 100%."}
+                  </p>
+                </div>
+
+                <div className="press-goal-share-list">
+                  {presses.map((press) => {
+                    const percent = Number(goalShareForm[press.key]) || 0;
+                    const targetFootage = goalFootage * percent / 100;
+                    return (
+                      <label key={press.key}>
+                        <div>
+                          <span>{press.key}</span>
+                          <strong>{press.name}</strong>
+                          <em>{formatInt(targetFootage)} ft target</em>
+                        </div>
+                        <div className="press-goal-share-input">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={goalShareForm[press.key]}
+                            onChange={(event) => updateGoalShare(press.key, event.target.value)}
+                          />
+                          <small>%</small>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {goalShareStatus.error && (
+                  <div className="live-device-settings-message error">
+                    <AlertTriangle size={16} />
+                    <span>{goalShareStatus.error}</span>
+                  </div>
+                )}
+                {goalShareStatus.notice && (
+                  <div className="live-device-settings-message success">
+                    <CheckCircle2 size={16} />
+                    <span>{goalShareStatus.notice}</span>
+                  </div>
+                )}
+
+                <footer className="live-device-settings-footer">
+                  <button type="button" className="secondary" onClick={resetGoalSharesEvenly}>Even Split</button>
+                  <button type="button" className="secondary" onClick={() => setGoalSharesOpen(false)}>Cancel</button>
+                  <button type="submit" className="primary" disabled={goalShareStatus.saving || !goalSharesBalanced}>
+                    {goalShareStatus.saving ? <Activity className="live-device-settings-spin" size={17} /> : <Save size={17} />}
+                    {goalShareStatus.saving ? "Saving..." : "Save Split"}
+                  </button>
+                </footer>
+              </form>
+            )}
+          </section>
+        </div>
+      )}
 
       {settingsOpen && canManageSettings && (
         <div className="live-device-settings-overlay" role="presentation" onMouseDown={() => setSettingsOpen(false)}>

@@ -84,6 +84,7 @@ logger = logging.getLogger(__name__)
 
 FIREBASE_LIVE_FOOTAGE_BASE = "https://realtime2-94ff8-default-rtdb.firebaseio.com"
 FIREBASE_ETI_SETTINGS_PATH = "/ETI_DEVICE_SETTINGS.json"
+FIREBASE_PRESS_GOAL_SHARES_PATH = "/PRESS_GOAL_SHARES.json"
 FIREBASE_PRINT_QUEUE_BASE = settings.FIREBASE_PRINT_QUEUE_BASE
 FIREBASE_PRINT_QUEUE_ROOT = settings.FIREBASE_PRINT_QUEUE_ROOT
 FIREBASE_PRINT_QUEUE_NAME = settings.FIREBASE_PRINT_QUEUE_NAME
@@ -197,6 +198,69 @@ ETI_DEVICE_SETTINGS_DEFAULTS = {
     "resetMinute": 0,
     "schemaVersion": 1,
 }
+
+
+def _default_press_goal_shares():
+    keys = list(PRESS_DASHBOARD_LABEL_PRESSES.keys())
+    if not keys:
+        return {}
+    equal_share = (Decimal("100") / Decimal(len(keys))).quantize(Decimal("0.01"))
+    remaining = Decimal("100")
+    shares = {}
+    for key in keys[:-1]:
+        shares[key] = float(equal_share)
+        remaining -= equal_share
+    shares[keys[-1]] = float(remaining.quantize(Decimal("0.01")))
+    return shares
+
+
+def _validated_press_goal_shares(data, *, strict=False):
+    defaults = _default_press_goal_shares()
+    source = data.get("shares") if isinstance(data, dict) and isinstance(data.get("shares"), dict) else data
+    source = source if isinstance(source, dict) else {}
+    shares = {}
+    for key in PRESS_DASHBOARD_LABEL_PRESSES:
+        raw = source.get(key, defaults.get(key, 0))
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError):
+            if not strict:
+                value = Decimal(str(defaults.get(key, 0)))
+            else:
+                raise serializers.ValidationError({"shares": [f"{PRESS_DASHBOARD_LABEL_PRESSES[key]} needs a valid percentage."]})
+        if value < 0 or value > 100:
+            if not strict:
+                value = Decimal(str(defaults.get(key, 0)))
+            else:
+                raise serializers.ValidationError({"shares": [f"{PRESS_DASHBOARD_LABEL_PRESSES[key]} must be between 0% and 100%."]})
+        shares[key] = float(value.quantize(Decimal("0.01")))
+
+    total = sum(Decimal(str(shares[key])) for key in PRESS_DASHBOARD_LABEL_PRESSES)
+    if strict and (total < Decimal("99.95") or total > Decimal("100.05")):
+        raise serializers.ValidationError({"shares": [f"Press goal shares must total 100%. Current total is {total}%."]})
+    return shares
+
+
+def _press_goal_share_response(shares, *, exists=True, firebase_status=None, meta=None):
+    total = sum(Decimal(str(shares[key])) for key in PRESS_DASHBOARD_LABEL_PRESSES)
+    presses = []
+    for key, name in PRESS_DASHBOARD_LABEL_PRESSES.items():
+        share = Decimal(str(shares.get(key, 0)))
+        presses.append({
+            "key": key,
+            "name": name,
+            "sharePercent": float(share),
+            "targetFootage": float((LOCAL_LIVE_FOOTAGE_GOAL * share / Decimal("100")).quantize(Decimal("0.01"))),
+        })
+    return {
+        "shares": shares,
+        "presses": presses,
+        "total": float(total),
+        "goalFootage": float(LOCAL_LIVE_FOOTAGE_GOAL),
+        "exists": exists,
+        "firebase_status": firebase_status,
+        **(meta or {}),
+    }
 
 
 def _verified_settings_admin(request):
@@ -569,6 +633,88 @@ def eti_device_settings(request):
         "firebase_status": firebase_status,
         "updated_by": admin_user.name or admin_user.username,
     })
+
+
+@api_view(["GET", "PUT"])
+def press_goal_shares(request):
+    admin_user = _verified_settings_admin(request)
+    if not admin_user:
+        return Response(
+            {"detail": "Only an active Admin user can manage press goal splits."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    firebase_url = f"{FIREBASE_LIVE_FOOTAGE_BASE}{FIREBASE_PRESS_GOAL_SHARES_PATH}"
+    if request.method == "GET":
+        firebase_request = Request(firebase_url, method="GET")
+        try:
+            with urlopen(firebase_request, timeout=8) as response:
+                response_body = response.read().decode("utf-8") or "null"
+                firebase_payload = json.loads(response_body)
+                firebase_status = response.status
+        except (json.JSONDecodeError, TypeError):
+            return Response(
+                {"detail": "Firebase returned invalid press goal split data."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except HTTPError as error:
+            return Response(
+                {"detail": "Firebase rejected the press goal split request.", "firebase_status": error.code},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except URLError as error:
+            return Response(
+                {"detail": "Could not reach Firebase for press goal splits.", "error": str(error.reason)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        exists = isinstance(firebase_payload, dict)
+        shares = _validated_press_goal_shares(firebase_payload if exists else {}, strict=False)
+        return Response(_press_goal_share_response(shares, exists=exists, firebase_status=firebase_status))
+
+    try:
+        shares = _validated_press_goal_shares(request.data, strict=True)
+    except serializers.ValidationError as error:
+        return Response(error.detail, status=status.HTTP_400_BAD_REQUEST)
+
+    firebase_payload = {
+        "shares": shares,
+        "goalFootage": float(LOCAL_LIVE_FOOTAGE_GOAL),
+        "schemaVersion": 1,
+        "updatedBy": admin_user.name or admin_user.username,
+        "updatedAt": timezone.now().isoformat(),
+    }
+    body = json.dumps(firebase_payload, separators=(",", ":")).encode("utf-8")
+    firebase_request = Request(
+        f"{firebase_url}?print=silent",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="PUT",
+    )
+    try:
+        with urlopen(firebase_request, timeout=8) as response:
+            firebase_status = response.status
+    except HTTPError as error:
+        return Response(
+            {"detail": "Firebase rejected the press goal split update.", "firebase_status": error.code},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    except URLError as error:
+        return Response(
+            {"detail": "Could not reach Firebase to save press goal splits.", "error": str(error.reason)},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response(_press_goal_share_response(
+        shares,
+        exists=True,
+        firebase_status=firebase_status,
+        meta={
+            "ok": True,
+            "updated_by": admin_user.name or admin_user.username,
+            "updated_at": firebase_payload["updatedAt"],
+        },
+    ))
 
 
 @api_view(["POST"])

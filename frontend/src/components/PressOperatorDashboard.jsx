@@ -14,6 +14,7 @@ const shiftEndMinute = 59;
 const runningThresholdFpm = 10;
 const strongRunThresholdFpm = 80;
 const dashboardRefreshMs = 30000;
+const goalSharesUrl = `${firebaseBase}/PRESS_GOAL_SHARES.json`;
 
 export const pressDashboardPresses = [
   { key: "18AZT", name: "18 Aztech", dailyNode: "/18Aztech_SPEED", speedNode: "/18Aztech_CURRENT_SPEED" },
@@ -23,6 +24,28 @@ export const pressDashboardPresses = [
   { key: "17NIL", name: "17 Nilpeter", dailyNode: "/17Nilpeter_SPEED", speedNode: "/17Nilpeter_CURRENT_SPEED" },
   { key: "13AZT", name: "13 Aztech", dailyNode: "/13Aztech_DAILY_SPEED", speedNode: "/13Aztech_CURRENT_SPEED" },
 ];
+
+function buildEqualPressGoalShares() {
+  const shares = {};
+  const equalShare = Number((100 / Math.max(1, pressDashboardPresses.length)).toFixed(2));
+  let remaining = 100;
+  pressDashboardPresses.forEach((press, index) => {
+    const value = index === pressDashboardPresses.length - 1 ? Number(remaining.toFixed(2)) : equalShare;
+    shares[press.key] = value;
+    remaining -= value;
+  });
+  return shares;
+}
+
+function normalizePressGoalShares(payload = {}) {
+  const source = payload?.shares && typeof payload.shares === "object" ? payload.shares : payload;
+  const defaults = buildEqualPressGoalShares();
+  return pressDashboardPresses.reduce((acc, press) => {
+    const value = Number(source?.[press.key]);
+    acc[press.key] = Number.isFinite(value) && value >= 0 ? Number(value.toFixed(2)) : defaults[press.key];
+    return acc;
+  }, {});
+}
 
 function formatInt(value) {
   const number = Number(value);
@@ -474,6 +497,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
     error: "",
     rows: [],
     pressTotals: pressDashboardPresses.map((item) => ({ key: item.key, name: item.name, total: 0 })),
+    goalShares: buildEqualPressGoalShares(),
     speed: 0,
     deviceStatus: normalizeDeviceStatus(null),
     speedUpdatedAt: "",
@@ -489,7 +513,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
     const now = new Date();
     const { start, end } = getShiftWindow(now);
     try {
-      const [dailyPayloads, speedPayload] = await Promise.all([
+      const [dailyPayloads, speedPayload, goalSharesPayload] = await Promise.all([
         Promise.all(pressDashboardPresses.map((item) => (
           fetchJson(dailyUrl(item.dailyNode), controller.signal).catch((error) => {
             if (error.name === "AbortError") throw error;
@@ -497,6 +521,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
           })
         ))),
         fetchJson(speedUrl(press.speedNode), controller.signal).catch(() => null),
+        fetchJson(goalSharesUrl, controller.signal).catch(() => null),
       ]);
       let rows = [];
       const pressTotals = pressDashboardPresses.map((item, index) => {
@@ -514,6 +539,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
         error: "",
         rows,
         pressTotals,
+        goalShares: normalizePressGoalShares(goalSharesPayload),
         speed: extractSpeed(speedPayload),
         deviceStatus: normalizeDeviceStatus(speedPayload),
         speedUpdatedAt: extractUpdatedAt(speedPayload),
@@ -544,9 +570,13 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
   const metrics = useMemo(() => computeMetrics(state.rows, state.speed), [state.rows, state.speed]);
   const schedule = useMemo(() => getShiftSchedule(new Date()), [state.updatedAt]);
   const totalShiftMinutes = Math.max(1, (metrics.end.getTime() - metrics.start.getTime()) / 60000);
-  const perPressTargetFpm = companyGoalFootage / pressDashboardPresses.length / totalShiftMinutes;
+  const pressGoalSharePercent = Number(state.goalShares?.[press.key]);
+  const safePressGoalSharePercent = Number.isFinite(pressGoalSharePercent) && pressGoalSharePercent >= 0
+    ? pressGoalSharePercent
+    : 100 / pressDashboardPresses.length;
+  const pressGoalFootage = companyGoalFootage * (safePressGoalSharePercent / 100);
+  const perPressTargetFpm = pressGoalFootage / totalShiftMinutes;
   const targetHourlyFootage = perPressTargetFpm * 60;
-  const pressGoalFootage = companyGoalFootage / pressDashboardPresses.length;
   const projectedFootage = metrics.averageFpm * totalShiftMinutes;
   const remainingToGoal = Math.max(0, pressGoalFootage - metrics.totalFootage);
   const projectedGap = projectedFootage - pressGoalFootage;
@@ -666,7 +696,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
                 <i style={{ width: `${currentGoalWidth}%` }} />
                 <b style={{ left: `${projectedGoalWidth}%` }} />
               </div>
-              <small>Filled bar is made so far. Marker is projected finish.</small>
+              <small>{press.name} target is {formatOne(safePressGoalSharePercent)}% of the company goal. Filled bar is made so far. Marker is projected finish.</small>
             </div>
           </section>
 
