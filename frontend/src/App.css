@@ -17146,11 +17146,11 @@ p, .muted { color: #7a7a7a; }
   font-weight: 850;
 }
 
-.live-footage-tile > div:last-child {
+.live-footage-press-numbers {
   text-align: right;
 }
 
-.live-footage-tile > div:last-child strong {
+.live-footage-press-numbers strong {
   color: #0f172a;
   font-size: 1.35rem;
   font-variant-numeric: tabular-nums;
@@ -17161,7 +17161,7 @@ p, .muted { color: #7a7a7a; }
   font-size: .6rem;
 }
 
-.live-footage-tile > div:last-child em {
+.live-footage-press-numbers em {
   color: #475569;
   font-size: .78rem;
   font-style: normal;
@@ -17193,6 +17193,37 @@ p, .muted { color: #7a7a7a; }
   font-weight: 950;
 }
 
+.live-footage-hour-bars {
+  grid-column: 1 / -1;
+  height: 24px;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 5px 6px;
+  border: 1px solid rgba(15, 23, 42, .08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .66);
+}
+
+.live-footage-hour-bars span {
+  flex: 1 1 0;
+  min-width: 4px;
+  border-radius: 4px 4px 2px 2px;
+  opacity: .95;
+}
+
+.live-footage-hour-bars span.good {
+  background: #16a34a;
+}
+
+.live-footage-hour-bars span.warn {
+  background: #f59e0b;
+}
+
+.live-footage-hour-bars span.bad {
+  background: #ef4444;
+}
+
 .live-footage-tv-shell .live-footage-hero h2 {
   font-size: clamp(1.7rem, 2vw, 2.35rem);
 }
@@ -17221,6 +17252,11 @@ p, .muted { color: #7a7a7a; }
 .live-footage-tv-shell .live-footage-tile {
   min-height: 96px;
   padding: 14px;
+}
+
+.live-footage-tv-shell .live-footage-hour-bars {
+  height: 30px;
+  gap: 4px;
 }
 
 .live-footage-tv-shell .live-footage-tile > div:first-child strong {

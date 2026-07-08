@@ -22,6 +22,7 @@ const archiveEndpoint = "live-footage-archives";
 const etiDailyNode = "/ETI_SPEED";
 const etiSettingsEndpoint = "live-footage/eti-settings";
 const pressGoalSharesEndpoint = "live-footage/press-goal-shares";
+const pressGoalSharesFirebaseUrl = `${firebaseBase}/PRESS_GOAL_SHARES.json`;
 const defaultEtiSettings = {
   wheelDiameterInches: 3,
   pulsesPerRevolution: 1,
@@ -313,6 +314,38 @@ function buildCumulativeBuckets(rows, start, buckets, end) {
   });
 }
 
+function buildHourlyRateBars(rows, start, effectiveNow, end, sharePercent) {
+  const shiftHours = Math.max(0.1, (end.getTime() - start.getTime()) / 3600000);
+  const pressTargetFootage = goalFootage * ((Number(sharePercent) || 0) / 100);
+  const targetHourlyFootage = pressTargetFootage / shiftHours;
+  const bars = [];
+  let cursor = new Date(start);
+
+  while (cursor.getTime() < effectiveNow.getTime()) {
+    const bucketStart = new Date(cursor);
+    const bucketEnd = new Date(Math.min(addMinutes(bucketStart, 60).getTime(), effectiveNow.getTime()));
+    const durationMinutes = Math.max(1, (bucketEnd.getTime() - bucketStart.getTime()) / 60000);
+    const total = rows.reduce((sum, row) => {
+      const rowMs = row.ts * 1000;
+      if (rowMs >= bucketStart.getTime() && rowMs < bucketEnd.getTime()) return sum + Number(row.footage || 0);
+      return sum;
+    }, 0);
+    const hourlyRate = (total / durationMinutes) * 60;
+    const ratio = targetHourlyFootage > 0 ? hourlyRate / targetHourlyFootage : 0;
+    const tone = ratio >= 1 ? "good" : ratio >= 0.65 ? "warn" : "bad";
+    bars.push({
+      label: bucketStart.toLocaleTimeString([], { hour: "numeric" }),
+      total,
+      ratio,
+      tone,
+      height: Math.max(18, Math.min(100, ratio * 100)),
+    });
+    cursor = addMinutes(bucketStart, 60);
+  }
+
+  return bars.slice(-12);
+}
+
 function extractSpeed(payload) {
   let speed = 0;
   if (typeof payload === "number") speed = payload;
@@ -581,7 +614,7 @@ export default function LiveFootageView({
     shiftDate: "",
     paceText: "",
     pace: emptyPace(),
-    tiles: presses.map((press, index) => ({ ...press, color: pressColor(index), speed: 0, total: 0 })),
+    tiles: presses.map((press, index) => ({ ...press, color: pressColor(index), speed: 0, total: 0, hourlyBars: [] })),
   });
 
   const animatedSnapshot = useMemo(() => {
@@ -890,16 +923,21 @@ export default function LiveFootageView({
         if (shouldFetchDaily) {
           const buckets = buildBuckets(start, effectiveNow);
           const labels = buckets.map((date) => `${pad2(date.getHours())}:${pad2(date.getMinutes())}`);
-          const results = await Promise.all(
-            presses.map((press) => fetchJson(dailyUrl(press.dailyNode), controller.signal).catch((error) => {
-              if (error.name === "AbortError") throw error;
-              return { error: error.message };
-            }))
-          );
+          const [results, goalSharesPayload] = await Promise.all([
+            Promise.all(
+              presses.map((press) => fetchJson(dailyUrl(press.dailyNode), controller.signal).catch((error) => {
+                if (error.name === "AbortError") throw error;
+                return { error: error.message };
+              }))
+            ),
+            fetchJson(pressGoalSharesFirebaseUrl, controller.signal).catch(() => null),
+          ]);
 
           const seriesList = [];
           const totalsByKey = {};
+          const hourlyBarsByKey = {};
           const errors = [];
+          const goalShares = normalizeGoalShares(goalSharesPayload);
 
           presses.forEach((press, index) => {
             const payload = results[index];
@@ -911,6 +949,7 @@ export default function LiveFootageView({
             const points = buildCumulativeBuckets(rows, start, buckets, end);
             const total = points.length ? points[points.length - 1] : 0;
             totalsByKey[press.key] = total;
+            hourlyBarsByKey[press.key] = buildHourlyRateBars(rows, start, effectiveNow, end, goalShares[press.key]);
             seriesList.push({ key: press.key, name: press.name, color: pressColor(index), points });
           });
 
@@ -918,6 +957,8 @@ export default function LiveFootageView({
             labels,
             seriesList,
             totalsByKey,
+            hourlyBarsByKey,
+            goalShares,
             companyTotal: Object.values(totalsByKey).reduce((sum, value) => sum + Number(value || 0), 0),
             errors,
           };
@@ -966,6 +1007,7 @@ export default function LiveFootageView({
               color: pressColor(index),
               speed: extractSpeed(speedResults[index]),
               total: sameShift ? Math.max(previousTotal, confirmedTotal) : confirmedTotal,
+              hourlyBars: dailyData?.hourlyBarsByKey?.[press.key] || [],
             };
           });
           const companyTotal = tiles.reduce((sum, tile) => sum + Number(tile.total || 0), 0);
@@ -1154,6 +1196,16 @@ export default function LiveFootageView({
                 <div className="live-footage-press-numbers">
                   <strong><AnimatedNumber value={tile.animatedTotal} suffix="ft" className="live-footage-press-counter" durationMs={liveFootageAnimationMs} initialDurationMs={1200} easing="linear" /></strong>
                   <em>{formatInt(tile.speed)} FPM</em>
+                </div>
+                <div className="live-footage-hour-bars" aria-label={`${tile.name} hourly production pace`}>
+                  {(tile.hourlyBars || []).map((bar, index) => (
+                    <span
+                      className={bar.tone}
+                      style={{ height: `${bar.height}%` }}
+                      title={`${bar.label}: ${formatInt(bar.total)} ft`}
+                      key={`${tile.key}-${bar.label}-${index}`}
+                    />
+                  ))}
                 </div>
               </div>
             ))}
