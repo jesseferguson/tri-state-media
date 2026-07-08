@@ -18183,49 +18183,188 @@ p, .muted { color: #7a7a7a; }
 .pod-timeline-legend .slow { background: #f59e0b; }
 .pod-timeline-legend .down { background: #ef4444; }
 
-.pod-hourly-bars {
-  height: 190px;
+.pod-pace-compare {
+  border: 1px solid rgba(15, 23, 42, .10);
+  border-radius: 22px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, .08);
+  padding: 14px;
   display: grid;
-  grid-template-columns: repeat(12, minmax(18px, 1fr));
-  align-items: end;
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.pod-pace-compare.good {
+  border-color: rgba(34, 197, 94, .28);
+  background: linear-gradient(145deg, #f0fdf4, #fff);
+}
+
+.pod-pace-compare.behind {
+  border-color: rgba(245, 158, 11, .24);
+  background: linear-gradient(145deg, #fffbeb, #fff);
+}
+
+.pod-pace-compare > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.pod-pace-compare > div:first-child span {
+  display: inline-flex;
+  align-items: center;
   gap: 7px;
-}
-
-.pod-hourly-bars div {
-  min-width: 0;
-  height: 100%;
-  display: grid;
-  grid-template-rows: 1fr auto auto;
-  align-items: end;
-  gap: 5px;
-}
-
-.pod-hourly-bars div > span {
-  width: 100%;
-  min-height: 8px;
-  border-radius: 999px 999px 5px 5px;
-  background: linear-gradient(180deg, #14b8a6, #0f766e);
-}
-
-.pod-hourly-bars small,
-.pod-hourly-bars em {
-  font-style: normal;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pod-hourly-bars small {
   color: #64748b;
-  font-size: .65rem;
+  font-size: .76rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
   font-weight: 950;
 }
 
-.pod-hourly-bars em {
+.pod-pace-compare > div:first-child strong {
   color: #0f172a;
-  font-size: .64rem;
+  font-size: 2.15rem;
+  line-height: 1;
+  font-weight: 1000;
+}
+
+.pod-pace-compare > div:first-child em {
+  color: #64748b;
+  font-size: .78rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.pod-pace-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.pod-pace-bars label {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 9px;
+}
+
+.pod-pace-bars label > span,
+.pod-pace-bars label > strong {
+  color: #475569;
+  font-size: .76rem;
   font-weight: 950;
+}
+
+.pod-pace-bars label > strong {
+  text-align: right;
+}
+
+.pod-pace-bars i {
+  height: 12px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.pod-pace-bars b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #14b8a6, #22c55e);
+}
+
+.pod-pace-compare.behind .pod-pace-bars b {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.pod-line-chart {
+  width: 100%;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fafc, #ffffff);
+  border: 1px solid rgba(15,23,42,.08);
+  overflow: hidden;
+}
+
+.pod-line-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pod-line-grid {
+  stroke: rgba(100, 116, 139, .18);
+  stroke-width: 1;
+}
+
+.pod-line-axis,
+.pod-line-label,
+.pod-line-value,
+.pod-line-target-label {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 950;
+}
+
+.pod-line-axis {
+  fill: #94a3b8;
+  font-size: 9px;
+}
+
+.pod-line-label {
+  fill: #475569;
+  font-size: 9px;
+}
+
+.pod-line-value {
+  fill: #0f172a;
+  font-size: 8px;
+}
+
+.pod-line-target {
+  stroke: #ef4444;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+}
+
+.pod-line-target-label {
+  fill: #b91c1c;
+  font-size: 9px;
+}
+
+.pod-line-area {
+  fill: url(#podLineFill);
+}
+
+.pod-line-stroke {
+  fill: none;
+  stroke: #0f766e;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pod-line-chart circle {
+  fill: #fff;
+  stroke: #0f766e;
+  stroke-width: 3;
+}
+
+.pod-line-chart circle.hit {
+  fill: #dcfce7;
+  stroke: #16a34a;
+}
+
+.pod-line-empty {
+  min-height: 150px;
+  border-radius: 18px;
+  border: 1px dashed rgba(100, 116, 139, .30);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  color: #64748b;
+}
+
+.pod-line-empty strong {
+  color: #0f172a;
 }
 
 .pod-shift-header {
@@ -18390,9 +18529,12 @@ p, .muted { color: #7a7a7a; }
     text-align: left;
   }
 
-  .pod-hourly-bars {
-    height: 170px;
-    gap: 5px;
+  .pod-pace-compare {
+    grid-template-columns: 1fr;
+  }
+
+  .pod-line-value {
+    font-size: 7px;
   }
 }
 
@@ -18415,9 +18557,13 @@ p, .muted { color: #7a7a7a; }
     font-size: 1.72rem;
   }
 
-  .pod-hourly-bars {
-    grid-template-columns: repeat(6, minmax(24px, 1fr));
-    height: 160px;
+  .pod-pace-bars label {
+    grid-template-columns: 70px minmax(0, 1fr) 44px;
+  }
+
+  .pod-line-label,
+  .pod-line-value {
+    font-size: 7px;
   }
 
   .pod-footer {

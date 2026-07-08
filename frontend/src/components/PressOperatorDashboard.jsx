@@ -6,6 +6,7 @@ const firebaseBase = "https://realtime2-94ff8-default-rtdb.firebaseio.com";
 const dailyLimit = 520;
 const maxValidSpeedFpm = 700;
 const minDtSeconds = 60;
+const companyGoalFootage = 400000;
 const shiftStartHour = 5;
 const shiftStartMinute = 0;
 const shiftEndHour = 2;
@@ -50,6 +51,11 @@ function formatDuration(minutes) {
   const hours = Math.floor(safe / 60);
   const mins = safe % 60;
   return mins ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+function formatHourLabel(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleTimeString([], { hour: "numeric" }).replace(" ", "");
 }
 
 function addMinutes(date, minutes) {
@@ -266,6 +272,75 @@ function statusHelp(status, metrics) {
     : "Waiting for the first footage reading this shift.";
 }
 
+function HourlyLineChart({ buckets = [], targetHourlyFootage = 0 }) {
+  const visibleBuckets = buckets.slice(-12);
+  const width = 360;
+  const height = 190;
+  const padX = 28;
+  const padTop = 18;
+  const padBottom = 42;
+  const chartWidth = width - padX * 2;
+  const chartHeight = height - padTop - padBottom;
+  const values = visibleBuckets.map((bucket) => Number(bucket.total || 0));
+  const maxValue = Math.max(100, targetHourlyFootage, ...values) * 1.16;
+  const pointFor = (value, index) => {
+    const x = padX + (chartWidth * index) / Math.max(1, visibleBuckets.length - 1);
+    const y = padTop + chartHeight * (1 - Math.max(0, value) / maxValue);
+    return { x, y };
+  };
+  const points = values.map(pointFor);
+  const linePoints = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const areaPoints = points.length
+    ? `${padX},${height - padBottom} ${linePoints} ${padX + chartWidth},${height - padBottom}`
+    : "";
+  const targetY = padTop + chartHeight * (1 - Math.max(0, targetHourlyFootage) / maxValue);
+  const gridValues = [0.25, 0.5, 0.75].map((ratio) => maxValue * ratio);
+
+  if (!visibleBuckets.length) {
+    return (
+      <div className="pod-line-empty">
+        <Activity size={18} />
+        <strong>Waiting for hourly footage</strong>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pod-line-chart">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Hourly footage line chart">
+        <defs>
+          <linearGradient id="podLineFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#14b8a6" stopOpacity=".28" />
+            <stop offset="100%" stopColor="#14b8a6" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {gridValues.map((value) => {
+          const y = padTop + chartHeight * (1 - value / maxValue);
+          return (
+            <g key={value}>
+              <line className="pod-line-grid" x1={padX} x2={padX + chartWidth} y1={y} y2={y} />
+              <text className="pod-line-axis" x={padX - 7} y={y + 4} textAnchor="end">{formatInt(value)}</text>
+            </g>
+          );
+        })}
+        <line className="pod-line-target" x1={padX} x2={padX + chartWidth} y1={targetY} y2={targetY} />
+        <text className="pod-line-target-label" x={padX + chartWidth} y={Math.max(12, targetY - 7)} textAnchor="end">
+          target {formatInt(targetHourlyFootage)}/hr
+        </text>
+        {areaPoints && <polygon className="pod-line-area" points={areaPoints} />}
+        <polyline className="pod-line-stroke" points={linePoints} />
+        {points.map((point, index) => (
+          <g key={`${visibleBuckets[index].start.getTime()}-${index}`}>
+            <circle className={values[index] >= targetHourlyFootage ? "hit" : ""} cx={point.x} cy={point.y} r="4.2" />
+            <text className="pod-line-value" x={point.x} y={Math.max(12, point.y - 9)} textAnchor="middle">{formatInt(values[index])}</text>
+            <text className="pod-line-label" x={point.x} y={height - 15} textAnchor="middle">{formatHourLabel(visibleBuckets[index].start)}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 function PressSelector({ onClose }) {
   return (
     <main className="press-operator-dashboard selector">
@@ -353,7 +428,11 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
 
   const metrics = useMemo(() => computeMetrics(state.rows, state.speed), [state.rows, state.speed]);
   const schedule = useMemo(() => getShiftSchedule(new Date()), [state.updatedAt]);
-  const maxHourly = Math.max(1, ...metrics.hourly.map((bucket) => bucket.total));
+  const totalShiftMinutes = Math.max(1, (metrics.end.getTime() - metrics.start.getTime()) / 60000);
+  const perPressTargetFpm = companyGoalFootage / pressDashboardPresses.length / totalShiftMinutes;
+  const targetHourlyFootage = perPressTargetFpm * 60;
+  const currentPacePercent = Math.max(0, (Number(state.speed || 0) / Math.max(1, perPressTargetFpm)) * 100);
+  const movingPacePercent = Math.max(0, (Number(metrics.runningAverageFpm || 0) / Math.max(1, perPressTargetFpm)) * 100);
   const status = metrics.status;
   const downRisk = metrics.minutesSinceFootage >= 20 ? "bad" : metrics.minutesSinceFootage >= 8 ? "warn" : "good";
 
@@ -420,13 +499,33 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
             <article className="pod-metric-card">
               <span><Gauge size={16} /> Avg Speed</span>
               <strong>{formatInt(metrics.averageFpm)} FPM</strong>
-              <em>All elapsed shift time</em>
+              <em>Need {formatInt(perPressTargetFpm)} FPM per press</em>
             </article>
             <article className="pod-metric-card">
               <span><TrendingUp size={16} /> Moving Avg</span>
               <strong>{formatInt(metrics.runningAverageFpm)} FPM</strong>
-              <em>Only buckets with footage</em>
+              <em>{formatInt(movingPacePercent)}% of company share pace</em>
             </article>
+          </section>
+
+          <section className={`pod-pace-compare ${state.speed >= perPressTargetFpm ? "good" : "behind"}`}>
+            <div>
+              <span><Goal size={16} /> Company goal pace</span>
+              <strong>{formatInt(perPressTargetFpm)} FPM</strong>
+              <em>Each tracked press share to hit {formatInt(companyGoalFootage)} ft</em>
+            </div>
+            <div className="pod-pace-bars">
+              <label>
+                <span>Current</span>
+                <i><b style={{ width: `${Math.min(140, currentPacePercent)}%` }} /></i>
+                <strong>{formatInt(currentPacePercent)}%</strong>
+              </label>
+              <label>
+                <span>Moving avg</span>
+                <i><b style={{ width: `${Math.min(140, movingPacePercent)}%` }} /></i>
+                <strong>{formatInt(movingPacePercent)}%</strong>
+              </label>
+            </div>
           </section>
 
           <section className="pod-panel">
@@ -457,19 +556,11 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
             <header>
               <div>
                 <span><Goal size={15} /> Hourly Footage</span>
-                <strong>Production shape</strong>
+                <strong>Production trend</strong>
               </div>
-              <em>Last full shift buckets</em>
+              <em>Line compared to share target</em>
             </header>
-            <div className="pod-hourly-bars">
-              {metrics.hourly.slice(-12).map((bucket) => (
-                <div key={bucket.start.getTime()}>
-                  <span style={{ height: `${Math.max(8, (bucket.total / maxHourly) * 100)}%` }} />
-                  <small>{formatTime(bucket.start).replace(":00", "")}</small>
-                  <em>{formatInt(bucket.total)}</em>
-                </div>
-              ))}
-            </div>
+            <HourlyLineChart buckets={metrics.hourly} targetHourlyFootage={targetHourlyFootage} />
           </section>
 
           <section className="pod-shift-card">
