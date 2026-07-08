@@ -3,6 +3,7 @@ import json
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -20,6 +21,7 @@ from rest_framework.response import Response
 
 from materials.models import MaterialUsage, RawMaterialInventory
 from materials.serializers import RawMaterialInventorySerializer
+from materials.zpl import zpl_copies, zpl_text
 from tooling.models import Press, ToolingLocation
 
 from .models import (
@@ -99,6 +101,14 @@ LOCAL_LIVE_FOOTAGE_PRESSES = {
     "13nil": {"key": "13NIL", "name": "13 Nilpeter"},
     "17nil": {"key": "17NIL", "name": "17 Nilpeter"},
     "13azt": {"key": "13AZT", "name": "13 Aztech"},
+}
+PRESS_DASHBOARD_LABEL_PRESSES = {
+    "18AZT": "18 Aztech",
+    "ETI": "ETI",
+    "SLIT": "Slitter",
+    "13NIL": "13 Nilpeter",
+    "17NIL": "17 Nilpeter",
+    "13AZT": "13 Aztech",
 }
 PLANT_TIME_ZONE = ZoneInfo("America/New_York")
 LOCAL_LIVE_FOOTAGE_GOAL = Decimal("400000")
@@ -255,6 +265,38 @@ def _firebase_post_json(base_url, path_parts, payload, timeout=8):
         except json.JSONDecodeError:
             response_payload = {}
         return response.status, response_payload
+
+
+def _press_dashboard_info(value):
+    key = str(value or "").strip().upper()
+    if key in PRESS_DASHBOARD_LABEL_PRESSES:
+        return key, PRESS_DASHBOARD_LABEL_PRESSES[key]
+    return "", ""
+
+
+def _press_dashboard_label_zpl(press_key, press_name, scan_url, *, darkness="20", speed="5", copies=1):
+    return "\n".join([
+        "^XA",
+        "^CI28",
+        "^PW812",
+        "^LL609",
+        "^LH0,0",
+        f"~SD{zpl_text(darkness) or '20'}",
+        f"^PR{zpl_text(speed) or '5'}",
+        "^FO30,24^A0N,31,31^FDTRI-STATE MEDIA^FS",
+        f"^FO30,68^A0N,48,48^FB360,2,0,L^FD{zpl_text(press_name)}^FS",
+        "^FO30,170^A0N,26,26^FDOPERATOR FOOTAGE^FS",
+        "^FO30,206^GB340,3,3^FS",
+        "^FO30,238^A0N,24,24^FB350,3,8,L^FDScan for live FPM, downtime, runtime, and shift footage.^FS",
+        "^FO30,355^A0N,24,24^FDFirst: 6:00 AM - 4:30 PM^FS",
+        "^FO30,390^A0N,24,24^FDSecond: 12:00 PM - 10:30 PM^FS",
+        "^FO30,425^A0N,23,23^FDOverlap: 12:00 PM - 4:30 PM^FS",
+        f"^FO30,532^A0N,25,25^FD{zpl_text(press_key)}^FS",
+        f"^FO425,76^BQN,2,9^FDLA,{zpl_text(scan_url)}^FS",
+        "^FO420,520^A0N,25,25^FB360,1,0,C^FDSCAN WITH PHONE^FS",
+        f"^PQ{zpl_copies(copies)}",
+        "^XZ",
+    ])
 
 
 def _job_ticket_carton_payload(ticket, request_data, press=None):
@@ -527,6 +569,103 @@ def eti_device_settings(request):
         "firebase_status": firebase_status,
         "updated_by": admin_user.name or admin_user.username,
     })
+
+
+@api_view(["POST"])
+def press_dashboard_qr_label(request):
+    admin_user = _verified_settings_admin(request)
+    if not admin_user:
+        return Response(
+            {"detail": "Only an active Admin user can print press dashboard QR labels."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    press_key, press_name = _press_dashboard_info(request.data.get("dashboard_press_key"))
+    if not press_key:
+        return Response({"dashboard_press_key": ["Choose a valid press dashboard."]}, status=status.HTTP_400_BAD_REQUEST)
+
+    printer_press = None
+    printer_press_id = request.data.get("printer_press")
+    if printer_press_id:
+        printer_press = Press.objects.filter(pk=printer_press_id).first()
+        if not printer_press:
+            return Response({"printer_press": ["Selected printer press was not found."]}, status=status.HTTP_400_BAD_REQUEST)
+
+    printer_ip = _print_text(request.data, "printer_ip", getattr(printer_press, "printer_ip", ""))
+    if not printer_ip:
+        return Response({"printer_ip": ["Enter a printer IP before printing the QR label."]}, status=status.HTTP_400_BAD_REQUEST)
+
+    frontend_base = _print_text(request.data, "frontend_url", settings.FRONTEND_PUBLIC_URL).rstrip("/")
+    if not frontend_base or "localhost" in frontend_base or "127.0.0.1" in frontend_base:
+        frontend_base = settings.FRONTEND_PUBLIC_URL.rstrip("/")
+    scan_url = f"{frontend_base}/?{urlencode({'pressDashboard': press_key})}"
+    speed = _print_text(request.data, "speed", getattr(printer_press, "printer_speed", "") or "5")
+    darkness = _print_text(request.data, "darkness", getattr(printer_press, "printer_darkness", "") or "20")
+    copies = _positive_int(request.data.get("copies"), 1)
+    queue_key = _firebase_safe_key(
+        getattr(printer_press, "printer_queue_key", "")
+        or getattr(printer_press, "name", "")
+        or printer_ip
+    )
+    zpl = _press_dashboard_label_zpl(
+        press_key,
+        press_name,
+        scan_url,
+        speed=speed,
+        darkness=darkness,
+        copies=copies,
+    )
+    payload = {
+        "TYPE": "PRESS_DASHBOARD_QR_4X3",
+        "Printer": printer_ip,
+        "Printer Port": _positive_int(request.data.get("printer_port") or getattr(printer_press, "printer_port", None), 9100),
+        "SPEED": speed,
+        "DARKNESS": darkness,
+        "Total Ship Stock": copies,
+        "Press": press_name,
+        "Press Key": press_key,
+        "Dashboard URL": scan_url,
+        "Queue Key": queue_key,
+        "Queued By": _print_text(request.data, "performed_by", admin_user.name or admin_user.username),
+        "Queued At": timezone.now().isoformat(),
+        "ZPL": zpl,
+    }
+
+    try:
+        firebase_status, firebase_payload = _firebase_post_json(
+            FIREBASE_PRINT_QUEUE_BASE,
+            [FIREBASE_PRINT_QUEUE_ROOT, FIREBASE_PRINT_QUEUE_NAME],
+            payload,
+        )
+    except HTTPError as error:
+        return Response(
+            {"detail": "Firebase rejected the press dashboard QR label.", "firebase_status": error.code},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    except URLError as error:
+        return Response(
+            {"detail": "Could not reach Firebase to queue the press dashboard QR label.", "error": str(error.reason)},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    firebase_key = str(firebase_payload.get("name") or "")
+    return Response({
+        "ok": True,
+        "press": press_name,
+        "pressKey": press_key,
+        "dashboardUrl": scan_url,
+        "queueKey": queue_key,
+        "firebaseKey": firebase_key,
+        "firebaseStatus": firebase_status,
+        "firebasePath": (
+            f"/{FIREBASE_PRINT_QUEUE_ROOT}/{FIREBASE_PRINT_QUEUE_NAME}/{firebase_key}"
+            if firebase_key
+            else f"/{FIREBASE_PRINT_QUEUE_ROOT}/{FIREBASE_PRINT_QUEUE_NAME}"
+        ),
+        "printerIp": printer_ip,
+        "printerPort": payload.get("Printer Port"),
+        "copies": copies,
+    }, status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST", "PUT"])

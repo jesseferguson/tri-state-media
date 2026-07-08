@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Edit3, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Edit3, Plus, Search, Trash2, X } from "lucide-react";
 
 const emptyForm = {
   code: "",
@@ -22,13 +22,35 @@ function materialTitle(row) {
   return row.name && row.name !== row.code ? `${row.code} - ${row.name}` : row.code || row.name || "Material Type";
 }
 
-export default function MaterialTypeManager({ rows = [], saving = false, deleting = false, onClose, onSave, onDelete }) {
+function materialSearchText(row) {
+  return [row.code, row.name, row.description, row.is_active === false ? "inactive" : "active"]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+export default function MaterialTypeManager({ rows = [], saving = false, deleting = false, canDelete = false, onClose, onSave, onDelete }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     setForm(normalizeForm(editing));
   }, [editing?.id]);
+
+  const activeCount = useMemo(() => rows.filter((row) => row.is_active !== false).length, [rows]);
+  const inactiveCount = rows.length - activeCount;
+  const filteredRows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return rows
+      .filter((row) => {
+        if (statusFilter === "active" && row.is_active === false) return false;
+        if (statusFilter === "inactive" && row.is_active !== false) return false;
+        return !normalizedQuery || materialSearchText(row).includes(normalizedQuery);
+      })
+      .sort((left, right) => String(left.code || left.name || "").localeCompare(String(right.code || right.name || ""), undefined, { numeric: true }));
+  }, [rows, query, statusFilter]);
 
   function update(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -68,12 +90,12 @@ export default function MaterialTypeManager({ rows = [], saving = false, deletin
         <div className="material-setup-explain">
           <article>
             <strong>Material Type</strong>
-            <span>Family used for quoting, job tickets, and matching.</span>
+            <span>Quote and job-ticket family.</span>
             <em>PM, PM/PET, PET</em>
           </article>
           <article>
             <strong>Material</strong>
-            <span>Actual coated construction with face, liner, adhesive, and silicone choices.</span>
+            <span>Coated construction with face, liner, adhesive, and silicone.</span>
             <em>PM 40# permanent coated stock</em>
           </article>
         </div>
@@ -113,29 +135,54 @@ export default function MaterialTypeManager({ rows = [], saving = false, deletin
 
           <section className="material-type-list">
             <div className="type-section-head">
-              <strong>{rows.length} Material Type{rows.length === 1 ? "" : "s"}</strong>
-              <span>Families</span>
+              <strong>{filteredRows.length} of {rows.length} Material Type{rows.length === 1 ? "" : "s"}</strong>
+              <span>{activeCount} active / {inactiveCount} inactive</span>
             </div>
-            {rows.length ? (
-              rows.map((row) => (
-                <article className={row.is_active === false ? "inactive" : ""} key={row.id}>
-                  <div>
-                    <strong>{materialTitle(row)}</strong>
-                    <span>{row.description || (row.is_active === false ? "Inactive" : "Active")}</span>
-                  </div>
-                  <div className="row-actions">
-                    <button className="ghost-btn xs" type="button" onClick={() => setEditing(row)}>
-                      <Edit3 size={13} /> Edit
-                    </button>
-                    <button className="danger-btn xs" type="button" onClick={() => remove(row)} disabled={deleting}>
-                      <Trash2 size={13} /> Delete
-                    </button>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <p className="muted">No material types have been added yet.</p>
-            )}
+            <div className="material-type-list-tools">
+              <label>
+                <Search size={15} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search code, name, or description" />
+              </label>
+              <div>
+                {[
+                  ["all", "All"],
+                  ["active", "Active"],
+                  ["inactive", "Inactive"],
+                ].map(([value, label]) => (
+                  <button className={statusFilter === value ? "active" : ""} type="button" onClick={() => setStatusFilter(value)} key={value}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="material-type-list-scroll">
+              {filteredRows.length ? (
+                filteredRows.map((row) => (
+                  <article className={row.is_active === false ? "inactive" : ""} key={row.id}>
+                    <div className="material-type-code-card">
+                      <strong>{row.code || "--"}</strong>
+                      <span>{row.is_active === false ? "Inactive" : "Active"}</span>
+                    </div>
+                    <div className="material-type-row-copy">
+                      <strong>{row.name || row.code || "Material Type"}</strong>
+                      <span>{row.description || "No description"}</span>
+                    </div>
+                    <div className="row-actions">
+                      <button className="ghost-btn xs" type="button" onClick={() => setEditing(row)}>
+                        <Edit3 size={13} /> Edit
+                      </button>
+                      {canDelete && (
+                        <button className="danger-btn xs" type="button" onClick={() => remove(row)} disabled={deleting}>
+                          <Trash2 size={13} /> Delete
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="muted">No material types match this search.</p>
+              )}
+            </div>
           </section>
         </div>
       </div>

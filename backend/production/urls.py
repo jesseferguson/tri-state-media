@@ -34,6 +34,7 @@ from .views import (
     local_live_footage_reset_shift,
     local_live_footage_snapshot,
     live_footage_relay,
+    press_dashboard_qr_label,
 )
 from .data_import import data_flush, data_import_csv, data_import_templates
 
@@ -71,6 +72,7 @@ urlpatterns = [
     path("data-import/flush/", data_flush, name="data-import-flush"),
     path("data-import/<str:import_type>/", data_import_csv, name="data-import-csv"),
     path("live-footage/eti-settings/", eti_device_settings, name="eti-device-settings"),
+    path("live-footage/press-dashboard-label/", press_dashboard_qr_label, name="press-dashboard-qr-label"),
     path("live-footage-relay/<str:press>/<str:kind>/", live_footage_relay, name="live-footage-relay"),
     path("local-live-footage/snapshot/", local_live_footage_snapshot, name="local-live-footage-snapshot"),
     path("local-live-footage/reset-shift/", local_live_footage_reset_shift, name="local-live-footage-reset-shift"),

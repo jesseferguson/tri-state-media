@@ -31,6 +31,7 @@ import MaterialUsageWindow from "./components/MaterialUsageWindow";
 import MessagesCenter from "./components/MessagesCenter";
 import PackagingInventoryView from "./components/PackagingInventoryView";
 import PressSpeedSidebarWidget from "./components/PressSpeedSidebarWidget";
+import PressOperatorDashboard from "./components/PressOperatorDashboard";
 import QuotePricingTool from "./components/QuotePricingTool";
 import RecipeOptionsView from "./components/RecipeOptionsView";
 import RecipeToolStackView from "./components/RecipeToolStackView";
@@ -519,6 +520,7 @@ function SignInScreen({ onSignIn }) {
     if (params.get("skidToken")) return { label: "Skid", detail: "Sign in to open this skid." };
     if (params.get("rollTagId") || params.get("inventoryId")) return { label: "Roll", detail: "Sign in to open this material roll." };
     if (params.get("rackToken")) return { label: "Rack", detail: "Sign in to open this rack." };
+    if (params.get("pressDashboard")) return { label: "Press", detail: "Sign in to open this press footage dashboard." };
     return null;
   })();
 
@@ -1232,6 +1234,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       if (params.get("skidToken")) return "skids";
       if (params.get("rackToken")) return "racks";
       if (params.get("rollTagId") || params.get("inventoryId")) return "material-handling";
+      if (params.get("pressDashboard")) return "live-footage";
     }
     return defaultResourceKeyForRole(roleDefinitions, currentUser?.role);
   });
@@ -1246,6 +1249,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   ));
   const [scannedRackToken, setScannedRackToken] = useState(() => (
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("rackToken") || "" : ""
+  ));
+  const [pressDashboardKey, setPressDashboardKey] = useState(() => (
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("pressDashboard") || "" : ""
   ));
   const [previewRoleName, setPreviewRoleName] = useState("");
   const [search, setSearch] = useState("");
@@ -2540,6 +2546,21 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const liveFootageFullView = resource.viewMode === "liveFootage" && liveFootageTvMode;
   const materialWorkspaceView = ["material-handling", "skids", "racks"].includes(resource.key);
 
+  if (pressDashboardKey) {
+    return (
+      <PressOperatorDashboard
+        pressKey={pressDashboardKey}
+        onClose={() => {
+          setPressDashboardKey("");
+          setActiveKey("live-footage");
+          const url = new URL(window.location.href);
+          url.searchParams.delete("pressDashboard");
+          window.history.replaceState({}, "", url);
+        }}
+      />
+    );
+  }
+
   return (
     <main className={`app-shell ${singleResourceMode ? "single-resource-app" : ""} ${liveFootageFullView ? "live-footage-tv-shell" : ""} ${directScanResourceKey ? "storage-scan-shell" : ""} ${materialWorkspaceView ? "material-workspace-shell" : ""} ${mobilePageMenuOpen ? "mobile-nav-open" : ""}`}>
       <section className="mobile-shell-bar compact-card">
@@ -3116,7 +3137,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                       if (isMaterialTypePage) setMaterialTypeOpen(true);
                     }}
                     rowActions={resource.key === "material-coated-stock" && materialOwnerTab === "tri_state"
-                      ? [{ label: "Schedule Material", className: "primary-btn xs", onClick: (row) => openMaterialDetail(row, true) }]
+                      ? [
+                        { label: "Schedule Material", className: "primary-btn xs", onClick: (row) => openMaterialDetail(row, true) },
+                        ...(viewCanManageUsers ? [{ label: "Remove", className: "danger-btn xs", onClick: (row) => confirmDeleteRecord(row) }] : []),
+                      ]
+                      : resource.key === "material-coated-stock" && viewCanManageUsers
+                        ? [{ label: "Remove", className: "danger-btn xs", onClick: (row) => confirmDeleteRecord(row) }]
                       : []}
                   />
                 )}
@@ -3510,9 +3536,10 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
             rows={materialMasterTypes}
             saving={materialTypeSaveMutation.isPending}
             deleting={materialTypeDeleteMutation.isPending}
+            canDelete={viewCanManageUsers}
             onClose={() => setMaterialTypeManagerOpen(false)}
             onSave={(payload) => materialTypeSaveMutation.mutateAsync(payload)}
-            onDelete={(row) => materialTypeDeleteMutation.mutateAsync(row)}
+            onDelete={viewCanManageUsers ? (row) => materialTypeDeleteMutation.mutateAsync(row) : undefined}
           />
         )}
 

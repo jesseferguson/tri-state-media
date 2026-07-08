@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertTriangle, CheckCircle2, Gauge, Goal, Maximize2, Minimize2, Save, Settings2, Timer, X } from "lucide-react";
-import { requestApi } from "../api";
+import { Activity, AlertTriangle, CheckCircle2, Gauge, Goal, Maximize2, Minimize2, Printer, QrCode, Save, Settings2, Timer, X } from "lucide-react";
+import { fetchCollection, requestApi } from "../api";
 import AnimatedNumber from "./AnimatedNumber";
 
 const firebaseBase = "https://realtime2-94ff8-default-rtdb.firebaseio.com";
@@ -30,6 +30,15 @@ const defaultEtiSettings = {
   resetEnabled: false,
   resetHour: 3,
   resetMinute: 0,
+};
+
+const defaultQrLabelForm = {
+  printer_press: "",
+  printer_ip: "",
+  printer_port: 9100,
+  speed: "5",
+  darkness: "11",
+  copies: 1,
 };
 
 const presses = [
@@ -88,6 +97,16 @@ function normalizeEtiSettings(settings = {}) {
     resetEnabled: Boolean(settings.resetEnabled ?? defaultEtiSettings.resetEnabled),
     resetHour: Number(settings.resetHour ?? defaultEtiSettings.resetHour),
     resetMinute: Number(settings.resetMinute ?? defaultEtiSettings.resetMinute),
+  };
+}
+
+function printerFieldsFromPress(press) {
+  return {
+    printer_press: press?.id ? String(press.id) : "",
+    printer_ip: press?.printer_ip || "",
+    printer_port: press?.printer_port || 9100,
+    speed: press?.printer_speed || "5",
+    darkness: press?.printer_darkness || "11",
   };
 }
 
@@ -502,6 +521,15 @@ export default function LiveFootageView({
     notice: "",
     exists: true,
   });
+  const [qrLabelsOpen, setQrLabelsOpen] = useState(false);
+  const [printerPresses, setPrinterPresses] = useState([]);
+  const [qrLabelForm, setQrLabelForm] = useState(defaultQrLabelForm);
+  const [qrLabelStatus, setQrLabelStatus] = useState({
+    loading: false,
+    printingKey: "",
+    error: "",
+    notice: "",
+  });
   const [snapshot, setSnapshot] = useState({
     state: "loading",
     error: "",
@@ -550,6 +578,10 @@ export default function LiveFootageView({
     "X-Company-User-Id": String(currentUser?.id || ""),
     "X-Company-Username": String(currentUser?.username || ""),
   };
+  const selectedPrinterPress = useMemo(
+    () => printerPresses.find((press) => String(press.id) === String(qrLabelForm.printer_press)),
+    [printerPresses, qrLabelForm.printer_press]
+  );
 
   async function openSettings() {
     setSettingsOpen(true);
@@ -624,6 +656,89 @@ export default function LiveFootageView({
         error: readableApiError(error, "Could not save ETI settings."),
         notice: "",
       }));
+    }
+  }
+
+  async function openQrLabels() {
+    setQrLabelsOpen(true);
+    setQrLabelStatus({ loading: true, printingKey: "", error: "", notice: "" });
+    try {
+      const payload = await fetchCollection("presses", { ordering: "name", pageSize: 500, fetchAll: true });
+      const rows = payload.results || [];
+      const suggested = rows.find((press) => String(press.printer_ip || "").trim()) || rows[0] || null;
+      setPrinterPresses(rows);
+      setQrLabelForm((current) => ({
+        ...current,
+        ...printerFieldsFromPress(suggested),
+        copies: current.copies || 1,
+      }));
+      setQrLabelStatus({ loading: false, printingKey: "", error: "", notice: "" });
+    } catch (error) {
+      setQrLabelStatus({
+        loading: false,
+        printingKey: "",
+        error: readableApiError(error, "Could not load printer presses."),
+        notice: "",
+      });
+    }
+  }
+
+  function updateQrPrinterPress(pressId) {
+    const press = printerPresses.find((item) => String(item.id) === String(pressId));
+    setQrLabelForm((current) => ({
+      ...current,
+      ...printerFieldsFromPress(press),
+      printer_press: pressId,
+    }));
+    setQrLabelStatus((current) => ({ ...current, error: "", notice: "" }));
+  }
+
+  function updateQrLabelField(key, value) {
+    setQrLabelForm((current) => ({ ...current, [key]: value }));
+    setQrLabelStatus((current) => ({ ...current, error: "", notice: "" }));
+  }
+
+  async function printDashboardQrLabel(press) {
+    const printerIp = String(qrLabelForm.printer_ip || "").trim();
+    if (!printerIp) {
+      setQrLabelStatus({
+        loading: false,
+        printingKey: "",
+        error: "Enter a printer IP before printing the QR label.",
+        notice: "",
+      });
+      return;
+    }
+    setQrLabelStatus({ loading: false, printingKey: press.key, error: "", notice: "" });
+    try {
+      const payload = await requestApi("live-footage/press-dashboard-label", {
+        method: "POST",
+        headers: settingsHeaders,
+        body: JSON.stringify({
+          dashboard_press_key: press.key,
+          printer_press: qrLabelForm.printer_press || null,
+          printer_ip: printerIp,
+          printer_port: qrLabelForm.printer_port,
+          speed: qrLabelForm.speed,
+          darkness: qrLabelForm.darkness,
+          copies: qrLabelForm.copies,
+          frontend_url: typeof window !== "undefined" ? window.location.origin : "",
+          performed_by: currentUser?.name || currentUser?.username || "",
+        }),
+      });
+      setQrLabelStatus({
+        loading: false,
+        printingKey: "",
+        error: "",
+        notice: `Queued ${press.name} QR label to ${payload?.printerIp || printerIp}.`,
+      });
+    } catch (error) {
+      setQrLabelStatus({
+        loading: false,
+        printingKey: "",
+        error: readableApiError(error, `Could not print ${press.name} QR label.`),
+        notice: "",
+      });
     }
   }
 
@@ -828,9 +943,14 @@ export default function LiveFootageView({
         </div>
         <div className="live-footage-hero-actions">
           {canManageSettings && !tvMode && (
-            <button className="live-footage-settings-btn" type="button" onClick={openSettings}>
-              <Settings2 size={15} /> ETI Settings
-            </button>
+            <>
+              <button className="live-footage-settings-btn" type="button" onClick={openQrLabels}>
+                <QrCode size={15} /> Press QR Labels
+              </button>
+              <button className="live-footage-settings-btn" type="button" onClick={openSettings}>
+                <Settings2 size={15} /> ETI Settings
+              </button>
+            </>
           )}
           <button type="button" onClick={() => {
             dailyCacheRef.current = null;
@@ -1110,6 +1230,113 @@ export default function LiveFootageView({
                   </button>
                 </footer>
               </form>
+            )}
+          </section>
+        </div>
+      )}
+
+      {qrLabelsOpen && canManageSettings && (
+        <div className="live-device-settings-overlay" role="presentation" onMouseDown={() => setQrLabelsOpen(false)}>
+          <section
+            className="live-device-settings-window press-qr-label-window"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="press-qr-label-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="live-device-settings-header">
+              <div>
+                <span className="live-device-settings-kicker"><QrCode size={15} /> 4 x 3 scan label</span>
+                <h3 id="press-qr-label-title">Press Dashboard QR Labels</h3>
+                <p>Print a scan label for each press so operators can open their live phone dashboard.</p>
+              </div>
+              <button className="live-device-settings-close" type="button" onClick={() => setQrLabelsOpen(false)} aria-label="Close press QR labels">
+                <X size={19} />
+              </button>
+            </header>
+
+            {qrLabelStatus.loading ? (
+              <div className="live-device-settings-loading">
+                <Activity size={20} />
+                <strong>Loading printer settings...</strong>
+              </div>
+            ) : (
+              <>
+                <div className="press-qr-printer-card">
+                  <div className="press-qr-printer-title">
+                    <Printer size={18} />
+                    <div>
+                      <strong>Printer</strong>
+                      <span>{selectedPrinterPress?.name || "Choose the printer press or enter an IP."}</span>
+                    </div>
+                  </div>
+                  <div className="press-qr-printer-fields">
+                    <label>
+                      <span>Printer press</span>
+                      <select value={qrLabelForm.printer_press} onChange={(event) => updateQrPrinterPress(event.target.value)}>
+                        <option value="">Manual printer IP</option>
+                        {printerPresses.map((press) => (
+                          <option value={press.id} key={press.id}>
+                            {press.name}{press.printer_ip ? ` / ${press.printer_ip}` : " / no printer IP"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Printer IP</span>
+                      <input value={qrLabelForm.printer_ip} onChange={(event) => updateQrLabelField("printer_ip", event.target.value)} placeholder="192.168.1.100" />
+                    </label>
+                    <label>
+                      <span>Port</span>
+                      <input type="number" min="1" value={qrLabelForm.printer_port} onChange={(event) => updateQrLabelField("printer_port", event.target.value)} />
+                    </label>
+                    <label>
+                      <span>Speed</span>
+                      <input value={qrLabelForm.speed} onChange={(event) => updateQrLabelField("speed", event.target.value)} />
+                    </label>
+                    <label>
+                      <span>Darkness</span>
+                      <input value={qrLabelForm.darkness} onChange={(event) => updateQrLabelField("darkness", event.target.value)} />
+                    </label>
+                    <label>
+                      <span>Copies</span>
+                      <input type="number" min="1" max="20" value={qrLabelForm.copies} onChange={(event) => updateQrLabelField("copies", event.target.value)} />
+                    </label>
+                  </div>
+                </div>
+
+                {qrLabelStatus.error && (
+                  <div className="live-device-settings-message error">
+                    <AlertTriangle size={16} />
+                    <span>{qrLabelStatus.error}</span>
+                  </div>
+                )}
+                {qrLabelStatus.notice && (
+                  <div className="live-device-settings-message success">
+                    <CheckCircle2 size={16} />
+                    <span>{qrLabelStatus.notice}</span>
+                  </div>
+                )}
+
+                <div className="press-qr-label-list">
+                  {presses.map((press) => {
+                    const printing = qrLabelStatus.printingKey === press.key;
+                    return (
+                      <article key={press.key}>
+                        <div>
+                          <span>{press.key}</span>
+                          <strong>{press.name}</strong>
+                          <em>{typeof window !== "undefined" ? `${window.location.origin}/?pressDashboard=${press.key}` : `?pressDashboard=${press.key}`}</em>
+                        </div>
+                        <button type="button" onClick={() => printDashboardQrLabel(press)} disabled={Boolean(qrLabelStatus.printingKey)}>
+                          {printing ? <Activity className="live-device-settings-spin" size={16} /> : <Printer size={16} />}
+                          {printing ? "Queueing..." : "Print QR"}
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </section>
         </div>
