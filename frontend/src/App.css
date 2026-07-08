@@ -17100,11 +17100,14 @@ p, .muted { color: #7a7a7a; }
 
 .live-footage-tile {
   display: grid;
-  grid-template-columns: minmax(112px, .74fr) minmax(140px, 1fr);
-  grid-template-areas: "identity bars";
+  grid-template-columns: minmax(0, .76fr) minmax(145px, 1fr);
+  grid-template-areas:
+    "identity bars"
+    "numbers bars";
   align-items: stretch;
-  gap: 10px;
-  min-height: 84px;
+  align-content: center;
+  gap: 4px 12px;
+  min-height: 88px;
   padding: 10px;
   border: 1px solid #e5eaf1;
   border-radius: 9px;
@@ -17118,11 +17121,10 @@ p, .muted { color: #7a7a7a; }
 .live-footage-tile > div:first-child {
   grid-area: identity;
   min-width: 0;
-  display: grid;
-  grid-template-columns: 13px minmax(0, 1fr);
-  align-content: center;
-  align-items: start;
-  gap: 3px 8px;
+  align-self: end;
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 .live-footage-tile > div:first-child > span {
@@ -17130,7 +17132,6 @@ p, .muted { color: #7a7a7a; }
   height: 13px;
   flex: 0 0 13px;
   border-radius: 999px;
-  margin-top: 3px;
 }
 
 .live-footage-tile strong,
@@ -17154,8 +17155,9 @@ p, .muted { color: #7a7a7a; }
 }
 
 .live-footage-press-numbers {
-  grid-column: 2;
-  padding-top: 2px;
+  grid-area: numbers;
+  align-self: start;
+  padding-left: 22px;
   text-align: left;
 }
 
@@ -17179,7 +17181,7 @@ p, .muted { color: #7a7a7a; }
 
 .live-footage-press-numbers strong {
   color: #0f172a;
-  font-size: clamp(1.12rem, 1.5vw, 1.55rem);
+  font-size: clamp(1.18rem, 1.45vw, 1.55rem);
   font-weight: 1000;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -17206,7 +17208,7 @@ p, .muted { color: #7a7a7a; }
   grid-area: bars;
   align-self: stretch;
   height: 100%;
-  min-height: 58px;
+  min-height: 56px;
   display: flex;
   align-items: flex-end;
   gap: 4px;
@@ -17261,13 +17263,13 @@ p, .muted { color: #7a7a7a; }
 }
 
 .live-footage-tv-shell .live-footage-tile {
-  grid-template-columns: minmax(132px, .76fr) minmax(168px, 1fr);
-  min-height: 92px;
+  grid-template-columns: minmax(0, .78fr) minmax(165px, 1fr);
+  min-height: 96px;
   padding: 12px;
 }
 
 .live-footage-tv-shell .live-footage-hour-bars {
-  min-height: 64px;
+  min-height: 62px;
   gap: 4px;
 }
 
@@ -17276,7 +17278,7 @@ p, .muted { color: #7a7a7a; }
 }
 
 .live-footage-tv-shell .live-footage-press-numbers strong {
-  font-size: clamp(1.3rem, 1.65vw, 1.9rem);
+  font-size: clamp(1.38rem, 1.7vw, 1.95rem);
 }
 
 .live-footage-tv-shell .live-footage-press-numbers em {
