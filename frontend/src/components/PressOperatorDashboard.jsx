@@ -180,6 +180,55 @@ function extractUpdatedAt(payload) {
   return formatTime(date);
 }
 
+function normalizeDeviceStatus(payload) {
+  if (!payload || typeof payload !== "object") {
+    return {
+      hasData: false,
+      stale: true,
+      message: "",
+      checkedInText: "",
+      ageMinutes: null,
+    };
+  }
+  const device = payload.device && typeof payload.device === "object" ? payload.device : {};
+  const rawTimestamp = Number(payload.timestamp ?? 0);
+  const timestampSeconds = rawTimestamp > 100000000000 ? rawTimestamp / 1000 : rawTimestamp;
+  const timestampMs = timestampSeconds > 0 ? timestampSeconds * 1000 : 0;
+  const ageMs = timestampMs > 0 ? Date.now() - timestampMs : Infinity;
+  const stale = !Number.isFinite(ageMs) || ageMs > 5 * 60 * 1000;
+  const lastHttp = Number(device.lastHttp ?? 0);
+  const lastMessage = String(device.lastMessage || "").trim();
+  const senderAgeSec = Number(device.senderAgeSec ?? 0);
+  const senderStale = Number.isFinite(senderAgeSec) && senderAgeSec > 120;
+  const wifiDown = device.wifi === false;
+  let message = "";
+  if (stale) {
+    message = timestampMs > 0
+      ? `ETI has not checked in for ${Math.max(1, Math.round(ageMs / 60000))} min. The wheel may still be counting locally.`
+      : "ETI has not checked in yet.";
+  } else if (wifiDown) {
+    message = "ETI is counting, but WiFi is disconnected.";
+  } else if (senderStale) {
+    message = "ETI sender is restarting because Firebase stopped responding.";
+  } else if (lastHttp && (lastHttp < 200 || lastHttp >= 300)) {
+    message = lastMessage ? `Last Firebase send problem: ${lastMessage}.` : `Last Firebase send problem: HTTP ${lastHttp}.`;
+  }
+  return {
+    hasData: true,
+    stale,
+    wifiDown,
+    senderStale,
+    lastHttp,
+    lastMessage,
+    message,
+    checkedInText: timestampMs > 0 ? formatTime(new Date(timestampMs)) : "",
+    ageMinutes: Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 60000)) : null,
+    senderRestarts: Number(device.senderRestarts || 0),
+    bufferedDaily: Number(device.bufferedDaily || 0),
+    heap: Number(device.heap || 0),
+  };
+}
+
 function buildBuckets(rows, start, effectiveNow, minutesPerBucket) {
   const buckets = [];
   let cursor = new Date(start);
@@ -426,6 +475,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
     rows: [],
     pressTotals: pressDashboardPresses.map((item) => ({ key: item.key, name: item.name, total: 0 })),
     speed: 0,
+    deviceStatus: normalizeDeviceStatus(null),
     speedUpdatedAt: "",
     updatedAt: "",
   });
@@ -465,6 +515,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
         rows,
         pressTotals,
         speed: extractSpeed(speedPayload),
+        deviceStatus: normalizeDeviceStatus(speedPayload),
         speedUpdatedAt: extractUpdatedAt(speedPayload),
         updatedAt: formatTime(new Date()),
       });
@@ -503,6 +554,7 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
   const projectedGoalWidth = Math.min(100, Math.max(0, (projectedFootage / Math.max(1, pressGoalFootage)) * 100));
   const status = metrics.status;
   const downRisk = metrics.minutesSinceFootage >= 20 ? "bad" : metrics.minutesSinceFootage >= 8 ? "warn" : "good";
+  const deviceWarning = press.key === "ETI" ? (state.deviceStatus?.message || "") : "";
 
   if (!press) return <PressSelector onClose={onClose} />;
 
@@ -550,6 +602,21 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
             <div className="pod-alert">
               <AlertTriangle size={17} />
               <span>{state.error}</span>
+            </div>
+          )}
+
+          {deviceWarning && (
+            <div className={`pod-device-warning ${state.deviceStatus?.stale || state.deviceStatus?.wifiDown || state.deviceStatus?.senderStale ? "bad" : "warn"}`}>
+              <AlertTriangle size={17} />
+              <div>
+                <strong>{state.deviceStatus?.stale ? "ETI check-in is stale" : "ETI sender notice"}</strong>
+                <span>{deviceWarning}</span>
+                <em>
+                  {state.deviceStatus?.checkedInText ? `Last check-in ${state.deviceStatus.checkedInText}` : "No check-in time yet"}
+                  {state.deviceStatus?.senderRestarts ? ` / sender restarts ${state.deviceStatus.senderRestarts}` : ""}
+                  {state.deviceStatus?.bufferedDaily ? ` / buffered footage ${state.deviceStatus.bufferedDaily}` : ""}
+                </em>
+              </div>
             </div>
           )}
 

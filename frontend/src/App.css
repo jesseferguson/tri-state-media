@@ -18046,6 +18046,53 @@ p, .muted { color: #7a7a7a; }
   font-weight: 850;
 }
 
+.pod-device-warning {
+  border-radius: 18px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  font-weight: 850;
+}
+
+.pod-device-warning.warn {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.pod-device-warning.bad {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #9f1239;
+}
+
+.pod-device-warning strong,
+.pod-device-warning span,
+.pod-device-warning em {
+  display: block;
+}
+
+.pod-device-warning strong {
+  color: #0f172a;
+  font-size: .9rem;
+  font-weight: 1000;
+}
+
+.pod-device-warning span {
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+.pod-device-warning em {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: .76rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
 .pod-card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
