@@ -144,6 +144,11 @@ def _workflow_error(error):
 PRODUCTION_FLOOR_LOCATION = "Wilmington Ohio > Plant Floor"
 
 
+def _floor_destination(value):
+    destination = str(value or "").strip()
+    return destination[:150] if destination else PRODUCTION_FLOOR_LOCATION
+
+
 def _storage_print_job(request, *, label_type, scan_url, zpl):
     from production.views import (
         FIREBASE_PRINT_QUEUE_BASE,
@@ -463,31 +468,33 @@ class MaterialSkidViewSet(BaseMaterialsViewSet):
                 {"detail": f"{skid.skid_number} is not active."},
                 status=status.HTTP_409_CONFLICT,
             )
-        if not skid.current_rack_id and not skid.other_location:
+        floor_location = _floor_destination(request.data.get("floor_location") or request.data.get("other_location"))
+        current_floor = skid.other_location or PRODUCTION_FLOOR_LOCATION
+        if not skid.current_rack_id and current_floor == floor_location:
             return Response({
                 "ok": True,
-                "completed": f"{skid.skid_number} is already on the production floor.",
+                "completed": f"{skid.skid_number} is already on {floor_location}.",
                 "skid": self.get_serializer(skid).data,
             })
         before_location = skid_location(skid)
         rack = skid.current_rack
         with transaction.atomic():
             skid.current_rack = None
-            skid.other_location = PRODUCTION_FLOOR_LOCATION
+            skid.other_location = floor_location
             skid.save(update_fields=["current_rack", "other_location", "updated_at"])
             movement(
                 action_type="skid_removed_from_rack" if rack else "manual_edit",
                 skid=skid,
                 rack=rack,
                 from_location=before_location,
-                to_location=PRODUCTION_FLOOR_LOCATION,
-                notes=f"{skid.skid_number} moved to the production floor.",
+                to_location=floor_location,
+                notes=f"{skid.skid_number} moved to {floor_location}.",
                 source="manual",
                 **_request_actor(request, user),
             )
         return Response({
             "ok": True,
-            "completed": f"Completed: {skid.skid_number} moved to {PRODUCTION_FLOOR_LOCATION}",
+            "completed": f"Completed: {skid.skid_number} moved to {floor_location}",
             "skid": self.get_serializer(self.get_queryset().get(pk=skid.pk)).data,
         })
 

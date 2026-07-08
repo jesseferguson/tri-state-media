@@ -99,6 +99,111 @@ function storageRackLabel(row) {
   return [row?.rack_code, row?.storage_location_display || row?.location_detail].filter(Boolean).join(" / ");
 }
 
+function cleanStorageText(value, fallback = "Unassigned") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function rackAisle(row) {
+  return cleanStorageText(row?.aisle, "No Aisle");
+}
+
+function rackNumber(row) {
+  return cleanStorageText(row?.bay, "No Rack Number");
+}
+
+function naturalCompare(left, right) {
+  return String(left ?? "").localeCompare(String(right ?? ""), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function rackSearchText(row) {
+  return [
+    row.rack_code,
+    row.aisle,
+    row.bay,
+    row.level,
+    row.position,
+    row.storage_location_display,
+    row.location_detail,
+    row.status,
+    ...(row.skids || []).map((skid) => skid.skid_number),
+    ...(row.loose_rolls || []).map((roll) => `${roll.serial_number || ""} ${roll.lot_number || ""} ${roll.material_name || ""}`),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function groupedRacks(rows = []) {
+  const byAisle = new Map();
+  rows.forEach((row) => {
+    const aisle = rackAisle(row);
+    const number = rackNumber(row);
+    if (!byAisle.has(aisle)) {
+      byAisle.set(aisle, { key: aisle, racks: [], numbers: new Map(), skidCount: 0, rollCount: 0 });
+    }
+    const aisleGroup = byAisle.get(aisle);
+    aisleGroup.racks.push(row);
+    aisleGroup.skidCount += Number(row.skid_count || 0);
+    aisleGroup.rollCount += Number(row.roll_count || 0);
+    if (!aisleGroup.numbers.has(number)) {
+      aisleGroup.numbers.set(number, { key: number, racks: [], skidCount: 0, rollCount: 0 });
+    }
+    const numberGroup = aisleGroup.numbers.get(number);
+    numberGroup.racks.push(row);
+    numberGroup.skidCount += Number(row.skid_count || 0);
+    numberGroup.rollCount += Number(row.roll_count || 0);
+  });
+  return Array.from(byAisle.values())
+    .map((aisle) => ({
+      ...aisle,
+      numbers: Array.from(aisle.numbers.values())
+        .map((number) => ({ ...number, racks: number.racks.sort((a, b) => naturalCompare(a.rack_code, b.rack_code)) }))
+        .sort((a, b) => naturalCompare(a.key, b.key)),
+    }))
+    .sort((a, b) => naturalCompare(a.key, b.key));
+}
+
+function locationPath(row) {
+  return row?.full_path || row?.location_full_path || row?.name || "";
+}
+
+function locationMatches(row, pattern) {
+  return row?.is_active !== false
+    && row?.inventory_scope !== "finished_product"
+    && pattern.test(`${locationPath(row)} ${row?.code || ""}`);
+}
+
+function floorDestinationOptions(locations = [], racks = []) {
+  const options = [];
+  const pushOption = (key, label, value, detail = "") => {
+    if (!value || options.some((option) => option.value.toLowerCase() === String(value).toLowerCase())) return;
+    options.push({ key, label, value, detail });
+  };
+  const plant = locations.find((row) => locationMatches(row, /wilmington.*plant\s*floor|plant\s*floor/i));
+  const offsite = locations.find((row) => locationMatches(row, /off[\s-]*site.*floor/i));
+  pushOption("plant", "Plant Floor", locationPath(plant) || "Wilmington Ohio > Plant Floor", "General material floor");
+  pushOption("offsite", "Off-Site Floor", locationPath(offsite) || "Wilmington Ohio > Off-Site Floor", "Large shipment staging");
+  Array.from(new Set(racks.map((rack) => String(rack.aisle || "").trim()).filter(Boolean)))
+    .sort(naturalCompare)
+    .forEach((aisle) => pushOption(`aisle-${aisle}`, `Aisle ${aisle} Floor`, `Wilmington Ohio > Aisle ${aisle} Floor`, "Temporary aisle staging"));
+  return options;
+}
+
+function defaultWilmingtonLocationId(locations = []) {
+  return (
+    locations.find((row) => /wilmington ohio/i.test(locationPath(row)) && !row.parent)?.id
+    || locations.find((row) => /wilmington ohio/i.test(locationPath(row)))?.id
+    || ""
+  );
+}
+
+function floorCodeFromName(value) {
+  const code = String(value || "Floor")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return code ? `LOC-${code}`.slice(0, 50) : `LOC-FLOOR-${Date.now()}`;
+}
+
 function StorageSearchPicker({ label, options, value, onChange, getLabel, placeholder }) {
   const selected = options.find((option) => String(option.id) === String(value) || option.qr_token === value || option.rack_code === value);
   const [query, setQuery] = useState("");
@@ -249,6 +354,8 @@ function MaterialLoadingScreen({ title, detail }) {
 
 function StorageForm({ mode, record, locations = [], busy, error, onSave, onClose }) {
   const isSkid = mode === "skids";
+  const canChooseStorageType = !isSkid && !record;
+  const wilmingtonId = defaultWilmingtonLocationId(locations);
   const rackLocations = locations.filter((location) => (
     location.is_active !== false
     && location.inventory_scope !== "finished_product"
@@ -271,6 +378,18 @@ function StorageForm({ mode, record, locations = [], busy, error, onSave, onClos
     status: record?.status || "active",
     notes: record?.notes || "",
   });
+  const storageRecordType = form.storage_record_type || "rack";
+  const floorName = form.floor_type === "offsite"
+    ? "Off-Site Floor"
+    : form.floor_type === "aisle"
+      ? form.aisle ? `Aisle ${form.aisle} Floor` : "Aisle Floor"
+      : form.floor_type === "custom"
+        ? form.name
+        : "Plant Floor";
+
+  function updateForm(next) {
+    setForm((current) => ({ ...current, ...next }));
+  }
 
   return (
     <div className="storage-modal-overlay" role="presentation" onMouseDown={onClose}>
@@ -278,18 +397,24 @@ function StorageForm({ mode, record, locations = [], busy, error, onSave, onClos
         <header>
           <div>
             <span>{record ? "Edit" : "Create"}</span>
-            <h3>{isSkid ? record?.skid_number || "New Skid" : record?.rack_code || "New Rack"}</h3>
+            <h3>{isSkid ? record?.skid_number || "New Skid" : record?.rack_code || (storageRecordType === "floor" ? "New Floor" : "New Rack")}</h3>
           </div>
           <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
         </header>
+        {canChooseStorageType && (
+          <div className="storage-kind-toggle" role="tablist" aria-label="Storage type">
+            <button className={storageRecordType === "rack" ? "active" : ""} type="button" onClick={() => updateForm({ storage_record_type: "rack" })}><Warehouse size={16} /> Rack</button>
+            <button className={storageRecordType === "floor" ? "active" : ""} type="button" onClick={() => updateForm({ storage_record_type: "floor", parent: form.parent || wilmingtonId, floor_type: form.floor_type || "plant" })}><MapPin size={16} /> Floor</button>
+          </div>
+        )}
         <div className="storage-form-grid">
-          {!isSkid && (
-            <label className="wide"><span>Rack ID</span><input value={form.rack_code} onChange={(event) => setForm((current) => ({ ...current, rack_code: event.target.value.toUpperCase() }))} placeholder="RACK-03-A" required /></label>
+          {!isSkid && storageRecordType === "rack" && (
+            <label className="wide"><span>Rack ID</span><input value={form.rack_code} onChange={(event) => updateForm({ rack_code: event.target.value.toUpperCase() })} placeholder="RACK-03-A" required /></label>
           )}
-          {!isSkid && (
+          {!isSkid && storageRecordType === "rack" && (
             <label className="wide">
               <span>Warehouse Location</span>
-              <select value={form.location || ""} onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))} required>
+              <select value={form.location || ""} onChange={(event) => updateForm({ location: event.target.value })} required>
                 <option value="">Select warehouse location</option>
                 {rackLocations.map((location) => (
                   <option value={location.id} key={location.id}>{location.full_path || location.name}</option>
@@ -297,25 +422,53 @@ function StorageForm({ mode, record, locations = [], busy, error, onSave, onClos
               </select>
             </label>
           )}
-          {!isSkid && <label><span>Aisle</span><input value={form.aisle} onChange={(event) => setForm((current) => ({ ...current, aisle: event.target.value }))} /></label>}
-          {!isSkid && <label><span>Bay</span><input value={form.bay} onChange={(event) => setForm((current) => ({ ...current, bay: event.target.value }))} /></label>}
-          {!isSkid && <label><span>Level</span><input value={form.level} onChange={(event) => setForm((current) => ({ ...current, level: event.target.value }))} /></label>}
-          {!isSkid && <label><span>Position</span><input value={form.position} onChange={(event) => setForm((current) => ({ ...current, position: event.target.value }))} /></label>}
-          {isSkid && <label className="wide"><span>Other Location</span><input value={form.other_location} onChange={(event) => setForm((current) => ({ ...current, other_location: event.target.value }))} placeholder="Leave blank for Plant Floor" /></label>}
-          <label>
+          {!isSkid && storageRecordType === "rack" && <label><span>Aisle</span><input value={form.aisle} onChange={(event) => updateForm({ aisle: event.target.value })} /></label>}
+          {!isSkid && storageRecordType === "rack" && <label><span>Rack Number</span><input value={form.bay} onChange={(event) => updateForm({ bay: event.target.value })} /></label>}
+          {!isSkid && storageRecordType === "rack" && <label><span>Level</span><input value={form.level} onChange={(event) => updateForm({ level: event.target.value })} /></label>}
+          {!isSkid && storageRecordType === "rack" && <label><span>Position</span><input value={form.position} onChange={(event) => updateForm({ position: event.target.value })} /></label>}
+          {!isSkid && storageRecordType === "floor" && (
+            <>
+              <label className="wide">
+                <span>Floor Type</span>
+                <select value={form.floor_type || "plant"} onChange={(event) => updateForm({ floor_type: event.target.value })}>
+                  <option value="plant">Wilmington Plant Floor</option>
+                  <option value="offsite">Wilmington Off-Site Floor</option>
+                  <option value="aisle">Aisle Floor</option>
+                  <option value="custom">Custom Floor Area</option>
+                </select>
+              </label>
+              {(form.floor_type || "plant") === "aisle" && <label><span>Aisle</span><input value={form.aisle || ""} onChange={(event) => updateForm({ aisle: event.target.value })} placeholder="03" required /></label>}
+              {(form.floor_type || "plant") === "custom" && <label><span>Floor Name</span><input value={form.name || ""} onChange={(event) => updateForm({ name: event.target.value })} placeholder="Receiving Floor" required /></label>}
+              <label className="wide">
+                <span>Parent Location</span>
+                <select value={form.parent || wilmingtonId || ""} onChange={(event) => updateForm({ parent: event.target.value })} required>
+                  <option value="">Select parent location</option>
+                  {rackLocations.map((location) => (
+                    <option value={location.id} key={location.id}>{location.full_path || location.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="wide floor-preview">
+                <MapPin size={18} />
+                <div><span>New floor location</span><strong>{floorName || "Floor"}</strong><small>Shows up in Add Material as a floor destination.</small></div>
+              </div>
+            </>
+          )}
+          {isSkid && <label className="wide"><span>Other Location</span><input value={form.other_location} onChange={(event) => updateForm({ other_location: event.target.value })} placeholder="Leave blank for Plant Floor" /></label>}
+          {(isSkid || storageRecordType === "rack") && <label>
             <span>Status</span>
-            <select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}>
+            <select value={form.status} onChange={(event) => updateForm({ status: event.target.value })}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
               {isSkid && <option value="retired">Retired</option>}
             </select>
-          </label>
-          <label className="wide"><span>Notes</span><textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} /></label>
+          </label>}
+          <label className="wide"><span>Notes</span><textarea value={form.notes} onChange={(event) => updateForm({ notes: event.target.value })} /></label>
         </div>
         {error && <div className="storage-message error"><AlertTriangle size={17} /><span>{error}</span></div>}
         <footer>
           <button className="ghost-btn" type="button" onClick={onClose}>Cancel</button>
-          <button className="primary-btn" type="submit" disabled={busy}>{busy ? "Saving..." : record ? "Save Changes" : isSkid ? "Create Skid" : "Create Rack"}</button>
+          <button className="primary-btn" type="submit" disabled={busy}>{busy ? "Saving..." : record ? "Save Changes" : isSkid ? "Create Skid" : storageRecordType === "floor" ? "Create Floor" : "Create Rack"}</button>
         </footer>
       </form>
     </div>
@@ -414,6 +567,46 @@ function OfflineMovementForms({ onClose }) {
           ))}
         </main>
       </section>
+    </div>
+  );
+}
+
+function FloorMoveDialog({ skid, options = [], busy, error, onMove, onClose }) {
+  const [value, setValue] = useState(options[0]?.value || "Wilmington Ohio > Plant Floor");
+  const [custom, setCustom] = useState("");
+  const movingToCustom = value === "__custom__";
+  const destination = movingToCustom ? custom.trim() : value;
+
+  return (
+    <div className="storage-modal-overlay" role="presentation" onMouseDown={onClose}>
+      <form className="storage-modal floor-move-modal" onSubmit={(event) => { event.preventDefault(); onMove(destination); }} onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <div><span>{skid?.skid_number}</span><h3>Move To Floor</h3></div>
+          <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
+        </header>
+        <div className="floor-destination-list">
+          {options.map((option) => (
+            <button className={value === option.value ? "active" : ""} type="button" key={option.key} onClick={() => setValue(option.value)}>
+              <MapPin size={18} />
+              <span><strong>{option.label}</strong><small>{option.detail || option.value}</small></span>
+            </button>
+          ))}
+          <button className={movingToCustom ? "active" : ""} type="button" onClick={() => setValue("__custom__")}>
+            <Plus size={18} />
+            <span><strong>Other Floor</strong><small>Type a temporary floor area</small></span>
+          </button>
+        </div>
+        {movingToCustom && (
+          <div className="storage-form-grid">
+            <label className="wide"><span>Floor Location</span><input value={custom} onChange={(event) => setCustom(event.target.value)} placeholder="Wilmington Ohio > Aisle 03 Floor" required /></label>
+          </div>
+        )}
+        {error && <div className="storage-message error"><AlertTriangle size={17} /><span>{error}</span></div>}
+        <footer>
+          <button className="ghost-btn" type="button" onClick={onClose}>Cancel</button>
+          <button className="primary-btn" type="submit" disabled={busy || !destination}>{busy ? "Moving..." : "Move Skid"}</button>
+        </footer>
+      </form>
     </div>
   );
 }
@@ -602,6 +795,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
   const [workflow, setWorkflow] = useState(null);
   const [printRecord, setPrintRecord] = useState(null);
   const [offlineFormsOpen, setOfflineFormsOpen] = useState(false);
+  const [floorMoveOpen, setFloorMoveOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -637,14 +831,14 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
   const records = dataQuery.data?.records || [];
   const selected = records.find((row) => String(row.id) === String(selectedId)) || null;
-  const selectedIsProductionFloor = Boolean(
-    selected && !selected.current_rack && /(?:plant|production)\s+floor/i.test(String(selected.other_location || selected.current_location_display || ""))
+  const floorOptions = useMemo(
+    () => floorDestinationOptions(dataQuery.data?.locations || [], dataQuery.data?.racks || []),
+    [dataQuery.data?.locations, dataQuery.data?.racks]
   );
   const canMoveSelectedSkidToFloor = Boolean(
     isSkidPage
     && selected
     && selected.status === "active"
-    && (selected.current_rack || (selected.other_location && !selectedIsProductionFloor))
   );
   const rackRolls = !isSkidPage && selected ? [
     ...(selected.loose_rolls || []).map((roll) => ({ ...roll, storage_skid_number: "" })),
@@ -689,13 +883,15 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
 
   useEffect(() => {
     setActionMenuOpen(false);
+    setFloorMoveOpen(false);
     setHistoryOpen(false);
   }, [selectedId]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return records.filter((row) => !query || JSON.stringify(row).toLowerCase().includes(query));
-  }, [records, search]);
+    return records.filter((row) => !query || (isSkidPage ? JSON.stringify(row).toLowerCase().includes(query) : rackSearchText(row).includes(query)));
+  }, [records, search, isSkidPage]);
+  const rackGroups = useMemo(() => groupedRacks(filtered), [filtered]);
 
   async function refresh(recordId = selectedId) {
     const result = await dataQuery.refetch();
@@ -708,6 +904,44 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
     setError("");
     try {
       const creating = formRecord === null;
+      if (!isSkidPage && creating && form.storage_record_type === "floor") {
+        const name = form.floor_type === "offsite"
+          ? "Off-Site Floor"
+          : form.floor_type === "aisle"
+            ? `Aisle ${String(form.aisle || "").trim()} Floor`.replace(/\s+/g, " ").trim()
+            : form.floor_type === "custom"
+              ? String(form.name || "").trim()
+              : "Plant Floor";
+        if (!name || name === "Aisle Floor") throw new Error(JSON.stringify({ detail: "Enter the aisle for this floor location." }));
+        const existing = (dataQuery.data?.locations || []).find((location) => (
+          location.is_active !== false
+          && location.inventory_scope !== "finished_product"
+          && String(locationPath(location)).toLowerCase().endsWith(name.toLowerCase())
+        ));
+        if (existing) {
+          setFormRecord(undefined);
+          setSuccess(`${locationPath(existing)} already exists and is ready for material.`);
+          await refresh();
+          return;
+        }
+        const location = await requestApi("locations", {
+          method: "POST",
+          headers: userHeaders(currentUser),
+          body: JSON.stringify({
+            name,
+            code: form.code || floorCodeFromName(name),
+            location_type: "position",
+            inventory_scope: "raw_material",
+            parent: form.parent || defaultWilmingtonLocationId(dataQuery.data?.locations || []) || null,
+            is_active: true,
+            notes: form.notes || "",
+          }),
+        });
+        setFormRecord(undefined);
+        setSuccess(`${location.full_path || location.name} created as a material floor.`);
+        await refresh();
+        return;
+      }
       const record = await requestApi(creating ? endpoint : `${endpoint}/${formRecord.id}`, {
         method: creating ? "POST" : "PATCH",
         headers: userHeaders(currentUser),
@@ -778,7 +1012,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
     }
   }
 
-  async function moveSelectedSkidToFloor() {
+  async function moveSelectedSkidToFloor(floorLocation = "") {
     if (!selected || !isSkidPage) return;
     setBusy(true);
     setError("");
@@ -787,8 +1021,9 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
       const result = await requestApi(`${endpoint}/${selected.id}/move-to-floor`, {
         method: "POST",
         headers: userHeaders(currentUser),
-        body: JSON.stringify({ performed_by: currentUser?.name || "" }),
+        body: JSON.stringify({ performed_by: currentUser?.name || "", floor_location: floorLocation }),
       });
+      setFloorMoveOpen(false);
       setSuccess(result.completed || `${selected.skid_number} moved to the production floor.`);
       await refresh(selected.id);
     } catch (moveError) {
@@ -880,20 +1115,57 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
         <aside className="storage-list-panel">
           <label className="storage-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${isSkidPage ? "skid, roll, or rack" : "rack or skid"}...`} /></label>
           <div className="storage-list">
-            {filtered.map((row) => {
-              const active = String(row.id) === String(selected?.id);
-              return (
-                <button className={active ? "active" : ""} type="button" onClick={() => { setSelectedId(String(row.id)); setSuccess(""); setError(""); }} key={row.id}>
-                  <span className={`storage-status-dot ${row.status}`} />
-                  <div>
-                    <strong>{isSkidPage ? row.skid_number : row.rack_code}</strong>
-                    <span>{isSkidPage ? row.current_location_display : row.storage_location_display || row.location_detail || "Location not assigned"}</span>
-                    <small>{isSkidPage ? `${row.roll_count} rolls / ${formatFeet(row.total_remaining_feet)}` : `${row.skid_count} skids / ${row.roll_count} rolls`}</small>
-                  </div>
-                  <ChevronRight size={17} />
-                </button>
-              );
-            })}
+            {isSkidPage ? filtered.map((row) => {
+                const active = String(row.id) === String(selected?.id);
+                return (
+                  <button className={active ? "active" : ""} type="button" onClick={() => { setSelectedId(String(row.id)); setSuccess(""); setError(""); }} key={row.id}>
+                    <span className={`storage-status-dot ${row.status}`} />
+                    <div>
+                      <strong>{row.skid_number}</strong>
+                      <span>{row.current_location_display}</span>
+                      <small>{row.roll_count} rolls / {formatFeet(row.total_remaining_feet)}</small>
+                    </div>
+                    <ChevronRight size={17} />
+                  </button>
+                );
+              }) : (
+                <div className="rack-grouped-list">
+                  {rackGroups.map((aisle) => (
+                    <details className="rack-aisle-group" defaultOpen key={aisle.key}>
+                      <summary>
+                        <span>Aisle</span>
+                        <strong>{aisle.key}</strong>
+                        <em>{aisle.racks.length} rack{aisle.racks.length === 1 ? "" : "s"} / {aisle.skidCount} skids / {aisle.rollCount} rolls</em>
+                      </summary>
+                      {aisle.numbers.map((number) => (
+                        <details className="rack-number-group" defaultOpen key={`${aisle.key}-${number.key}`}>
+                          <summary>
+                            <span>Rack Number</span>
+                            <strong>{number.key}</strong>
+                            <em>{number.racks.length} location{number.racks.length === 1 ? "" : "s"}</em>
+                          </summary>
+                          <div className="rack-number-items">
+                            {number.racks.map((row) => {
+                              const active = String(row.id) === String(selected?.id);
+                              return (
+                                <button className={active ? "active" : ""} type="button" onClick={() => { setSelectedId(String(row.id)); setSuccess(""); setError(""); }} key={row.id}>
+                                  <span className={`storage-status-dot ${row.status}`} />
+                                  <div>
+                                    <strong>{row.rack_code}</strong>
+                                    <span>{row.storage_location_display || row.location_detail || "Location not assigned"}</span>
+                                    <small>{row.skid_count} skids / {row.roll_count} rolls</small>
+                                  </div>
+                                  <ChevronRight size={17} />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      ))}
+                    </details>
+                  ))}
+                </div>
+              )}
             {!dataQuery.isLoading && !filtered.length && <p className="storage-empty">No {isSkidPage ? "skids" : "racks"} match this search.</p>}
           </div>
         </aside>
@@ -934,7 +1206,7 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
                   <>
                     <button className="primary" type="button" onClick={() => openWorkflow("add-roll")} disabled={selected.status !== "active"}><Camera size={20} /><span><strong>Scan Roll</strong><small>Add directly to skid</small></span></button>
                     <button className="storage-move-primary" type="button" onClick={() => openWorkflow("move-to-rack")} disabled={selected.status !== "active"}><Warehouse size={20} /><span><strong>To Rack</strong><small>Scan rack QR</small></span></button>
-                    <button className="storage-floor-primary" type="button" onClick={moveSelectedSkidToFloor} disabled={busy || !canMoveSelectedSkidToFloor}><MapPin size={20} /><span><strong>To Floor</strong><small>Wilmington Ohio</small></span></button>
+                    <button className="storage-floor-primary" type="button" onClick={() => { setFloorMoveOpen(true); setError(""); }} disabled={busy || !canMoveSelectedSkidToFloor}><MapPin size={20} /><span><strong>To Floor</strong><small>Plant, off-site, aisle</small></span></button>
                     <div className="storage-action-menu-wrap">
                       <button className="storage-menu-trigger" type="button" onClick={() => setActionMenuOpen((open) => !open)} aria-label="More skid actions" aria-expanded={actionMenuOpen}><Menu size={22} /></button>
                       {actionMenuOpen && (
@@ -1018,6 +1290,16 @@ export default function MaterialStorageView({ mode, currentUser, initialToken = 
       {formRecord !== undefined && <StorageForm mode={mode} record={formRecord} locations={dataQuery.data?.locations || []} busy={busy} error={error} onSave={saveRecord} onClose={() => { setFormRecord(undefined); setError(""); }} />}
       {printRecord && <PrintDialog mode={mode} record={printRecord} presses={dataQuery.data?.presses || []} busy={busy} error={error} onPrint={printLabel} onClose={() => { setPrintRecord(null); setError(""); }} />}
       {offlineFormsOpen && <OfflineMovementForms onClose={() => setOfflineFormsOpen(false)} />}
+      {floorMoveOpen && selected && (
+        <FloorMoveDialog
+          skid={selected}
+          options={floorOptions}
+          busy={busy}
+          error={error}
+          onMove={moveSelectedSkidToFloor}
+          onClose={() => { setFloorMoveOpen(false); setError(""); }}
+        />
+      )}
       {workflow && selected && (
         <WorkflowDialog
           mode={mode}

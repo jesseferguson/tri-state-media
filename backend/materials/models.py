@@ -258,7 +258,7 @@ class MaterialRack(models.Model):
     def location_detail(self):
         parts = [
             f"Aisle {self.aisle}" if self.aisle else "",
-            f"Bay {self.bay}" if self.bay else "",
+            f"Rack Number {self.bay}" if self.bay else "",
             f"Level {self.level}" if self.level else "",
             f"Position {self.position}" if self.position else "",
         ]

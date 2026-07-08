@@ -19,7 +19,7 @@ from .models import (
     MaterialUsage,
     RawMaterialInventory,
 )
-from .zpl import rack_label_zpl, skid_label_zpl
+from .zpl import STORAGE_QR_COMMAND, STORAGE_QR_ORIGIN, rack_label_zpl, skid_label_zpl
 
 
 class CoaterRollTagPrintQueueTests(TestCase):
@@ -671,7 +671,7 @@ class SkidRackWorkflowTests(TestCase):
         self.assertTrue(skid.qr_token)
         self.assertTrue(rack.qr_token)
         self.assertEqual(rack.location_id, self.warehouse.id)
-        self.assertEqual(rack.storage_location_display, "Wilmington Ohio > Warehouse > Aisle 03 > Bay A")
+        self.assertEqual(rack.storage_location_display, "Wilmington Ohio > Warehouse > Aisle 03 > Rack Number A")
         self.assertTrue(MaterialMovement.objects.filter(skid=skid, action_type="skid_created").exists())
         self.assertTrue(MaterialMovement.objects.filter(rack=rack, action_type="rack_created").exists())
 
@@ -829,6 +829,38 @@ class SkidRackWorkflowTests(TestCase):
             to_location="Wilmington Ohio > Plant Floor",
         ).exists())
 
+    def test_skid_page_can_move_skid_to_selected_floor_location(self):
+        skid = self.create_skid()
+        rack = self.create_rack()
+        self.client.post(
+            reverse("rack-add-skid", args=[rack.id]),
+            {"scan_value": skid.skid_number, "performed_by": self.operator.name},
+            content_type="application/json",
+            **self.operator_headers,
+        )
+
+        response = self.client.post(
+            reverse("skid-move-to-floor", args=[skid.id]),
+            {
+                "performed_by": self.operator.name,
+                "floor_location": "Wilmington Ohio > Off-Site Floor",
+            },
+            content_type="application/json",
+            **self.operator_headers,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        skid.refresh_from_db()
+        self.assertIsNone(skid.current_rack_id)
+        self.assertEqual(skid.other_location, "Wilmington Ohio > Off-Site Floor")
+        self.assertIn("Wilmington Ohio > Off-Site Floor", response.json()["completed"])
+        self.assertTrue(MaterialMovement.objects.filter(
+            skid=skid,
+            action_type="skid_removed_from_rack",
+            from_location__icontains=rack.rack_code,
+            to_location="Wilmington Ohio > Off-Site Floor",
+        ).exists())
+
     def test_partial_and_full_roll_usage_keep_inventory_consistent(self):
         skid = self.create_skid()
         self.add_roll(skid)
@@ -926,7 +958,7 @@ class SkidRackWorkflowTests(TestCase):
         self.assertEqual(body["TYPE"], "SKID_LABEL_3X3")
         self.assertIn("^PW609", body["ZPL"])
         self.assertIn("^LL609", body["ZPL"])
-        self.assertIn("^FO78,98^BQN,2,10", body["ZPL"])
+        self.assertIn(f"{STORAGE_QR_ORIGIN}{STORAGE_QR_COMMAND}", body["ZPL"])
         self.assertIn(str(skid.qr_token), body["ZPL"])
         self.assertNotIn("Status:", body["ZPL"])
         self.assertNotIn("Location:", body["ZPL"])
@@ -976,7 +1008,7 @@ class SkidRackWorkflowTests(TestCase):
 
         self.assertIn("^PW609", skid_zpl)
         self.assertIn("^LL609", skid_zpl)
-        self.assertIn("^FO78,98^BQN,2,10", skid_zpl)
+        self.assertIn(f"{STORAGE_QR_ORIGIN}{STORAGE_QR_COMMAND}", skid_zpl)
         self.assertIn("SCAN FOR LIVE CONTENTS", skid_zpl)
         self.assertIn(str(skid.qr_token), skid_zpl)
         self.assertNotIn("Status:", skid_zpl)
@@ -985,5 +1017,5 @@ class SkidRackWorkflowTests(TestCase):
         self.assertNotIn("Created:", skid_zpl)
         self.assertIn("^PW609", rack_zpl)
         self.assertIn("^LL609", rack_zpl)
-        self.assertIn("^FO78,98^BQN,2,10", rack_zpl)
+        self.assertIn(f"{STORAGE_QR_ORIGIN}{STORAGE_QR_COMMAND}", rack_zpl)
         self.assertIn(str(rack.qr_token), rack_zpl)
