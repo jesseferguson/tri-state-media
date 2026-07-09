@@ -29993,6 +29993,225 @@ textarea {
   padding: 12px;
 }
 
+.coater-width-field {
+  gap: 7px;
+}
+
+.coater-width-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.coater-width-options button {
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font-size: .78rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.coater-width-options button:hover,
+.coater-width-options button:focus-visible,
+.coater-width-options button.active {
+  outline: 0;
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.coater-skid-picker {
+  grid-column: span 2;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.coater-skid-picker > span {
+  color: #334155;
+  font-size: .72rem;
+  font-weight: 900;
+}
+
+.coater-selected-skid {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.coater-selected-skid.ready {
+  border-color: #99f6e4;
+  background: #ecfdf5;
+}
+
+.coater-selected-skid strong,
+.coater-selected-skid small {
+  display: block;
+}
+
+.coater-selected-skid strong {
+  color: #0f172a;
+  font-size: .86rem;
+  font-weight: 950;
+}
+
+.coater-selected-skid small {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.coater-skid-search-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.coater-skid-search-row > svg {
+  color: #64748b;
+}
+
+.coater-skid-search-row button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: .75rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.coater-skid-search-row button:hover,
+.coater-skid-search-row button:focus-visible {
+  outline: 0;
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.coater-skid-results {
+  display: grid;
+  gap: 5px;
+}
+
+.coater-skid-results button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(96px, .5fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coater-skid-results button.active,
+.coater-skid-results button:hover,
+.coater-skid-results button:focus-visible {
+  outline: 0;
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
+.coater-skid-results strong,
+.coater-skid-results span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coater-skid-results strong {
+  color: #0f172a;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.coater-skid-results span {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.coater-skid-error {
+  color: #b91c1c;
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.coater-skid-camera {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.coater-skid-camera video {
+  width: 100%;
+  max-height: 220px;
+  border-radius: 7px;
+  background: #0f172a;
+}
+
+.coater-skid-camera button {
+  min-height: 36px;
+  border: 1px solid #bfdbfe;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #1d4ed8;
+  font-weight: 900;
+}
+
+.coater-skid-camera p {
+  margin: 0;
+  color: #b45309;
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.coater-cutting-data {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+}
+
+.coater-cutting-data span {
+  color: #9a3412;
+  font-size: .68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.coater-cutting-data strong {
+  color: #0f172a;
+  font-size: .86rem;
+  font-weight: 950;
+}
+
 .coater-material-window .coater-print-setup {
   margin: 0 12px 12px;
   border-radius: 7px;
@@ -30259,6 +30478,10 @@ textarea {
   .coater-roll-print-step .coater-roll-details-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .coater-skid-picker {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 720px) {
@@ -30474,6 +30697,19 @@ textarea {
 
   .coater-roll-print-step .field-wide {
     grid-column: auto;
+  }
+
+  .coater-skid-picker {
+    grid-column: auto;
+  }
+
+  .coater-skid-search-row {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+
+  .coater-skid-results button {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   .coater-material-window .coater-print-setup {
@@ -32488,5 +32724,285 @@ textarea {
 
   .app-shell.material-workspace-shell .material-loading-screen > div {
     gap: 10px;
+  }
+}
+
+/* Final phone pass for the Material / Skids / Locations workspace */
+@media (max-width: 760px) {
+  .app-shell.material-workspace-shell .topbar.compact-card {
+    display: none;
+  }
+
+  .app-shell.material-workspace-shell .work-area {
+    min-height: calc(100dvh - 64px);
+    padding: 0;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view,
+  .app-shell.material-workspace-shell .material-storage-view {
+    width: 100%;
+    min-height: calc(100dvh - 64px);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    overflow-x: hidden;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links {
+    position: sticky;
+    top: 64px;
+    z-index: 1150;
+    order: -30;
+    height: auto;
+    min-height: 46px;
+    max-height: none;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 5px 8px;
+    border: 0;
+    border-bottom: 1px solid #d9e4ec;
+    border-radius: 0;
+    background: rgba(255, 255, 255, .98);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, .05);
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button {
+    height: 36px;
+    min-height: 36px;
+    gap: 5px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #526176;
+    font-size: .7rem;
+    line-height: 1;
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button.active {
+    border-color: #99f6e4;
+    background: #effdf8;
+    color: #0f766e;
+    box-shadow: inset 0 0 0 1px rgba(20, 184, 166, .12);
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button > svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions {
+    order: -20;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.1fr;
+    gap: 6px;
+    margin: 0;
+    padding: 7px 8px;
+    border: 0;
+    border-bottom: 1px solid #d9e4ec;
+    border-radius: 0;
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, .04);
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 7px;
+    border-radius: 8px;
+    font-size: .7rem;
+    line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions button > svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+  }
+
+  .app-shell.material-workspace-shell .storage-layout {
+    flex: 1;
+    min-height: 0;
+    display: block;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .storage-list-panel {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .storage-search {
+    gap: 7px;
+    padding: 8px;
+    border-bottom: 1px solid #d9e4ec;
+    background: #ffffff;
+  }
+
+  .app-shell.material-workspace-shell .storage-search input {
+    height: 38px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+
+  .app-shell.material-workspace-shell .storage-location-tabs {
+    gap: 6px;
+    padding: 7px 8px 8px;
+    border-bottom: 1px solid #d9e4ec;
+    background: #ffffff;
+  }
+
+  .app-shell.material-workspace-shell .storage-location-tabs button {
+    min-height: 34px;
+    border-radius: 8px;
+    font-size: .68rem;
+    line-height: 1;
+  }
+
+  .app-shell.material-workspace-shell .storage-list {
+    max-height: none;
+    overflow: visible;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .rack-grouped-list {
+    gap: 7px;
+    padding: 8px;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group,
+  .app-shell.material-workspace-shell .rack-number-group {
+    border: 0;
+    border-radius: 8px;
+    box-shadow: 0 1px 0 rgba(15, 23, 42, .06), 0 8px 18px rgba(15, 23, 42, .04);
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary,
+  .app-shell.material-workspace-shell .rack-number-group > summary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary {
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+
+  .app-shell.material-workspace-shell .rack-number-group {
+    margin: 6px;
+    border: 1px solid #e2e8f0;
+    box-shadow: none;
+  }
+
+  .app-shell.material-workspace-shell .rack-number-group > summary {
+    min-height: 36px;
+    padding: 8px 9px;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary span,
+  .app-shell.material-workspace-shell .rack-number-group > summary span {
+    font-size: .56rem;
+    letter-spacing: 0;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary strong,
+  .app-shell.material-workspace-shell .rack-number-group > summary strong {
+    font-size: .78rem;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary em,
+  .app-shell.material-workspace-shell .rack-number-group > summary em {
+    max-width: 50vw;
+    overflow: hidden;
+    font-size: .6rem;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell.material-workspace-shell .storage-list > button,
+  .app-shell.material-workspace-shell .rack-number-items > button {
+    min-height: 58px;
+    padding: 9px 10px;
+  }
+
+  .app-shell.material-workspace-shell .storage-list > button strong,
+  .app-shell.material-workspace-shell .rack-number-items > button strong {
+    font-size: .78rem;
+  }
+
+  .app-shell.material-workspace-shell .storage-list > button span,
+  .app-shell.material-workspace-shell .rack-number-items > button span {
+    font-size: .66rem;
+  }
+
+  .app-shell.material-workspace-shell .storage-list > button small,
+  .app-shell.material-workspace-shell .rack-number-items > button small {
+    font-size: .6rem;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-hero {
+    margin: 0;
+    padding: 10px 8px;
+    border: 0;
+    border-bottom: 1px solid #d9e4ec;
+    border-radius: 0;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-hero h2 {
+    font-size: 1.08rem;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-tabs,
+  .app-shell.material-workspace-shell .material-handling-toolbar {
+    margin: 0;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-tabs {
+    padding: 6px 8px;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-toolbar {
+    padding: 8px;
+  }
+
+  .app-shell.material-workspace-shell .material-inventory-view {
+    gap: 7px;
+    padding: 8px;
+  }
+}
+
+@media (max-width: 390px) {
+  .app-shell.material-workspace-shell .material-workspace-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions button {
+    gap: 4px;
+    padding: 0 4px;
+    font-size: .65rem;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary em,
+  .app-shell.material-workspace-shell .rack-number-group > summary em {
+    max-width: 42vw;
+    font-size: .56rem;
   }
 }

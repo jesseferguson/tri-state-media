@@ -1544,6 +1544,9 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
                 {"detail": "Reopen this schedule before creating another roll."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        result_lot_number = str(request.data.get("result_lot_number") or "").strip()
+        if not result_lot_number:
+            return Response({"result_lot_number": ["Enter the lot number for this roll."]}, status=status.HTTP_400_BAD_REQUEST)
 
         def requested_id(key, fallback):
             value = request.data.get(key)
@@ -1583,9 +1586,8 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "location": request.data.get("location"),
             "log_inventory": False,
             "notes": request.data.get("notes", ""),
+            "result_lot_number": result_lot_number,
         }
-        if request.data.get("result_lot_number"):
-            payload["result_lot_number"] = request.data["result_lot_number"]
 
         serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)

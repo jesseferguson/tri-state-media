@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Factory, Layers3, PackageCheck, Play, Printer, RefreshCcw, Save, Search, Settings2, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Camera, CheckCircle2, ChevronRight, Factory, Layers3, PackageCheck, Play, Printer, RefreshCcw, Save, Search, Settings2, Trash2, X } from "lucide-react";
 import { fetchCollection, postRecordAction, updateRecord } from "../api";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { canDeleteMaterialRoll } from "../lib/localAuth";
@@ -15,6 +16,7 @@ const componentSlots = [
   { key: "silicone", preferredKey: "silicone_material", label: "Silicone", type: "silicone", supplierKey: "silicone_supplier_option", allowedKey: "allowed_silicone_materials" },
   { key: "coating", preferredKey: "coating_material", label: "Coating", type: "coating", supplierKey: "coating_supplier_option", allowedKey: "allowed_coating_materials", optional: true },
 ];
+const commonCoaterWidths = ["8.75", "9", "12.75"];
 
 function sameId(a, b) {
   if (a === null || a === undefined || b === null || b === undefined || a === "" || b === "") return false;
@@ -94,6 +96,43 @@ function supplierChoiceLabel(option) {
   ].filter(Boolean).join(" / ");
 }
 
+function skidSearchText(skid) {
+  return [
+    skid?.skid_number,
+    skid?.qr_token,
+    skid?.current_rack_code,
+    skid?.current_location_display,
+    skid?.other_location,
+    skid?.notes,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function extractSkidScanCandidates(value) {
+  const text = String(value || "").trim();
+  if (!text) return [];
+  const candidates = [text];
+  try {
+    const parsed = new URL(text, window.location.origin);
+    const token = parsed.searchParams.get("skidToken");
+    if (token) candidates.push(token);
+    const lastPath = parsed.pathname.split("/").filter(Boolean).pop();
+    if (lastPath) candidates.push(lastPath);
+  } catch {
+    // Plain scanner values are handled by the original text candidate.
+  }
+  return [...new Set(candidates.map((candidate) => String(candidate || "").trim()).filter(Boolean))];
+}
+
+function findSkidByScan(skids, value) {
+  const candidates = extractSkidScanCandidates(value).map((candidate) => candidate.toLowerCase());
+  if (!candidates.length) return null;
+  return (skids ?? []).find((skid) => candidates.some((candidate) => (
+    String(skid.id) === candidate
+    || String(skid.skid_number || "").toLowerCase() === candidate
+    || String(skid.qr_token || "").toLowerCase() === candidate
+  ))) || null;
+}
+
 function allowedComponentIds(material, slot) {
   const ids = [];
   if (material?.[slot.preferredKey]) ids.push(material[slot.preferredKey]);
@@ -169,7 +208,6 @@ function printerSettingsFor(press) {
 
 function noteBlock(tag, form, supplierOptions) {
   const lines = [
-    tag.cut_description ? `Cutting Notes: ${tag.cut_description}` : "",
     form.operator_notes ? `Operator Notes: ${form.operator_notes}` : "",
     ...componentSlots.map((slot) => {
       const option = (supplierOptions ?? []).find((row) => sameId(row.id, form[slot.supplierKey]));
@@ -196,6 +234,7 @@ function defaultRollForm(tag, data, currentUser) {
     length_feet: tag?.is_schedule ? "" : (tag?.length_feet || ""),
     weight_lbs: tag?.weight_lbs || "",
     result_lot_number: tag?.is_schedule ? "" : (tag?.result_lot_number || ""),
+    skid: "",
     location,
     operator_notes: "",
     operator: loggedInOperator,
@@ -218,14 +257,79 @@ function validateRollForm(form, data = {}) {
   });
   if (!numberOrNull(form.width_inches) || numberOrNull(form.width_inches) <= 0) missing.push("finished width");
   if (!numberOrNull(form.length_feet) || numberOrNull(form.length_feet) <= 0) missing.push("actual roll length");
+  if (!String(form.result_lot_number || "").trim()) missing.push("lot number");
+  if (!form.skid) missing.push("skid");
   if (!String(form.operator || "").trim()) missing.push("operator");
-  if (!form.location) missing.push("plant location");
+  if (!form.location && !form.skid) missing.push("plant location");
   if (!form.printer_press) {
     missing.push("Roll tag printer");
   } else if (!String(form.printer_ip || "").trim()) {
     missing.push("Printer IP setup");
   }
   return missing;
+}
+
+function CoaterSkidCamera({ onResult, onClose }) {
+  const videoRef = useRef(null);
+  const controlsRef = useRef(null);
+  const resultRef = useRef(onResult);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    resultRef.current = onResult;
+  }, [onResult]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function start() {
+      try {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          setError("Camera scanning requires HTTPS or localhost. Use the scan field instead.");
+          return;
+        }
+        const reader = new BrowserMultiFormatReader(undefined, {
+          delayBetweenScanAttempts: 100,
+          delayBetweenScanSuccess: 300,
+        });
+        const controls = await reader.decodeFromConstraints(
+          { audio: false, video: { facingMode: { ideal: "environment" } } },
+          videoRef.current,
+          (result, _scanError, currentControls) => {
+            const value = result?.getText?.();
+            if (value && active) {
+              currentControls?.stop?.();
+              resultRef.current(value);
+            }
+          },
+        );
+        if (!active) controls?.stop?.();
+        else controlsRef.current = controls;
+      } catch (scanError) {
+        setError(scanError?.name === "NotAllowedError"
+          ? "Camera permission was blocked. Allow camera access or use the scan field."
+          : "Could not open the camera. Use the scan field or a USB scanner.");
+      }
+    }
+
+    start();
+    return () => {
+      active = false;
+      controlsRef.current?.stop?.();
+      controlsRef.current = null;
+      if (videoRef.current?.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  return (
+    <div className="coater-skid-camera">
+      <video ref={videoRef} playsInline muted />
+      <button type="button" onClick={onClose}><X size={16} /> Close Camera</button>
+      {error && <p>{error}</p>}
+    </div>
+  );
 }
 
 function PressFilter({ presses, selectedPress, onSelect }) {
@@ -343,9 +447,17 @@ function ComponentPicker({ slot, form, setForm, materials, supplierOptions, allo
 function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, setupSectionId, rollSectionId, onSave }) {
   const [form, setForm] = useState(() => defaultRollForm(tag, data, currentUser));
   const [printerSettingsOpen, setPrinterSettingsOpen] = useState(false);
+  const [skidSearch, setSkidSearch] = useState("");
+  const [skidError, setSkidError] = useState("");
+  const [skidCameraOpen, setSkidCameraOpen] = useState(false);
   const missing = validateRollForm(form, data);
   const scheduledMaterial = (data.materials ?? []).find((row) => sameId(row.id, tag?.scheduled_material));
   const selectedPrinter = (data.presses ?? []).find((press) => sameId(press.id, form.printer_press));
+  const activeSkids = (data.skids ?? []).filter((skid) => skid.status === "active");
+  const selectedSkid = activeSkids.find((skid) => sameId(skid.id, form.skid));
+  const skidMatches = activeSkids
+    .filter((skid) => !skidSearch.trim() || skidSearchText(skid).includes(skidSearch.trim().toLowerCase()))
+    .slice(0, 5);
   const partNumber = rollPartNumber(tag, form, data.materials);
 
   useEffect(() => {
@@ -364,6 +476,21 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
 
   function update(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function selectSkid(skid) {
+    setSkidError("");
+    setForm((prev) => ({ ...prev, skid: skid?.id ? String(skid.id) : "" }));
+    setSkidSearch(skid ? skid.skid_number : "");
+  }
+
+  function applySkidScan(value = skidSearch) {
+    const match = findSkidByScan(activeSkids, value);
+    if (!match) {
+      setSkidError("No active skid matched that scan or search.");
+      return;
+    }
+    selectSkid(match);
   }
 
   function selectPrinter(pressId) {
@@ -386,7 +513,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
     <form className="coater-roll-form" id={setupSectionId} onSubmit={submit}>
       <header>
         <div>
-          <span>1 / Material Setup</span>
+          <span>Material Setup</span>
           <strong>Select What Is Running</strong>
           <em>{[partNumber ? `Part ${partNumber}` : "", tag.scheduled_material_name || tag.name].filter(Boolean).join(" / ")}</em>
         </div>
@@ -410,41 +537,95 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
       <section className="coater-roll-print-step" id={rollSectionId}>
         <header>
           <div>
-            <span>2 / New Physical Roll</span>
+            <span>New Physical Roll</span>
             <strong>Enter the finished roll and print its tag</strong>
           </div>
           <Printer size={20} />
         </header>
         <div className="coater-roll-details-grid">
-        <label>
-          <span>Cutting Notes</span>
-          <input value={tag.cut_description || ""} readOnly />
-        </label>
-        <label>
-          <span>Finished Width</span>
-          <input type="number" min="0.001" step="0.001" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} required />
-        </label>
-        <label>
-          <span>Actual Roll Length</span>
-          <input type="number" min="0.01" step="0.01" value={form.length_feet} onChange={(event) => update("length_feet", event.target.value)} placeholder="Feet on this roll" required />
-        </label>
-        <label>
-          <span>Operator</span>
-          <input className="coater-operator-locked" value={form.operator} readOnly aria-readonly="true" required />
-        </label>
-        <label>
-          <span>Plant Location</span>
-          <select value={form.location || ""} onChange={(event) => update("location", event.target.value)} required>
-            <option value="">Select location</option>
-            {(data.locations ?? []).filter((location) => location.inventory_scope !== "finished_product").map((location) => (
-              <option value={location.id} key={location.id}>{location.full_path || location.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="field-wide">
-          <span>Operator Notes</span>
-          <textarea value={form.operator_notes} onChange={(event) => update("operator_notes", event.target.value)} />
-        </label>
+          <label>
+            <span>Lot Number</span>
+            <input value={form.result_lot_number} onChange={(event) => update("result_lot_number", event.target.value)} placeholder="Operator-entered lot" required />
+          </label>
+          <label className="coater-width-field">
+            <span>Finished Width</span>
+            <div className="coater-width-options" role="group" aria-label="Common finished widths">
+              {commonCoaterWidths.map((width) => (
+                <button
+                  className={String(form.width_inches) === width ? "active" : ""}
+                  type="button"
+                  key={width}
+                  onClick={() => update("width_inches", width)}
+                >
+                  {width}"
+                </button>
+              ))}
+            </div>
+            <input type="number" min="0.001" step="0.001" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} placeholder="Custom width" required />
+          </label>
+          <label>
+            <span>Actual Roll Length</span>
+            <input type="number" min="0.01" step="0.01" value={form.length_feet} onChange={(event) => update("length_feet", event.target.value)} placeholder="Feet on this roll" required />
+          </label>
+          <label>
+            <span>Operator</span>
+            <input className="coater-operator-locked" value={form.operator} readOnly aria-readonly="true" required />
+          </label>
+          <div className="coater-skid-picker">
+            <span>Skid</span>
+            <div className={`coater-selected-skid ${selectedSkid ? "ready" : ""}`}>
+              <strong>{selectedSkid?.skid_number || "No skid selected"}</strong>
+              <small>{selectedSkid ? (selectedSkid.current_location_display || "Plant floor") : "Search or scan the skid QR code"}</small>
+            </div>
+            <div className="coater-skid-search-row">
+              <Search size={15} />
+              <input
+                value={skidSearch}
+                onChange={(event) => {
+                  setSkidSearch(event.target.value);
+                  setSkidError("");
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    applySkidScan(event.currentTarget.value);
+                  }
+                }}
+                placeholder="Search skid or scan QR"
+              />
+              <button type="button" onClick={() => applySkidScan()}>
+                Select
+              </button>
+              <button type="button" onClick={() => setSkidCameraOpen(true)} aria-label="Scan skid QR with camera" title="Scan skid QR">
+                <Camera size={16} />
+              </button>
+            </div>
+            {skidMatches.length > 0 && (
+              <div className="coater-skid-results">
+                {skidMatches.map((skid) => (
+                  <button className={sameId(skid.id, form.skid) ? "active" : ""} type="button" key={skid.id} onClick={() => selectSkid(skid)}>
+                    <strong>{skid.skid_number}</strong>
+                    <span>{skid.current_location_display || "Plant floor"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {skidError && <small className="coater-skid-error">{skidError}</small>}
+            {skidCameraOpen && (
+              <CoaterSkidCamera
+                onClose={() => setSkidCameraOpen(false)}
+                onResult={(value) => {
+                  setSkidCameraOpen(false);
+                  setSkidSearch(value);
+                  applySkidScan(value);
+                }}
+              />
+            )}
+          </div>
+          <label className="field-wide">
+            <span>Operator Notes</span>
+            <textarea value={form.operator_notes} onChange={(event) => update("operator_notes", event.target.value)} />
+          </label>
         </div>
       </section>
 
@@ -453,7 +634,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
           <span className="coater-print-icon"><Printer size={18} /></span>
           <div>
             <strong>Roll Tag Printer</strong>
-            <span>The unique roll ID and inventory record are created automatically.</span>
+            <span>The system creates the roll ID; the operator enters the lot number.</span>
           </div>
         </header>
         <div className="coater-print-controls">
@@ -543,6 +724,12 @@ function ScheduleProgress({ schedule, rolls, sectionId, onOpenRoll, onDeleteRoll
         <article><span>Remaining</span><strong>{qty(remaining, " ft")}</strong></article>
         <article><span>Finished Rolls</span><strong>{documented.length}</strong></article>
       </div>
+      {schedule?.cut_description && (
+        <div className="coater-cutting-data">
+          <span>Cutting Data</span>
+          <strong>{schedule.cut_description}</strong>
+        </div>
+      )}
       <div className="coater-footage-progress" role="progressbar" aria-valuemin="0" aria-valuemax={target || 100} aria-valuenow={footage}>
         <span style={{ width: `${percent}%` }} />
       </div>
@@ -644,10 +831,6 @@ function MaterialJobDialog({
   const setupSectionId = `${sectionPrefix}-setup`;
   const rollSectionId = `${sectionPrefix}-new-roll`;
 
-  function moveTo(sectionId) {
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
   return (
     <section className="coater-job-overlay" role="dialog" aria-modal="true" aria-label={`Material run ${tag.tag_number}`}>
       <div className="coater-material-window">
@@ -655,7 +838,7 @@ function MaterialJobDialog({
           <div>
             <span className="coater-window-type material"><Layers3 size={16} /> Material Run</span>
             <h2>{tag.scheduled_material_name || tag.name}</h2>
-            <p>{[tag.tag_number, tag.press_name || "No press", tag.cut_description || "No cutting notes"].filter(Boolean).join(" / ")}</p>
+            <p>{[tag.tag_number, tag.press_name || "No press"].filter(Boolean).join(" / ")}</p>
           </div>
           <div>
             <button
@@ -674,17 +857,6 @@ function MaterialJobDialog({
         </header>
 
         <main className="coater-material-window-body">
-          <nav className="coater-run-nav" aria-label="Material run sections">
-            <button type="button" onClick={() => moveTo(progressSectionId)}>
-              <span>1</span> Progress
-            </button>
-            <button type="button" onClick={() => moveTo(setupSectionId)}>
-              <span>2</span> Material Setup
-            </button>
-            <button type="button" onClick={() => moveTo(rollSectionId)}>
-              <span>3</span> New Roll
-            </button>
-          </nav>
           {notice && <div className="coater-print-success"><CheckCircle2 size={16} /><span>{notice}</span></div>}
           <ScheduleProgress
             schedule={tag}
@@ -1062,7 +1234,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
   const dataQuery = useQuery({
     queryKey: ["coater-operator-data"],
     queryFn: async () => {
-      const [tags, schedule, materials, supplierOptions, presses, locations, rawMaterials] = await Promise.all([
+      const [tags, schedule, materials, supplierOptions, presses, locations, rawMaterials, skids] = await Promise.all([
         fetchCollection("coater-roll-tags", { ordering: "-run_date,tag_number", pageSize: 500, fetchAll: true }),
         fetchCollection("production-schedule", { ordering: "scheduled_date,press_sequence", pageSize: 500, fetchAll: true }),
         fetchCollection("materials", { ordering: "material_type,name", pageSize: 500, fetchAll: true }),
@@ -1070,6 +1242,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         fetchCollection("presses", { ordering: "name", pageSize: 250, fetchAll: true }),
         fetchCollection("locations", { ordering: "name", pageSize: 500, fetchAll: true }),
         fetchCollection("raw-materials", { ordering: "-received_date,-id", filters: { material_type: "coated_stock" }, pageSize: 1000, fetchAll: true }),
+        fetchCollection("skids", { ordering: "-created_at", pageSize: 1000, fetchAll: true }),
       ]);
       return {
         tags: tags.results ?? [],
@@ -1079,13 +1252,14 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         presses: presses.results ?? [],
         locations: locations.results ?? [],
         rawMaterials: rawMaterials.results ?? [],
+        skids: skids.results ?? [],
       };
     },
     staleTime: 20_000,
     refetchInterval: 60_000,
   });
 
-  const data = dataQuery.data ?? { tags: [], schedule: [], materials: [], supplierOptions: [], presses: [], locations: [], rawMaterials: [] };
+  const data = dataQuery.data ?? { tags: [], schedule: [], materials: [], supplierOptions: [], presses: [], locations: [], rawMaterials: [], skids: [] };
   const operatorName = currentUser?.name || "";
   const canDeleteRoll = canDeleteMaterialRoll(currentUser);
   const preferredPresses = useMemo(() => {
@@ -1225,25 +1399,46 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
           frontend_url: window.location.origin,
           auto_document: true,
         });
-        return { saved: printResult.roll || saved, printResult };
+        let skidResult = null;
+        if (form.skid) {
+          const rollScanValue = printResult.roll?.result_serial_number
+            || printResult.roll?.tag_number
+            || printResult.roll?.result_lot_number
+            || saved.result_serial_number
+            || saved.tag_number
+            || saved.result_lot_number;
+          skidResult = await postRecordAction("skids", form.skid, "add-roll", {
+            scan_value: rollScanValue,
+            performed_by: form.operator || operatorName,
+            confirm_move: true,
+          }, {
+            headers: userHeaders(currentUser),
+          });
+        }
+        return { saved: printResult.roll || saved, printResult, skidResult };
       } catch (printError) {
         throw new Error(`Roll ${saved.tag_number} was created, but the print job could not be queued. ${printError.message || ""}`.trim());
       }
     },
-    onSuccess: ({ saved, printResult }) => {
+    onSuccess: ({ saved, printResult, skidResult }) => {
       setSelectedTagId(String(saved.source_schedule || selectedTagId));
       setLastCreatedRollId(String(saved.id));
-      setRollTagNotice(`${saved.tag_number} was printed, documented at ${qty(saved.length_feet, " ft")}, and added to inventory.`);
+      setRollTagNotice([
+        `${saved.tag_number} was printed, documented at ${qty(saved.length_feet, " ft")}, and added to inventory.`,
+        skidResult?.skid?.skid_number ? `Placed on ${skidResult.skid.skid_number}.` : "",
+      ].filter(Boolean).join(" "));
       queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "skids"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "skids"] });
     },
   });
 
