@@ -543,11 +543,11 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
           <Printer size={20} />
         </header>
         <div className="coater-roll-details-grid">
-          <label>
+          <label className="coater-roll-lot-field">
             <span>Lot Number</span>
             <input value={form.result_lot_number} onChange={(event) => update("result_lot_number", event.target.value)} placeholder="Operator-entered lot" required />
           </label>
-          <label className="coater-width-field">
+          <label className="coater-width-field coater-roll-width-field">
             <span>Finished Width</span>
             <div className="coater-width-options" role="group" aria-label="Common finished widths">
               {commonCoaterWidths.map((width) => (
@@ -563,16 +563,19 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
             </div>
             <input type="number" min="0.001" step="0.001" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} placeholder="Custom width" required />
           </label>
-          <label>
+          <label className="coater-roll-length-field">
             <span>Actual Roll Length</span>
             <input type="number" min="0.01" step="0.01" value={form.length_feet} onChange={(event) => update("length_feet", event.target.value)} placeholder="Feet on this roll" required />
           </label>
-          <label>
+          <label className="coater-roll-operator-field">
             <span>Operator</span>
             <input className="coater-operator-locked" value={form.operator} readOnly aria-readonly="true" required />
           </label>
           <div className="coater-skid-picker">
-            <span>Skid</span>
+            <div className="coater-skid-panel-title">
+              <span>Skid Destination</span>
+              <small>Search, select, or scan where this roll will land.</small>
+            </div>
             <div className={`coater-selected-skid ${selectedSkid ? "ready" : ""}`}>
               <strong>{selectedSkid?.skid_number || "No skid selected"}</strong>
               <small>{selectedSkid ? (selectedSkid.current_location_display || "Plant floor") : "Search or scan the skid QR code"}</small>
@@ -622,7 +625,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
               />
             )}
           </div>
-          <label className="field-wide">
+          <label className="field-wide coater-roll-notes-field">
             <span>Operator Notes</span>
             <textarea value={form.operator_notes} onChange={(event) => update("operator_notes", event.target.value)} />
           </label>
