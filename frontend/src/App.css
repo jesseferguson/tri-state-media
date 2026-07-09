@@ -33006,3 +33006,26 @@ textarea {
     font-size: .56rem;
   }
 }
+
+@media (max-width: 760px) {
+  .app-shell.material-workspace-shell .material-handling-view > .material-storage-links {
+    position: relative;
+    top: auto;
+    z-index: 4;
+    order: -40;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view > .material-workspace-actions {
+    position: relative;
+    z-index: 3;
+    order: -30;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view > .material-handling-tabs {
+    order: -20;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view > .material-handling-toolbar {
+    order: -10;
+  }
+}
