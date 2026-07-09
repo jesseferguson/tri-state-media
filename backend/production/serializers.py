@@ -695,19 +695,51 @@ class ProductionShiftReportSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
     press_name = serializers.CharField(source="press.name", read_only=True)
     waste_footage = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    coater_schedule_tag_number = serializers.CharField(source="coater_schedule.tag_number", read_only=True)
+    coater_schedule_name = serializers.CharField(source="coater_schedule.name", read_only=True)
+    coater_material_name = serializers.SerializerMethodField()
+    schedule_reference = serializers.SerializerMethodField()
+    display_job_name = serializers.SerializerMethodField()
 
     def get_customer_name(self, obj):
+        if obj.coater_schedule_id:
+            return "Tri-State Media"
+        if not obj.production_schedule_id:
+            return obj.job_ticket.customer_name if obj.job_ticket else ""
         if obj.production_schedule.customer:
             return obj.production_schedule.customer.name
         if obj.job_ticket.customer:
             return obj.job_ticket.customer.name
         return obj.job_ticket.customer_name
 
+    def get_coater_material_name(self, obj):
+        schedule = obj.coater_schedule
+        if not schedule:
+            return ""
+        material = schedule.produced_material or schedule.scheduled_material
+        return getattr(material, "name", "") or getattr(material, "code", "") or schedule.name
+
+    def get_schedule_reference(self, obj):
+        if obj.coater_schedule_id:
+            return obj.coater_schedule.tag_number
+        if obj.production_schedule_id:
+            return str(obj.production_schedule_id)
+        return ""
+
+    def get_display_job_name(self, obj):
+        if obj.coater_schedule_id:
+            return self.get_coater_material_name(obj) or obj.coater_schedule.name
+        return obj.job_ticket.job_name if obj.job_ticket_id else ""
+
     def validate(self, attrs):
+        production_schedule = attrs.get("production_schedule", getattr(self.instance, "production_schedule", None))
+        coater_schedule = attrs.get("coater_schedule", getattr(self.instance, "coater_schedule", None))
         total = attrs.get("total_footage", getattr(self.instance, "total_footage", 0))
         good = attrs.get("good_footage", getattr(self.instance, "good_footage", 0))
         start = attrs.get("shift_start", getattr(self.instance, "shift_start", None))
         end = attrs.get("shift_end", getattr(self.instance, "shift_end", None))
+        if bool(production_schedule) == bool(coater_schedule):
+            raise serializers.ValidationError({"production_schedule": "Choose either a production schedule or a coater schedule."})
         if total < 0 or good < 0:
             raise serializers.ValidationError("Footage cannot be negative.")
         if good > total:

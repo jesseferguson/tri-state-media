@@ -848,12 +848,13 @@ class CoaterRollTag(models.Model):
 
     result_code = models.CharField(max_length=80, blank=True)
     result_serial_number = models.CharField(max_length=80, blank=True)
-    result_lot_number = models.CharField(max_length=80, unique=True, blank=True)
+    result_lot_number = models.CharField(max_length=80, blank=True)
     width_inches = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     length_feet = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     weight_lbs = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     operator = models.CharField(max_length=100, blank=True)
+    suboperator = models.CharField(max_length=100, blank=True)
     run_date = models.DateField(null=True, blank=True)
     press = models.ForeignKey(
         Press,

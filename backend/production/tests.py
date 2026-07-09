@@ -592,6 +592,53 @@ class ScheduledMaterialWorkflowTests(TestCase):
         self.assertEqual(Decimal(str(detail.json()["footage_remaining"])), Decimal("12000"))
         self.assertEqual(Decimal(str(detail.json()["reported_waste_footage"])), Decimal("500"))
 
+    def test_shift_report_accepts_coater_schedule_without_job_ticket(self):
+        press = Press.objects.create(name="ETI")
+        material = MaterialSpec.objects.create(material_type="coated_stock", code="PM-40-2417", name="PM-40-2417")
+        liner = MaterialSpec.objects.create(material_type="liner", code="40", name="40 Liner")
+        face = MaterialSpec.objects.create(material_type="face", code="PM", name="PM Face")
+        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="2417", name="2417 Adhesive")
+        silicone = MaterialSpec.objects.create(material_type="silicone", code="STD", name="Standard Silicone")
+        coater_schedule = CoaterRollTag.objects.create(
+            name="PM-40-2417",
+            status="running",
+            produced_material=material,
+            liner=liner,
+            face=face,
+            adhesive=adhesive,
+            silicone=silicone,
+            length_feet=Decimal("100000"),
+            press=press,
+            log_inventory=False,
+        )
+
+        response = self.client.post(
+            reverse("production-shift-report-list"),
+            {
+                "coater_schedule": coater_schedule.id,
+                "press": press.id,
+                "operator": "Levi",
+                "suboperator": "Night Helper",
+                "report_date": "2026-07-01",
+                "shift_start": "2026-07-01T08:00:00-04:00",
+                "shift_end": "2026-07-01T08:01:00-04:00",
+                "total_footage": "5000",
+                "good_footage": "5000",
+                "material_footage": "5000",
+                "outcome": "end_shift",
+                "created_by": "Levi",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        body = response.json()
+        self.assertEqual(body["coater_schedule"], coater_schedule.id)
+        self.assertEqual(body["coater_schedule_tag_number"], coater_schedule.tag_number)
+        self.assertEqual(body["schedule_reference"], coater_schedule.tag_number)
+        self.assertEqual(body["display_job_name"], "PM-40-2417")
+        self.assertEqual(body["suboperator"], "Night Helper")
+
 
 class JobTicketPrintQueueTests(TestCase):
     class FirebaseResponse:

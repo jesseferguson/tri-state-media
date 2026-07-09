@@ -397,7 +397,7 @@ function scheduleDefaultsForTicket(ticket, currentUser) {
 }
 
 const initialOpenGroups = Object.fromEntries(
-  resourceGroups.map((group) => [group.key, false])
+  resourceGroups.map((group) => [group.key, Boolean(group.defaultOpen)])
 );
 
 const topLevelGroups = resourceGroups.filter((group) => !group.parent);
@@ -471,7 +471,10 @@ function defaultResourceKeyForRole(roleDefinitions, roleName) {
   const visible = visibleResourcesForRole(roleDefinitions, roleName);
   const normalizedRole = String(roleName || "").toLowerCase();
   if (normalizedRole === "sales" && visible.some((item) => item.key === "quote-calculator")) return "quote-calculator";
-  if (normalizedRole === "coater" && visible.some((item) => item.key === "coater-operator")) return "coater-operator";
+  const operatorRole = normalizedRole.includes("operator") || normalizedRole.includes("coater") || normalizedRole.includes("press");
+  if (operatorRole && visible.some((item) => item.key === "coater-operator")) return "coater-operator";
+  if (visible.some((item) => item.key === "production-schedule")) return "production-schedule";
+  if (visible.some((item) => item.key === "coater-operator")) return "coater-operator";
   if (visible.some((item) => item.key === "job-tickets")) return "job-tickets";
   return visible[0]?.key ?? "quote-calculator";
 }

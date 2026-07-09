@@ -50,9 +50,18 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function isCoaterPress(press) {
-  const name = String(press?.name || "").toLowerCase();
-  return name.includes("eti") || name.includes("coater");
+function pressPreferenceKey(user) {
+  return `tsm-working-press:${user?.id || user?.username || user?.name || "guest"}`;
+}
+
+function readPressPreference(user) {
+  if (typeof window === "undefined") return "all";
+  return window.localStorage.getItem(pressPreferenceKey(user)) || "all";
+}
+
+function savePressPreference(user, value) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(pressPreferenceKey(user), value || "all");
 }
 
 function qty(value, suffix = "") {
@@ -208,7 +217,6 @@ function printerSettingsFor(press) {
 
 function noteBlock(tag, form, supplierOptions) {
   const lines = [
-    form.operator_notes ? `Operator Notes: ${form.operator_notes}` : "",
     ...componentSlots.map((slot) => {
       const option = (supplierOptions ?? []).find((row) => sameId(row.id, form[slot.supplierKey]));
       return option ? `${slot.label} Supplier: ${supplierOptionTitle(option)}${supplierOptionMeta(option) ? ` / ${supplierOptionMeta(option)}` : ""}` : "";
@@ -236,8 +244,8 @@ function defaultRollForm(tag, data, currentUser) {
     result_lot_number: tag?.is_schedule ? "" : (tag?.result_lot_number || ""),
     skid: "",
     location,
-    operator_notes: "",
     operator: loggedInOperator,
+    suboperator: tag?.suboperator || "",
     printer_press: printerPress?.id ? String(printerPress.id) : "",
     print_copies: "1",
     ...printerSettingsFor(printerPress),
@@ -258,9 +266,7 @@ function validateRollForm(form, data = {}) {
   if (!numberOrNull(form.width_inches) || numberOrNull(form.width_inches) <= 0) missing.push("finished width");
   if (!numberOrNull(form.length_feet) || numberOrNull(form.length_feet) <= 0) missing.push("actual roll length");
   if (!String(form.result_lot_number || "").trim()) missing.push("lot number");
-  if (!form.skid) missing.push("skid");
   if (!String(form.operator || "").trim()) missing.push("operator");
-  if (!form.location && !form.skid) missing.push("plant location");
   if (!form.printer_press) {
     missing.push("Roll tag printer");
   } else if (!String(form.printer_ip || "").trim()) {
@@ -332,16 +338,51 @@ function CoaterSkidCamera({ onResult, onClose }) {
   );
 }
 
-function PressFilter({ presses, selectedPress, onSelect }) {
+function PressFilter({ presses, selectedPress, selectedPressName, currentUser, onSelect }) {
   return (
-    <div className="coater-press-tabs" role="tablist" aria-label="Coater press filter">
-      <button className={selectedPress === "all" ? "active" : ""} type="button" onClick={() => onSelect("all")}>All</button>
-      {presses.map((press) => (
-        <button className={String(selectedPress) === String(press.id) ? "active" : ""} type="button" key={press.id} onClick={() => onSelect(String(press.id))}>
-          {press.name}
-        </button>
-      ))}
-    </div>
+    <section className="coater-press-picker" aria-label="Working press selector">
+      <div className="coater-press-memory">
+        <span>Working Press</span>
+        <strong>{selectedPressName}</strong>
+        <em>{currentUser?.name ? `Remembered for ${currentUser.name}` : "Saved on this device"}</em>
+      </div>
+      <label className="coater-press-select">
+        <span>Press</span>
+        <select value={selectedPress} onChange={(event) => onSelect(event.target.value)}>
+          <option value="all">All Presses</option>
+          {presses.map((press) => (
+            <option value={String(press.id)} key={press.id}>{press.name}</option>
+          ))}
+        </select>
+      </label>
+      <div className="coater-press-tabs" role="tablist" aria-label="Press schedule filter">
+        <button className={selectedPress === "all" ? "active" : ""} type="button" onClick={() => onSelect("all")}>All</button>
+        {presses.map((press) => (
+          <button className={String(selectedPress) === String(press.id) ? "active" : ""} type="button" key={press.id} onClick={() => onSelect(String(press.id))}>
+            {press.name}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CoaterScheduleLoading() {
+  return (
+    <section className="coater-schedule-loading" aria-live="polite">
+      <div className="scan-link-loader">
+        <span className="scan-link-loader-icon"><Factory size={30} /></span>
+        <div>
+          <strong>Loading Schedule</strong>
+          <small>Finding active jobs and press assignments...</small>
+        </div>
+      </div>
+      <div className="scan-link-loading-bars" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
+    </section>
   );
 }
 
@@ -468,7 +509,6 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
     if (!createdRollId) return;
     setForm((current) => ({
       ...current,
-      result_lot_number: "",
       length_feet: "",
       weight_lbs: "",
     }));
@@ -571,14 +611,25 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
             <span>Operator</span>
             <input className="coater-operator-locked" value={form.operator} readOnly aria-readonly="true" required />
           </label>
+          <label className="coater-roll-secondary-field">
+            <span>Secondary Operator</span>
+            <input value={form.suboperator} onChange={(event) => update("suboperator", event.target.value)} placeholder="Optional helper/operator" />
+          </label>
           <div className="coater-skid-picker">
             <div className="coater-skid-panel-title">
-              <span>Skid Destination</span>
-              <small>Search, select, or scan where this roll will land.</small>
+              <div>
+                <span>Destination</span>
+                <small>Default is Plant Floor. Select a skid only when this roll is going onto one.</small>
+              </div>
+              {selectedSkid && (
+                <button type="button" onClick={() => selectSkid(null)}>
+                  Use Plant Floor
+                </button>
+              )}
             </div>
-            <div className={`coater-selected-skid ${selectedSkid ? "ready" : ""}`}>
-              <strong>{selectedSkid?.skid_number || "No skid selected"}</strong>
-              <small>{selectedSkid ? (selectedSkid.current_location_display || "Plant floor") : "Search or scan the skid QR code"}</small>
+            <div className={`coater-selected-skid ${selectedSkid ? "ready" : "floor"}`}>
+              <strong>{selectedSkid?.skid_number || "Plant Floor"}</strong>
+              <small>{selectedSkid ? (selectedSkid.current_location_display || "Plant floor") : "No skid selected. Roll will be added straight to floor inventory."}</small>
             </div>
             <div className="coater-skid-search-row">
               <Search size={15} />
@@ -594,7 +645,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
                     applySkidScan(event.currentTarget.value);
                   }
                 }}
-                placeholder="Search skid or scan QR"
+                placeholder="Optional: search skid or scan QR"
               />
               <button type="button" onClick={() => applySkidScan()}>
                 Select
@@ -625,10 +676,6 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
               />
             )}
           </div>
-          <label className="field-wide coater-roll-notes-field">
-            <span>Operator Notes</span>
-            <textarea value={form.operator_notes} onChange={(event) => update("operator_notes", event.target.value)} />
-          </label>
         </div>
       </section>
 
@@ -1224,7 +1271,7 @@ function RollTagDetailDialog({ tag, schedule, relatedRolls = [], inventoryRows =
 
 export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", onLinkedRollTagChange, onLinkedRollTagClose }) {
   const queryClient = useQueryClient();
-  const [selectedPress, setSelectedPress] = useState("all");
+  const [selectedPress, setSelectedPress] = useState(() => readPressPreference(currentUser));
   const [lineupType, setLineupType] = useState("all");
   const [lineupSearch, setLineupSearch] = useState("");
   const [selectedTagId, setSelectedTagId] = useState("");
@@ -1266,13 +1313,38 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
   const operatorName = currentUser?.name || "";
   const canDeleteRoll = canDeleteMaterialRoll(currentUser);
   const preferredPresses = useMemo(() => {
-    const coater = data.presses.filter(isCoaterPress);
-    return coater.length ? coater : data.presses;
+    const active = data.presses.filter((press) => press?.is_active !== false);
+    return active.length ? active : data.presses;
   }, [data.presses]);
   const preferredPressIds = useMemo(
     () => new Set(preferredPresses.map((press) => String(press.id))),
     [preferredPresses]
   );
+  const selectedPressRecord = useMemo(
+    () => preferredPresses.find((press) => sameId(press.id, selectedPress)) ?? null,
+    [preferredPresses, selectedPress]
+  );
+  const selectedPressName = selectedPress === "all" ? "All Presses" : selectedPressRecord?.name || "Selected Press";
+
+  useEffect(() => {
+    setSelectedPress(readPressPreference(currentUser));
+  }, [currentUser?.id, currentUser?.username, currentUser?.name]);
+
+  useEffect(() => {
+    if (!preferredPresses.length || selectedPress === "all") return;
+    if (!preferredPressIds.has(String(selectedPress))) {
+      setSelectedPress("all");
+      savePressPreference(currentUser, "all");
+    }
+  }, [currentUser, preferredPresses.length, preferredPressIds, selectedPress]);
+
+  function selectWorkingPress(value) {
+    const nextValue = value || "all";
+    setSelectedPress(nextValue);
+    savePressPreference(currentUser, nextValue);
+    setSelectedTagId("");
+    setSelectedProductId("");
+  }
 
   const materialJobs = useMemo(() => data.tags
     .filter((tag) => !tag.source_schedule)
@@ -1382,9 +1454,9 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         length_feet: numberOrNull(form.length_feet),
         weight_lbs: numberOrNull(form.weight_lbs),
         operator: form.operator || operatorName,
+        suboperator: String(form.suboperator || "").trim(),
         run_date: today(),
         location: numberOrNull(form.location),
-        operator_notes: form.operator_notes || tag.operator_notes || "",
         notes: noteBlock(tag, form, data.supplierOptions),
       });
 
@@ -1398,6 +1470,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
           darkness: String(form.printer_darkness || 11),
           save_printer_settings: true,
           operator: form.operator || operatorName,
+          suboperator: String(form.suboperator || "").trim(),
           performed_by: form.operator || operatorName,
           frontend_url: window.location.origin,
           auto_document: true,
@@ -1428,7 +1501,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
       setLastCreatedRollId(String(saved.id));
       setRollTagNotice([
         `${saved.tag_number} was printed, documented at ${qty(saved.length_feet, " ft")}, and added to inventory.`,
-        skidResult?.skid?.skid_number ? `Placed on ${skidResult.skid.skid_number}.` : "",
+        skidResult?.skid?.skid_number ? `Placed on ${skidResult.skid.skid_number}.` : "Placed on Plant Floor.",
       ].filter(Boolean).join(" "));
       queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
@@ -1512,8 +1585,8 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
     <section className="coater-operator-view">
       <header className="coater-hero">
         <div>
-          <p className="eyebrow">Coater Operator</p>
-          <h2>Coater Lineup</h2>
+          <p className="eyebrow">Press Schedule</p>
+          <h2>{selectedPressName}</h2>
           <span>{operatorName || "Operator"} / {materialJobs.length} material run{materialJobs.length === 1 ? "" : "s"} / {productJobs.length} product job{productJobs.length === 1 ? "" : "s"}</span>
         </div>
         <button className="ghost-btn" type="button" onClick={() => dataQuery.refetch()} disabled={dataQuery.isFetching}>
@@ -1521,12 +1594,18 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
         </button>
       </header>
 
-      <PressFilter presses={preferredPresses} selectedPress={selectedPress} onSelect={setSelectedPress} />
+      <PressFilter
+        presses={preferredPresses}
+        selectedPress={selectedPress}
+        selectedPressName={selectedPressName}
+        currentUser={currentUser}
+        onSelect={selectWorkingPress}
+      />
 
-      {dataQuery.isLoading && <p className="coater-empty">Loading the coater lineup...</p>}
+      {dataQuery.isLoading && <CoaterScheduleLoading />}
       {dataQuery.error && <p className="coater-error">The coater lineup could not load: {dataQuery.error.message}</p>}
 
-      <section className="coater-panel coater-unified-panel">
+      {!dataQuery.isLoading && <section className="coater-panel coater-unified-panel">
         <header>
           <div>
             <span><Factory size={14} /> Scheduled Work</span>
@@ -1595,7 +1674,7 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
             </div>
           )}
         </div>
-      </section>
+      </section>}
 
       <MaterialJobDialog
         tag={selectedTag}

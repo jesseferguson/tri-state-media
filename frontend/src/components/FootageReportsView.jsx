@@ -83,7 +83,7 @@ export default function FootageReportsView({ currentUser }) {
   const setting = settingForm || settingQuery.data?.[0];
   const allRows = reportQuery.data ?? [];
   const operators = useMemo(
-    () => [...new Set(allRows.map((row) => row.operator).filter(Boolean))].sort(),
+    () => [...new Set(allRows.flatMap((row) => [row.operator, row.suboperator]).filter(Boolean))].sort(),
     [allRows],
   );
   const presses = useMemo(
@@ -93,14 +93,19 @@ export default function FootageReportsView({ currentUser }) {
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return allRows.filter((row) => {
-      if (operator && row.operator !== operator) return false;
+      if (operator && row.operator !== operator && row.suboperator !== operator) return false;
       if (press && String(row.press) !== String(press)) return false;
       if (!needle) return true;
       return [
         row.operator,
+        row.suboperator,
         row.press_name,
         row.job_ticket_number,
         row.job_name,
+        row.display_job_name,
+        row.schedule_reference,
+        row.coater_schedule_tag_number,
+        row.coater_material_name,
         row.customer_name,
         row.notes,
       ].some((value) => String(value || "").toLowerCase().includes(needle));
@@ -201,10 +206,10 @@ export default function FootageReportsView({ currentUser }) {
         {rows.map((row) => (
           <article key={row.id}>
             <div>
-              <strong>{row.job_ticket_number || row.job_name}</strong>
-              <span>{[row.customer_name, row.press_name].filter(Boolean).join(" / ")}</span>
+              <strong>{row.job_ticket_number || row.schedule_reference || row.display_job_name || row.job_name || "Footage Report"}</strong>
+              <span>{[row.display_job_name || row.job_name, row.customer_name, row.press_name].filter(Boolean).join(" / ")}</span>
             </div>
-            <div><strong>{row.operator}</strong><span>{new Date(row.shift_end).toLocaleString()}</span></div>
+            <div><strong>{[row.operator, row.suboperator ? `+ ${row.suboperator}` : ""].filter(Boolean).join(" ")}</strong><span>{new Date(row.shift_end).toLocaleString()}</span></div>
             <div><b>{footage(row.good_footage)}</b><span>good</span></div>
             <div><b>{footage(row.waste_footage)}</b><span>waste</span></div>
             <em>{row.outcome === "job_complete" ? "Job Complete" : "End of Shift"}{row.notes ? ` / ${row.notes}` : ""}</em>

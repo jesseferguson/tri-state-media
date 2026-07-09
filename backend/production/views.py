@@ -2121,6 +2121,8 @@ class ProductionMaterialAssignmentViewSet(BaseProductionViewSet):
 
 
 def sync_schedule_report_progress(schedule):
+    if not schedule:
+        return
     totals = schedule.shift_reports.aggregate(good=Sum("good_footage"))
     schedule.actual_footage = totals["good"] or Decimal("0")
     latest = schedule.shift_reports.order_by("-shift_end", "-id").first()
@@ -2142,6 +2144,11 @@ class ProductionShiftReportViewSet(BaseProductionViewSet):
         "job_ticket__job_name",
         "production_schedule__customer__name",
         "production_schedule__customer_po",
+        "coater_schedule__tag_number",
+        "coater_schedule__name",
+        "coater_schedule__result_lot_number",
+        "coater_schedule__scheduled_material__name",
+        "coater_schedule__produced_material__name",
     ]
     ordering_fields = [
         "report_date",
@@ -2158,6 +2165,9 @@ class ProductionShiftReportViewSet(BaseProductionViewSet):
         queryset = ProductionShiftReport.objects.select_related(
             "production_schedule",
             "production_schedule__customer",
+            "coater_schedule",
+            "coater_schedule__scheduled_material",
+            "coater_schedule__produced_material",
             "job_ticket",
             "job_ticket__customer",
             "press",
@@ -2165,6 +2175,7 @@ class ProductionShiftReportViewSet(BaseProductionViewSet):
         date_from = parse_date(str(self.request.query_params.get("date_from") or ""))
         date_to = parse_date(str(self.request.query_params.get("date_to") or ""))
         schedule = self.request.query_params.get("production_schedule")
+        coater_schedule = self.request.query_params.get("coater_schedule")
         operator = str(self.request.query_params.get("operator") or "").strip()
         press = self.request.query_params.get("press")
         if date_from:
@@ -2173,6 +2184,8 @@ class ProductionShiftReportViewSet(BaseProductionViewSet):
             queryset = queryset.filter(report_date__lte=date_to)
         if schedule:
             queryset = queryset.filter(production_schedule_id=schedule)
+        if coater_schedule:
+            queryset = queryset.filter(coater_schedule_id=coater_schedule)
         if operator:
             queryset = queryset.filter(operator__iexact=operator)
         if press:
@@ -2181,7 +2194,8 @@ class ProductionShiftReportViewSet(BaseProductionViewSet):
 
     def perform_create(self, serializer):
         report = serializer.save()
-        sync_schedule_report_progress(report.production_schedule)
+        if report.production_schedule_id:
+            sync_schedule_report_progress(report.production_schedule)
 
     def perform_update(self, serializer):
         previous_schedule_id = serializer.instance.production_schedule_id
@@ -2190,12 +2204,14 @@ class ProductionShiftReportViewSet(BaseProductionViewSet):
             previous = ProductionSchedule.objects.filter(pk=previous_schedule_id).first()
             if previous:
                 sync_schedule_report_progress(previous)
-        sync_schedule_report_progress(report.production_schedule)
+        if report.production_schedule_id:
+            sync_schedule_report_progress(report.production_schedule)
 
     def perform_destroy(self, instance):
         schedule = instance.production_schedule
         instance.delete()
-        sync_schedule_report_progress(schedule)
+        if schedule:
+            sync_schedule_report_progress(schedule)
 
 
 class ProductionShiftSettingViewSet(BaseProductionViewSet):

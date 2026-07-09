@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 
-from production.models import CompanyRole, CompanyUser, JobTicket, ProductionMaterialAssignment, ProductionSchedule
+from production.models import CompanyRole, CompanyUser, JobTicket, ProductionMaterialAssignment, ProductionSchedule, ProductionShiftReport
 from tooling.models import Press, Supplier, ToolingLocation
 
 from .models import (
@@ -103,6 +103,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
                     "darkness": "15",
                     "save_printer_settings": True,
                     "performed_by": "ET Operator",
+                    "suboperator": "Helper Operator",
                     "frontend_url": "https://plant.example.com",
                     "auto_document": True,
                 },
@@ -136,7 +137,16 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertEqual(tag.print_status, "queued")
         self.assertEqual(tag.status, "complete")
         self.assertTrue(response.json()["documented"])
+        self.assertTrue(response.json()["footageReportId"])
         self.assertTrue(tag.logged_inventory_id)
+        report = ProductionShiftReport.objects.get(pk=response.json()["footageReportId"])
+        self.assertEqual(report.coater_schedule, schedule)
+        self.assertIsNone(report.production_schedule_id)
+        self.assertEqual(report.operator, "ET Operator")
+        self.assertEqual(report.suboperator, "Helper Operator")
+        self.assertEqual(report.good_footage, Decimal("5000"))
+        self.assertIn(schedule.tag_number, report.notes)
+        self.assertIn(tag.tag_number, report.notes)
         logged_inventory_id = tag.logged_inventory_id
         self.assertTrue(RawMaterialInventory.objects.filter(source_roll_tag=tag, status="available").exists())
         linked_job = JobTicket.objects.create(ticket_number="JT-ROLL-DELETE", job_name="Delete test")
@@ -261,7 +271,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
                 "adhesive": adhesive.id,
                 "silicone": silicone.id,
                 "width_inches": 13,
-                "result_lot_number": "LOT-ROLL-002",
+                "result_lot_number": "LOT-ROLL-001",
                 "operator": "ET Operator",
                 "press": press.id,
                 "notes": "Second roll",
@@ -273,6 +283,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertEqual(second_roll.status_code, 201, second_roll.content)
         self.assertTrue(first_roll.json()["tag_number"].startswith("CRT-"))
         self.assertNotEqual(first_roll.json()["tag_number"], second_roll.json()["tag_number"])
+        self.assertEqual(first_roll.json()["result_lot_number"], second_roll.json()["result_lot_number"])
         self.assertEqual(first_roll.json()["source_schedule"], schedule_id)
         self.assertEqual(first_roll.json()["schedule_id"], schedule_id)
         self.assertEqual(first_roll.json()["schedule_tag_number"], response.json()["tag_number"])

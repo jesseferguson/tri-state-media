@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 from decimal import Decimal
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
@@ -1489,6 +1490,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         "cut_description",
         "operator_notes",
         "operator",
+        "suboperator",
         "result_code",
         "result_serial_number",
         "result_lot_number",
@@ -1581,6 +1583,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "length_feet": request.data.get("length_feet"),
             "weight_lbs": request.data.get("weight_lbs"),
             "operator": request.data.get("operator", ""),
+            "suboperator": request.data.get("suboperator", ""),
             "run_date": request.data.get("run_date") or timezone.localdate().isoformat(),
             "press": requested_id("press", schedule.press_id),
             "location": request.data.get("location"),
@@ -1641,7 +1644,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         if footage <= 0:
             return Response({"length_feet": ["Footage must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
 
-        for field in ["width_inches", "weight_lbs", "operator", "operator_notes", "notes"]:
+        for field in ["width_inches", "weight_lbs", "operator", "suboperator", "operator_notes", "notes"]:
             if field in request.data:
                 setattr(roll, field, request.data.get(field))
         if "location" in request.data:
@@ -1748,6 +1751,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
             "DARKNESS": _print_text(request.data, "darkness", press.printer_darkness or "11"),
             "Total Ship Stock": _positive_int(request.data.get("copies"), 1),
             "Operator": _print_text(request.data, "operator", tag.operator),
+            "Secondary Operator": _print_text(request.data, "suboperator", tag.suboperator),
             "Part Number List Logic": part_number,
             "Face": face_text,
             "Liner ": liner_text,
@@ -1790,12 +1794,42 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
 
         tag.print_status = "queued"
         documented_now = False
+        footage_report = None
         if auto_document and not tag.logged_inventory_id and tag.status != "complete":
             tag.status = "complete"
             tag.log_inventory = True
             tag.run_date = tag.run_date or timezone.localdate()
+            tag.suboperator = _print_text(request.data, "suboperator", tag.suboperator)
             tag.save()
             documented_now = True
+            from production.models import ProductionShiftReport
+
+            shift_end = timezone.now()
+            shift_start = shift_end - timedelta(minutes=1)
+            schedule_ref = tag.source_schedule.tag_number if tag.source_schedule_id else tag.tag_number
+            footage_report = ProductionShiftReport.objects.create(
+                coater_schedule=tag.source_schedule,
+                press=press,
+                operator=payload.get("Operator") or tag.operator,
+                suboperator=tag.suboperator,
+                report_date=tag.run_date or timezone.localdate(),
+                shift_start=shift_start,
+                shift_end=shift_end,
+                total_footage=tag.length_feet or 0,
+                good_footage=tag.length_feet or 0,
+                material_footage=tag.length_feet or 0,
+                outcome="end_shift",
+                notes=" / ".join(
+                    part for part in [
+                        f"Coater schedule {schedule_ref}",
+                        f"Roll {tag.tag_number}",
+                        f"Lot {tag.result_lot_number}" if tag.result_lot_number else "",
+                        f"Secondary operator {tag.suboperator}" if tag.suboperator else "",
+                    ]
+                    if part
+                ),
+                created_by=payload.get("Queued By") or tag.operator,
+            )
         else:
             tag.save(update_fields=["print_status", "updated_at"])
         printer_settings_saved = False
@@ -1823,6 +1857,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
                 "copies": payload.get("Total Ship Stock"),
                 "rollTagUrl": roll_tag_url,
                 "documented": documented_now,
+                "footageReportId": footage_report.pk if footage_report else None,
                 "roll": self.get_serializer(tag).data,
             },
             status=status.HTTP_201_CREATED,

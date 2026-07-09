@@ -585,6 +585,7 @@ const materialTypeResources = [
 
 export const resourceGroups = [
   { key: "production", label: "Production", defaultOpen: true },
+  { key: "schedule", label: "Scheduling", defaultOpen: true },
   { key: "production-material", label: "Material", defaultOpen: true },
   { key: "inventory", label: "Inventory", defaultOpen: true },
   { key: "tooling", label: "Tooling", defaultOpen: false },
@@ -759,15 +760,15 @@ export const resources = [
 
   {
     key: "coater-operator",
-    label: "Coater Operator",
-    singular: "Coater Operator",
-    group: "production",
+    label: "Coater Schedule",
+    singular: "Coater Schedule",
+    group: "schedule",
     icon: Factory,
     accent: "#0f766e",
     staticView: true,
     viewMode: "coaterOperator",
     disableCreate: true,
-    tagline: "Coater operator lineup for scheduled material runs, roll tags, and finished product jobs.",
+    tagline: "Press schedule for material runs, roll tags, and finished product jobs.",
     columns: [],
     fields: [],
   },
@@ -1037,9 +1038,9 @@ export const resources = [
   {
     key: "production-schedule",
     endpoint: "production-schedule",
-    label: "Scheduling",
+    label: "Main Scheduling",
     singular: "Schedule Entry",
-    group: "production",
+    group: "schedule",
     icon: Factory,
     accent: "#60a5fa",
     disableCreate: true,

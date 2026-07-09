@@ -832,11 +832,22 @@ class ProductionShiftReport(models.Model):
         ProductionSchedule,
         on_delete=models.CASCADE,
         related_name="shift_reports",
+        null=True,
+        blank=True,
+    )
+    coater_schedule = models.ForeignKey(
+        "materials.CoaterRollTag",
+        on_delete=models.CASCADE,
+        related_name="footage_reports",
+        null=True,
+        blank=True,
     )
     job_ticket = models.ForeignKey(
         JobTicket,
         on_delete=models.PROTECT,
         related_name="shift_reports",
+        null=True,
+        blank=True,
     )
     press = models.ForeignKey(
         Press,
@@ -846,6 +857,7 @@ class ProductionShiftReport(models.Model):
         related_name="shift_reports",
     )
     operator = models.CharField(max_length=120)
+    suboperator = models.CharField(max_length=120, blank=True)
     report_date = models.DateField(default=timezone.localdate, db_index=True)
     shift_start = models.DateTimeField()
     shift_end = models.DateTimeField()

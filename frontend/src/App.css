@@ -22299,6 +22299,67 @@ textarea {
   font-weight: 850;
 }
 
+.coater-press-picker {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(210px, .25fr) minmax(180px, .2fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .04);
+}
+
+.coater-press-memory,
+.coater-press-select {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.coater-press-memory span,
+.coater-press-select span {
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 950;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.coater-press-memory strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coater-press-memory em {
+  overflow: hidden;
+  color: #667085;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coater-press-select select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
 .coater-press-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -22322,6 +22383,20 @@ textarea {
   border-color: #0f766e;
   background: #ecfdf5;
   color: #0f766e;
+}
+
+.coater-schedule-loading {
+  min-height: min(420px, calc(100dvh - 300px));
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, .96), rgba(255, 255, 255, .98)),
+    radial-gradient(circle at 50% 0%, rgba(15, 118, 110, .12), transparent 36%);
 }
 
 .coater-work-grid {
@@ -30500,6 +30575,21 @@ textarea {
     justify-content: center;
   }
 
+  .coater-press-picker {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .coater-press-memory {
+    padding: 2px 2px 0;
+  }
+
+  .coater-press-select select {
+    min-height: 44px;
+    font-size: .9rem;
+  }
+
   .coater-press-tabs {
     width: calc(100% + 14px);
     margin-inline: -7px;
@@ -30520,6 +30610,11 @@ textarea {
     min-height: 42px;
     flex: 0 0 auto;
     scroll-snap-align: start;
+  }
+
+  .coater-schedule-loading {
+    min-height: max(360px, calc(100dvh - 335px));
+    padding: 22px 14px;
   }
 
   .coater-hero,
@@ -33080,7 +33175,7 @@ textarea {
   grid-template-areas:
     "lot width skid"
     "length operator skid"
-    "notes notes skid";
+    "secondary secondary skid";
   gap: 12px;
   align-items: stretch;
   padding: 16px;
@@ -33105,8 +33200,8 @@ textarea {
   grid-area: operator;
 }
 
-.coater-roll-notes-field {
-  grid-area: notes;
+.coater-roll-secondary-field {
+  grid-area: secondary;
 }
 
 .coater-material-window .coater-roll-details-grid > label,
@@ -33197,6 +33292,14 @@ textarea {
 }
 
 .coater-skid-panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.coater-skid-panel-title > div {
+  min-width: 0;
   display: grid;
   gap: 3px;
 }
@@ -33205,6 +33308,27 @@ textarea {
   color: #64748b;
   font-size: .68rem;
   font-weight: 850;
+}
+
+.coater-skid-panel-title button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid #99f6e4;
+  border-radius: 999px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: .66rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.coater-skid-panel-title button:hover,
+.coater-skid-panel-title button:focus-visible {
+  outline: 0;
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
 }
 
 .coater-material-window .coater-selected-skid {
@@ -33223,6 +33347,14 @@ textarea {
   background:
     linear-gradient(135deg, rgba(20, 184, 166, .16), rgba(34, 197, 94, .12)),
     #f0fdfa;
+}
+
+.coater-material-window .coater-selected-skid.floor {
+  border-style: solid;
+  border-color: #bfdbfe;
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, .1), rgba(20, 184, 166, .08)),
+    #f8fafc;
 }
 
 .coater-material-window .coater-selected-skid strong {
@@ -33315,7 +33447,7 @@ textarea {
       "lot width"
       "length operator"
       "skid skid"
-      "notes notes";
+      "secondary secondary";
   }
 }
 
@@ -33343,7 +33475,7 @@ textarea {
       "length"
       "operator"
       "skid"
-      "notes";
+      "secondary";
     gap: 9px;
     padding: 10px;
   }
