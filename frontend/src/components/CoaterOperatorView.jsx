@@ -46,6 +46,13 @@ function numberOrNull(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function rollWidthsForForm(form) {
+  const widths = Array.isArray(form.roll_widths) && form.roll_widths.length
+    ? form.roll_widths
+    : [form.width_inches || ""];
+  return widths.map((width) => String(width ?? "").trim());
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -239,6 +246,7 @@ function defaultRollForm(tag, data, currentUser) {
     silicone: defaultComponentId(material, tag, componentSlots.find((slot) => slot.key === "silicone")),
     coating: defaultComponentId(material, tag, componentSlots.find((slot) => slot.key === "coating")),
     width_inches: tag?.width_inches || "",
+    roll_widths: [tag?.width_inches || ""],
     length_feet: tag?.is_schedule ? "" : (tag?.length_feet || ""),
     weight_lbs: tag?.weight_lbs || "",
     result_lot_number: tag?.is_schedule ? "" : (tag?.result_lot_number || ""),
@@ -263,7 +271,11 @@ function validateRollForm(form, data = {}) {
     if (!form[slot.key]) missing.push(`${slot.label} type`);
     if (!form[slot.supplierKey]) missing.push(`${slot.label} supplier`);
   });
-  if (!numberOrNull(form.width_inches) || numberOrNull(form.width_inches) <= 0) missing.push("finished width");
+  const widths = rollWidthsForForm(form);
+  if (!widths.length) missing.push("finished width");
+  widths.forEach((width, index) => {
+    if (!numberOrNull(width) || numberOrNull(width) <= 0) missing.push(widths.length > 1 ? `roll ${index + 1} width` : "finished width");
+  });
   if (!numberOrNull(form.length_feet) || numberOrNull(form.length_feet) <= 0) missing.push("actual roll length");
   if (!String(form.result_lot_number || "").trim()) missing.push("lot number");
   if (!String(form.operator || "").trim()) missing.push("operator");
@@ -500,6 +512,7 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
     .filter((skid) => !skidSearch.trim() || skidSearchText(skid).includes(skidSearch.trim().toLowerCase()))
     .slice(0, 5);
   const partNumber = rollPartNumber(tag, form, data.materials);
+  const rollWidths = rollWidthsForForm(form);
 
   useEffect(() => {
     setForm(defaultRollForm(tag, data, currentUser));
@@ -516,6 +529,41 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
 
   function update(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function updateRollWidth(index, value) {
+    setForm((prev) => {
+      const nextWidths = rollWidthsForForm(prev);
+      nextWidths[index] = value;
+      return {
+        ...prev,
+        roll_widths: nextWidths,
+        width_inches: nextWidths[0] || "",
+      };
+    });
+  }
+
+  function addRollWidth(value = "") {
+    setForm((prev) => {
+      const nextWidths = [...rollWidthsForForm(prev), value];
+      return {
+        ...prev,
+        roll_widths: nextWidths,
+        width_inches: nextWidths[0] || "",
+      };
+    });
+  }
+
+  function removeRollWidth(index) {
+    setForm((prev) => {
+      const nextWidths = rollWidthsForForm(prev).filter((_width, widthIndex) => widthIndex !== index);
+      const safeWidths = nextWidths.length ? nextWidths : [""];
+      return {
+        ...prev,
+        roll_widths: safeWidths,
+        width_inches: safeWidths[0] || "",
+      };
+    });
   }
 
   function selectSkid(skid) {
@@ -587,22 +635,52 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
             <span>Lot Number</span>
             <input value={form.result_lot_number} onChange={(event) => update("result_lot_number", event.target.value)} placeholder="Operator-entered lot" required />
           </label>
-          <label className="coater-width-field coater-roll-width-field">
-            <span>Finished Width</span>
-            <div className="coater-width-options" role="group" aria-label="Common finished widths">
-              {commonCoaterWidths.map((width) => (
-                <button
-                  className={String(form.width_inches) === width ? "active" : ""}
-                  type="button"
-                  key={width}
-                  onClick={() => update("width_inches", width)}
-                >
-                  {width}"
-                </button>
+          <section className="coater-width-field coater-roll-width-field coater-roll-width-batch">
+            <div className="coater-roll-width-head">
+              <div>
+                <span>Roll Tags</span>
+                <strong>{rollWidths.length} label{rollWidths.length === 1 ? "" : "s"} this kick</strong>
+              </div>
+              <small>Each row prints a unique roll ID.</small>
+            </div>
+            <div className="coater-roll-width-list">
+              {rollWidths.map((widthValue, index) => (
+                <article className="coater-roll-width-row" key={`roll-width-${index}`}>
+                  <b>Roll {index + 1}</b>
+                  <div className="coater-width-options" role="group" aria-label={`Common widths for roll ${index + 1}`}>
+                    {commonCoaterWidths.map((width) => (
+                      <button
+                        className={String(widthValue) === width ? "active" : ""}
+                        type="button"
+                        key={width}
+                        onClick={() => updateRollWidth(index, width)}
+                      >
+                        {width}"
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="number"
+                    min="0.001"
+                    step="0.001"
+                    value={widthValue}
+                    onChange={(event) => updateRollWidth(index, event.target.value)}
+                    placeholder="Width"
+                    required
+                  />
+                  {rollWidths.length > 1 && (
+                    <button className="coater-roll-width-remove" type="button" onClick={() => removeRollWidth(index)} aria-label={`Remove roll ${index + 1}`}>
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </article>
               ))}
             </div>
-            <input type="number" min="0.001" step="0.001" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} placeholder="Custom width" required />
-          </label>
+            <div className="coater-roll-width-actions">
+              <button type="button" onClick={() => addRollWidth("")}>+ Add Roll</button>
+              <button type="button" onClick={() => addRollWidth(rollWidths[rollWidths.length - 1] || "")}>Duplicate Last</button>
+            </div>
+          </section>
           <label className="coater-roll-length-field">
             <span>Actual Roll Length</span>
             <input type="number" min="0.01" step="0.01" value={form.length_feet} onChange={(event) => update("length_feet", event.target.value)} placeholder="Feet on this roll" required />
@@ -744,7 +822,11 @@ function RollRunForm({ tag, data, currentUser, saving, error, createdRollId, set
       <div className="coater-roll-actions">
         <button className="primary-btn" type="submit" disabled={saving || missing.length > 0}>
           <Printer size={16} />
-          {saving ? "Creating Roll..." : "Print Tag & Add Roll"}
+          {saving
+            ? `Creating ${rollWidths.length} Roll${rollWidths.length === 1 ? "" : "s"}...`
+            : rollWidths.length > 1
+              ? `Print ${rollWidths.length} Tags & Add Rolls`
+              : "Print Tag & Add Roll"}
         </button>
       </div>
     </form>
@@ -1438,70 +1520,87 @@ export default function CoaterOperatorView({ currentUser, linkedRollTagId = "", 
     mutationFn: async ({ tag, form }) => {
       const missing = validateRollForm(form, data);
       if (missing.length) throw new Error(`Missing: ${missing.join(", ")}`);
-      const saved = await postRecordAction("coater-roll-tags", tag.id, "create-roll", {
-        liner: numberOrNull(form.liner),
-        face: numberOrNull(form.face),
-        adhesive: numberOrNull(form.adhesive),
-        silicone: numberOrNull(form.silicone),
-        coating: numberOrNull(form.coating),
-        liner_supplier_option: numberOrNull(form.liner_supplier_option),
-        face_supplier_option: numberOrNull(form.face_supplier_option),
-        adhesive_supplier_option: numberOrNull(form.adhesive_supplier_option),
-        silicone_supplier_option: numberOrNull(form.silicone_supplier_option),
-        coating_supplier_option: numberOrNull(form.coating_supplier_option),
-        result_lot_number: String(form.result_lot_number || "").trim(),
-        width_inches: numberOrNull(form.width_inches),
-        length_feet: numberOrNull(form.length_feet),
-        weight_lbs: numberOrNull(form.weight_lbs),
-        operator: form.operator || operatorName,
-        suboperator: String(form.suboperator || "").trim(),
-        run_date: today(),
-        location: numberOrNull(form.location),
-        notes: noteBlock(tag, form, data.supplierOptions),
-      });
-
-      try {
-        const printResult = await postRecordAction("coater-roll-tags", saved.id, "queue-print-label", {
-          press: numberOrNull(form.printer_press),
-          copies: 1,
-          printer_ip: String(form.printer_ip || "").trim(),
-          printer_port: numberOrNull(form.printer_port) || 9100,
-          speed: String(form.printer_speed || 5),
-          darkness: String(form.printer_darkness || 11),
-          save_printer_settings: true,
+      const widths = rollWidthsForForm(form);
+      const results = [];
+      for (const width of widths) {
+        const saved = await postRecordAction("coater-roll-tags", tag.id, "create-roll", {
+          liner: numberOrNull(form.liner),
+          face: numberOrNull(form.face),
+          adhesive: numberOrNull(form.adhesive),
+          silicone: numberOrNull(form.silicone),
+          coating: numberOrNull(form.coating),
+          liner_supplier_option: numberOrNull(form.liner_supplier_option),
+          face_supplier_option: numberOrNull(form.face_supplier_option),
+          adhesive_supplier_option: numberOrNull(form.adhesive_supplier_option),
+          silicone_supplier_option: numberOrNull(form.silicone_supplier_option),
+          coating_supplier_option: numberOrNull(form.coating_supplier_option),
+          result_lot_number: String(form.result_lot_number || "").trim(),
+          width_inches: numberOrNull(width),
+          length_feet: numberOrNull(form.length_feet),
+          weight_lbs: numberOrNull(form.weight_lbs),
           operator: form.operator || operatorName,
           suboperator: String(form.suboperator || "").trim(),
-          performed_by: form.operator || operatorName,
-          frontend_url: window.location.origin,
-          auto_document: true,
+          run_date: today(),
+          location: numberOrNull(form.location),
+          notes: noteBlock(tag, form, data.supplierOptions),
         });
-        let skidResult = null;
-        if (form.skid) {
-          const rollScanValue = printResult.roll?.result_serial_number
-            || printResult.roll?.tag_number
-            || printResult.roll?.result_lot_number
-            || saved.result_serial_number
-            || saved.tag_number
-            || saved.result_lot_number;
-          skidResult = await postRecordAction("skids", form.skid, "add-roll", {
-            scan_value: rollScanValue,
+
+        try {
+          const printResult = await postRecordAction("coater-roll-tags", saved.id, "queue-print-label", {
+            press: numberOrNull(form.printer_press),
+            copies: 1,
+            printer_ip: String(form.printer_ip || "").trim(),
+            printer_port: numberOrNull(form.printer_port) || 9100,
+            speed: String(form.printer_speed || 5),
+            darkness: String(form.printer_darkness || 11),
+            save_printer_settings: true,
+            operator: form.operator || operatorName,
+            suboperator: String(form.suboperator || "").trim(),
             performed_by: form.operator || operatorName,
-            confirm_move: true,
-          }, {
-            headers: userHeaders(currentUser),
+            frontend_url: window.location.origin,
+            auto_document: true,
           });
+          let skidResult = null;
+          if (form.skid) {
+            const rollScanValue = printResult.roll?.result_serial_number
+              || printResult.roll?.tag_number
+              || printResult.roll?.result_lot_number
+              || saved.result_serial_number
+              || saved.tag_number
+              || saved.result_lot_number;
+            skidResult = await postRecordAction("skids", form.skid, "add-roll", {
+              scan_value: rollScanValue,
+              performed_by: form.operator || operatorName,
+              confirm_move: true,
+            }, {
+              headers: userHeaders(currentUser),
+            });
+          }
+          results.push({ saved: printResult.roll || saved, printResult, skidResult });
+        } catch (printError) {
+          const completed = results.length ? `${results.length} roll tag${results.length === 1 ? "" : "s"} already queued. ` : "";
+          throw new Error(`${completed}Roll ${saved.tag_number} was created, but the print job could not be queued. ${printError.message || ""}`.trim());
         }
-        return { saved: printResult.roll || saved, printResult, skidResult };
-      } catch (printError) {
-        throw new Error(`Roll ${saved.tag_number} was created, but the print job could not be queued. ${printError.message || ""}`.trim());
       }
+      return { results };
     },
-    onSuccess: ({ saved, printResult, skidResult }) => {
-      setSelectedTagId(String(saved.source_schedule || selectedTagId));
-      setLastCreatedRollId(String(saved.id));
+    onSuccess: ({ results }) => {
+      const created = results.map((result) => result.saved).filter(Boolean);
+      const lastSaved = created[created.length - 1];
+      const skidNumber = results.find((result) => result.skidResult?.skid?.skid_number)?.skidResult?.skid?.skid_number;
+      const totalFootage = created.reduce((sum, roll) => sum + Number(roll.length_feet || 0), 0);
+      const widthSummary = created
+        .map((roll) => roll.width_inches ? formatInches(roll.width_inches) : "")
+        .filter(Boolean)
+        .join(", ");
+      if (lastSaved) {
+        setSelectedTagId(String(lastSaved.source_schedule || selectedTagId));
+        setLastCreatedRollId(String(lastSaved.id));
+      }
       setRollTagNotice([
-        `${saved.tag_number} was printed, documented at ${qty(saved.length_feet, " ft")}, and added to inventory.`,
-        skidResult?.skid?.skid_number ? `Placed on ${skidResult.skid.skid_number}.` : "Placed on Plant Floor.",
+        `${created.length} roll tag${created.length === 1 ? "" : "s"} printed, documented at ${qty(totalFootage, " ft")} total, and added to inventory.`,
+        widthSummary ? `Widths: ${widthSummary}.` : "",
+        skidNumber ? `Placed on ${skidNumber}.` : "Placed on Plant Floor.",
       ].filter(Boolean).join(" "));
       queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });

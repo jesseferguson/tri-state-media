@@ -9501,6 +9501,52 @@ p, .muted { color: #7a7a7a; }
   font-weight: 850;
 }
 
+.password-reset-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #eef2ff, #f8fafc);
+  color: #3730a3;
+}
+
+.password-reset-note svg {
+  margin-top: 2px;
+}
+
+.password-reset-note strong,
+.password-reset-note span {
+  display: block;
+}
+
+.password-reset-note strong {
+  color: #111827;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.password-reset-note span {
+  margin-top: 2px;
+  color: #475467;
+  font-size: .7rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.password-admin-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.password-admin-tools .ghost-btn {
+  width: 100%;
+  justify-content: center;
+}
+
 .admin-window .form-actions {
   justify-content: flex-end;
 }
@@ -33171,7 +33217,7 @@ textarea {
 
 .coater-material-window .coater-roll-print-step .coater-roll-details-grid {
   display: grid;
-  grid-template-columns: minmax(220px, .82fr) minmax(250px, .9fr) minmax(360px, 1.15fr);
+  grid-template-columns: minmax(220px, .72fr) minmax(380px, 1.18fr) minmax(360px, 1.1fr);
   grid-template-areas:
     "lot width skid"
     "length operator skid"
@@ -33192,6 +33238,130 @@ textarea {
   grid-area: width;
 }
 
+.coater-material-window .coater-roll-width-batch {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.coater-roll-width-head {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.coater-roll-width-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.coater-roll-width-head span {
+  color: #526176;
+  font-size: .66rem;
+  font-weight: 950;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.coater-roll-width-head strong {
+  color: #0f172a;
+  font-size: .9rem;
+  font-weight: 950;
+}
+
+.coater-roll-width-head small {
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 850;
+  text-align: right;
+}
+
+.coater-roll-width-list {
+  display: grid;
+  gap: 8px;
+}
+
+.coater-roll-width-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(86px, .32fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #dbe5ee;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.coater-roll-width-row > b {
+  min-width: 54px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: .66rem;
+  font-weight: 950;
+  text-align: center;
+}
+
+.coater-roll-width-row input {
+  min-height: 38px !important;
+  text-align: center;
+}
+
+.coater-roll-width-row .coater-width-options {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.coater-roll-width-row .coater-width-options button {
+  min-height: 34px;
+  padding-inline: 5px;
+  font-size: .7rem;
+}
+
+.coater-roll-width-remove {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fff7f7;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.coater-roll-width-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.coater-roll-width-actions button {
+  min-height: 38px;
+  border: 1px solid #99f6e4;
+  border-radius: 10px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: .72rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.coater-roll-width-actions button:hover,
+.coater-roll-width-actions button:focus-visible {
+  outline: 0;
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
+}
+
 .coater-roll-length-field {
   grid-area: length;
 }
@@ -33205,6 +33375,7 @@ textarea {
 }
 
 .coater-material-window .coater-roll-details-grid > label,
+.coater-material-window .coater-roll-width-batch,
 .coater-material-window .coater-skid-picker {
   min-width: 0;
   padding: 12px;
@@ -33481,9 +33652,42 @@ textarea {
   }
 
   .coater-material-window .coater-roll-details-grid > label,
+  .coater-material-window .coater-roll-width-batch,
   .coater-material-window .coater-skid-picker {
     padding: 10px;
     border-radius: 10px;
+  }
+
+  .coater-roll-width-head {
+    display: grid;
+    gap: 4px;
+  }
+
+  .coater-roll-width-head small {
+    text-align: left;
+  }
+
+  .coater-roll-width-row {
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+  }
+
+  .coater-roll-width-row > b {
+    justify-self: start;
+  }
+
+  .coater-roll-width-row .coater-width-options,
+  .coater-roll-width-row input {
+    grid-column: 1 / -1;
+  }
+
+  .coater-roll-width-remove {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .coater-roll-width-actions {
+    grid-template-columns: 1fr;
   }
 
   .coater-material-window .coater-skid-search-row {

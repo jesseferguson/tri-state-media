@@ -572,6 +572,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
   const [adminTab, setAdminTab] = useState("users");
   const [editingId, setEditingId] = useState(null);
   const [editingRoleId, setEditingRoleId] = useState(null);
+  const [showPasswordEntry, setShowPasswordEntry] = useState(false);
   const [error, setError] = useState("");
   const [roleError, setRoleError] = useState("");
   const activeUserCount = users.filter((user) => user.active !== false).length;
@@ -599,9 +600,33 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
+  function generateTemporaryPassword() {
+    const letters = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    const numbers = "23456789";
+    const symbols = "!@$%&?";
+    const alphabet = `${letters}${numbers}${symbols}`;
+    const bytes = new Uint32Array(24);
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+    else bytes.forEach((_value, index) => { bytes[index] = Math.floor(Math.random() * 1_000_000); });
+    const passwordParts = [
+      letters[bytes[0] % letters.length],
+      numbers[bytes[1] % numbers.length],
+      symbols[bytes[2] % symbols.length],
+      ...Array.from(bytes.slice(3, 12)).map((value) => alphabet[value % alphabet.length]),
+    ];
+    for (let index = passwordParts.length - 1; index > 0; index -= 1) {
+      const swapIndex = bytes[12 + index] % (index + 1);
+      [passwordParts[index], passwordParts[swapIndex]] = [passwordParts[swapIndex], passwordParts[index]];
+    }
+    const password = passwordParts.join("");
+    setForm((prev) => ({ ...prev, password }));
+    setShowPasswordEntry(true);
+  }
+
   function startEdit(user) {
     setAdminTab("users");
     setEditingId(user.id);
+    setShowPasswordEntry(false);
     setForm({
       name: user.name,
       username: user.username,
@@ -616,6 +641,7 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
   function cancelEdit() {
     setEditingId(null);
     setForm(emptyUserForm);
+    setShowPasswordEntry(false);
     setError("");
   }
 
@@ -820,10 +846,29 @@ function UserAdminPanel({ currentUser, users, roleDefinitions, onSaveUsers, onSa
               <span>Username</span>
               <input value={form.username} onChange={(event) => update("username", event.target.value)} placeholder="login id" disabled={editingId && form.username === "admin"} />
             </label>
+            <div className="password-reset-note">
+              <KeyRound size={17} />
+              <div>
+                <strong>{editingId ? "Reset Password" : "Starting Password"}</strong>
+                <span>Saved passwords cannot be viewed. Set a new temporary password when someone needs help signing in.</span>
+              </div>
+            </div>
             <label className="field">
-              <span>{editingId ? "New Password" : "Password"}</span>
-              <input type="password" value={form.password} onChange={(event) => update("password", event.target.value)} placeholder={editingId ? "Leave blank to keep current" : "Starting password"} />
+              <span>{editingId ? "New / Temporary Password" : "Password"}</span>
+              <input
+                type={showPasswordEntry ? "text" : "password"}
+                value={form.password}
+                onChange={(event) => update("password", event.target.value)}
+                placeholder={editingId ? "Leave blank to keep current" : "Starting password"}
+                autoComplete="new-password"
+              />
             </label>
+            <div className="password-admin-tools">
+              <button className="ghost-btn xs" type="button" onClick={generateTemporaryPassword}>Generate Temporary</button>
+              <button className="ghost-btn xs" type="button" onClick={() => setShowPasswordEntry((show) => !show)} disabled={!form.password}>
+                {showPasswordEntry ? "Hide Typed Password" : "Show Typed Password"}
+              </button>
+            </div>
             <label className="field">
               <span>Role</span>
               <select value={form.role} onChange={(event) => update("role", event.target.value)} disabled={editingId && form.username === "admin"}>
