@@ -545,11 +545,11 @@ function SignInScreen({ onSignIn }) {
           </div>
         )}
         <div className="auth-brand-panel">
-          <span className="auth-brand-mark"><ShieldCheck size={30} /></span>
+          <span className="auth-brand-mark"><ShieldCheck size={22} /></span>
           <div>
             <p className="eyebrow">Tri-State Media</p>
-            <h1>Company Sign In</h1>
-            <p>Enter your username and password to open the production system.</p>
+            <h1>Sign In</h1>
+            <p>Use your company account to continue.</p>
           </div>
         </div>
         <form className="auth-form" onSubmit={submit}>
