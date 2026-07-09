@@ -544,19 +544,22 @@ function SignInScreen({ onSignIn }) {
             <div><strong>{scanRequest.label} scan ready</strong><span>{scanRequest.detail}</span></div>
           </div>
         )}
-        <div>
-          <p className="eyebrow">Tri-State Media</p>
-          <h1>Sign In</h1>
-          <p>Use your company login to open the tooling and quoting system.</p>
+        <div className="auth-brand-panel">
+          <span className="auth-brand-mark"><ShieldCheck size={30} /></span>
+          <div>
+            <p className="eyebrow">Tri-State Media</p>
+            <h1>Company Sign In</h1>
+            <p>Enter your username and password to open the production system.</p>
+          </div>
         </div>
         <form className="auth-form" onSubmit={submit}>
           <label className="field">
             <span>Username</span>
-            <input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
+            <input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Your login name" autoFocus />
           </label>
           <label className="field">
             <span>Password</span>
-            <input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+            <input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" />
           </label>
           {error && <div className="auth-error">{error}</div>}
           <button className="primary-btn" type="submit" disabled={submitting}><LogIn size={16} /> {submitting ? "Signing In..." : "Sign In"}</button>
