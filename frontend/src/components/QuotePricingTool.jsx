@@ -85,6 +85,7 @@ const initialForm = {
   coreSize: "",
   labelsPerUnit: "",
   labelsPerCarton: "",
+  volumePricingEnabled: false,
   acrossMode: "auto",
   numberAcross: "",
   wastePercent: "7",
@@ -217,6 +218,14 @@ function quoteCoreLabel(value) {
   return `${String(Number(size.toFixed(3)))}" core`;
 }
 
+function quoteVolumePricingEnabled(form = {}) {
+  return form.volumePricingEnabled === true || form.volumePricingEnabled === "true" || form.volumePricingEnabled === 1 || form.volumePricingEnabled === "1";
+}
+
+function quoteItemVolumePricingEnabled(item, quote = {}) {
+  return quoteVolumePricingEnabled(item?.form || quote?.form || {});
+}
+
 function quoteTierQuantityLabel(option, unitType, compact = false) {
   const quantity = Math.max(0, toQuoteNumber(option?.quantity));
   const unit = quoteUnitLabel(unitType, true);
@@ -257,6 +266,7 @@ function calculateQuoteTierPricing(form, quantity) {
 
 function quoteItemTierRows(item, quote = {}) {
   const form = item?.form || quote?.form || {};
+  if (!quoteVolumePricingEnabled(form)) return [];
   const unitType = quoteItemUnitType(item, quote);
   const storedTiers = new Map(
     (Array.isArray(item?.pricing?.tiers) ? item.pricing.tiers : [])
@@ -287,12 +297,12 @@ function quoteTierSummaryLines(item, quote = {}) {
   const tiers = quoteItemTierRows(item, quote);
   const chunks = tiers.map((tier) => (
     tier.fits
-      ? `${tier.compactQuantityLabel} ${money(tier.pricePerThousand)}/M`
-      : `${tier.compactQuantityLabel} no fit`
+      ? `${tier.compactQuantityLabel} at ${money(tier.pricePerThousand)}/M`
+      : `${tier.compactQuantityLabel} needs review`
   ));
   return [
-    `Volume Pricing: ${chunks.slice(0, 2).join(" | ")}`,
-    chunks.slice(2).join(" | "),
+    `Volume Savings: ${chunks.slice(0, 2).join("; ")}`,
+    chunks.slice(2).join("; "),
   ].filter(Boolean);
 }
 
@@ -1614,44 +1624,38 @@ function FinishedMaterialForm({ form, rawMaterials, materialMasterTypes = [], up
   );
 }
 
-function QuoteTierTable({ item, quote }) {
+function QuoteVolumeOffer({ item, quote }) {
   const tiers = quoteItemTierRows(item, quote);
   if (!tiers.length) return null;
   const unitTitle = quoteItemUnitTitle(item, quote);
   return (
-    <div className="quote-doc-tier-table">
-      <strong>Volume Pricing - {unitTitle}</strong>
-      <div className="quote-doc-tier-grid">
-        <span>Qty</span>
-        <span>Price / M</span>
-        <span>Price / {unitTitle}</span>
-        <span>Tier Total</span>
+    <div className="quote-volume-offer">
+      <header>
+        <span>Volume Savings</span>
+        <strong>Better pricing as this order grows</strong>
+        <em>Optional {quoteUnitLabel(quoteItemUnitType(item, quote), true)} priced from the same approved spec.</em>
+      </header>
+      <div className="quote-volume-options">
         {tiers.map((tier) => (
-          <Fragment key={`${item?.id || quoteLinePartNumber(item, quote)}-${tier.quantity}`}>
-            <em>{tier.quantityLabel}</em>
-            <em>{tier.fits ? money(tier.pricePerThousand) : "No fit"}</em>
-            <em>{tier.fits ? unitMoney(tier.pricePerItem) : "--"}</em>
-            <em>{tier.fits ? money(tier.sellPrice) : "--"}</em>
-          </Fragment>
+          <article key={`${item?.id || quoteLinePartNumber(item, quote)}-${tier.quantity}`}>
+            <span>{tier.quantityLabel}</span>
+            <strong>{tier.fits ? `${money(tier.pricePerThousand)} / M` : "Quote review needed"}</strong>
+            <em>{tier.fits ? `${unitMoney(tier.pricePerItem)} per ${quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier"}</em>
+          </article>
         ))}
       </div>
     </div>
   );
 }
 
-function quoteTierTableHtml(item, quote) {
+function quoteVolumeOfferHtml(item, quote) {
   const tiers = quoteItemTierRows(item, quote);
   if (!tiers.length) return "";
-  const unitTitle = quoteItemUnitTitle(item, quote);
+  const unitType = quoteItemUnitType(item, quote);
   return [
-    `<div class="sales-tier-box"><strong>Volume Pricing - ${escapeHtml(unitTitle)}</strong>`,
-    `<div class="sales-tier-grid"><span>Qty</span><span>Price / M</span><span>Price / ${escapeHtml(unitTitle)}</span><span>Tier Total</span>`,
-    tiers.map((tier) => [
-      `<em>${escapeHtml(tier.quantityLabel)}</em>`,
-      `<em>${escapeHtml(tier.fits ? money(tier.pricePerThousand) : "No fit")}</em>`,
-      `<em>${escapeHtml(tier.fits ? unitMoney(tier.pricePerItem) : "--")}</em>`,
-      `<em>${escapeHtml(tier.fits ? money(tier.sellPrice) : "--")}</em>`,
-    ].join("")).join(""),
+    `<div class="sales-volume-offer"><div class="sales-volume-copy"><span>Volume Savings</span><strong>Better pricing as this order grows</strong><em>Optional ${escapeHtml(quoteUnitLabel(unitType, true))} priced from the same approved spec.</em></div>`,
+    `<div class="sales-volume-options">`,
+    tiers.map((tier) => `<article><span>${escapeHtml(tier.quantityLabel)}</span><strong>${escapeHtml(tier.fits ? `${money(tier.pricePerThousand)} / M` : "Quote review needed")}</strong><em>${escapeHtml(tier.fits ? `${unitMoney(tier.pricePerItem)} per ${quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier")}</em></article>`).join(""),
     `</div></div>`,
   ].join("");
 }
@@ -1708,23 +1712,28 @@ function QuoteDocument({ quote }) {
             </tr>
           </thead>
           <tbody>
-          {items.map((item) => (
-            <Fragment key={item.id || quoteItemDescription(item, quote)}>
-              <tr>
-                <td>
-                  <strong>{quoteLinePartNumber(item, quote)}</strong>
-                  {quoteLineDescriptionRows(item, quote).map((line, lineIndex) => <span key={`${line}-${lineIndex}`}>{line}</span>)}
-                </td>
-                <td>{quoteTableQuantity(item, salesInfo.unitOfMeasure)}</td>
-                <td>{quoteTableUomLabel(salesInfo.unitOfMeasure)}</td>
-                <td>{quoteTableUnitPrice(item, salesInfo.unitOfMeasure)}</td>
-                <td>{money(Number(item.pricing?.sellPrice || 0))}</td>
-              </tr>
-              <tr className="quote-doc-tier-row">
-                <td colSpan="5"><QuoteTierTable item={item} quote={quote} /></td>
-              </tr>
-            </Fragment>
-          ))}
+          {items.map((item) => {
+            const showVolumePricing = quoteItemVolumePricingEnabled(item, quote);
+            return (
+              <Fragment key={item.id || quoteItemDescription(item, quote)}>
+                <tr>
+                  <td>
+                    <strong>{quoteLinePartNumber(item, quote)}</strong>
+                    {quoteLineDescriptionRows(item, quote).map((line, lineIndex) => <span key={`${line}-${lineIndex}`}>{line}</span>)}
+                  </td>
+                  <td>{quoteTableQuantity(item, salesInfo.unitOfMeasure)}</td>
+                  <td>{quoteTableUomLabel(salesInfo.unitOfMeasure)}</td>
+                  <td>{quoteTableUnitPrice(item, salesInfo.unitOfMeasure)}</td>
+                  <td>{money(Number(item.pricing?.sellPrice || 0))}</td>
+                </tr>
+                {showVolumePricing && (
+                  <tr className="quote-doc-volume-row">
+                    <td colSpan="5"><QuoteVolumeOffer item={item} quote={quote} /></td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
           </tbody>
           <tfoot>
             <tr>
@@ -2065,6 +2074,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
   const fitTone = pricing.fits ? "ready" : "bad";
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
   const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
+  const volumePricingEnabled = quoteVolumePricingEnabled(form);
   const wasteMatchesRecommendation = Math.abs(toQuoteNumber(form.wastePercent) - toQuoteNumber(pricing.recommendedWastePercent)) < 0.01;
   const selectedQuoteIsMine = selectedQuote ? quoteBelongsToPerson(selectedQuote, currentUserQuoteKey(currentUser), currentUser) : false;
   const selectedQuoteWorkflowStatus = selectedQuote ? quoteWorkflowStatus(selectedQuote) : "active";
@@ -2601,6 +2611,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const itemForm = { ...form, repeat: String(pricing.repeat) };
     const itemPricing = { ...pricing };
     const itemForTiers = { form: itemForm, pricing: itemPricing };
+    const pricingSnapshot = quoteVolumePricingEnabled(itemForm)
+      ? { ...itemPricing, tiers: quoteItemTierRows(itemForTiers, { form: itemForm }) }
+      : itemPricing;
     return {
       id: itemId || makeId("item"),
       itemName,
@@ -2609,7 +2622,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       materialSource: selectedMaterial?.sourceType || "manual",
       materialComponents: selectedMaterial?.componentLabel || "",
       form: itemForm,
-      pricing: { ...itemPricing, tiers: quoteItemTierRows(itemForTiers, { form: itemForm }) },
+      pricing: pricingSnapshot,
     };
   }
 
@@ -2994,7 +3007,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
 .brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:12px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:12px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
 .meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:14px;margin-top:18px}.meta.date-only{grid-template-columns:minmax(280px,.62fr);justify-content:end}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:104px minmax(0,1fr);border-top:1px solid #111827;min-height:28px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{min-width:0;padding:6px 7px;font-size:12px;overflow-wrap:anywhere}
-.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:13%}.sales-table th:nth-child(3){width:6%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}.sales-table .sales-tier-row td{padding:0;border-left:0;background:#f9fafb;text-align:left}.sales-tier-box{padding:7px 8px}.sales-tier-box strong{font-size:10px;text-transform:uppercase;letter-spacing:.04em}.sales-tier-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;margin-top:5px;border:1px solid #d1d5db}.sales-tier-grid span,.sales-tier-grid em{padding:4px 5px;border-left:1px solid #d1d5db;border-top:1px solid #d1d5db;font-size:9.5px;font-style:normal;line-height:1.2;text-align:right}.sales-tier-grid span:nth-child(4n+1),.sales-tier-grid em:nth-child(4n+1){border-left:0;text-align:left}.sales-tier-grid span{border-top:0;background:#eef2f7;font-weight:700;color:#111827}
+.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:13%}.sales-table th:nth-child(3){width:6%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}.sales-table .sales-volume-row td{padding:0;border-left:0;background:#f8fafc;text-align:left}.sales-volume-offer{padding:10px 11px;border-top:1px solid #d9e1ea}.sales-volume-copy span{display:block;margin:0;color:#0b1f5e;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.sales-volume-copy strong{display:block;margin-top:2px;color:#111827;font-size:11px}.sales-volume-copy em{display:block;margin-top:2px;color:#475467;font-size:9.5px;font-style:normal}.sales-volume-options{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}.sales-volume-options article{padding:7px 6px;border:1px solid #cfd8e3;background:#fff}.sales-volume-options article span{margin:0;color:#0b1f5e;font-size:9px;font-weight:800}.sales-volume-options article strong{margin-top:3px;color:#111827;font-size:10px}.sales-volume-options article em{display:block;margin-top:2px;color:#475467;font-size:8.7px;font-style:normal;line-height:1.2}
 .signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-row{display:grid;grid-template-columns:128px 1fr;align-items:end;gap:10px;min-height:26px;margin-bottom:8px;font-size:12px}.sig-row span{font-weight:700;white-space:nowrap}.sig-row b{display:block;min-height:18px;border-bottom:1.2px solid #111827;font-size:12px}.sig-box strong{display:block;margin-top:8px;font-size:12px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px;line-height:1.35}.contact span{margin-top:16px;font-size:12px;font-weight:700}.contact em{margin-top:8px;font-size:12px;font-style:normal}
 .terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}
 @media print{body{background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{width:auto;max-width:7.8in;min-height:auto;margin:0 auto;padding:0}.no-print{display:none}}
@@ -3008,7 +3021,10 @@ ${quoteLines.length ? `<div class="quote-for"><span>Quotation for:</span>${quote
 <div class="date-card">${dateRows.map(([label, value]) => `<div><span>${escapeHtml(label)}:</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>
 </section>
 <section class="item"><table class="sales-table"><thead><tr><th>Part Number &amp; Description</th><th>Qty</th><th>UoM</th><th>Per Unit US$</th><th>Extended US$</th></tr></thead><tbody>
-${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr><tr class="sales-tier-row"><td colspan="5">${quoteTierTableHtml(item, quote)}</td></tr>`).join("")}
+${items.map((item) => {
+  const volumeHtml = quoteVolumeOfferHtml(item, quote);
+  return `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr>${volumeHtml ? `<tr class="sales-volume-row"><td colspan="5">${volumeHtml}</td></tr>` : ""}`;
+}).join("")}
 </tbody><tfoot><tr><td colspan="4">Total in US$</td><td>${escapeHtml(money(totals.sellPrice))}</td></tr></tfoot></table>
 </section>
 <section class="signature"><div class="sig-box"><div class="sig-row"><span>Client P.O.</span><b>${escapeHtml(salesInfo.clientPo || "")}</b></div><div class="sig-row"><span>Authorized Signature</span><b></b></div><div class="sig-row"><span>Printed Name</span><b></b></div><div class="sig-row"><span>Title</span><b></b></div><div class="sig-row"><span>Date</span><b></b></div><strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong></div><div class="contact"><strong>${escapeHtml(quoteThankYouMessage)}</strong><span>${escapeHtml(quoteCompanyTeamName(quoteCompany))}</span>${quote.contactEmail ? `<em>${escapeHtml(quote.contactEmail)}</em>` : ""}</div></section>
@@ -3729,6 +3745,18 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                     </Field>
                   </div>
                 </details>
+                <label className={`quote-volume-control ${volumePricingEnabled ? "active" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={volumePricingEnabled}
+                    onChange={(event) => updateField("volumePricingEnabled", event.target.checked)}
+                  />
+                  <span>
+                    <strong>Volume Pricing</strong>
+                    <em>{volumePricingEnabled ? "Included on this item" : "Off for this item"}</em>
+                  </span>
+                  <b>Offer 10k, 25k, 100k, and 1M+ options as a customer growth path.</b>
+                </label>
                 <div className="quote-top-grid quote-main-input-grid">
                   <Field label="Finished Material">
                     <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>
@@ -3913,9 +3941,11 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                 <em>{money(pricing.pricePerThousand)} / M</em>
               </div>
 
-              <div className="quote-tier-preview">
-                <QuoteTierTable item={{ id: "current-tier-preview", form: { ...form, repeat: String(pricing.repeat) }, pricing }} quote={{ form }} />
-              </div>
+              {volumePricingEnabled && (
+                <div className="quote-volume-preview">
+                  <QuoteVolumeOffer item={{ id: "current-volume-preview", form: { ...form, repeat: String(pricing.repeat) }, pricing }} quote={{ form }} />
+                </div>
+              )}
 
               <div className="quote-metric-grid">
                 <Metric label="Material Cost" value={money(pricing.materialCost)} />

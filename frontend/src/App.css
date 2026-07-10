@@ -11240,7 +11240,61 @@ p, .muted { color: #7a7a7a; }
   font-weight: 850;
 }
 
-.quote-tier-preview {
+.quote-volume-control {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 11px 12px;
+  border: 1px solid #cfd8e3;
+  border-radius: 8px;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.quote-volume-control.active {
+  border-color: #0b1f5e;
+  background: #eff6ff;
+}
+
+.quote-volume-control input {
+  width: 18px;
+  height: 18px;
+  accent-color: #0b1f5e;
+}
+
+.quote-volume-control span,
+.quote-volume-control strong,
+.quote-volume-control em,
+.quote-volume-control b {
+  min-width: 0;
+}
+
+.quote-volume-control span {
+  display: grid;
+  gap: 2px;
+}
+
+.quote-volume-control strong {
+  color: #101828;
+  font-size: .9rem;
+}
+
+.quote-volume-control em,
+.quote-volume-control b {
+  color: #475467;
+  font-size: .72rem;
+  font-style: normal;
+  line-height: 1.3;
+}
+
+.quote-volume-control b {
+  grid-column: 2;
+  font-weight: 850;
+}
+
+.quote-volume-preview {
   min-width: 0;
   border: 1px solid #d9e1ea;
   border-radius: 8px;
@@ -11248,18 +11302,8 @@ p, .muted { color: #7a7a7a; }
   overflow: hidden;
 }
 
-.quote-tier-preview .quote-doc-tier-table {
-  padding: 9px;
-}
-
-.quote-tier-preview .quote-doc-tier-grid {
-  grid-template-columns: minmax(74px, 1.15fr) repeat(3, minmax(58px, 1fr));
-}
-
-.quote-tier-preview .quote-doc-tier-grid span,
-.quote-tier-preview .quote-doc-tier-grid em {
-  padding: 5px;
-  font-size: .58rem;
+.quote-volume-preview .quote-volume-offer {
+  padding: 10px;
 }
 
 .quote-metric-grid {
@@ -12573,61 +12617,99 @@ p, .muted { color: #7a7a7a; }
   line-height: 1.32;
 }
 
-.quote-doc-tier-row td {
+.quote-doc-volume-row td {
   padding: 0;
   border-left: 0;
-  background: #f9fafb;
+  background: #f8fafc;
   text-align: left;
 }
 
-.quote-doc-tier-table {
+.quote-volume-offer {
   min-width: 0;
-  padding: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #d9e1ea;
 }
 
-.quote-doc-tier-table > strong {
+.quote-volume-offer header span {
   display: block;
-  color: #111827;
+  color: #0b1f5e;
   font-size: .62rem;
   font-weight: 900;
-  letter-spacing: .04em;
+  letter-spacing: .08em;
   line-height: 1.2;
   text-transform: uppercase;
 }
 
-.quote-doc-tier-grid {
-  display: grid;
-  grid-template-columns: minmax(92px, 1.2fr) repeat(3, minmax(74px, 1fr));
-  margin-top: 6px;
-  border: 1px solid #d1d5db;
-  overflow: hidden;
+.quote-volume-offer header strong {
+  display: block;
+  margin-top: 2px;
+  color: #111827;
+  font-size: .78rem;
+  line-height: 1.25;
 }
 
-.quote-doc-tier-grid span,
-.quote-doc-tier-grid em {
-  min-width: 0;
-  padding: 5px 6px;
-  border-left: 1px solid #d1d5db;
-  border-top: 1px solid #d1d5db;
-  color: #111827;
-  font-size: .62rem;
+.quote-volume-offer header em {
+  display: block;
+  margin-top: 2px;
+  color: #475467;
+  font-size: .64rem;
   font-style: normal;
-  line-height: 1.2;
-  text-align: right;
+  line-height: 1.3;
+}
+
+.quote-volume-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.quote-volume-options article {
+  min-width: 0;
+  padding: 8px 7px;
+  border: 1px solid #cfd8e3;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.quote-volume-options article span,
+.quote-volume-options article strong,
+.quote-volume-options article em {
+  display: block;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.quote-doc-tier-grid span:nth-child(4n+1),
-.quote-doc-tier-grid em:nth-child(4n+1) {
-  border-left: 0;
-  text-align: left;
+.quote-volume-options article span {
+  color: #0b1f5e;
+  font-size: .62rem;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
-.quote-doc-tier-grid span {
-  border-top: 0;
-  background: #eef2f7;
-  color: #344054;
-  font-weight: 850;
+.quote-volume-options article strong {
+  margin-top: 4px;
+  color: #111827;
+  font-size: .7rem;
+  line-height: 1.2;
+}
+
+.quote-volume-options article em {
+  margin-top: 2px;
+  color: #475467;
+  font-size: .58rem;
+  font-style: normal;
+  line-height: 1.2;
+}
+
+@media (max-width: 720px) {
+  .quote-volume-control b {
+    grid-column: 1 / -1;
+  }
+
+  .quote-volume-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .quote-doc-sales-table tfoot td {
