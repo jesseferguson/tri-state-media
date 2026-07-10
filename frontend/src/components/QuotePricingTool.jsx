@@ -264,6 +264,23 @@ function calculateQuoteTierPricing(form, quantity) {
   });
 }
 
+function quoteTierVisiblePriceKey(tier) {
+  if (!tier?.fits) return "review";
+  return String(Math.round(Number(tier.pricePerThousand || 0) * 100));
+}
+
+function quoteVisibleTierRows(tiers = []) {
+  const visible = [];
+  [...tiers]
+    .sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0))
+    .forEach((tier) => {
+      const previous = visible[visible.length - 1];
+      if (previous && quoteTierVisiblePriceKey(previous) === quoteTierVisiblePriceKey(tier)) return;
+      visible.push(tier);
+    });
+  return visible;
+}
+
 function quoteItemTierRows(item, quote = {}) {
   const form = item?.form || quote?.form || {};
   if (!quoteVolumePricingEnabled(form)) return [];
@@ -273,7 +290,7 @@ function quoteItemTierRows(item, quote = {}) {
       .map((tier) => [String(Math.round(toQuoteNumber(tier.quantity, 0))), tier])
   );
 
-  return quoteTierQuantityOptions.map((option) => {
+  const tiers = quoteTierQuantityOptions.map((option) => {
     const stored = storedTiers.get(String(option.quantity));
     if (stored && Number.isFinite(Number(stored.pricePerThousand))) {
       return {
@@ -291,6 +308,7 @@ function quoteItemTierRows(item, quote = {}) {
     }
     return quoteTierRowFromPricing(option, unitType, calculateQuoteTierPricing(form, option.quantity));
   });
+  return quoteVisibleTierRows(tiers);
 }
 
 function quoteTierSummaryLines(item, quote = {}) {
