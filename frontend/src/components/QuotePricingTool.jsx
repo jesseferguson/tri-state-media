@@ -888,18 +888,22 @@ function quoteCompactUnitMoney(value) {
 }
 
 function quoteLinePriceSummary(item, quote) {
+  return quoteLinePriceSummaryRows(item, quote).join(" or ");
+}
+
+function quoteLinePriceSummaryRows(item, quote) {
   const unitType = quoteItemUnitType(item, quote);
   const pricePerItem = Number(item?.pricing?.pricePerLabel || 0);
   const pricePerThousand = Number(item?.pricing?.pricePerThousand || 0);
   const labelsPerCarton = toQuoteNumber(item?.form?.labelsPerCarton, NaN);
-  const parts = [
+  const rows = [
     `${quoteCompactUnitMoney(pricePerItem)}/${quoteUnitLabel(unitType)}`,
     `${money(pricePerThousand)}/thousand`,
   ];
   if (Number.isFinite(labelsPerCarton) && labelsPerCarton > 0) {
-    parts.push(`${money(pricePerItem * labelsPerCarton)}/carton`);
+    rows.push(`${money(pricePerItem * labelsPerCarton)}/carton`);
   }
-  return parts.join(" or ");
+  return rows;
 }
 
 function quoteItems(quote) {
@@ -1011,7 +1015,7 @@ function quoteLineDescriptionRows(item, quote) {
     quote.productCode ? `TSM ID ${quote.productCode}` : "",
     form.itemNote,
     ...quoteLinePackagingRows(item, quote),
-    quoteLinePriceSummary(item, quote),
+    ...quoteLinePriceSummaryRows(item, quote),
   ].filter(Boolean);
 }
 
@@ -3197,7 +3201,7 @@ ${items.map((item) => {
         item,
         tierRows,
         drawVolumeOffer,
-        mainHeight: drawVolumeOffer ? 112 : compactRowHeight,
+        mainHeight: drawVolumeOffer ? 136 : compactRowHeight,
         volumeHeight: drawVolumeOffer ? 92 : 0,
       };
     });
