@@ -2965,6 +2965,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={recordFormLookups}
                 submitting={saveMutation.isPending}
+                error={saveMutation.error}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
@@ -3324,6 +3325,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     record={selected}
                     lookups={recordFormLookups}
                     submitting={jobTicketEditMutation.isPending}
+                    error={jobTicketEditMutation.error}
                     onSubmit={(payload) => jobTicketEditMutation.mutate(payload)}
                     onCancel={onCancel}
                     canUseField={canUseRecordField}
@@ -3336,6 +3338,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     defaults={scheduleDefaultsForTicket(selected, currentUserForView)}
                     lookups={{ ...(lookupQuery.data ?? {}), "job-tickets": selected ? [selected] : [] }}
                     submitting={jobTicketScheduleCreateMutation.isPending}
+                    error={jobTicketScheduleCreateMutation.error}
                     onSubmit={(payload) => jobTicketScheduleCreateMutation.mutate(payload)}
                     onCancel={onCancel}
                     canUseField={canUseRecordField}
@@ -3355,6 +3358,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={lookupQuery.data ?? {}}
                 submitting={saveMutation.isPending}
+                error={saveMutation.error}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
@@ -3372,6 +3376,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={recordFormLookups}
                 submitting={saveMutation.isPending}
+                error={saveMutation.error}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
@@ -3389,6 +3394,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={lookupQuery.data ?? {}}
                 submitting={saveMutation.isPending}
+                error={saveMutation.error}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
@@ -3406,6 +3412,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={recordFormLookups}
                 submitting={saveMutation.isPending}
+                error={saveMutation.error}
                 onSubmit={(payload) => saveMutation.mutate(payload)}
                 onCancel={closeRecordForm}
                 canUseField={canUseRecordField}
@@ -3453,6 +3460,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 defaults={toolingWorkspaceForm.mode === "create" ? toolingWorkspaceForm.defaults : {}}
                 lookups={toolingWorkspaceLookups}
                 submitting={toolingWorkspaceMutation.isPending}
+                error={toolingWorkspaceMutation.error}
                 onSubmit={(payload) => toolingWorkspaceMutation.mutate(payload)}
                 onCancel={() => setToolingWorkspaceForm(null)}
                 canUseField={canUseRecordField}
@@ -3470,6 +3478,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 defaults={{}}
                 lookups={toolingItemLookups}
                 submitting={toolingItemFormMutation.isPending}
+                error={toolingItemFormMutation.error}
                 onSubmit={(payload) => toolingItemFormMutation.mutate(payload)}
                 onCancel={() => setToolingItemForm(null)}
                 canUseField={canUseRecordField}
@@ -3520,6 +3529,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 defaults={formMode === "create" ? createDefaults : {}}
                 lookups={lookupQuery.data ?? {}}
                 submitting={saveMutation.isPending}
+                error={saveMutation.error}
                 onSubmit={(payload) => saveMutation.mutate({ ...payload, last_updated_by: currentUserForView.name })}
                 onCancel={closeRecordForm}
                 canUseField={canUseRecordField}

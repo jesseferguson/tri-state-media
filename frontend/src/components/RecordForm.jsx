@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Plus, Search, Tag, X } from "lucide-react";
+import { AlertCircle, Plus, Search, Tag, X } from "lucide-react";
 import { formatInches, getRecordTitle } from "../lib/format";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 
@@ -55,6 +55,39 @@ function getFieldLabel(field, form) {
 
 function getFieldTab(field) {
   return field.tab || "Ticket";
+}
+
+function formatErrorValue(value) {
+  if (Array.isArray(value)) return value.map(formatErrorValue).join(", ");
+  if (value && typeof value === "object") {
+    return Object.entries(value)
+      .map(([key, nestedValue]) => `${humanizeErrorKey(key)}: ${formatErrorValue(nestedValue)}`)
+      .join("; ");
+  }
+  return String(value ?? "");
+}
+
+function humanizeErrorKey(key) {
+  if (key === "non_field_errors") return "Error";
+  return String(key ?? "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatFormError(error) {
+  if (!error) return "";
+  const message = typeof error === "string" ? error : error.message || String(error);
+  try {
+    const parsed = JSON.parse(message);
+    if (parsed && typeof parsed === "object") {
+      return Object.entries(parsed)
+        .map(([key, value]) => `${humanizeErrorKey(key)}: ${formatErrorValue(value)}`)
+        .join("\n");
+    }
+    return formatErrorValue(parsed);
+  } catch {
+    return message;
+  }
 }
 
 function getEmptyValueForField(field) {
@@ -750,7 +783,7 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
   );
 }
 
-export default function RecordForm({ resource, record, defaults = {}, lookups = {}, onSubmit, onCancel, submitting, canUseField = () => true, onFormChange }) {
+export default function RecordForm({ resource, record, defaults = {}, lookups = {}, onSubmit, onCancel, submitting, error, canUseField = () => true, onFormChange }) {
   const fields = resource.fields ?? [];
   const [form, setForm] = useState(() => normalizeInitial(fields, record, defaults));
   const [activeFormTab, setActiveFormTab] = useState("");
@@ -777,6 +810,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
     () => (resource.key === "job-tickets" && !record ? buildTsmIdRecommendation(form, lookups, record) : null),
     [form, lookups, record, resource.key]
   );
+  const errorMessage = formatFormError(error);
 
   useEffect(() => {
     if (!formTabs.length) return;
@@ -823,6 +857,16 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
         </div>
         <button className="ghost-btn" type="button" onClick={onCancel}>Close</button>
       </div>
+
+      {errorMessage && (
+        <div className="form-error-message" role="alert">
+          <AlertCircle size={18} />
+          <div>
+            <strong>Could not save {resource.singular.toLowerCase()}.</strong>
+            <span>{errorMessage}</span>
+          </div>
+        </div>
+      )}
 
       <form className={`record-form ${resource.key}-record-form`} onSubmit={(event) => { event.preventDefault(); onSubmit(cleanPayload()); }}>
         {formTabs.length > 1 && (

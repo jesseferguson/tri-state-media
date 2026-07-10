@@ -33777,3 +33777,430 @@ textarea {
     gap: 3px;
   }
 }
+
+/* Flex die form refresh */
+.form-error-message {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.form-error-message svg {
+  margin-top: 1px;
+  color: #dc2626;
+}
+
+.form-error-message strong,
+.form-error-message span {
+  display: block;
+}
+
+.form-error-message strong {
+  font-size: .82rem;
+  font-weight: 950;
+}
+
+.form-error-message span {
+  margin-top: 3px;
+  color: #7f1d1d;
+  font-size: .78rem;
+  font-weight: 800;
+  line-height: 1.42;
+  white-space: pre-wrap;
+}
+
+.flex-die-form-overlay {
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, .52);
+}
+
+.flex-die-form-window {
+  width: min(1040px, calc(100vw - 28px));
+  height: min(780px, calc(100dvh - 36px));
+  max-height: calc(100dvh - 36px);
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid rgba(203, 213, 225, .9);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 28px 90px rgba(15, 23, 42, .28);
+}
+
+.flex-die-form-window .form-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.flex-die-form-window .panel-head {
+  position: static;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  background:
+    linear-gradient(135deg, rgba(240, 253, 250, .95), rgba(255, 255, 255, .98) 48%),
+    #ffffff;
+}
+
+.flex-die-form-window .panel-head > div {
+  min-width: 0;
+}
+
+.flex-die-form-window .panel-head .eyebrow {
+  color: #0f766e;
+  font-size: .75rem;
+  font-weight: 950;
+}
+
+.flex-die-form-window .panel-head h2 {
+  margin-top: 2px;
+  color: #0f172a;
+  font-size: 1.28rem;
+  line-height: 1.08;
+}
+
+.flex-die-form-window .panel-head .ghost-btn {
+  min-height: 38px;
+  flex: 0 0 auto;
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.flex-die-form-window .form-error-message {
+  flex: 0 0 auto;
+  margin: 12px 18px 0;
+}
+
+.flex-die-form-window .record-form {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  padding: 14px 18px 0;
+  background: #f8fafc;
+}
+
+.flex-die-form-window .record-form-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  background: rgba(248, 250, 252, .96);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .08);
+}
+
+.flex-die-form-window .record-form-tabs button {
+  min-height: 36px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  color: #64748b;
+  font-size: .76rem;
+  font-weight: 950;
+}
+
+.flex-die-form-window .record-form-tabs button.active {
+  background: #0f766e;
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(15, 118, 110, .22);
+}
+
+.flex-die-form-window .form-section-heading {
+  margin: 2px 0 -2px;
+  padding: 0 0 8px;
+  border: 0;
+  border-bottom: 1px solid #dbe4ef;
+  border-radius: 0;
+  background: transparent;
+}
+
+.flex-die-form-window .form-section-heading strong {
+  color: #0f172a;
+  font-size: .86rem;
+  font-weight: 950;
+}
+
+.flex-die-form-window .form-section-heading span {
+  max-width: 520px;
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.flex-die-form-window .field,
+.flex-die-form-window .check-field,
+.flex-die-form-window .flex-dies-record-form .field,
+.flex-die-form-window .flex-dies-record-form .check-field {
+  padding: 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, .03);
+}
+
+.flex-die-form-window .field > span,
+.flex-die-form-window .check-field > span,
+.flex-die-form-window .flex-dies-record-form .field > span,
+.flex-die-form-window .flex-dies-record-form .check-field > span {
+  color: #475569;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.flex-die-form-window .field small,
+.flex-die-form-window .check-field small {
+  color: #64748b;
+}
+
+.flex-die-form-window input,
+.flex-die-form-window select,
+.flex-die-form-window textarea,
+.flex-die-form-window .lookup-selected,
+.flex-die-form-window .flex-dies-record-form input,
+.flex-die-form-window .flex-dies-record-form select,
+.flex-die-form-window .flex-dies-record-form textarea,
+.flex-die-form-window .flex-dies-record-form .lookup-selected {
+  min-height: 42px;
+  border-color: #cbd5e1;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: .88rem;
+}
+
+.flex-die-form-window input:focus,
+.flex-die-form-window select:focus,
+.flex-die-form-window textarea:focus,
+.flex-die-form-window .lookup-selected:focus {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .14);
+}
+
+.flex-die-form-window .lookup-menu {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, .18);
+}
+
+.flex-die-form-window .lookup-search {
+  border-bottom-color: #e2e8f0;
+}
+
+.flex-die-form-window .lookup-search input {
+  color: #0f172a;
+}
+
+.flex-die-form-window .lookup-results button {
+  color: #0f172a;
+}
+
+.flex-die-form-window .lookup-results button:hover,
+.flex-die-form-window .lookup-results button.selected {
+  background: #ecfeff;
+}
+
+.flex-die-form-window .lookup-results span {
+  color: #64748b;
+}
+
+.flex-die-form-window .field-name,
+.flex-die-form-window .field-original_serial_number,
+.flex-die-form-window .field-manual_web_width,
+.flex-die-form-window .field-web_width_inches {
+  grid-column: span 2;
+}
+
+.flex-die-form-window .field-dieline_image,
+.flex-die-form-window .field-serial_numbers,
+.flex-die-form-window .field-current_location {
+  grid-column: 1 / -1;
+}
+
+.flex-die-form-window .field-serial_numbers textarea {
+  min-height: 170px;
+}
+
+.flex-die-form-window .image-upload-field > div {
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.flex-die-form-window .image-upload-field img,
+.flex-die-form-window .image-upload-field em,
+.flex-die-form-window .image-upload-field .pdf-preview,
+.flex-die-form-window .flex-dies-record-form .image-upload-field img,
+.flex-die-form-window .flex-dies-record-form .image-upload-field em {
+  width: 100%;
+  height: 160px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.flex-die-form-window .image-upload-field input {
+  align-self: end;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.flex-die-form-window .image-upload-field strong,
+.flex-die-form-window .image-upload-field small {
+  grid-column: 2;
+}
+
+.flex-die-form-window .check-field {
+  align-items: center;
+  min-height: 78px;
+}
+
+.flex-die-form-window .check-field input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  accent-color: #0f766e;
+}
+
+.flex-die-form-window .form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  margin: 10px -18px 0;
+  padding: 12px 18px;
+  border-top: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, .98);
+  box-shadow: 0 -12px 24px rgba(15, 23, 42, .08);
+}
+
+.flex-die-form-window .form-actions .ghost-btn,
+.flex-die-form-window .form-actions .primary-btn {
+  min-width: 120px;
+}
+
+@media (max-width: 860px) {
+  .flex-die-form-overlay {
+    align-items: stretch;
+    padding: 8px;
+  }
+
+  .flex-die-form-window {
+    width: 100%;
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 14px;
+  }
+
+  .flex-die-form-window .panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .flex-die-form-window .panel-head .ghost-btn {
+    width: 100%;
+  }
+
+  .flex-die-form-window .record-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px 14px 0;
+  }
+
+  .flex-die-form-window .record-form-tabs {
+    grid-template-columns: repeat(5, minmax(116px, 1fr));
+    overflow-x: auto;
+  }
+
+  .flex-die-form-window .form-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .flex-die-form-window .form-section-heading span {
+    text-align: left;
+  }
+
+  .flex-die-form-window .field-name,
+  .flex-die-form-window .field-original_serial_number,
+  .flex-die-form-window .field-manual_web_width,
+  .flex-die-form-window .field-web_width_inches,
+  .flex-die-form-window .field-dieline_image,
+  .flex-die-form-window .field-serial_numbers,
+  .flex-die-form-window .field-current_location {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .flex-die-form-overlay {
+    padding: 0;
+  }
+
+  .flex-die-form-window {
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .flex-die-form-window .record-form {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px 12px 0;
+  }
+
+  .flex-die-form-window .record-form-tabs {
+    margin: 0;
+  }
+
+  .flex-die-form-window .image-upload-field > div {
+    grid-template-columns: 1fr;
+  }
+
+  .flex-die-form-window .image-upload-field img,
+  .flex-die-form-window .image-upload-field em,
+  .flex-die-form-window .image-upload-field .pdf-preview {
+    height: 180px;
+  }
+
+  .flex-die-form-window .image-upload-field strong,
+  .flex-die-form-window .image-upload-field small {
+    grid-column: 1;
+  }
+
+  .flex-die-form-window .form-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin-right: -12px;
+    margin-left: -12px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+}
