@@ -2912,6 +2912,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 liners={lookupQuery.data?.materials ?? []}
                 resultCount={visibleRows.length}
                 totalCount={rows.length}
+                resourceLabel={resource.singular}
               />
             ) : (
               <section className="search-line compact-card">

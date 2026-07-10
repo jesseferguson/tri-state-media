@@ -13,7 +13,7 @@ function hasActiveFilter(filters) {
   return Object.values(filters ?? {}).some((value) => String(value ?? "").trim() !== "");
 }
 
-export default function FlexDieSearch({ filters, setFilters, liners = [], resultCount = 0, totalCount = 0 }) {
+export default function FlexDieSearch({ filters, setFilters, liners = [], resultCount = 0, totalCount = 0, resourceLabel = "Flex Die" }) {
   function set(name, value) {
     setFilters((prev) => ({ ...prev, [name]: value }));
   }
@@ -22,7 +22,7 @@ export default function FlexDieSearch({ filters, setFilters, liners = [], result
     <section className="flex-die-search-panel search-panel compact-card">
       <div className="flex-die-search-head">
         <label className="field flex-die-search-main">
-          <span>Flex Die Lookup</span>
+          <span>{resourceLabel} Lookup</span>
           <input value={filters.text} onChange={(event) => set("text", event.target.value)} placeholder="Search jacket, serial, supplier, location..." />
         </label>
         <div className="flex-die-search-count">

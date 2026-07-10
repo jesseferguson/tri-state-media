@@ -31,7 +31,9 @@ class DataImportToolingTests(TestCase):
         csv_text = "\n".join([
             "Row ID,Number,SizeAcross,SizeAround,LabelRepeat,ColSpace,CornerRadius,NoAcross,NoAround,LinerCaliper,FaceStock,Gear,Manufacturer,SerialNumber,Shape,Cut Position,Tooling Status,Description,ColSpace,Semi Rotary,Active",
             "RID-FLEX,FD-13-100,3,4,4.125,0.125,0.0625,2,1,40,Paper,99,Wilson Tool,FC123,RCR,Liner,In House (David's Dr),Legacy flex note,,false,true",
-            "RID-ROT,FD-13R-009,6.5,12,12.125,0.125,0,2,1,40,Paper,97,Rotary Supplier,MOD20-09-40133,RCR,Liner,In House (David's Dr),Semi Rotary,true,true",
+            "RID-FD-SEMI,FD-13R-009,6.5,12,12.125,0.125,0,2,1,40,Paper,97,Flex Supplier,MOD20-09-40133,RCR,Liner,In House (David's Dr),Semi Rotary,true,true",
+            "RID-ROT,RD-13-009,6.5,12,12.125,0.125,0,2,1,40,Paper,97,Rotary Supplier,ROT20-09-40133,RCR,Liner,In House (David's Dr),Rotary die,,true",
+            "RID-NAMELESS,,6.5,12,12.125,0.125,0,2,1,40,Paper,97,Unused Supplier,NO-NAME,RCR,Liner,In House (David's Dr),No visible shelf name,,true",
         ])
         upload = SimpleUploadedFile("legacy-flex-dies.csv", csv_text.encode("utf-8"), content_type="text/csv")
 
@@ -42,8 +44,9 @@ class DataImportToolingTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.content)
         payload = response.json()
-        self.assertEqual(payload["created"], 2)
-        self.assertEqual(payload["warning_count"], 1)
+        self.assertEqual(payload["created"], 3)
+        self.assertEqual(payload["skipped"], 1)
+        self.assertEqual(payload["warning_count"], 2)
 
         flex_die = FlexDie.objects.get(name="FD-13-100")
         self.assertEqual(flex_die.tooling_kind, "flex_die")
@@ -53,12 +56,17 @@ class DataImportToolingTests(TestCase):
         self.assertEqual(flex_die.current_location.name, "In House (David's Dr)")
         self.assertIn("Legacy flex note", flex_die.notes)
 
-        rotary_die = FlexDie.objects.get(name="FD-13R-009")
+        semi_rotary_named_fd = FlexDie.objects.get(name="FD-13R-009")
+        self.assertEqual(semi_rotary_named_fd.tooling_kind, "flex_die")
+        self.assertEqual(semi_rotary_named_fd.supplier.name, "Flex Supplier")
+
+        rotary_die = FlexDie.objects.get(name="RD-13-009")
         self.assertEqual(rotary_die.tooling_kind, "rotary_die")
         self.assertEqual(rotary_die.supplier.name, "Rotary Supplier")
         self.assertEqual(rotary_die.gear, 97)
 
         self.assertTrue(Supplier.objects.filter(name="Wilson Tool").exists())
+        self.assertFalse(FlexDie.objects.filter(name="RID-NAMELESS").exists())
 
 
 class FinishedInventoryOrderWorkflowTests(TestCase):

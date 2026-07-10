@@ -2396,6 +2396,8 @@ export const resources = [
     icon: Scissors,
     accent: "#34d399",
     defaultOrdering: "label_width_inches,label_length_inches,gear,name",
+    pageSize: 200,
+    fetchAll: true,
     tagline: "Die jackets by size, gap, count, serial history, and reorder status.",
     columns: [
       "name",
@@ -2609,6 +2611,8 @@ export const resources = [
     icon: Shapes,
     accent: "#14b8a6",
     defaultOrdering: "label_width_inches,label_length_inches,gear,name",
+    pageSize: 200,
+    fetchAll: true,
     tagline: "Solid and semi-rotary die cylinders tracked separately from flexible dies.",
     columns: [
       "name",
@@ -2633,7 +2637,7 @@ export const resources = [
         label: "Rotary Die #",
         type: "text",
         required: true,
-        placeholder: "FD-13R-009",
+        placeholder: "RD-13-009",
         tab: "Jacket",
         section: "Rotary Die",
         sectionHint: "Use the cylinder/tool number as the name.",

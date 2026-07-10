@@ -857,9 +857,11 @@ function quoteLinePrimaryDescription(item, quote) {
     materialHasUnit ? "" : quoteItemUnitTitle(item, quote),
   ].filter(Boolean).join(" ");
   const finishing = form.finishingType ? quoteFinishingLabel(form.finishingType).replace(/s$/, "") : "";
+  const coreLabel = quoteCoreLabel(form.coreSize);
   return [
     [size, productDescription].filter(Boolean).join(" "),
     finishing,
+    coreLabel,
   ].filter(Boolean).join(", ") || quoteDescription(quote);
 }
 
@@ -867,8 +869,6 @@ function quoteLinePackagingRows(item, quote) {
   const form = item?.form || quote?.form || {};
   const unitType = quoteItemUnitType(item, quote);
   const rows = [];
-  const coreLabel = quoteCoreLabel(form.coreSize);
-  if (coreLabel) rows.push(coreLabel);
   const labelsPerUnit = toQuoteNumber(form.labelsPerUnit, NaN);
   if (Number.isFinite(labelsPerUnit) && labelsPerUnit > 0) {
     rows.push(`${Math.round(labelsPerUnit).toLocaleString()} ${quoteUnitLabel(unitType, true)} per ${quoteItemContainerLabel(form)}`);
@@ -1008,7 +1008,6 @@ function quoteLineDescriptionRows(item, quote) {
   const form = item.form || {};
   return [
     quoteLinePrimaryDescription(item, quote),
-    `Item Type: ${quoteItemUnitTitle(item, quote)}`,
     quote.productCode ? `TSM ID ${quote.productCode}` : "",
     form.itemNote,
     ...quoteLinePackagingRows(item, quote),
@@ -3188,7 +3187,10 @@ ${items.map((item) => {
     const headerHeight = 28;
     const totalRowHeight = 28;
     const visibleItems = items;
-    const rowHeight = Math.max(76, Math.min(132, Math.floor(278 / Math.max(1, visibleItems.length))));
+    const hasVolumePricingRows = visibleItems.some((item) => quoteItemTierRows(item, quote).length > 0);
+    const rowHeight = hasVolumePricingRows
+      ? Math.max(104, Math.min(156, Math.floor(320 / Math.max(1, visibleItems.length))))
+      : Math.max(76, Math.min(132, Math.floor(278 / Math.max(1, visibleItems.length))));
     const columns = [42, 302, 372, 404, 488, 570];
     const tableHeaderFontSize = 10;
     const tablePartFontSize = 11;
@@ -3209,11 +3211,15 @@ ${items.map((item) => {
     visibleItems.forEach((item, index) => {
       const yTop = tableTop - headerHeight - index * rowHeight;
       const yBase = yTop - 16;
-      const maxDescriptionLines = Math.max(5, Math.floor((rowHeight - 12) / 13));
+      const tierRows = quoteItemTierRows(item, quote);
+      const drawVolumeOffer = tierRows.length > 0 && rowHeight >= 120;
+      const maxDescriptionLines = drawVolumeOffer
+        ? Math.max(3, Math.floor((rowHeight - 78) / 13))
+        : Math.max(5, Math.floor((rowHeight - 12) / 13));
       const partLines = wrapPdfText(quoteLinePartNumber(item, quote), columns[1] - columns[0] - 16, tablePartFontSize, "F2", 1, tableMinFontSize);
       const bodyLines = quoteLineDescriptionRows(item, quote)
         .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, tableBodyFontSize, "F1", 1, tableMinFontSize));
-      const tierLines = quoteTierSummaryLines(item, quote)
+      const tierLines = drawVolumeOffer ? [] : quoteTierSummaryLines(item, quote)
         .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, tableBodyFontSize, "F1", 1, tableMinFontSize));
       const descriptionLines = [
         ...partLines,
@@ -3222,6 +3228,25 @@ ${items.map((item) => {
       ].slice(0, maxDescriptionLines);
       textLines(50, yBase, tablePartFontSize, descriptionLines.slice(0, 1), "F2", 0, 13, tableMinFontSize);
       textLines(50, yBase - 13, tableBodyFontSize, descriptionLines.slice(1), "F1", 0, 13, tableMinFontSize);
+      if (drawVolumeOffer) {
+        const offerX = 50;
+        const offerWidth = columns[1] - columns[0] - 18;
+        const offerBottom = yTop - rowHeight + 8;
+        const cardGap = 5;
+        const cardWidth = (offerWidth - cardGap) / 2;
+        const cardHeight = 22;
+        text(offerX, offerBottom + 58, 7, "Volume Savings", "F2", 0, { maxWidth: offerWidth, minSize: 7 });
+        text(offerX, offerBottom + 47, 6, "Better pricing as this order grows", "F1", 0, { maxWidth: offerWidth, minSize: 6 });
+        tierRows.slice(0, 4).forEach((tier, tierIndex) => {
+          const column = tierIndex % 2;
+          const row = Math.floor(tierIndex / 2);
+          const cardX = offerX + column * (cardWidth + cardGap);
+          const cardY = offerBottom + (1 - row) * (cardHeight + 4);
+          box(cardX, cardY, cardWidth, cardHeight);
+          text(cardX + 4, cardY + 13, 6, tier.compactQuantityLabel, "F2", 0, { maxWidth: cardWidth - 8, minSize: 6 });
+          text(cardX + 4, cardY + 5, 6, tier.fits ? `${money(tier.pricePerThousand)} / M` : "Quote review", "F1", 0, { maxWidth: cardWidth - 8, minSize: 6 });
+        });
+      }
       textRight(columns[2] - 8, yBase, tableBodyFontSize, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12, tableMinFontSize);
       textRight(columns[3] - 8, yBase, tableBodyFontSize, quoteTableUomLabel(salesInfo.unitOfMeasure), "F1", 0, columns[3] - columns[2] - 12, tableMinFontSize);
       textRight(columns[4] - 8, yBase, tableBodyFontSize, quoteTableUnitPrice(item, salesInfo.unitOfMeasure), "F1", 0, columns[4] - columns[3] - 12, tableMinFontSize);

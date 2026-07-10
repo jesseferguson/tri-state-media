@@ -245,7 +245,7 @@ IMPORT_TEMPLATES = {
     },
     "flex_dies": {
         "label": "Flex / Rotary Dies",
-        "description": "Imports flex die jackets/folders. You can upload the old Glide tooling export directly; rows marked Semi Rotary import as Rotary Dies instead of Flex Dies.",
+        "description": "Imports flex die jackets/folders. You can upload the old Glide tooling export directly; the name/number is used as the shelf identifier, and rows starting RD import as Rotary Dies.",
         "columns": FLEX_DIE_COLUMNS,
         "sample": {
             "row_id": "FDROW-1",
@@ -596,6 +596,13 @@ def flex_cutting_type_value(value):
 
 
 def die_tooling_kind_value(row):
+    shelf_name = first(row, "name", "number", "tool_number", "die_number")
+    shelf_prefix = str(shelf_name or "").strip().upper()
+    if shelf_prefix.startswith("FD"):
+        return "flex_die"
+    if shelf_prefix.startswith("RD"):
+        return "rotary_die"
+
     explicit = normalize_key(first(row, "tooling_kind", "tool_type", "die_type", "type"))
     if explicit in {"rotary", "rotary_die", "semi_rotary", "solid_rotary", "solid_rotary_die"}:
         return "rotary_die"
@@ -605,7 +612,7 @@ def die_tooling_kind_value(row):
     if bool_value(first(row, "semi_rotary"), default=False):
         return "rotary_die"
 
-    number = first(row, "name", "number", "tool_number", "die_number")
+    number = shelf_name
     description = first(row, "description", "notes")
     combined = f"{number} {description}".lower()
     if re.search(r"\bfd[-_\s]?\d+r[-_\s]", combined) or "semi rotary" in combined or "rotary die" in combined:
@@ -1031,9 +1038,10 @@ def import_job_tickets(rows):
 def import_flex_dies(rows):
     result = import_result()
     for line_number, row in rows:
-        name = first(row, "name", "number", "tool_number", "die_number", "row_id")
+        name = first(row, "name", "number", "tool_number", "die_number")
         if not name:
-            add_error(result, line_number, "Missing name, number, or row_id.")
+            result["skipped"] += 1
+            add_warning(result, line_number, "Skipped die tooling row with no shelf name/number. Legacy row_id was not used as the die name.")
             continue
 
         tooling_kind = die_tooling_kind_value(row)
