@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Copy, Download, FileText, Image as ImageIcon, Layers3, Mail, MoreHorizontal, Pencil, Plus, Printer, Ruler, Search, SlidersHorizontal, Trash2, XCircle } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 import { quoteCompanyForKey, quoteCompanyForQuote } from "../lib/quoteBranding";
@@ -30,6 +30,12 @@ const percentFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits:
 const quoteDefaultExpirationDays = 30;
 const quoteDefaultUnitOfMeasure = "M";
 const quoteThankYouMessage = "Thank you for the opportunity to serve...";
+const quoteTierQuantityOptions = [
+  { quantity: 10000, label: "10,000" },
+  { quantity: 25000, label: "25,000" },
+  { quantity: 100000, label: "100,000" },
+  { quantity: 1000000, label: "1,000,000", plus: true },
+];
 const quoteUnitTypeChoices = [
   ["label", "Label"],
   ["tag", "Tag"],
@@ -209,6 +215,85 @@ function quoteCoreLabel(value) {
   const size = toQuoteNumber(value, NaN);
   if (!Number.isFinite(size) || size <= 0) return "";
   return `${String(Number(size.toFixed(3)))}" core`;
+}
+
+function quoteTierQuantityLabel(option, unitType, compact = false) {
+  const quantity = Math.max(0, toQuoteNumber(option?.quantity));
+  const unit = quoteUnitLabel(unitType, true);
+  if (compact) {
+    const shortQuantity = quantity >= 1000000
+      ? `${numberFormatter.format(quantity / 1000000)}M${option?.plus ? "+" : ""}`
+      : quantity >= 1000
+        ? `${numberFormatter.format(quantity / 1000)}k`
+        : numberFormatter.format(quantity);
+    return `${shortQuantity} ${unit}`;
+  }
+  return `${option?.label || Math.round(quantity).toLocaleString()}${option?.plus ? "+" : ""} ${unit}`;
+}
+
+function quoteTierRowFromPricing(option, unitType, pricing) {
+  return {
+    quantity: Math.max(0, toQuoteNumber(option?.quantity)),
+    quantityLabel: quoteTierQuantityLabel(option, unitType),
+    compactQuantityLabel: quoteTierQuantityLabel(option, unitType, true),
+    unitType,
+    fits: Boolean(pricing?.fits),
+    runFootage: Number(pricing?.runFootage || 0),
+    wastePercent: Number(pricing?.wastePercent || 0),
+    pricePerThousand: Number(pricing?.pricePerThousand || 0),
+    pricePerItem: Number(pricing?.pricePerLabel || 0),
+    sellPrice: Number(pricing?.sellPrice || 0),
+  };
+}
+
+function calculateQuoteTierPricing(form, quantity) {
+  const tierForm = { ...(form || {}), quantity: String(quantity) };
+  const recommendationPricing = calculateQuotePricing(tierForm);
+  return calculateQuotePricing({
+    ...tierForm,
+    wastePercent: percentInputValue(recommendationPricing.recommendedWastePercent),
+  });
+}
+
+function quoteItemTierRows(item, quote = {}) {
+  const form = item?.form || quote?.form || {};
+  const unitType = quoteItemUnitType(item, quote);
+  const storedTiers = new Map(
+    (Array.isArray(item?.pricing?.tiers) ? item.pricing.tiers : [])
+      .map((tier) => [String(Math.round(toQuoteNumber(tier.quantity, 0))), tier])
+  );
+
+  return quoteTierQuantityOptions.map((option) => {
+    const stored = storedTiers.get(String(option.quantity));
+    if (stored && Number.isFinite(Number(stored.pricePerThousand))) {
+      return {
+        quantity: option.quantity,
+        quantityLabel: stored.quantityLabel || quoteTierQuantityLabel(option, stored.unitType || unitType),
+        compactQuantityLabel: stored.compactQuantityLabel || quoteTierQuantityLabel(option, stored.unitType || unitType, true),
+        unitType: quoteUnitType(stored.unitType || unitType),
+        fits: stored.fits !== false,
+        runFootage: Number(stored.runFootage || 0),
+        wastePercent: Number(stored.wastePercent || 0),
+        pricePerThousand: Number(stored.pricePerThousand || 0),
+        pricePerItem: Number(stored.pricePerItem ?? stored.pricePerLabel ?? 0),
+        sellPrice: Number(stored.sellPrice || 0),
+      };
+    }
+    return quoteTierRowFromPricing(option, unitType, calculateQuoteTierPricing(form, option.quantity));
+  });
+}
+
+function quoteTierSummaryLines(item, quote = {}) {
+  const tiers = quoteItemTierRows(item, quote);
+  const chunks = tiers.map((tier) => (
+    tier.fits
+      ? `${tier.compactQuantityLabel} ${money(tier.pricePerThousand)}/M`
+      : `${tier.compactQuantityLabel} no fit`
+  ));
+  return [
+    `Volume Pricing: ${chunks.slice(0, 2).join(" | ")}`,
+    chunks.slice(2).join(" | "),
+  ].filter(Boolean);
 }
 
 function materialMasterTypeOptionLabel(type) {
@@ -750,7 +835,7 @@ function quoteLinePrimaryDescription(item, quote) {
   ].filter(Boolean).join(", ") || quoteDescription(quote);
 }
 
-function quoteLinePackagingRow(item, quote) {
+function quoteLinePackagingRows(item, quote) {
   const form = item?.form || quote?.form || {};
   const unitType = quoteItemUnitType(item, quote);
   const rows = [];
@@ -758,13 +843,13 @@ function quoteLinePackagingRow(item, quote) {
   if (coreLabel) rows.push(coreLabel);
   const labelsPerUnit = toQuoteNumber(form.labelsPerUnit, NaN);
   if (Number.isFinite(labelsPerUnit) && labelsPerUnit > 0) {
-    rows.push(`${Math.round(labelsPerUnit).toLocaleString()} ${quoteUnitLabel(unitType, true)}/${quoteItemContainerLabel(form)}`);
+    rows.push(`${Math.round(labelsPerUnit).toLocaleString()} ${quoteUnitLabel(unitType, true)} per ${quoteItemContainerLabel(form)}`);
   }
   const labelsPerCarton = toQuoteNumber(form.labelsPerCarton, NaN);
   if (Number.isFinite(labelsPerCarton) && labelsPerCarton > 0) {
-    rows.push(`${Math.round(labelsPerCarton).toLocaleString()} ${quoteUnitLabel(unitType, true)}/carton`);
+    rows.push(`${Math.round(labelsPerCarton).toLocaleString()} ${quoteUnitLabel(unitType, true)} per carton`);
   }
-  return rows.join(", ");
+  return rows;
 }
 
 function quoteCompactUnitMoney(value) {
@@ -895,9 +980,10 @@ function quoteLineDescriptionRows(item, quote) {
   const form = item.form || {};
   return [
     quoteLinePrimaryDescription(item, quote),
+    `Item Type: ${quoteItemUnitTitle(item, quote)}`,
     quote.productCode ? `TSM ID ${quote.productCode}` : "",
     form.itemNote,
-    quoteLinePackagingRow(item, quote),
+    ...quoteLinePackagingRows(item, quote),
     quoteLinePriceSummary(item, quote),
   ].filter(Boolean);
 }
@@ -1528,6 +1614,48 @@ function FinishedMaterialForm({ form, rawMaterials, materialMasterTypes = [], up
   );
 }
 
+function QuoteTierTable({ item, quote }) {
+  const tiers = quoteItemTierRows(item, quote);
+  if (!tiers.length) return null;
+  const unitTitle = quoteItemUnitTitle(item, quote);
+  return (
+    <div className="quote-doc-tier-table">
+      <strong>Volume Pricing - {unitTitle}</strong>
+      <div className="quote-doc-tier-grid">
+        <span>Qty</span>
+        <span>Price / M</span>
+        <span>Price / {unitTitle}</span>
+        <span>Tier Total</span>
+        {tiers.map((tier) => (
+          <Fragment key={`${item?.id || quoteLinePartNumber(item, quote)}-${tier.quantity}`}>
+            <em>{tier.quantityLabel}</em>
+            <em>{tier.fits ? money(tier.pricePerThousand) : "No fit"}</em>
+            <em>{tier.fits ? unitMoney(tier.pricePerItem) : "--"}</em>
+            <em>{tier.fits ? money(tier.sellPrice) : "--"}</em>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function quoteTierTableHtml(item, quote) {
+  const tiers = quoteItemTierRows(item, quote);
+  if (!tiers.length) return "";
+  const unitTitle = quoteItemUnitTitle(item, quote);
+  return [
+    `<div class="sales-tier-box"><strong>Volume Pricing - ${escapeHtml(unitTitle)}</strong>`,
+    `<div class="sales-tier-grid"><span>Qty</span><span>Price / M</span><span>Price / ${escapeHtml(unitTitle)}</span><span>Tier Total</span>`,
+    tiers.map((tier) => [
+      `<em>${escapeHtml(tier.quantityLabel)}</em>`,
+      `<em>${escapeHtml(tier.fits ? money(tier.pricePerThousand) : "No fit")}</em>`,
+      `<em>${escapeHtml(tier.fits ? unitMoney(tier.pricePerItem) : "--")}</em>`,
+      `<em>${escapeHtml(tier.fits ? money(tier.sellPrice) : "--")}</em>`,
+    ].join("")).join(""),
+    `</div></div>`,
+  ].join("");
+}
+
 function QuoteDocument({ quote }) {
   if (!quote) return <p className="quote-empty">Select a saved quote to view it.</p>;
   const items = quoteItems(quote);
@@ -1581,16 +1709,21 @@ function QuoteDocument({ quote }) {
           </thead>
           <tbody>
           {items.map((item) => (
-            <tr key={item.id || quoteItemDescription(item, quote)}>
-              <td>
-                <strong>{quoteLinePartNumber(item, quote)}</strong>
-                {quoteLineDescriptionRows(item, quote).map((line, lineIndex) => <span key={`${line}-${lineIndex}`}>{line}</span>)}
-              </td>
-              <td>{quoteTableQuantity(item, salesInfo.unitOfMeasure)}</td>
-              <td>{quoteTableUomLabel(salesInfo.unitOfMeasure)}</td>
-              <td>{quoteTableUnitPrice(item, salesInfo.unitOfMeasure)}</td>
-              <td>{money(Number(item.pricing?.sellPrice || 0))}</td>
-            </tr>
+            <Fragment key={item.id || quoteItemDescription(item, quote)}>
+              <tr>
+                <td>
+                  <strong>{quoteLinePartNumber(item, quote)}</strong>
+                  {quoteLineDescriptionRows(item, quote).map((line, lineIndex) => <span key={`${line}-${lineIndex}`}>{line}</span>)}
+                </td>
+                <td>{quoteTableQuantity(item, salesInfo.unitOfMeasure)}</td>
+                <td>{quoteTableUomLabel(salesInfo.unitOfMeasure)}</td>
+                <td>{quoteTableUnitPrice(item, salesInfo.unitOfMeasure)}</td>
+                <td>{money(Number(item.pricing?.sellPrice || 0))}</td>
+              </tr>
+              <tr className="quote-doc-tier-row">
+                <td colSpan="5"><QuoteTierTable item={item} quote={quote} /></td>
+              </tr>
+            </Fragment>
           ))}
           </tbody>
           <tfoot>
@@ -2465,6 +2598,9 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const itemName = quoteInfo.itemName.trim() || (quoteInfo.linkMode === "ticket"
       ? selectedJobTicket?.job_name || selectedJobTicket?.product_name || "Job ticket item"
       : quoteInfo.jobName || "Manual quote item");
+    const itemForm = { ...form, repeat: String(pricing.repeat) };
+    const itemPricing = { ...pricing };
+    const itemForTiers = { form: itemForm, pricing: itemPricing };
     return {
       id: itemId || makeId("item"),
       itemName,
@@ -2472,8 +2608,8 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       materialId: selectedMaterial?.id || "",
       materialSource: selectedMaterial?.sourceType || "manual",
       materialComponents: selectedMaterial?.componentLabel || "",
-      form: { ...form, repeat: String(pricing.repeat) },
-      pricing: { ...pricing },
+      form: itemForm,
+      pricing: { ...itemPricing, tiers: quoteItemTierRows(itemForTiers, { form: itemForm }) },
     };
   }
 
@@ -2858,7 +2994,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
 .brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:12px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:12px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
 .meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:14px;margin-top:18px}.meta.date-only{grid-template-columns:minmax(280px,.62fr);justify-content:end}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:104px minmax(0,1fr);border-top:1px solid #111827;min-height:28px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{min-width:0;padding:6px 7px;font-size:12px;overflow-wrap:anywhere}
-.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:13%}.sales-table th:nth-child(3){width:6%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}
+.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:13%}.sales-table th:nth-child(3){width:6%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}.sales-table .sales-tier-row td{padding:0;border-left:0;background:#f9fafb;text-align:left}.sales-tier-box{padding:7px 8px}.sales-tier-box strong{font-size:10px;text-transform:uppercase;letter-spacing:.04em}.sales-tier-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;margin-top:5px;border:1px solid #d1d5db}.sales-tier-grid span,.sales-tier-grid em{padding:4px 5px;border-left:1px solid #d1d5db;border-top:1px solid #d1d5db;font-size:9.5px;font-style:normal;line-height:1.2;text-align:right}.sales-tier-grid span:nth-child(4n+1),.sales-tier-grid em:nth-child(4n+1){border-left:0;text-align:left}.sales-tier-grid span{border-top:0;background:#eef2f7;font-weight:700;color:#111827}
 .signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-row{display:grid;grid-template-columns:128px 1fr;align-items:end;gap:10px;min-height:26px;margin-bottom:8px;font-size:12px}.sig-row span{font-weight:700;white-space:nowrap}.sig-row b{display:block;min-height:18px;border-bottom:1.2px solid #111827;font-size:12px}.sig-box strong{display:block;margin-top:8px;font-size:12px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px;line-height:1.35}.contact span{margin-top:16px;font-size:12px;font-weight:700}.contact em{margin-top:8px;font-size:12px;font-style:normal}
 .terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}
 @media print{body{background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{width:auto;max-width:7.8in;min-height:auto;margin:0 auto;padding:0}.no-print{display:none}}
@@ -2872,7 +3008,7 @@ ${quoteLines.length ? `<div class="quote-for"><span>Quotation for:</span>${quote
 <div class="date-card">${dateRows.map(([label, value]) => `<div><span>${escapeHtml(label)}:</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>
 </section>
 <section class="item"><table class="sales-table"><thead><tr><th>Part Number &amp; Description</th><th>Qty</th><th>UoM</th><th>Per Unit US$</th><th>Extended US$</th></tr></thead><tbody>
-${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr>`).join("")}
+${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr><tr class="sales-tier-row"><td colspan="5">${quoteTierTableHtml(item, quote)}</td></tr>`).join("")}
 </tbody><tfoot><tr><td colspan="4">Total in US$</td><td>${escapeHtml(money(totals.sellPrice))}</td></tr></tfoot></table>
 </section>
 <section class="signature"><div class="sig-box"><div class="sig-row"><span>Client P.O.</span><b>${escapeHtml(salesInfo.clientPo || "")}</b></div><div class="sig-row"><span>Authorized Signature</span><b></b></div><div class="sig-row"><span>Printed Name</span><b></b></div><div class="sig-row"><span>Title</span><b></b></div><div class="sig-row"><span>Date</span><b></b></div><strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong></div><div class="contact"><strong>${escapeHtml(quoteThankYouMessage)}</strong><span>${escapeHtml(quoteCompanyTeamName(quoteCompany))}</span>${quote.contactEmail ? `<em>${escapeHtml(quote.contactEmail)}</em>` : ""}</div></section>
@@ -3016,9 +3152,9 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     const tableTop = 542;
     const tableWidth = 528;
     const headerHeight = 28;
-    const rowHeight = 92;
     const totalRowHeight = 28;
-    const visibleItems = items.slice(0, 1);
+    const visibleItems = items;
+    const rowHeight = Math.max(76, Math.min(132, Math.floor(278 / Math.max(1, visibleItems.length))));
     const columns = [42, 302, 372, 404, 488, 570];
     const tableHeaderFontSize = 10;
     const tablePartFontSize = 11;
@@ -3039,12 +3175,17 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
     visibleItems.forEach((item, index) => {
       const yTop = tableTop - headerHeight - index * rowHeight;
       const yBase = yTop - 16;
+      const maxDescriptionLines = Math.max(5, Math.floor((rowHeight - 12) / 13));
+      const partLines = wrapPdfText(quoteLinePartNumber(item, quote), columns[1] - columns[0] - 16, tablePartFontSize, "F2", 1, tableMinFontSize);
+      const bodyLines = quoteLineDescriptionRows(item, quote)
+        .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, tableBodyFontSize, "F1", 1, tableMinFontSize));
+      const tierLines = quoteTierSummaryLines(item, quote)
+        .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, tableBodyFontSize, "F1", 1, tableMinFontSize));
       const descriptionLines = [
-        ...wrapPdfText(quoteLinePartNumber(item, quote), columns[1] - columns[0] - 16, tablePartFontSize, "F2", 1, tableMinFontSize),
-        ...quoteLineDescriptionRows(item, quote)
-          .slice(0, 4)
-          .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, tableBodyFontSize, "F1", 1, tableMinFontSize)),
-      ].slice(0, 5);
+        ...partLines,
+        ...bodyLines.slice(0, Math.max(3, maxDescriptionLines - 3)),
+        ...tierLines,
+      ].slice(0, maxDescriptionLines);
       textLines(50, yBase, tablePartFontSize, descriptionLines.slice(0, 1), "F2", 0, 13, tableMinFontSize);
       textLines(50, yBase - 13, tableBodyFontSize, descriptionLines.slice(1), "F1", 0, 13, tableMinFontSize);
       textRight(columns[2] - 8, yBase, tableBodyFontSize, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12, tableMinFontSize);
@@ -3053,7 +3194,6 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
       textRight(columns[5] - 8, yBase, tableBodyFontSize, money(Number(item.pricing?.sellPrice || 0)), "F1", 0, columns[5] - columns[4] - 12, tableMinFontSize);
       line(tableX, yTop - rowHeight, 570, yTop - rowHeight);
     });
-    if (items.length > visibleItems.length) text(50, tableBottom + 9, tableBodyFontSize, `${items.length - visibleItems.length} additional item(s) included in quote total.`, "F1", 0, { maxWidth: 300, minSize: tableMinFontSize });
     textRight(columns[4] - 8, tableBottom + 9, tableBodyFontSize, "Total in US$", "F2", 0, columns[4] - columns[3] - 12, tableMinFontSize);
     textRight(columns[5] - 8, tableBottom + 9, tableBodyFontSize, money(totals.sellPrice), "F2", 0, columns[5] - columns[4] - 12, tableMinFontSize);
 
@@ -3771,6 +3911,10 @@ ${items.map((item) => `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber
                 <span>Estimated Quote</span>
                 <strong>{money(pricing.sellPrice)}</strong>
                 <em>{money(pricing.pricePerThousand)} / M</em>
+              </div>
+
+              <div className="quote-tier-preview">
+                <QuoteTierTable item={{ id: "current-tier-preview", form: { ...form, repeat: String(pricing.repeat) }, pricing }} quote={{ form }} />
               </div>
 
               <div className="quote-metric-grid">
