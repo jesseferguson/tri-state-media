@@ -3188,7 +3188,7 @@ ${items.map((item) => {
     const totalRowHeight = 28;
     const visibleItems = items;
     const itemsWithVolume = visibleItems.filter((item) => quoteItemTierRows(item, quote).length > 0).length;
-    const drawVolumeBands = itemsWithVolume > 0 && visibleItems.length <= 2;
+    const drawVolumeBands = itemsWithVolume > 0 && visibleItems.length === 1;
     const compactRowHeight = Math.max(76, Math.min(132, Math.floor(278 / Math.max(1, visibleItems.length))));
     const itemLayouts = visibleItems.map((item) => {
       const tierRows = quoteItemTierRows(item, quote);
@@ -3197,7 +3197,7 @@ ${items.map((item) => {
         item,
         tierRows,
         drawVolumeOffer,
-        mainHeight: drawVolumeOffer ? 72 : compactRowHeight,
+        mainHeight: drawVolumeOffer ? 112 : compactRowHeight,
         volumeHeight: drawVolumeOffer ? 92 : 0,
       };
     });
@@ -3237,7 +3237,7 @@ ${items.map((item) => {
         .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, tableBodyFontSize, "F1", 1, tableMinFontSize));
       const descriptionLines = [
         ...partLines,
-        ...bodyLines.slice(0, Math.max(3, maxDescriptionLines - 3)),
+        ...bodyLines.slice(0, Math.max(0, maxDescriptionLines - partLines.length)),
         ...tierLines,
       ].slice(0, maxDescriptionLines);
       textLines(50, yBase, tablePartFontSize, descriptionLines.slice(0, 1), "F2", 0, 13, tableMinFontSize);
