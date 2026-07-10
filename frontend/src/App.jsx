@@ -441,6 +441,7 @@ const toolingConfigFormPageKeys = new Set([
 
 const toolingItemPageKeys = new Set([
   "flex-dies",
+  "rotary-dies",
   "mags",
   "perf-cylinders",
   "perf-blade-setups",
@@ -450,6 +451,7 @@ const AUTO_REFRESH_INTERVALS = {
   "production-schedule": 15_000,
   "job-tickets": 30_000,
   "flex-dies": 45_000,
+  "rotary-dies": 45_000,
   "recipe-options": 45_000,
   "recipe-tools": 45_000,
 };
@@ -1756,7 +1758,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           saved = await uploadRecordAction(resource.endpoint, saved.id, `images/${upload.slot}`, formData);
         }
       }
-      if (resource.key === "flex-dies" && imageUploads.length && saved?.id) {
+      if ((resource.key === "flex-dies" || resource.key === "rotary-dies") && imageUploads.length && saved?.id) {
         const upload = imageUploads.find((item) => item.slot === "dieline" && item.file);
         if (upload) {
           const formData = new FormData();

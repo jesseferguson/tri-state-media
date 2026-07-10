@@ -129,6 +129,7 @@ class MagViewSet(BaseToolingViewSet):
 class FlexDieViewSet(BaseToolingViewSet):
     serializer_class = FlexDieSerializer
     parser_classes = [JSONParser, FormParser, MultiPartParser]
+    tooling_kind = "flex_die"
     search_fields = [
         "name",
         "original_serial_number",
@@ -138,7 +139,9 @@ class FlexDieViewSet(BaseToolingViewSet):
         "shape_type",
         "cutting_type",
         "supplier__name",
+        "last_quote_supplier__name",
         "status",
+        "procurement_notes",
     ]
     ordering_fields = [
         "name",
@@ -155,7 +158,7 @@ class FlexDieViewSet(BaseToolingViewSet):
         qs = (
             FlexDie.objects.select_related("supplier", "current_location")
             .prefetch_related("compatible_mags")
-            .all()
+            .filter(tooling_kind=self.tooling_kind)
             .order_by("name")
         )
 
@@ -199,6 +202,9 @@ class FlexDieViewSet(BaseToolingViewSet):
             qs = qs.filter(cutting_type=cutting_type)
 
         return qs
+
+    def perform_create(self, serializer):
+        serializer.save(tooling_kind=self.tooling_kind)
 
     def create_history(self, die, event_type, summary, request, notes=""):
         actor = (
@@ -324,6 +330,11 @@ class FlexDieViewSet(BaseToolingViewSet):
             notes=note,
         )
         return Response(self.get_serializer(die).data)
+
+
+class RotaryDieViewSet(FlexDieViewSet):
+    tooling_kind = "rotary_die"
+
 
 class PerfCylinderViewSet(BaseToolingViewSet):
     queryset = (

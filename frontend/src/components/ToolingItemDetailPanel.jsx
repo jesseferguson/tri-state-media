@@ -45,7 +45,7 @@ function serials(item) {
 }
 
 function detailRows(resourceKey, item) {
-  if (resourceKey === "flex-dies") {
+  if (resourceKey === "flex-dies" || resourceKey === "rotary-dies") {
     return [
       ["Size", `${inches(item, "label_width_inches", "width")} x ${inches(item, "label_length_inches", "length")}`],
       ["Repeat", inches(item, "repeat_inches", "repeat")],
@@ -57,8 +57,15 @@ function detailRows(resourceKey, item) {
       ["Liner", labelize(pick(item, "liner_type"))],
       ["Cut", labelize(pick(item, "cutting_type"))],
       ["Location", pick(item, "current_location_full_path", "location", "current_location_name", "location_name")],
+      ["Current Supplier", pick(item, "supplier_name")],
       ["Original Serial", pick(item, "original_serial_number")],
       ["Active / Target", `${pick(item, "active_die_count") || 0} / ${pick(item, "target_die_count") || 0}`],
+      ["Last Order Price", pick(item, "last_order_price") ? `$${pick(item, "last_order_price")}` : ""],
+      ["Last Quote Price", pick(item, "last_quote_price") ? `$${pick(item, "last_quote_price")}` : ""],
+      ["Quoted Supplier", pick(item, "last_quote_supplier_name")],
+      ["Last Ordered", pick(item, "last_ordered_date")],
+      ["Procurement Notes", pick(item, "procurement_notes")],
+      ["Notes", pick(item, "notes")],
     ];
   }
 
@@ -102,7 +109,7 @@ function detailRows(resourceKey, item) {
 }
 
 function primaryMetric(resourceKey, item) {
-  if (resourceKey === "flex-dies") return { label: "Across", value: pick(item, "number_across", "across") || "--", suffix: "wide" };
+  if (resourceKey === "flex-dies" || resourceKey === "rotary-dies") return { label: "Across", value: pick(item, "number_across", "across") || "--", suffix: "wide" };
   if (resourceKey === "mags") return { label: "Tooth", value: pick(item, "tooth_count") || "--", suffix: "T" };
   if (resourceKey === "perf-cylinders") return { label: "Gear", value: pick(item, "gear_tooth_count", "gear") || "--", suffix: "T" };
   return { label: "Blades", value: pick(item, "blade_count") || "--", suffix: "" };
@@ -160,7 +167,7 @@ export default function ToolingItemDetailPanel({
       </header>
 
       <div className="tooling-item-hero">
-        <div className={`tooling-primary-metric ${resourceKey === "flex-dies" ? "across" : ""}`}>
+        <div className={`tooling-primary-metric ${resourceKey === "flex-dies" || resourceKey === "rotary-dies" ? "across" : ""}`}>
           <span>{metric.label}</span>
           <strong>{metric.value}</strong>
           {metric.suffix && <em>{metric.suffix}</em>}

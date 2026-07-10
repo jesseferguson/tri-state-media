@@ -106,6 +106,12 @@ FLEX_DIE_COLUMNS = [
     "location_name",
     "manual_web_width",
     "web_width",
+    "tooling_kind",
+    "last_order_price",
+    "last_quote_price",
+    "last_quote_supplier",
+    "last_ordered_date",
+    "procurement_notes",
 ]
 
 INVENTORY_COLUMNS = [
@@ -238,8 +244,8 @@ IMPORT_TEMPLATES = {
         },
     },
     "flex_dies": {
-        "label": "Flex Dies",
-        "description": "Imports flex die jackets/folders. Serial numbers can be separated with semicolons, pipes, or new lines.",
+        "label": "Flex / Rotary Dies",
+        "description": "Imports flex die jackets/folders. You can upload the old Glide tooling export directly; rows marked Semi Rotary import as Rotary Dies instead of Flex Dies.",
         "columns": FLEX_DIE_COLUMNS,
         "sample": {
             "row_id": "FDROW-1",
@@ -266,6 +272,12 @@ IMPORT_TEMPLATES = {
             "location_name": "13 inch die cabinet",
             "manual_web_width": "false",
             "web_width": "",
+            "tooling_kind": "flex_die",
+            "last_order_price": "",
+            "last_quote_price": "",
+            "last_quote_supplier": "",
+            "last_ordered_date": "",
+            "procurement_notes": "",
         },
     },
     "inventory": {
@@ -389,20 +401,44 @@ def normalize_key(key):
     return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", str(key or "").strip().lower())).strip("_")
 
 
+def is_blank_import_value(value):
+    if value in ("", None):
+        return True
+    return normalize_key(value) in {"empty", "null", "none", "na", "n_a"}
+
+
 def normalize_row(row):
     return {normalize_key(key): str(value or "").strip() for key, value in row.items()}
+
+
+def unique_normalized_headers(headers):
+    counts = {}
+    normalized_headers = []
+    for index, header in enumerate(headers, start=1):
+        base = normalize_key(header) or f"column_{index}"
+        counts[base] = counts.get(base, 0) + 1
+        normalized_headers.append(base if counts[base] == 1 else f"{base}_{counts[base]}")
+    return normalized_headers
+
+
+def normalize_row_values(headers, values):
+    row = {}
+    for index, key in enumerate(headers):
+        value = values[index] if index < len(values) else ""
+        row[key] = str(value or "").strip()
+    return row
 
 
 def first(row, *keys, default=""):
     for key in keys:
         value = row.get(normalize_key(key), "")
-        if value not in ("", None):
+        if not is_blank_import_value(value):
             return str(value).strip()
     return default
 
 
 def decimal_or_none(value):
-    if value in ("", None):
+    if is_blank_import_value(value):
         return None
     try:
         return Decimal(str(value).replace(",", "").strip())
@@ -425,7 +461,7 @@ def int_or_none(value):
 
 
 def bool_value(value, default=False):
-    if value in ("", None):
+    if is_blank_import_value(value):
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "y", "manual"}
 
@@ -515,6 +551,68 @@ def choice_value(value, choices, default):
     return default
 
 
+def tooling_status_value(value, choices, default="in_stock"):
+    normalized = normalize_key(value)
+    if not normalized:
+        return default
+    if "production" in normalized or normalized in {"running", "in_use"}:
+        return "in_use"
+    if "house" in normalized or "david" in normalized or normalized in {"stock", "available", "active"}:
+        return "in_stock"
+    if "ordered" in normalized:
+        return "ordered"
+    if "repair" in normalized:
+        return "needs_repair"
+    if "retool" in normalized:
+        return "out_for_retool"
+    if "retired" in normalized or "delete" in normalized or "inactive" in normalized:
+        return "retired"
+    if "missing" in normalized:
+        return "missing"
+    return choice_value(value, choices, default)
+
+
+def legacy_tooling_location(value):
+    text = str(value or "").strip()
+    normalized = normalize_key(text)
+    if not text:
+        return ""
+    if "house" in normalized or "david" in normalized:
+        return text
+    return ""
+
+
+def flex_cutting_type_value(value):
+    normalized = normalize_key(value)
+    if "multi" in normalized:
+        return "multilevel"
+    if "metal" in normalized:
+        return "metal_to_metal"
+    if "score" in normalized:
+        return "score"
+    if "liner" in normalized:
+        return "to_liner"
+    return choice_value(value, FlexDie.CUTTING_TYPE_CHOICES, "to_liner")
+
+
+def die_tooling_kind_value(row):
+    explicit = normalize_key(first(row, "tooling_kind", "tool_type", "die_type", "type"))
+    if explicit in {"rotary", "rotary_die", "semi_rotary", "solid_rotary", "solid_rotary_die"}:
+        return "rotary_die"
+    if explicit in {"flex", "flex_die", "flexible_die"}:
+        return "flex_die"
+
+    if bool_value(first(row, "semi_rotary"), default=False):
+        return "rotary_die"
+
+    number = first(row, "name", "number", "tool_number", "die_number")
+    description = first(row, "description", "notes")
+    combined = f"{number} {description}".lower()
+    if re.search(r"\bfd[-_\s]?\d+r[-_\s]", combined) or "semi rotary" in combined or "rotary die" in combined:
+        return "rotary_die"
+    return "flex_die"
+
+
 def job_unit_type_value(value):
     normalized = normalize_key(value)
     if normalized in {"tag", "tags"}:
@@ -557,11 +655,20 @@ def read_csv_rows(request):
         raise ValueError("Attach a CSV file named file.")
 
     text = upload.read().decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames:
+    reader = csv.reader(io.StringIO(text))
+    try:
+        headers = next(reader)
+    except StopIteration:
+        raise ValueError("CSV file needs a header row.")
+    if not headers:
         raise ValueError("CSV file needs a header row.")
 
-    return [(index, normalize_row(row)) for index, row in enumerate(reader, start=2)]
+    normalized_headers = unique_normalized_headers(headers)
+    return [
+        (index, normalize_row_values(normalized_headers, row))
+        for index, row in enumerate(reader, start=2)
+        if any(str(value or "").strip() for value in row)
+    ]
 
 
 def import_result():
@@ -924,56 +1031,98 @@ def import_job_tickets(rows):
 def import_flex_dies(rows):
     result = import_result()
     for line_number, row in rows:
-        name = first(row, "name", "tool_number", "die_number", "row_id")
+        name = first(row, "name", "number", "tool_number", "die_number", "row_id")
         if not name:
-            add_error(result, line_number, "Missing name or row_id.")
+            add_error(result, line_number, "Missing name, number, or row_id.")
             continue
 
-        label_width = decimal_or_none(first(row, "label_width", "label_width_inches", "width"))
-        label_length = decimal_or_none(first(row, "label_length", "label_length_inches", "length"))
-        repeat = decimal_or_none(first(row, "repeat", "repeat_inches"))
-        gap_around = decimal_or_none(first(row, "gap_around", "gap", "gap_around_inches"))
+        tooling_kind = die_tooling_kind_value(row)
+        label_width = decimal_or_none(first(row, "label_width", "label_width_inches", "width", "size_across", "sizeacross"))
+        label_length = decimal_or_none(first(row, "label_length", "label_length_inches", "length", "size_around", "sizearound"))
+        repeat = decimal_or_none(first(row, "repeat", "repeat_inches", "label_repeat", "labelrepeat"))
+        gap_around = decimal_or_none(first(row, "gap_around", "gap", "gap_around_inches", "colspace", "col_space"))
         if repeat is None and label_length is not None and gap_around is not None:
             repeat = label_length + gap_around
+        if repeat is None and label_length is not None:
+            repeat = label_length
         if label_width is None or label_length is None or repeat is None:
-            add_error(result, line_number, "Flex die rows need label_width, label_length, and repeat.")
+            result["skipped"] += 1
+            add_warning(result, line_number, "Skipped incomplete die tooling row with missing width, length, or repeat.")
             continue
 
-        serials = serial_number_text(first(row, "serial_numbers", "serial_number"))
-        active_count = int_or_none(first(row, "active_die_count"))
+        serials = serial_number_text(first(row, "serial_numbers", "serial_number", "serialnumber"))
+        quantity = int_or_none(first(row, "active_die_count", "quantity"))
+        active_count = quantity
         if active_count is None:
             active_count = len([line for line in serials.splitlines() if line.strip()]) or 1
 
+        active_flag = bool_value(first(row, "active"), default=True)
+        status = tooling_status_value(first(row, "status", "tooling_status"), FlexDie.STATUS_CHOICES, "in_stock")
+        if not active_flag:
+            status = "retired"
+            if quantity is None:
+                active_count = 0
+
         web_width = decimal_or_none(first(row, "web_width", "web_width_inches"))
         manual_web_width = bool_value(first(row, "manual_web_width"), default=web_width is not None)
+        tooling_status = first(row, "tooling_status")
+        notes = "\n".join(
+            part
+            for part in [
+                first(row, "notes"),
+                first(row, "description"),
+                first(row, "description_list_to_text", "descriptionlisttotext"),
+                f"Label Specs: {first(row, 'label_specs')}" if first(row, "label_specs") else "",
+                f"Cut Layout: {first(row, 'cut_layout')}" if first(row, "cut_layout") else "",
+                f"Version: {first(row, 'version')}" if first(row, "version") else "",
+                f"Legacy FD Image: {first(row, 'fd_image')}" if first(row, "fd_image") else "",
+                f"Press Type: {first(row, 'press_type')}" if first(row, "press_type") else "",
+                "Semi Rotary: Yes" if bool_value(first(row, "semi_rotary"), default=False) else "",
+                "13 Semi Rotary compatible: Yes" if bool_value(first(row, "13_semi_rotary"), default=False) else "",
+                "Built in perf: Yes" if bool_value(first(row, "built_in_perf"), default=False) else "",
+                "Built in internal perf: Yes" if bool_value(first(row, "built_in_internal_perf"), default=False) else "",
+                f"Tooling History / Action: {first(row, 'tooling_history_action')}" if first(row, "tooling_history_action") else "",
+                f"Tooling History / Note: {first(row, 'tooling_history_note')}" if first(row, "tooling_history_note") else "",
+            ]
+            if part
+        )
+        current_location_name = first(row, "location_name", "location") or legacy_tooling_location(tooling_status)
         existing = FlexDie.objects.filter(name__iexact=name).first()
         defaults = {
-            "supplier": find_or_create_supplier(first(row, "supplier_name", "supplier")),
-            "current_location": find_or_create_location(first(row, "location_code"), first(row, "location_name", "location")),
-            "status": choice_value(first(row, "status"), FlexDie.STATUS_CHOICES, "in_stock"),
+            "tooling_kind": tooling_kind,
+            "supplier": find_or_create_supplier(first(row, "supplier_name", "supplier", "manufacturer")),
+            "current_location": find_or_create_location(first(row, "location_code"), current_location_name),
+            "status": status,
             "label_width_inches": label_width,
             "label_length_inches": label_length,
             "repeat_inches": repeat,
-            "face_type": first(row, "face_type", "face"),
-            "liner_type": first(row, "liner_type", "liner"),
+            "face_type": first(row, "face_type", "face", "face_stock", "facestock"),
+            "liner_type": first(row, "liner_type", "liner", "liner_caliper", "linercaliper"),
             "shape_type": choice_value(first(row, "shape_type", "shape"), FlexDie.SHAPE_TYPE_CHOICES, "rcr"),
-            "cutting_type": choice_value(first(row, "cutting_type"), FlexDie.CUTTING_TYPE_CHOICES, "to_liner"),
-            "gear": int_or_none(first(row, "gear", "gear_tooth_count")),
-            "number_across": int_or_none(first(row, "number_across", "across")) or 1,
-            "number_around": int_or_none(first(row, "number_around", "around")) or 1,
-            "corner_radius_inches": decimal_or_none(first(row, "corner_radius", "corner_radius_inches")),
-            "gap_across_inches": decimal_or_none(first(row, "gap_across", "gap", "gap_across_inches")),
+            "cutting_type": flex_cutting_type_value(first(row, "cutting_type", "cut_position", "cutposition")),
+            "gear": int_or_none(first(row, "gear", "gear_tooth_count", "gear_teeth", "gearteeth")),
+            "number_across": int_or_none(first(row, "number_across", "across", "no_across", "noacross")) or 1,
+            "number_around": int_or_none(first(row, "number_around", "around", "no_around", "noaround")) or 1,
+            "corner_radius_inches": decimal_or_none(first(row, "corner_radius", "corner_radius_inches", "cornerradius")),
+            "gap_across_inches": decimal_or_none(first(row, "gap_across", "gap", "gap_across_inches", "colspace", "col_space")),
             "gap_around_inches": gap_around,
             "manual_web_width": manual_web_width,
             "web_width_inches": web_width,
-            "original_serial_number": first(row, "original_serial_number", "original_serial"),
+            "original_serial_number": first(row, "original_serial_number", "original_serial", "serial_number", "serialnumber"),
             "serial_numbers": serials,
             "active_die_count": active_count,
             "target_die_count": int_or_none(first(row, "target_die_count")) or active_count or 1,
-            "notes": mark_imported_note(first(row, "notes"), first(row, "row_id")),
+            "last_order_price": decimal_or_none(first(row, "last_order_price", "order_price", "purchase_price", "price", "cost")),
+            "last_quote_price": decimal_or_none(first(row, "last_quote_price", "quote_price", "quoted_price")),
+            "last_quote_supplier": find_or_create_supplier(first(row, "last_quote_supplier", "quote_supplier", "quoted_supplier")),
+            "last_ordered_date": date_value(first(row, "last_ordered_date", "ordered_date")),
+            "procurement_notes": first(row, "procurement_notes", "reorder_notes", "quote_notes"),
+            "notes": mark_imported_note(notes, first(row, "row_id"), "Glide Tooling"),
         }
         die = existing or FlexDie(name=name)
         save_model(die, defaults, result)
+        if tooling_kind == "rotary_die":
+            add_warning(result, line_number, f"{name} was imported as a Rotary Die, not a Flex Die.")
     return result
 
 

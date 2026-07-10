@@ -53,6 +53,7 @@ class MagSerializer(serializers.ModelSerializer):
 
 class FlexDieSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
+    last_quote_supplier_name = serializers.CharField(source="last_quote_supplier.name", read_only=True)
     current_location_name = serializers.CharField(source="current_location.name", read_only=True)
     current_location_full_path = serializers.ReadOnlyField(source="current_location.full_path")
     computed_web_width_inches = serializers.DecimalField(max_digits=7, decimal_places=3, read_only=True)

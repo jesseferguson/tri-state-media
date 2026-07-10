@@ -95,6 +95,7 @@ class MagAdmin(admin.ModelAdmin):
 class FlexDieAdmin(admin.ModelAdmin):
     list_display = (
         "name",
+        "tooling_kind",
         "status",
         "supplier",
         "current_location",
@@ -104,10 +105,11 @@ class FlexDieAdmin(admin.ModelAdmin):
         "shape_type",
         "active_die_count",
         "target_die_count",
+        "last_order_price",
     )
-    list_filter = ("status", "shape_type", "cutting_type", "supplier")
+    list_filter = ("tooling_kind", "status", "shape_type", "cutting_type", "supplier")
     search_fields = ("name", "original_serial_number", "serial_numbers", "face_type", "liner_type")
-    autocomplete_fields = ("supplier", "current_location")
+    autocomplete_fields = ("supplier", "last_quote_supplier", "current_location")
     exclude = ("tool_number", "drawing_number", "compatible_mags", "notes")
 
 

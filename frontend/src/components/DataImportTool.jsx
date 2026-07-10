@@ -5,10 +5,10 @@ import { requestApi } from "../api";
 const importOrder = ["job_tickets", "job_ticket_usage", "finished_inventory", "print_plates", "print_stations", "flex_dies", "inventory", "inventory_usage"];
 
 const flushScopes = [
-  ["setup_data", "Setup data: job tickets, finished inventory, schedule, flex dies, inventory, usage, quotes"],
+  ["setup_data", "Setup data: job tickets, finished inventory, schedule, flex/rotary dies, inventory, usage, quotes"],
   ["job_tickets", "Job tickets + schedule/orders"],
   ["finished_inventory", "Finished inventory"],
-  ["flex_dies", "Flex dies"],
+  ["flex_dies", "Flex + rotary dies"],
   ["inventory", "Raw inventory + usage"],
   ["inventory_usage", "Inventory usage only"],
   ["job_ticket_usage", "Job ticket usage only"],
@@ -173,7 +173,7 @@ export default function DataImportTool({ currentUser }) {
         <div>
           <p className="eyebrow">Data Setup</p>
           <h2>CSV Import Center</h2>
-          <p>Bring over old-system job tickets, finished stock, flex die jackets, inventory rolls, and usage in controlled batches.</p>
+          <p>Bring over old-system job tickets, finished stock, flex/rotary die tooling, inventory rolls, and usage in controlled batches.</p>
         </div>
         <div className="data-import-hero-actions">
           <span><FileSpreadsheet size={16} /> CSV only</span>

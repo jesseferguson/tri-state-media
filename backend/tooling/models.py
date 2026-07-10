@@ -218,6 +218,11 @@ class Mag(models.Model):
 
 
 class FlexDie(models.Model):
+    TOOLING_KIND_CHOICES = [
+        ("flex_die", "Flex Die"),
+        ("rotary_die", "Rotary Die"),
+    ]
+
     STATUS_CHOICES = [
         ("ordered", "Ordered"),
         ("in_stock", "In Stock"),
@@ -247,6 +252,7 @@ class FlexDie(models.Model):
     ]
 
     name = models.CharField(max_length=50, unique=True)
+    tooling_kind = models.CharField(max_length=30, choices=TOOLING_KIND_CHOICES, default="flex_die", db_index=True)
 
     supplier = models.ForeignKey(
         Supplier,
@@ -304,6 +310,17 @@ class FlexDie(models.Model):
     target_die_count = models.PositiveIntegerField(default=1)
     dieline_image = models.ImageField(upload_to=flex_die_image_upload_path, blank=True, null=True)
     dieline_image_name = models.CharField(max_length=180, blank=True)
+    last_order_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    last_quote_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    last_quote_supplier = models.ForeignKey(
+        Supplier,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="quoted_die_tooling",
+    )
+    last_ordered_date = models.DateField(null=True, blank=True)
+    procurement_notes = models.TextField(blank=True)
 
     notes = models.TextField(blank=True)
 
