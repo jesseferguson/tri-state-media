@@ -3187,16 +3187,28 @@ ${items.map((item) => {
     const headerHeight = 28;
     const totalRowHeight = 28;
     const visibleItems = items;
-    const hasVolumePricingRows = visibleItems.some((item) => quoteItemTierRows(item, quote).length > 0);
-    const rowHeight = hasVolumePricingRows
-      ? Math.max(104, Math.min(156, Math.floor(320 / Math.max(1, visibleItems.length))))
-      : Math.max(76, Math.min(132, Math.floor(278 / Math.max(1, visibleItems.length))));
+    const itemsWithVolume = visibleItems.filter((item) => quoteItemTierRows(item, quote).length > 0).length;
+    const drawVolumeBands = itemsWithVolume > 0 && visibleItems.length <= 2;
+    const compactRowHeight = Math.max(76, Math.min(132, Math.floor(278 / Math.max(1, visibleItems.length))));
+    const itemLayouts = visibleItems.map((item) => {
+      const tierRows = quoteItemTierRows(item, quote);
+      const drawVolumeOffer = drawVolumeBands && tierRows.length > 0;
+      return {
+        item,
+        tierRows,
+        drawVolumeOffer,
+        mainHeight: drawVolumeOffer ? 72 : compactRowHeight,
+        volumeHeight: drawVolumeOffer ? 92 : 0,
+      };
+    });
     const columns = [42, 302, 372, 404, 488, 570];
     const tableHeaderFontSize = 10;
     const tablePartFontSize = 11;
     const tableBodyFontSize = 10;
     const tableMinFontSize = 10;
-    const tableBottom = tableTop - headerHeight - visibleItems.length * rowHeight - totalRowHeight;
+    const bodyHeight = itemLayouts.reduce((sum, layout) => sum + layout.mainHeight + layout.volumeHeight, 0);
+    const tableBottom = tableTop - headerHeight - bodyHeight - totalRowHeight;
+    const totalRowTop = tableBottom + totalRowHeight;
     fillBox(tableX, tableTop - headerHeight, 528, headerHeight, 0);
     fillBox(tableX, tableBottom, tableWidth, totalRowHeight, 0.93);
     text(50, tableTop - 18, tableHeaderFontSize, "Part Number & Description", "F2", 1, { maxWidth: 246, minSize: tableMinFontSize });
@@ -3205,17 +3217,19 @@ ${items.map((item) => {
     textRight(columns[4] - 8, tableTop - 18, tableHeaderFontSize, "Per Unit", "F2", 1, columns[4] - columns[3] - 12, tableMinFontSize);
     textRight(columns[5] - 8, tableTop - 18, tableHeaderFontSize, "Extended", "F2", 1, columns[5] - columns[4] - 12, tableMinFontSize);
     box(tableX, tableBottom, tableWidth, tableTop - tableBottom);
-    columns.slice(1, -1).forEach((x) => line(x, tableBottom, x, tableTop));
+    columns.slice(1, -1).forEach((x) => line(x, tableTop - headerHeight, x, tableTop));
     line(tableX, tableTop - headerHeight, 570, tableTop - headerHeight);
+    line(columns[4], tableBottom, columns[4], totalRowTop);
 
-    visibleItems.forEach((item, index) => {
-      const yTop = tableTop - headerHeight - index * rowHeight;
+    let rowTop = tableTop - headerHeight;
+    itemLayouts.forEach((layout) => {
+      const { item, tierRows, drawVolumeOffer, mainHeight, volumeHeight } = layout;
+      const yTop = rowTop;
+      const mainBottom = yTop - mainHeight;
       const yBase = yTop - 16;
-      const tierRows = quoteItemTierRows(item, quote);
-      const drawVolumeOffer = tierRows.length > 0 && rowHeight >= 120;
       const maxDescriptionLines = drawVolumeOffer
-        ? Math.max(3, Math.floor((rowHeight - 78) / 13))
-        : Math.max(5, Math.floor((rowHeight - 12) / 13));
+        ? Math.max(3, Math.floor((mainHeight - 12) / 13))
+        : Math.max(5, Math.floor((mainHeight - 12) / 13));
       const partLines = wrapPdfText(quoteLinePartNumber(item, quote), columns[1] - columns[0] - 16, tablePartFontSize, "F2", 1, tableMinFontSize);
       const bodyLines = quoteLineDescriptionRows(item, quote)
         .flatMap((lineText) => wrapPdfText(lineText, columns[1] - columns[0] - 16, tableBodyFontSize, "F1", 1, tableMinFontSize));
@@ -3228,30 +3242,35 @@ ${items.map((item) => {
       ].slice(0, maxDescriptionLines);
       textLines(50, yBase, tablePartFontSize, descriptionLines.slice(0, 1), "F2", 0, 13, tableMinFontSize);
       textLines(50, yBase - 13, tableBodyFontSize, descriptionLines.slice(1), "F1", 0, 13, tableMinFontSize);
+      columns.slice(1, -1).forEach((x) => line(x, mainBottom, x, yTop));
       if (drawVolumeOffer) {
+        const volumeTop = mainBottom;
+        const volumeBottom = volumeTop - volumeHeight;
         const offerX = 50;
-        const offerWidth = columns[1] - columns[0] - 18;
-        const offerBottom = yTop - rowHeight + 8;
-        const cardGap = 5;
-        const cardWidth = (offerWidth - cardGap) / 2;
-        const cardHeight = 22;
-        text(offerX, offerBottom + 58, 7, "Volume Savings", "F2", 0, { maxWidth: offerWidth, minSize: 7 });
-        text(offerX, offerBottom + 47, 6, "Better pricing as this order grows", "F1", 0, { maxWidth: offerWidth, minSize: 6 });
+        const offerWidth = tableWidth - 16;
+        const offerBottom = volumeBottom + 10;
+        const visibleTiers = tierRows.slice(0, 4);
+        const cardGap = 8;
+        const cardWidth = (offerWidth - Math.max(0, visibleTiers.length - 1) * cardGap) / Math.max(1, visibleTiers.length);
+        const cardHeight = 36;
+        fillBox(tableX, volumeBottom, tableWidth, volumeHeight, 0.97);
+        text(offerX, volumeTop - 18, 8, "Volume Savings", "F2", 0, { maxWidth: offerWidth, minSize: 8 });
+        text(offerX, volumeTop - 31, 7, "Better pricing as this order grows", "F1", 0, { maxWidth: offerWidth, minSize: 7 });
         tierRows.slice(0, 4).forEach((tier, tierIndex) => {
-          const column = tierIndex % 2;
-          const row = Math.floor(tierIndex / 2);
-          const cardX = offerX + column * (cardWidth + cardGap);
-          const cardY = offerBottom + (1 - row) * (cardHeight + 4);
+          const cardX = offerX + tierIndex * (cardWidth + cardGap);
+          const cardY = offerBottom;
+          fillBox(cardX, cardY, cardWidth, cardHeight, 1);
           box(cardX, cardY, cardWidth, cardHeight);
-          text(cardX + 4, cardY + 13, 6, tier.compactQuantityLabel, "F2", 0, { maxWidth: cardWidth - 8, minSize: 6 });
-          text(cardX + 4, cardY + 5, 6, tier.fits ? `${money(tier.pricePerThousand)} / M` : "Quote review", "F1", 0, { maxWidth: cardWidth - 8, minSize: 6 });
+          text(cardX + 5, cardY + 22, 7, tier.compactQuantityLabel, "F2", 0, { maxWidth: cardWidth - 10, minSize: 7 });
+          text(cardX + 5, cardY + 11, 7, tier.fits ? `${money(tier.pricePerThousand)} / M` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 7 });
         });
       }
       textRight(columns[2] - 8, yBase, tableBodyFontSize, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12, tableMinFontSize);
       textRight(columns[3] - 8, yBase, tableBodyFontSize, quoteTableUomLabel(salesInfo.unitOfMeasure), "F1", 0, columns[3] - columns[2] - 12, tableMinFontSize);
       textRight(columns[4] - 8, yBase, tableBodyFontSize, quoteTableUnitPrice(item, salesInfo.unitOfMeasure), "F1", 0, columns[4] - columns[3] - 12, tableMinFontSize);
       textRight(columns[5] - 8, yBase, tableBodyFontSize, money(Number(item.pricing?.sellPrice || 0)), "F1", 0, columns[5] - columns[4] - 12, tableMinFontSize);
-      line(tableX, yTop - rowHeight, 570, yTop - rowHeight);
+      rowTop = mainBottom - volumeHeight;
+      line(tableX, rowTop, 570, rowTop);
     });
     textRight(columns[4] - 8, tableBottom + 9, tableBodyFontSize, "Total in US$", "F2", 0, columns[4] - columns[3] - 12, tableMinFontSize);
     textRight(columns[5] - 8, tableBottom + 9, tableBodyFontSize, money(totals.sellPrice), "F2", 0, columns[5] - columns[4] - 12, tableMinFontSize);

@@ -469,6 +469,11 @@ function resourceAvailableForRole(roleDefinitions, roleName, key) {
   return Boolean(item && !item.permissionOnly && roleHasResourceAccess(roleDefinitions, roleName, item.key));
 }
 
+function resourceCanOpenFromReturnKey(roleDefinitions, roleName, key, returnKey) {
+  if (key !== "material-supplier-options" || !returnKey) return false;
+  return resourceAvailableForRole(roleDefinitions, roleName, returnKey);
+}
+
 function defaultResourceKeyForRole(roleDefinitions, roleName) {
   const visible = visibleResourcesForRole(roleDefinitions, roleName);
   const normalizedRole = String(roleName || "").toLowerCase();
@@ -1368,9 +1373,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     }
     return visible;
   }, [directScanResourceKey, roleDefinitions, viewRoleName]);
-  const activeKeyAllowed = allowedResources.some((item) => item.key === activeKey);
-  const resource = activeKeyAllowed
-    ? resourceMap[activeKey]
+  const activeResource = resourceMap[activeKey];
+  const activeKeyAllowed = allowedResources.some((item) => item.key === activeKey)
+    || resourceAvailableForRole(roleDefinitions, viewRoleName, activeKey)
+    || resourceCanOpenFromReturnKey(roleDefinitions, viewRoleName, activeKey, materialSupplierReturnKey);
+  const resource = activeKeyAllowed && activeResource
+    ? activeResource
     : allowedResources[0] ?? resourceMap["quote-calculator"] ?? resources[0];
   const singleResourceMode = allowedResources.length === 1 && !viewCanManageUsers;
   const showingStaticView = Boolean(resource.staticView);
