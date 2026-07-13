@@ -34767,32 +34767,33 @@ textarea {
   width: min(260px, 100%);
 }
 
-.layout-artwork-preview img,
-.layout-artwork-preview canvas {
+.layout-artwork-preview img {
   display: block;
   max-width: calc(100% - 18px);
   max-height: calc(100% - 18px);
   border: 0;
   background: #ffffff;
-}
-
-.layout-artwork-preview img {
   width: calc(100% - 18px);
   height: calc(100% - 18px);
   object-fit: contain;
 }
 
-.layout-artwork-canvas {
-  width: auto;
-  height: auto;
-}
-
-.layout-artwork-fallback {
+.layout-artwork-state {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
   color: #667085;
+}
+
+.layout-artwork-state.loading svg {
+  animation: layoutPreviewSpin .8s linear infinite;
+}
+
+@keyframes layoutPreviewSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .layout-artwork-open {
@@ -34905,16 +34906,27 @@ textarea {
   }
 
   .layout-group-head.combined.layout-root-head.has-artwork {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(112px, 148px) minmax(0, 1fr);
+    align-items: start;
   }
 
   .layout-root-toggle {
     grid-template-columns: auto 5px minmax(0, 1fr);
   }
 
-  .layout-root-artwork-shell,
+  .layout-root-head.has-artwork .layout-root-artwork-shell {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    width: min(148px, 100%);
+  }
+
+  .layout-root-head.has-artwork .layout-root-toggle,
+  .layout-root-head.has-artwork .layout-root-actions {
+    grid-column: 2;
+  }
+
   .layout-artwork-preview.main {
-    width: min(220px, 100%);
+    width: min(148px, 100%);
   }
 
   .layout-root-specs,
@@ -34948,6 +34960,26 @@ textarea {
 
   .layout-root-stripe {
     display: none;
+  }
+
+  .layout-group-head.combined.layout-root-head.has-artwork {
+    grid-template-columns: 1fr;
+  }
+
+  .layout-root-head.has-artwork .layout-root-artwork-shell,
+  .layout-root-head.has-artwork .layout-root-toggle,
+  .layout-root-head.has-artwork .layout-root-actions {
+    grid-column: 1;
+  }
+
+  .layout-root-head.has-artwork .layout-root-artwork-shell {
+    grid-row: auto;
+    justify-self: center;
+    width: min(210px, 100%);
+  }
+
+  .layout-artwork-preview.main {
+    width: min(210px, 100%);
   }
 
   .layout-root-specs,

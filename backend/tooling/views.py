@@ -1,6 +1,8 @@
+import mimetypes
 import re
 
 from django.db.models import Q
+from django.http import FileResponse
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -398,6 +400,19 @@ class ToolingRecipeViewSet(BaseToolingViewSet):
         recipe.layout_file_name = str(request.data.get("name") or upload.name).strip()
         recipe.save(update_fields=["layout_file", "layout_file_name"])
         return Response(self.get_serializer(recipe).data)
+
+    @action(detail=True, methods=["get"], url_path="layout-file-preview")
+    def layout_file_preview(self, request, pk=None):
+        recipe = self.get_object()
+        if not recipe.layout_file:
+            return Response({"error": "No layout file uploaded."}, status=status.HTTP_404_NOT_FOUND)
+
+        file_name = recipe.layout_file_name or recipe.layout_file.name.rsplit("/", 1)[-1] or "layout-file"
+        safe_file_name = file_name.replace('"', "")
+        content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+        response = FileResponse(recipe.layout_file.open("rb"), content_type=content_type)
+        response["Content-Disposition"] = f'inline; filename="{safe_file_name}"'
+        return response
 
 
 class PrintPlateViewSet(BaseToolingViewSet):

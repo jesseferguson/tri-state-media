@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, Edit3, ExternalLink, Plus, Search, Trash2, Wrench, X } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, Edit3, ExternalLink, LoaderCircle, Plus, Search, Trash2, Wrench, X } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { apiEndpoint } from "../api";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { isPdfUrl } from "./FilePreview";
@@ -70,6 +71,10 @@ function layoutFileUrl(row) {
 
 function layoutFileName(row) {
   return row?.layout_file_name || String(layoutFileUrl(row)).split("/").pop() || "";
+}
+
+function layoutPreviewUrl(row) {
+  return row?.id && layoutFileUrl(row) ? `${apiEndpoint("recipes", row.id)}layout-file-preview/` : "";
 }
 
 function layoutMatchesFilters(row, filters) {
@@ -478,47 +483,52 @@ function CopyLayoutIdButton({ row, copiedId, onCopy }) {
   );
 }
 
-function PdfArtworkCanvas({ url, title }) {
-  const canvasRef = useRef(null);
+function PdfArtworkImage({ url, title }) {
+  const [previewSrc, setPreviewSrc] = useState("");
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const canvas = canvasRef.current;
-    if (!url || !canvas) return undefined;
+    const controller = new AbortController();
+    if (!url) return undefined;
 
+    setPreviewSrc("");
     setFailed(false);
-    const loadingTask = pdfjsLib.getDocument({
-      url,
-      disableAutoFetch: true,
-    });
 
     async function renderFirstPage() {
       let pdf = null;
       try {
+        const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error(`Could not load layout PDF preview (${response.status}).`);
+        const data = new Uint8Array(await response.arrayBuffer());
+        const loadingTask = pdfjsLib.getDocument({
+          data,
+          disableAutoFetch: true,
+          disableRange: true,
+          disableStream: true,
+        });
         pdf = await loadingTask.promise;
         const page = await pdf.getPage(1);
         if (cancelled) return;
 
         const baseViewport = page.getViewport({ scale: 1 });
-        const box = canvas.parentElement?.getBoundingClientRect();
-        const cssSize = Math.max(box?.width || 240, box?.height || 240, 160);
         const deviceScale = Math.min(window.devicePixelRatio || 1, 2);
-        const targetSize = Math.min(900, Math.max(520, cssSize * deviceScale * 2));
+        const targetSize = Math.round(640 * deviceScale);
         const scale = targetSize / Math.max(baseViewport.width, baseViewport.height);
         const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d", { alpha: false });
         if (!context) throw new Error("Canvas preview is unavailable.");
 
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
-        canvas.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
         context.fillStyle = "#ffffff";
         context.fillRect(0, 0, canvas.width, canvas.height);
 
         await page.render({ canvasContext: context, viewport }).promise;
+        if (!cancelled) setPreviewSrc(canvas.toDataURL("image/png"));
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && error?.name !== "AbortError") {
           console.warn("Could not render layout PDF preview.", error);
           setFailed(true);
         }
@@ -537,15 +547,16 @@ function PdfArtworkCanvas({ url, title }) {
 
     return () => {
       cancelled = true;
-      loadingTask.destroy();
+      controller.abort();
     };
   }, [url]);
 
+  if (previewSrc) return <img className="layout-artwork-rendered" src={previewSrc} alt={title} />;
+
   return (
-    <>
-      <canvas ref={canvasRef} className="layout-artwork-canvas" aria-label={title} />
-      {failed && <span className="layout-artwork-fallback" aria-hidden="true"><ExternalLink size={18} /></span>}
-    </>
+    <span className={`layout-artwork-state ${failed ? "failed" : "loading"}`} aria-hidden="true">
+      {failed ? <ExternalLink size={18} /> : <LoaderCircle size={18} />}
+    </span>
   );
 }
 
@@ -553,13 +564,14 @@ function LayoutArtworkPreview({ row, size = "expanded" }) {
   const url = layoutFileUrl(row);
   if (!url) return null;
   const title = layoutFileName(row) || row.name || "Layout artwork";
+  const previewUrl = layoutPreviewUrl(row) || url;
 
   return (
     <div className={`layout-artwork-preview ${size}`} title={title}>
       {isPdfUrl(url) ? (
-        <PdfArtworkCanvas url={url} title={title} />
+        <PdfArtworkImage url={previewUrl} title={title} />
       ) : (
-        <img src={url} alt={title} />
+        <img src={previewUrl} alt={title} />
       )}
     </div>
   );
@@ -568,11 +580,12 @@ function LayoutArtworkPreview({ row, size = "expanded" }) {
 function LayoutRootArtwork({ row }) {
   const url = layoutFileUrl(row);
   if (!url) return null;
+  const openUrl = layoutPreviewUrl(row) || url;
 
   return (
     <div className="layout-root-artwork-shell" onClick={(event) => event.stopPropagation()}>
       <LayoutArtworkPreview row={row} size="main" />
-      <a className="layout-artwork-open" href={url} target="_blank" rel="noreferrer" title="Open layout artwork" aria-label="Open layout artwork">
+      <a className="layout-artwork-open" href={openUrl} target="_blank" rel="noreferrer" title="Open layout artwork" aria-label="Open layout artwork">
         <ExternalLink size={14} />
       </a>
     </div>
@@ -583,12 +596,13 @@ function LayoutAttachmentPreview({ row }) {
   const url = layoutFileUrl(row);
   if (!url) return null;
   const name = layoutFileName(row) || "Layout artwork";
+  const openUrl = layoutPreviewUrl(row) || url;
   return (
     <div className="layout-attachment-preview" onClick={(event) => event.stopPropagation()}>
       <LayoutArtworkPreview row={row} />
       <div className="layout-attachment-meta">
         <strong>{name}</strong>
-        <a href={url} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Open full size</a>
+        <a href={openUrl} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Open full size</a>
       </div>
     </div>
   );
