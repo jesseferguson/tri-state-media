@@ -62,6 +62,9 @@ def _verified_company_user(request, *, admin_only=False):
             return None
         return user
 
+    if settings.API_AUTH_REQUIRED:
+        return None
+
     user_id = str(request.META.get("HTTP_X_COMPANY_USER_ID") or "").strip()
     username = str(request.META.get("HTTP_X_COMPANY_USERNAME") or "").strip()
     queryset = CompanyUser.objects.select_related("role").filter(active=True)

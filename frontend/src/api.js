@@ -17,6 +17,18 @@ function absoluteUrl(url) {
   return new URL(url, origin);
 }
 
+export function isApiUrl(url) {
+  if (!url) return false;
+  try {
+    const target = absoluteUrl(url);
+    const apiBase = absoluteUrl(cleanBase(API_BASE));
+    const basePath = apiBase.pathname.replace(/\/$/, "");
+    return target.origin === apiBase.origin && (target.pathname === basePath || target.pathname.startsWith(`${basePath}/`));
+  } catch {
+    return false;
+  }
+}
+
 async function request(url, options = {}) {
   const bodyIsFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const { headers: optionHeaders = {}, skipAuth = false, ...requestOptions } = options;

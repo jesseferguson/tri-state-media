@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Save, Trash2 } from "lucide-react";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
+import { AuthenticatedImage } from "./FilePreview";
 
 function numberValue(value) {
   const next = Number(value ?? 0);
@@ -214,7 +215,7 @@ export default function FlexDieDetailPanel({
       )}
 
       <section className="flex-die-image-card">
-        {imageUrl ? <img src={imageUrl} alt={die.dieline_image_name || die.name} /> : <div><ImageIcon size={22} /><span>No dieline image</span></div>}
+        {imageUrl ? <AuthenticatedImage src={imageUrl} alt={die.dieline_image_name || die.name} /> : <div><ImageIcon size={22} /><span>No dieline image</span></div>}
         {imageUrl && onDeleteDieline && (
           <button className="ghost-btn xs" type="button" onClick={() => run("image", onDeleteDieline)}>
             <Trash2 size={12} /> Delete Image

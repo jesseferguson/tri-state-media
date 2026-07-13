@@ -20,6 +20,19 @@ from .models import (
     ToolingRecipeTool,
 )
 
+
+def absolute_api_url(serializer, path):
+    request = serializer.context.get("request") if getattr(serializer, "context", None) else None
+    return request.build_absolute_uri(path) if request else path
+
+
+def flex_die_dieline_preview_url(serializer, obj):
+    if not obj.dieline_image:
+        return ""
+    endpoint = "rotary-dies" if obj.tooling_kind == "rotary_die" else "flex-dies"
+    return absolute_api_url(serializer, f"/api/{endpoint}/{obj.pk}/dieline-image-preview/")
+
+
 class SupplierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplier
@@ -59,6 +72,7 @@ class FlexDieSerializer(serializers.ModelSerializer):
     computed_web_width_inches = serializers.DecimalField(max_digits=7, decimal_places=3, read_only=True)
     die_count_status = serializers.CharField(read_only=True)
     serial_number_list = serializers.SerializerMethodField()
+    dieline_image = serializers.SerializerMethodField()
     dieline_image_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -69,12 +83,10 @@ class FlexDieSerializer(serializers.ModelSerializer):
         return [line.strip() for line in (obj.serial_numbers or "").splitlines() if line.strip()]
 
     def get_dieline_image_url(self, obj):
-        if not obj.dieline_image:
-            return ""
-        try:
-            return obj.dieline_image.url
-        except ValueError:
-            return ""
+        return flex_die_dieline_preview_url(self, obj)
+
+    def get_dieline_image(self, obj):
+        return self.get_dieline_image_url(obj)
 
 class PerfCylinderSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
@@ -131,7 +143,9 @@ class ToolingRecipeSerializer(serializers.ModelSerializer):
     requires_perf = serializers.BooleanField(read_only=True)
     is_no_perf = serializers.BooleanField(read_only=True)
     external_perf_cutting_type = serializers.CharField(read_only=True)
+    layout_file = serializers.SerializerMethodField()
     layout_file_url = serializers.SerializerMethodField()
+    layout_file_is_document = serializers.SerializerMethodField()
 
     class Meta:
         model = ToolingRecipe
@@ -140,10 +154,14 @@ class ToolingRecipeSerializer(serializers.ModelSerializer):
     def get_layout_file_url(self, obj):
         if not obj.layout_file:
             return ""
-        try:
-            return obj.layout_file.url
-        except ValueError:
-            return ""
+        return absolute_api_url(self, f"/api/recipes/{obj.pk}/layout-file-preview/")
+
+    def get_layout_file(self, obj):
+        return self.get_layout_file_url(obj)
+
+    def get_layout_file_is_document(self, obj):
+        name = obj.layout_file_name or getattr(obj.layout_file, "name", "")
+        return ".pdf" in str(name or "").lower()
 
 
 class PrintStationNestedSerializer(serializers.ModelSerializer):
@@ -231,7 +249,7 @@ class ToolingRecipeToolNestedSerializer(serializers.ModelSerializer):
                 "active_die_count": die.active_die_count,
                 "target_die_count": die.target_die_count,
                 "die_count_status": die.die_count_status,
-                "dieline_image_url": die.dieline_image.url if die.dieline_image else "",
+                "dieline_image_url": flex_die_dieline_preview_url(self, die),
                 "web_width": die.web_width_inches,
                 "status": die.status,
                 "location": self.get_location_path(die.current_location),
@@ -344,7 +362,7 @@ class ToolingRecipeToolSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def get_tool_details(self, obj):
-        return ToolingRecipeToolNestedSerializer().get_tool_details(obj)
+        return ToolingRecipeToolNestedSerializer(context=self.context).get_tool_details(obj)
 
 class ToolingHistorySerializer(serializers.ModelSerializer):
     mag_name = serializers.CharField(source="mag.name", read_only=True)

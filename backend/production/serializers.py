@@ -50,6 +50,18 @@ def note_value(note, label):
     return match.group(1).strip() if match else ""
 
 
+def absolute_api_url(serializer, path):
+    request = serializer.context.get("request") if getattr(serializer, "context", None) else None
+    return request.build_absolute_uri(path) if request else path
+
+
+def job_ticket_image_preview_url(serializer, obj, slot):
+    image = getattr(obj, f"{slot}_image", None)
+    if not image:
+        return ""
+    return absolute_api_url(serializer, f"/api/job-tickets/{obj.pk}/images/{slot}/preview/")
+
+
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
@@ -323,6 +335,9 @@ class CoreInventorySerializer(serializers.ModelSerializer):
 class JobTicketSerializer(serializers.ModelSerializer):
     performed_by = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_display = serializers.SerializerMethodField()
+    general_image = serializers.SerializerMethodField()
+    spec_image = serializers.SerializerMethodField()
+    finishing_image = serializers.SerializerMethodField()
     job_images = serializers.SerializerMethodField()
     recent_usage_90d = serializers.SerializerMethodField()
     finished_on_hand_quantity = serializers.SerializerMethodField()
@@ -406,19 +421,13 @@ class JobTicketSerializer(serializers.ModelSerializer):
 
     def image_payload(self, obj, slot):
         image = getattr(obj, f"{slot}_image", None)
-        url = ""
+        protected_url = job_ticket_image_preview_url(self, obj, slot)
         source = ""
-        is_external = False
         if image:
-            try:
-                url = image.url
-            except ValueError:
-                url = ""
-            source = "New System" if url else ""
+            source = "New System"
         elif slot == "general" and obj.external_image_url:
-            url = obj.external_image_url
-            source = obj.external_image_source or "Glide"
-            is_external = True
+            source = f"{obj.external_image_source or 'External'} image hidden"
+        file_name = image.name.split("/")[-1] if image else ""
         return {
             "slot": slot,
             "label": {
@@ -426,19 +435,28 @@ class JobTicketSerializer(serializers.ModelSerializer):
                 "spec": "Spec Image",
                 "finishing": "Finishing Image",
             }.get(slot, slot.title()),
-            "url": url,
-            "fileName": image.name.split("/")[-1] if image else "",
+            "url": protected_url,
+            "fileName": file_name,
             "storageName": image.name if image else "",
-            "name": getattr(obj, f"{slot}_image_name", "") or (f"{source} file" if is_external else ""),
+            "name": getattr(obj, f"{slot}_image_name", "") or (f"{source} file" if source and not image else ""),
             "description": getattr(obj, f"{slot}_image_description", ""),
-            "hasImage": bool(image) or bool(url),
+            "hasImage": bool(protected_url),
             "source": source,
-            "isExternal": is_external,
-            "isDocument": is_document_url(url),
+            "isExternal": False,
+            "isDocument": is_document_url(file_name),
         }
 
     def get_job_images(self, obj):
         return [self.image_payload(obj, slot) for slot in ["general", "spec", "finishing"]]
+
+    def get_general_image(self, obj):
+        return job_ticket_image_preview_url(self, obj, "general")
+
+    def get_spec_image(self, obj):
+        return job_ticket_image_preview_url(self, obj, "spec")
+
+    def get_finishing_image(self, obj):
+        return job_ticket_image_preview_url(self, obj, "finishing")
 
     class Meta:
         model = JobTicket
@@ -564,13 +582,9 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
         return obj.job_ticket.material_spec.master_type.code
 
     def get_job_general_image_url(self, obj):
-        image = obj.job_ticket.general_image if obj.job_ticket else None
-        if image:
-            try:
-                return image.url
-            except ValueError:
-                return ""
-        return obj.job_ticket.external_image_url if obj.job_ticket else ""
+        if not obj.job_ticket:
+            return ""
+        return job_ticket_image_preview_url(self, obj.job_ticket, "general")
 
     def get_job_general_image_source(self, obj):
         if not obj.job_ticket:
@@ -582,7 +596,8 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
         return ""
 
     def get_job_general_image_is_document(self, obj):
-        return is_document_url(self.get_job_general_image_url(obj))
+        image = obj.job_ticket.general_image if obj.job_ticket else None
+        return is_document_url(image.name if image else "")
 
     def _report_totals(self, obj):
         cached = getattr(obj, "_report_totals_cache", None)

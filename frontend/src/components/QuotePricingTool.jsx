@@ -1,7 +1,7 @@
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Copy, Download, FileText, Image as ImageIcon, Layers3, Mail, MoreHorizontal, Pencil, Plus, Printer, Ruler, Search, SlidersHorizontal, Trash2, XCircle } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
-import { PdfPreview, isPdfUrl } from "./FilePreview";
+import { AuthenticatedImage, PdfPreview, isPdfUrl } from "./FilePreview";
 import { quoteCompanyForKey, quoteCompanyForQuote } from "../lib/quoteBranding";
 import {
   buildLayoutCandidates,
@@ -539,7 +539,7 @@ function JobTicketThumb({ ticket }) {
   return (
     <span className="quote-ticket-thumb">
       {image?.url && !isDocument ? (
-        <img src={image.url} alt={jobTicketPartNumber(ticket)} />
+        <AuthenticatedImage src={image.url} alt={jobTicketPartNumber(ticket)} />
       ) : image?.url ? (
         <PdfPreview url={image.url} title={jobTicketPartNumber(ticket)} compact />
       ) : (

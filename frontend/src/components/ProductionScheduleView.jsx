@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Image as ImageIcon, PackageCheck, ScanLine, Trash2 } from "lucide-react";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
-import { PdfPreview, isPdfUrl } from "./FilePreview";
+import { AuthenticatedImage, PdfPreview, isPdfUrl } from "./FilePreview";
 import RecipeOptionsView from "./RecipeOptionsView";
 import ScheduleMaterialWorkflow from "./ScheduleMaterialWorkflow";
 
@@ -270,7 +270,7 @@ function ScheduleThumb({ row }) {
   return (
     <div className="schedule-thumb">
       {src && !scheduleImageIsDocument(row) ? (
-        <img src={src} alt={row.job_general_image_name || row.job_name || "Scheduled job"} />
+        <AuthenticatedImage src={src} alt={row.job_general_image_name || row.job_name || "Scheduled job"} />
       ) : src ? (
         <PdfPreview url={src} title={row.job_general_image_name || row.job_name || "Scheduled PDF"} compact />
       ) : (

@@ -206,7 +206,7 @@ REST_FRAMEWORK = {
         "production.auth.CompanyUserTokenAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated" if API_AUTH_REQUIRED else "rest_framework.permissions.AllowAny",
+        "production.auth.HasCompanyResourceAccess" if API_AUTH_REQUIRED else "rest_framework.permissions.AllowAny",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -231,6 +231,9 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },

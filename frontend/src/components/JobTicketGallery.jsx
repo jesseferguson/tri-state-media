@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { AlertTriangle, Image as ImageIcon } from "lucide-react";
-import { PdfPreview, isPdfUrl } from "./FilePreview";
+import { AuthenticatedImage, PdfPreview, isPdfUrl } from "./FilePreview";
 
 const RECENT_USAGE_DAYS = 90;
 const LOW_STOCK_MONTHS = 1;
@@ -172,7 +172,7 @@ export default function JobTicketGallery({ rows, selectedId, usageRows = [], fin
           >
             <div className="job-ticket-card-image">
               {image?.url && !imageIsDocument ? (
-                <img src={image.url} alt={image.name || ticket.job_name} />
+                <AuthenticatedImage src={image.url} alt={image.name || ticket.job_name} />
               ) : image?.url ? (
                 <PdfPreview url={image.url} title={image.name || ticket.job_name || "Job PDF"} compact />
               ) : (

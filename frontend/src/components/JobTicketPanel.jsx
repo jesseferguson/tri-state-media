@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, XCircle } from "lucide-react";
-import { PdfPreview, isPdfUrl } from "./FilePreview";
+import { AuthenticatedImage, PdfPreview, isPdfUrl } from "./FilePreview";
 import RecipeOptionsView from "./RecipeOptionsView";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
@@ -1644,7 +1644,7 @@ export default function JobTicketPanel({
           <section className="job-ticket-sheet-head">
             <div className="job-ticket-sheet-image">
               {image?.url && !imageIsDocument ? (
-                <img src={image.url} alt={image.name || ticket.job_name || "Job image"} />
+                <AuthenticatedImage src={image.url} alt={image.name || ticket.job_name || "Job image"} />
               ) : image?.url ? (
                 <PdfPreview url={image.url} title={image.name || ticket.job_name || "Job PDF"} />
               ) : (

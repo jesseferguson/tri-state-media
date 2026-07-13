@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Plus, Search, Tag, X } from "lucide-react";
 import { apiEndpoint } from "../api";
 import { formatInches, getRecordTitle } from "../lib/format";
-import { PdfPreview, isPdfUrl } from "./FilePreview";
+import { AuthenticatedImage, PdfPreview, isPdfUrl } from "./FilePreview";
 
 function normalizeInitial(fields, record, defaults = {}) {
   const out = {};
@@ -983,7 +983,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
               : existingUrl;
             const existingName = record?.[field.nameField] || record?.[`${field.imageSlot}_image_name`] || existingImage?.name;
             const existingSource = existingImage?.source;
-            const existingIsDocument = existingImage?.isDocument || isPdfUrl(existingUrl);
+            const existingIsDocument = existingImage?.isDocument || isPdfUrl(existingName) || isPdfUrl(existingUrl);
             const selectedFile = value instanceof File ? value : null;
             return (
               <Fragment key={field.name}>
@@ -996,7 +996,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
                     ) : selectedFile ? (
                       <em>{selectedFile.name || "File selected"}</em>
                     ) : existingPreviewUrl && !existingIsDocument ? (
-                      <img src={existingPreviewUrl} alt={existingName || fieldLabel} />
+                      <AuthenticatedImage src={existingPreviewUrl} alt={existingName || fieldLabel} />
                     ) : existingUrl ? (
                       <PdfPreview url={existingPreviewUrl || existingUrl} title={existingName || fieldLabel} compact />
                     ) : (

@@ -79,7 +79,8 @@ from .serializers import (
     QuoteRawMaterialSerializer,
     QuoteRecordSerializer,
 )
-from .auth import company_user_from_request, create_company_user_token, request_user_is_admin
+from .auth import company_user_from_request, create_company_user_token, request_user_has_resource_access, request_user_is_admin
+from .file_responses import private_file_response
 from .upload_security import validate_upload
 
 
@@ -1072,15 +1073,6 @@ def apply_pending_ticket_payload(ticket, payload):
     ticket.save()
 
 
-def image_public_url(storage_name):
-    if not storage_name:
-        return ""
-    try:
-        return default_storage.url(storage_name)
-    except Exception:
-        return ""
-
-
 def apply_pending_artwork(ticket, artwork):
     slot = artwork.get("slot")
     if slot not in {"general", "spec", "finishing"}:
@@ -1688,20 +1680,17 @@ class JobTicketViewSet(BaseProductionViewSet):
         previous_file_name = previous_file.name.split("/")[-1] if previous_file else ""
         previous_name = getattr(ticket, name_field, "")
         previous_description = getattr(ticket, description_field, "")
-        previous_url = image_public_url(previous_storage_name)
-        if slot == "general" and not previous_url:
-            previous_url = ticket.external_image_url or ""
         previous_artwork = {
             "storage_name": previous_storage_name,
             "file_name": previous_file_name,
-            "url": previous_url,
-            "name": previous_name or (ticket.external_image_source if slot == "general" and previous_url else ""),
+            "url": "",
+            "name": previous_name,
             "description": previous_description,
         }
         change_description = str(request.data.get("change_description") or "").strip()
 
         if request.method == "DELETE":
-            if previous_file_name or previous_name or previous_description or previous_url:
+            if previous_file_name or previous_name or previous_description or (slot == "general" and ticket.external_image_url):
                 changes.append({"field": image_field, "label": slot_label, "from": previous_name or previous_file_name, "to": ""})
                 if change_description:
                     changes.append({"field": f"{slot}_artwork_change_note", "label": f"{slot_label} Change Note", "from": "", "to": change_description})
@@ -1766,7 +1755,7 @@ class JobTicketViewSet(BaseProductionViewSet):
                         "next": {
                             "storage_name": pending_storage_name or previous_storage_name,
                             "file_name": upload.name if upload else previous_file_name,
-                            "url": image_public_url(pending_storage_name or previous_storage_name),
+                            "url": "",
                             "name": new_name,
                             "description": new_description,
                         },
@@ -1775,6 +1764,24 @@ class JobTicketViewSet(BaseProductionViewSet):
                 },
             )
         return Response(self.get_serializer(ticket).data)
+
+    @action(detail=True, methods=["get"], url_path=r"images/(?P<slot>general|spec|finishing)/preview")
+    def image_preview(self, request, pk=None, slot=None):
+        ticket = self.get_object()
+        if slot not in self.image_slots:
+            return Response({"error": "Unknown image slot."}, status=status.HTTP_400_BAD_REQUEST)
+        if not request_user_has_resource_access(request, "job-ticket-images"):
+            return Response({"detail": "You do not have access to job ticket images."}, status=status.HTTP_403_FORBIDDEN)
+
+        image = getattr(ticket, f"{slot}_image")
+        if not image:
+            return Response({"error": "No image uploaded for this slot."}, status=status.HTTP_404_NOT_FOUND)
+
+        return private_file_response(
+            image,
+            display_name=getattr(ticket, f"{slot}_image_name", ""),
+            fallback_name=f"{slot}-image",
+        )
 
 
 class JobTicketEventViewSet(BaseProductionViewSet):

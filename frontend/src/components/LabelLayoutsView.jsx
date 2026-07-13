@@ -643,10 +643,11 @@ function LayoutArtworkPreview({ row, size = "expanded" }) {
   if (!url) return null;
   const title = layoutFileName(row) || row.name || "Layout artwork";
   const previewUrl = layoutPreviewUrl(row) || url;
+  const isPdf = row?.layout_file_is_document || isPdfUrl(title) || isPdfUrl(url);
 
   return (
     <div className={`layout-artwork-preview ${size}`} title={title}>
-      {isPdfUrl(url) ? (
+      {isPdf ? (
         <PdfArtworkImage url={previewUrl} fallbackUrl={url} title={title} />
       ) : (
         <ArtworkImage src={previewUrl} fallbackSrc={url} title={title} />

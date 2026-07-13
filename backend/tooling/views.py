@@ -1,8 +1,6 @@
-import mimetypes
 import re
 
 from django.db.models import Q
-from django.http import FileResponse
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -46,7 +44,9 @@ from .serializers import (
     ToolingRecipeSerializer,
     ToolingRecipeToolSerializer,
 )
-from production.upload_security import safe_upload_name, validate_upload
+from production.auth import request_user_has_resource_access
+from production.file_responses import private_file_response
+from production.upload_security import validate_upload
 
 
 class BaseToolingViewSet(viewsets.ModelViewSet):
@@ -254,6 +254,20 @@ class FlexDieViewSet(BaseToolingViewSet):
         die.save(update_fields=["dieline_image", "dieline_image_name"])
         return Response(self.get_serializer(die).data)
 
+    @action(detail=True, methods=["get"], url_path="dieline-image-preview")
+    def dieline_image_preview(self, request, pk=None):
+        die = self.get_object()
+        required_key = "rotary-dies" if self.tooling_kind == "rotary_die" else "flex-dies"
+        if not request_user_has_resource_access(request, required_key):
+            return Response({"detail": "You do not have access to this dieline image."}, status=status.HTTP_403_FORBIDDEN)
+        if not die.dieline_image:
+            return Response({"error": "No dieline image uploaded."}, status=status.HTTP_404_NOT_FOUND)
+        return private_file_response(
+            die.dieline_image,
+            display_name=die.dieline_image_name,
+            fallback_name="dieline-image",
+        )
+
     @action(detail=True, methods=["post"], url_path="request-reorder")
     def request_reorder(self, request, pk=None):
         die = self.get_object()
@@ -413,15 +427,16 @@ class ToolingRecipeViewSet(BaseToolingViewSet):
     @action(detail=True, methods=["get"], url_path="layout-file-preview")
     def layout_file_preview(self, request, pk=None):
         recipe = self.get_object()
+        if not request_user_has_resource_access(request, "recipes"):
+            return Response({"detail": "You do not have access to this layout file."}, status=status.HTTP_403_FORBIDDEN)
         if not recipe.layout_file:
             return Response({"error": "No layout file uploaded."}, status=status.HTTP_404_NOT_FOUND)
 
-        file_name = recipe.layout_file_name or recipe.layout_file.name.rsplit("/", 1)[-1] or "layout-file"
-        safe_file_name = safe_upload_name(file_name, "layout-file").replace('"', "").replace("\r", "").replace("\n", "")
-        content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-        response = FileResponse(recipe.layout_file.open("rb"), content_type=content_type)
-        response["Content-Disposition"] = f'inline; filename="{safe_file_name}"'
-        return response
+        return private_file_response(
+            recipe.layout_file,
+            display_name=recipe.layout_file_name,
+            fallback_name="layout-file",
+        )
 
 
 class PrintPlateViewSet(BaseToolingViewSet):

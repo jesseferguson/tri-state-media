@@ -25,7 +25,7 @@ from .models import (
     ProductionMaterialAssignment,
     ProductionSchedule,
 )
-from .auth import CompanyUserTokenAuthentication
+from .auth import CompanyUserTokenAuthentication, create_company_user_token
 
 
 SECURE_REST_FRAMEWORK = {
@@ -33,7 +33,7 @@ SECURE_REST_FRAMEWORK = {
         "production.auth.CompanyUserTokenAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+        "production.auth.HasCompanyResourceAccess",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -86,6 +86,60 @@ class ApiAuthSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 400, response.content)
         self.assertIn("legacy default admin password is blocked", response.json()["error"])
+
+    def test_job_ticket_image_preview_does_not_expose_public_storage_url(self):
+        image_role = CompanyRole.objects.create(
+            name="Image Viewer",
+            allowed_resource_keys=["job-tickets", "job-ticket-images"],
+        )
+        no_image_role = CompanyRole.objects.create(
+            name="Ticket Only",
+            allowed_resource_keys=["job-tickets"],
+        )
+        image_user = CompanyUser(username="image-viewer", name="Image Viewer", role=image_role, active=True)
+        image_user.set_password("StrongPass7&")
+        image_user.save()
+        ticket_user = CompanyUser(username="ticket-only", name="Ticket Only", role=no_image_role, active=True)
+        ticket_user.set_password("StrongPass7&")
+        ticket_user.save()
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-PRIVATE-IMAGE",
+            job_name="Private Image Job",
+            product_code="TSM-PRIVATE",
+            customer_name="Private Customer",
+            general_image=SimpleUploadedFile(
+                "private-artwork.gif",
+                b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
+                content_type="image/gif",
+            ),
+            general_image_name="private-artwork.gif",
+        )
+
+        detail = self.client.get(
+            reverse("job-ticket-detail", args=[ticket.pk]),
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(image_user)}",
+        )
+        self.assertEqual(detail.status_code, 200, detail.content)
+        image_url = detail.json()["job_images"][0]["url"]
+        self.assertIn(f"/api/job-tickets/{ticket.pk}/images/general/preview/", image_url)
+        self.assertNotIn("/media/", image_url)
+        self.assertNotIn("private-artwork.gif", image_url)
+
+        unauthenticated = self.client.get(reverse("job-ticket-image-preview", args=[ticket.pk, "general"]))
+        self.assertEqual(unauthenticated.status_code, 403, unauthenticated.content)
+
+        denied = self.client.get(
+            reverse("job-ticket-image-preview", args=[ticket.pk, "general"]),
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(ticket_user)}",
+        )
+        self.assertEqual(denied.status_code, 403, denied.content)
+
+        allowed = self.client.get(
+            reverse("job-ticket-image-preview", args=[ticket.pk, "general"]),
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(image_user)}",
+        )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertTrue(b"".join(allowed.streaming_content).startswith(b"GIF89a"))
 
 
 class DataImportToolingTests(TestCase):
