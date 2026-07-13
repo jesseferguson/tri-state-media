@@ -131,9 +131,19 @@ class ToolingRecipeSerializer(serializers.ModelSerializer):
     requires_perf = serializers.BooleanField(read_only=True)
     is_no_perf = serializers.BooleanField(read_only=True)
     external_perf_cutting_type = serializers.CharField(read_only=True)
+    layout_file_url = serializers.SerializerMethodField()
+
     class Meta:
         model = ToolingRecipe
         fields = "__all__"
+
+    def get_layout_file_url(self, obj):
+        if not obj.layout_file:
+            return ""
+        try:
+            return obj.layout_file.url
+        except ValueError:
+            return ""
 
 
 class PrintStationNestedSerializer(serializers.ModelSerializer):

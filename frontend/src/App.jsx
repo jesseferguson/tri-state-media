@@ -1776,6 +1776,15 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           saved = await uploadRecordAction(resource.endpoint, saved.id, "dieline-image", formData);
         }
       }
+      if (resource.key === "recipes" && imageUploads.length && saved?.id) {
+        const upload = imageUploads.find((item) => item.slot === "layout" && item.file);
+        if (upload) {
+          const formData = new FormData();
+          formData.append("image", upload.file);
+          formData.append("name", upload.file.name);
+          saved = await uploadRecordAction(resource.endpoint, saved.id, upload.action || "layout-file", formData);
+        }
+      }
       return saved;
     },
     onSuccess: async (saved) => {

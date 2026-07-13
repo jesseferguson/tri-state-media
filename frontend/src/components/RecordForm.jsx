@@ -601,6 +601,13 @@ function getRelationTitle(row, field) {
     ].filter(Boolean).join(" / ");
   }
 
+  if (field.relation === "recipes") {
+    return [
+      row.id ? `ID ${row.id}` : "",
+      row.name ?? getRecordTitle(row),
+    ].filter(Boolean).join(" / ");
+  }
+
   if (field.relation === "customers") {
     if (field.displayMode === "nameOnly") return row.name ?? getRecordTitle(row);
     return [
@@ -835,7 +842,12 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
       const rawValue = visible ? form[field.name] : getEmptyValueForField(field);
       if (field.type === "imageUpload") {
         if (rawValue instanceof File) {
-          imageUploads.push({ slot: field.imageSlot, file: rawValue, changeDescription: form[`${field.name}__changeNote`] || "" });
+          imageUploads.push({
+            slot: field.imageSlot,
+            file: rawValue,
+            changeDescription: form[`${field.name}__changeNote`] || "",
+            action: field.uploadAction,
+          });
         }
         return;
       }
@@ -942,8 +954,8 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
 
           if (field.type === "imageUpload") {
             const existingImage = record?.job_images?.find((image) => image.slot === field.imageSlot);
-            const existingUrl = record?.[`${field.imageSlot}_image_url`] || record?.[`${field.imageSlot}_image`] || existingImage?.url;
-            const existingName = record?.[`${field.imageSlot}_image_name`] || existingImage?.name;
+            const existingUrl = record?.[field.urlField] || record?.[`${field.imageSlot}_image_url`] || record?.[`${field.imageSlot}_image`] || record?.[field.name] || existingImage?.url;
+            const existingName = record?.[field.nameField] || record?.[`${field.imageSlot}_image_name`] || existingImage?.name;
             const existingSource = existingImage?.source;
             const existingIsDocument = existingImage?.isDocument || isPdfUrl(existingUrl);
             return (
@@ -957,10 +969,10 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
                     ) : existingUrl ? (
                       <PdfPreview url={existingUrl} title={existingName || fieldLabel} compact />
                     ) : (
-                      <em>No image uploaded</em>
+                      <em>{field.emptyText || "No file uploaded"}</em>
                     )}
                     <input id={id} type="file" accept="image/*,application/pdf,.pdf" onChange={(event) => update(field.name, event.target.files?.[0] ?? null)} />
-                    <strong>{value?.name || existingName || "Choose image"}</strong>
+                    <strong>{value?.name || existingName || field.chooseText || "Choose file"}</strong>
                     {existingSource && <small>{existingSource}</small>}
                     {value instanceof File && (
                       <textarea

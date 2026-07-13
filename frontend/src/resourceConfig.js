@@ -995,7 +995,7 @@ export const resources = [
         maxResults: 250,
         recommendFromJobLayout: true,
         section: "Label Layout",
-        searchFields: ["name", "label_width_inches", "label_length_inches", "repeat_inches", "face_type", "liner_type", "shape_type", "cutting_type"],
+        searchFields: ["id", "name", "label_width_inches", "label_length_inches", "repeat_inches", "face_type", "liner_type", "shape_type", "cutting_type", "perf_option", "tpi", "internal_perf_tpi"],
       },
       {
         name: "box",
@@ -1990,6 +1990,7 @@ export const resources = [
     defaultOrdering: "name",
     tagline: "Reusable face, liner, cut, size, and perf layout definitions.",
     columns: [
+      "id",
       "name",
       "label_width_inches",
       "label_length_inches",
@@ -2009,11 +2010,25 @@ export const resources = [
         type: "text",
         required: true,
         placeholder: "2 x 1 Poly NP",
+        tab: "Specs",
+      },
+      {
+        name: "layout_file",
+        label: "Layout Image or PDF",
+        type: "imageUpload",
+        imageSlot: "layout",
+        uploadAction: "layout-file",
+        urlField: "layout_file_url",
+        nameField: "layout_file_name",
+        emptyText: "No layout file",
+        chooseText: "Choose layout file",
+        tab: "Layout File",
+        section: "Layout Reference",
       },
 
-      { name: "label_width_inches", label: "Label Width", type: "number", step: "0.0001" },
-      { name: "label_length_inches", label: "Label Length", type: "number", step: "0.0001" },
-      { name: "repeat_inches", label: "Label Repeat", type: "number", step: "0.0001" },
+      { name: "label_width_inches", label: "Label Width", type: "number", step: "0.0001", tab: "Specs" },
+      { name: "label_length_inches", label: "Label Length", type: "number", step: "0.0001", tab: "Specs" },
+      { name: "repeat_inches", label: "Label Repeat", type: "number", step: "0.0001", tab: "Specs" },
 
       {
         name: "shape_type",
@@ -2021,6 +2036,7 @@ export const resources = [
         type: "select",
         choices: choiceLists.layoutShapeType,
         defaultValue: "rcr",
+        tab: "Specs",
       },
       {
         name: "cutting_type",
@@ -2028,6 +2044,7 @@ export const resources = [
         type: "select",
         choices: choiceLists.labelCutType,
         defaultValue: "to_liner",
+        tab: "Specs",
       },
       {
         name: "face_type",
@@ -2037,14 +2054,16 @@ export const resources = [
         lookupRelation: "material-faces",
         lookupValueField: "name",
         lookupLabelFields: ["name", "code", "material_family"],
+        tab: "Specs",
       },
-      { ...linerDataTypeField, label: "Liner Type" },
+      { ...linerDataTypeField, label: "Liner Type", tab: "Specs" },
       {
         name: "perf_option",
         label: "Between Labels",
         type: "select",
         choices: choiceLists.perfOption,
         defaultValue: "none",
+        tab: "Perf",
       },
       {
         name: "tpi",
@@ -2053,6 +2072,7 @@ export const resources = [
         step: "0.0001",
         showWhen: { perf_option: "perf" },
         clearWhenHidden: null,
+        tab: "Perf",
       },
       {
         name: "perf_notes",
@@ -2060,6 +2080,7 @@ export const resources = [
         type: "textarea",
         showWhen: { perf_option: ["perf", "sheeted"] },
         clearWhenHidden: "",
+        tab: "Perf",
       },
       {
         name: "internal_perf_option",
@@ -2067,6 +2088,7 @@ export const resources = [
         type: "select",
         choices: choiceLists.perfOption,
         defaultValue: "none",
+        tab: "Perf",
       },
       {
         name: "internal_perf_cutting_type",
@@ -2075,6 +2097,7 @@ export const resources = [
         choices: choiceLists.internalPerfCuttingType,
         showWhen: { internal_perf_option: "perf" },
         clearWhenHidden: "",
+        tab: "Perf",
       },
       {
         name: "internal_perf_tpi",
@@ -2083,6 +2106,7 @@ export const resources = [
         step: "0.0001",
         showWhen: { internal_perf_option: "perf" },
         clearWhenHidden: null,
+        tab: "Perf",
       },
       {
         name: "internal_perf_notes",
@@ -2090,17 +2114,20 @@ export const resources = [
         type: "textarea",
         showWhen: { internal_perf_option: "perf" },
         clearWhenHidden: "",
+        tab: "Perf",
       },
       {
         name: "is_active",
         label: "Active",
         type: "checkbox",
         defaultValue: true,
+        tab: "Specs",
       },
       {
         name: "notes",
         label: "Recipe Notes",
         type: "textarea",
+        tab: "Notes",
       },
     ],
   },

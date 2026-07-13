@@ -10,6 +10,11 @@ def flex_die_image_upload_path(instance, filename):
     return f"tooling/flex-dies/{safe_name}/{uuid4().hex}-{filename}"
 
 
+def tooling_recipe_layout_upload_path(instance, filename):
+    safe_name = str(instance.name or instance.pk or "label-layout").replace("/", "-").replace("\\", "-")
+    return f"tooling/label-layouts/{safe_name}/{uuid4().hex}-{filename}"
+
+
 # =========================
 # BASIC SUPPORT MODELS
 # =========================
@@ -551,6 +556,9 @@ class ToolingRecipe(models.Model):
     )
 
     repeat_inches = models.DecimalField(max_digits=7, decimal_places=3, null=True, blank=True)
+
+    layout_file = models.FileField(upload_to=tooling_recipe_layout_upload_path, blank=True, null=True)
+    layout_file_name = models.CharField(max_length=180, blank=True)
 
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)

@@ -1,7 +1,8 @@
 import { Fragment, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Edit3, Plus, Trash2, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, Edit3, ExternalLink, FileText, Plus, Search, Trash2, Wrench, X } from "lucide-react";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
+import { FilePreview } from "./FilePreview";
 import { evaluateOption } from "./RecipeOptionsView";
 
 const GOOD_STATUSES = new Set(["active", "available", "in_stock", "in_use"]);
@@ -28,6 +29,71 @@ function choiceLabel(listKey, value, fallback = "Unspecified") {
 
 function sizeText(value) {
   return formatInches(value).replace(/"$/g, "");
+}
+
+function compactSearchText(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/"/g, "");
+}
+
+function numberSearchText(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const n = Number(value);
+  return [
+    value,
+    Number.isFinite(n) ? n.toFixed(3) : "",
+    Number.isFinite(n) ? String(n) : "",
+    formatInches(value),
+    sizeText(value),
+  ].filter(Boolean).join(" ").toLowerCase().replace(/"/g, "");
+}
+
+function matchesNumberFilter(value, query) {
+  const q = compactSearchText(query);
+  if (!q) return true;
+  return numberSearchText(value).includes(q);
+}
+
+function tpiText(row) {
+  return [
+    row.tpi ? `${row.tpi} TPI` : "",
+    row.internal_perf_tpi ? `Internal ${row.internal_perf_tpi} TPI` : "",
+  ].filter(Boolean).join(" / ");
+}
+
+function layoutFileUrl(row) {
+  return row?.layout_file_url || row?.layout_file || "";
+}
+
+function layoutFileName(row) {
+  return row?.layout_file_name || String(layoutFileUrl(row)).split("/").pop() || "";
+}
+
+function layoutMatchesFilters(row, filters) {
+  if (!matchesNumberFilter(row.label_width_inches, filters.width)) return false;
+  if (!matchesNumberFilter(row.label_length_inches, filters.length)) return false;
+  if (!matchesNumberFilter(row.repeat_inches, filters.repeat)) return false;
+
+  const perfQuery = compactSearchText(filters.perf);
+  if (perfQuery) {
+    const perfSource = [
+      perfText(row),
+      perfShortLabel(row),
+      perfShortLabel(row) === "NP" ? "No Perf" : "",
+      row.perf_option,
+      row.internal_perf_option,
+      row.perf_notes,
+      row.internal_perf_notes,
+    ].join(" ").toLowerCase();
+    if (!perfSource.includes(perfQuery)) return false;
+  }
+
+  const tpiQuery = compactSearchText(filters.tpi);
+  if (tpiQuery) {
+    const source = [row.tpi, row.internal_perf_tpi, tpiText(row)].filter(Boolean).join(" ").toLowerCase();
+    if (!source.includes(tpiQuery)) return false;
+  }
+
+  return true;
 }
 
 function layoutGroupLabel(row) {
@@ -63,9 +129,11 @@ function layoutRootTitle(row) {
 function layoutRootChips(row) {
   return [
     `Repeat ${formatInches(row.repeat_inches)}`,
+    tpiText(row),
     choiceLabel("layoutShapeType", row.shape_type, "Shape"),
     choiceLabel("labelCutType", row.cutting_type, "Cut"),
     perfShortLabel(row) === "NP" ? "No Perf" : perfShortLabel(row),
+    layoutFileUrl(row) ? "File attached" : "",
   ].filter(Boolean);
 }
 
@@ -396,6 +464,35 @@ function dieAcrossText(tool) {
   return across || across === 0 ? `${across} across` : "";
 }
 
+function CopyLayoutIdButton({ row, copiedId, onCopy }) {
+  if (!row?.id) return null;
+  const copied = String(copiedId) === String(row.id);
+  return (
+    <button type="button" className={`layout-copy-id ${copied ? "copied" : ""}`} title="Copy layout ID" onClick={(event) => { event.stopPropagation(); onCopy?.(row); }}>
+      <Copy size={12} />
+      {copied ? "Copied" : `ID ${row.id}`}
+    </button>
+  );
+}
+
+function LayoutAttachmentPreview({ row }) {
+  const url = layoutFileUrl(row);
+  if (!url) return null;
+  const name = layoutFileName(row) || "Layout file";
+  return (
+    <div className="layout-attachment-preview" onClick={(event) => event.stopPropagation()}>
+      <div className="layout-attachment-thumb">
+        <FilePreview url={url} title={name} compact />
+      </div>
+      <div>
+        <span><FileText size={13} /> Layout File</span>
+        <strong>{name}</strong>
+        <a href={url} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Open</a>
+      </div>
+    </div>
+  );
+}
+
 function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen }) {
   if (!slot.tool) {
     return (
@@ -528,6 +625,8 @@ function LayoutCard({
   onEditTooling,
   onDeleteTooling,
   renderToolDetail,
+  copiedId,
+  onCopyLayoutId,
   showHeader = true,
 }) {
   return (
@@ -544,12 +643,15 @@ function LayoutCard({
             <span>{choiceLabel("layoutShapeType", row.shape_type, "Shape")} / {choiceLabel("labelCutType", row.cutting_type, "Cut")}</span>
           </div>
           <div className="layout-inline-actions" onClick={(event) => event.stopPropagation()}>
+            <CopyLayoutIdButton row={row} copiedId={copiedId} onCopy={onCopyLayoutId} />
             <button type="button" onClick={() => onEdit(row)}><Edit3 size={12} /> Edit</button>
             <button type="button" onClick={() => onAddPressOption(row)}><Plus size={12} /> Add Press Option</button>
             <button type="button" className="danger-text" onClick={() => onDelete(row)}><Trash2 size={12} /> Delete</button>
           </div>
         </header>
       )}
+
+      <LayoutAttachmentPreview row={row} />
 
       <div className={`layout-press-section ${showHeader ? "" : "root-options"}`} onClick={(event) => event.stopPropagation()}>
         {options.length ? (
@@ -621,6 +723,7 @@ function LayoutGroup({
 
         {singleLayout && (
           <div className="layout-inline-actions layout-root-actions">
+            <CopyLayoutIdButton row={primaryRow} copiedId={actions.copiedId} onCopy={actions.onCopyLayoutId} />
             <button type="button" onClick={() => actions.onEdit(primaryRow)}><Edit3 size={12} /> Edit</button>
             <button type="button" onClick={() => actions.onAddPressOption(primaryRow)}><Plus size={12} /> Add Press Option</button>
             <button type="button" className="danger-text" onClick={() => actions.onDelete(primaryRow)}><Trash2 size={12} /> Delete</button>
@@ -664,6 +767,8 @@ export default function LabelLayoutsView({
   renderToolDetail,
 }) {
   const [openKeys, setOpenKeys] = useState(() => new Set());
+  const [filters, setFilters] = useState({ width: "", length: "", repeat: "", perf: "", tpi: "" });
+  const [copiedId, setCopiedId] = useState("");
 
   const optionsByRecipe = useMemo(() => {
     const map = new Map();
@@ -677,7 +782,41 @@ export default function LabelLayoutsView({
     return map;
   }, [recipeOptions]);
 
-  const groups = useMemo(() => buildGroups(rows ?? [], optionsByRecipe), [rows, optionsByRecipe]);
+  const filteredRows = useMemo(() => (rows ?? []).filter((row) => layoutMatchesFilters(row, filters)), [rows, filters]);
+  const groups = useMemo(() => buildGroups(filteredRows, optionsByRecipe), [filteredRows, optionsByRecipe]);
+
+  function updateFilter(key, value) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function clearFilters() {
+    setFilters({ width: "", length: "", repeat: "", perf: "", tpi: "" });
+  }
+
+  async function copyLayoutId(row) {
+    const text = String(row?.id ?? "").trim();
+    if (!text) return;
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.setAttribute("readonly", "");
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      setCopiedId(text);
+      window.setTimeout(() => setCopiedId((current) => current === text ? "" : current), 1400);
+    } catch {
+      setCopiedId("");
+    }
+  }
+
   function toggleOpen(id) {
     setOpenKeys((current) => {
       const next = new Set(current);
@@ -691,6 +830,32 @@ export default function LabelLayoutsView({
 
   return (
     <div className="label-layout-view tooling-hub-view">
+      <div className="layout-search-panel">
+        <label>
+          <span><Search size={13} /> Width</span>
+          <input value={filters.width} onChange={(event) => updateFilter("width", event.target.value)} placeholder="2.000" />
+        </label>
+        <label>
+          <span>Length</span>
+          <input value={filters.length} onChange={(event) => updateFilter("length", event.target.value)} placeholder="1.000" />
+        </label>
+        <label>
+          <span>Repeat</span>
+          <input value={filters.repeat} onChange={(event) => updateFilter("repeat", event.target.value)} placeholder="3.125" />
+        </label>
+        <label>
+          <span>Perf</span>
+          <input value={filters.perf} onChange={(event) => updateFilter("perf", event.target.value)} placeholder="NP / perf" />
+        </label>
+        <label>
+          <span>TPI</span>
+          <input value={filters.tpi} onChange={(event) => updateFilter("tpi", event.target.value)} placeholder="12" />
+        </label>
+        <button type="button" onClick={clearFilters} disabled={!Object.values(filters).some(Boolean)}>
+          <X size={13} /> Clear
+        </button>
+      </div>
+      {!groups.length && <p className="label-layout-empty">No label layouts match those filters.</p>}
       {groups.map((group) => (
         <LayoutGroup
           key={group.key}
@@ -711,6 +876,8 @@ export default function LabelLayoutsView({
             onEditTooling,
             onDeleteTooling,
             renderToolDetail,
+            copiedId,
+            onCopyLayoutId: copyLayoutId,
           }}
         />
       ))}

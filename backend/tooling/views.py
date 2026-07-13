@@ -370,8 +370,34 @@ class PerfBladeViewSet(BaseToolingViewSet):
 class ToolingRecipeViewSet(BaseToolingViewSet):
     queryset = ToolingRecipe.objects.all().order_by("name")
     serializer_class = ToolingRecipeSerializer
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
     search_fields = ["name", "face_type", "liner_type", "shape_type", "notes"]
     ordering_fields = ["name", "label_width_inches", "label_length_inches", "repeat_inches", "tpi", "is_active"]
+
+    @action(detail=True, methods=["post", "delete"], url_path="layout-file")
+    def layout_file(self, request, pk=None):
+        recipe = self.get_object()
+
+        if request.method == "DELETE":
+            current_file = recipe.layout_file
+            if current_file:
+                current_file.delete(save=False)
+            recipe.layout_file = None
+            recipe.layout_file_name = ""
+            recipe.save(update_fields=["layout_file", "layout_file_name"])
+            return Response(self.get_serializer(recipe).data)
+
+        upload = request.FILES.get("image") or request.FILES.get("file")
+        if not upload:
+            return Response({"file": ["Choose a layout image or PDF to upload."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        current_file = recipe.layout_file
+        if current_file:
+            current_file.delete(save=False)
+        recipe.layout_file = upload
+        recipe.layout_file_name = str(request.data.get("name") or upload.name).strip()
+        recipe.save(update_fields=["layout_file", "layout_file_name"])
+        return Response(self.get_serializer(recipe).data)
 
 
 class PrintPlateViewSet(BaseToolingViewSet):
