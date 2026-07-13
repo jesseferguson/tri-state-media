@@ -1,9 +1,13 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, Edit3, ExternalLink, Plus, Search, Trash2, Wrench, X } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { isPdfUrl } from "./FilePreview";
 import { evaluateOption } from "./RecipeOptionsView";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const GOOD_STATUSES = new Set(["active", "available", "in_stock", "in_use"]);
 const BAD_STATUSES = new Set(["inactive", "missing", "needs_ordered", "needs_repair", "ordered", "out_for_repair", "out_for_retool", "out_of_stock", "retired"]);
@@ -66,11 +70,6 @@ function layoutFileUrl(row) {
 
 function layoutFileName(row) {
   return row?.layout_file_name || String(layoutFileUrl(row)).split("/").pop() || "";
-}
-
-function layoutPdfEmbedUrl(url) {
-  const separator = String(url || "").includes("#") ? "&" : "#";
-  return `${url}${separator}toolbar=0&navpanes=0&scrollbar=0&view=Fit&zoom=page-fit`;
 }
 
 function layoutMatchesFilters(row, filters) {
@@ -479,6 +478,77 @@ function CopyLayoutIdButton({ row, copiedId, onCopy }) {
   );
 }
 
+function PdfArtworkCanvas({ url, title }) {
+  const canvasRef = useRef(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const canvas = canvasRef.current;
+    if (!url || !canvas) return undefined;
+
+    setFailed(false);
+    const loadingTask = pdfjsLib.getDocument({
+      url,
+      disableAutoFetch: true,
+    });
+
+    async function renderFirstPage() {
+      let pdf = null;
+      try {
+        pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+        if (cancelled) return;
+
+        const baseViewport = page.getViewport({ scale: 1 });
+        const box = canvas.parentElement?.getBoundingClientRect();
+        const cssSize = Math.max(box?.width || 240, box?.height || 240, 160);
+        const deviceScale = Math.min(window.devicePixelRatio || 1, 2);
+        const targetSize = Math.min(900, Math.max(520, cssSize * deviceScale * 2));
+        const scale = targetSize / Math.max(baseViewport.width, baseViewport.height);
+        const viewport = page.getViewport({ scale });
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) throw new Error("Canvas preview is unavailable.");
+
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        canvas.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        await page.render({ canvasContext: context, viewport }).promise;
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Could not render layout PDF preview.", error);
+          setFailed(true);
+        }
+      } finally {
+        if (pdf) {
+          try {
+            await pdf.destroy();
+          } catch {
+            // Ignore cleanup failures after the preview has already rendered.
+          }
+        }
+      }
+    }
+
+    renderFirstPage();
+
+    return () => {
+      cancelled = true;
+      loadingTask.destroy();
+    };
+  }, [url]);
+
+  return (
+    <>
+      <canvas ref={canvasRef} className="layout-artwork-canvas" aria-label={title} />
+      {failed && <span className="layout-artwork-fallback" aria-hidden="true"><ExternalLink size={18} /></span>}
+    </>
+  );
+}
+
 function LayoutArtworkPreview({ row, size = "expanded" }) {
   const url = layoutFileUrl(row);
   if (!url) return null;
@@ -487,7 +557,7 @@ function LayoutArtworkPreview({ row, size = "expanded" }) {
   return (
     <div className={`layout-artwork-preview ${size}`} title={title}>
       {isPdfUrl(url) ? (
-        <iframe src={layoutPdfEmbedUrl(url)} title={title} loading="lazy" />
+        <PdfArtworkCanvas url={url} title={title} />
       ) : (
         <img src={url} alt={title} />
       )}
@@ -737,6 +807,8 @@ function LayoutGroup({
   return (
     <section className={`layout-group combined roll-root ${open ? "open" : ""} ${selected ? "selected" : ""}`}>
       <div className={`layout-group-head combined layout-root-head ${singleLayout && layoutFileUrl(primaryRow) ? "has-artwork" : ""}`}>
+        {singleLayout && <LayoutRootArtwork row={primaryRow} />}
+
         <button type="button" className="layout-root-toggle" onClick={toggleGroup}>
           <span className="layout-group-toggle">{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
           <span className="layout-root-stripe" aria-hidden="true" />
@@ -751,8 +823,6 @@ function LayoutGroup({
           )}
           <span className="layout-group-count layout-root-count">{countLabel}</span>
         </button>
-
-        {singleLayout && <LayoutRootArtwork row={primaryRow} />}
 
         {singleLayout && (
           <div className="layout-inline-actions layout-root-actions">

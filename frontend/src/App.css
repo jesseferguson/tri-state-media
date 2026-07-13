@@ -34652,9 +34652,9 @@ textarea {
 }
 
 .layout-group-head.combined.layout-root-head.has-artwork {
-  grid-template-columns: minmax(0, 1fr) minmax(132px, 164px) auto;
+  grid-template-columns: minmax(132px, 164px) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .layout-root-toggle {
@@ -34742,8 +34742,8 @@ textarea {
   position: relative;
   display: grid;
   place-items: center;
-  justify-self: center;
-  width: min(158px, 100%);
+  justify-self: start;
+  width: min(164px, 100%);
 }
 
 .layout-artwork-preview {
@@ -34756,11 +34756,11 @@ textarea {
   border: 1px solid #d6e0eb;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .035), 0 6px 18px rgba(15, 23, 42, .06);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .035), 0 5px 14px rgba(15, 23, 42, .05);
 }
 
 .layout-artwork-preview.main {
-  width: 150px;
+  width: 156px;
 }
 
 .layout-artwork-preview.expanded {
@@ -34768,17 +34768,31 @@ textarea {
 }
 
 .layout-artwork-preview img,
-.layout-artwork-preview iframe {
+.layout-artwork-preview canvas {
   display: block;
-  width: 100%;
-  height: 100%;
+  max-width: calc(100% - 18px);
+  max-height: calc(100% - 18px);
   border: 0;
   background: #ffffff;
+}
+
+.layout-artwork-preview img {
+  width: calc(100% - 18px);
+  height: calc(100% - 18px);
   object-fit: contain;
 }
 
-.layout-artwork-preview iframe {
-  color-scheme: light;
+.layout-artwork-canvas {
+  width: auto;
+  height: auto;
+}
+
+.layout-artwork-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #667085;
 }
 
 .layout-artwork-open {
