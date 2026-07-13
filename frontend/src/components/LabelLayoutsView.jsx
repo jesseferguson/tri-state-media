@@ -671,22 +671,6 @@ function LayoutRootArtwork({ row }) {
   );
 }
 
-function LayoutAttachmentPreview({ row }) {
-  const url = layoutFileUrl(row);
-  if (!url) return null;
-  const name = layoutFileName(row) || "Layout artwork";
-  const openUrl = layoutPreviewUrl(row) || url;
-  return (
-    <div className="layout-attachment-preview" onClick={(event) => event.stopPropagation()}>
-      <LayoutArtworkPreview row={row} />
-      <div className="layout-attachment-meta">
-        <strong>{name}</strong>
-        <a href={openUrl} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Open full size</a>
-      </div>
-    </div>
-  );
-}
-
 function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen }) {
   if (!slot.tool) {
     return (
@@ -844,8 +828,6 @@ function LayoutCard({
           </div>
         </header>
       )}
-
-      <LayoutAttachmentPreview row={row} />
 
       <div className={`layout-press-section ${showHeader ? "" : "root-options"}`} onClick={(event) => event.stopPropagation()}>
         {options.length ? (

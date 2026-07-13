@@ -34819,54 +34819,6 @@ textarea {
   color: #1d4ed8;
 }
 
-.layout-attachment-preview {
-  display: grid;
-  grid-template-columns: minmax(210px, 280px) minmax(0, 1fr);
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  margin: 10px;
-  padding: 12px;
-  border: 1px solid #dbe6f2;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.layout-design-card.root-panel .layout-attachment-preview {
-  margin: 0 0 10px;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 320px);
-}
-
-.layout-attachment-meta {
-  min-width: 0;
-  display: grid;
-  gap: 7px;
-  align-content: center;
-}
-
-.layout-attachment-preview a {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  width: fit-content;
-  color: #475467;
-  font-size: .68rem;
-  font-weight: 900;
-  text-decoration: none;
-}
-
-.layout-attachment-preview strong {
-  overflow: hidden;
-  color: #101828;
-  font-size: .9rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.layout-attachment-preview a {
-  color: #2563eb;
-}
-
 .recipes-record-form .field-layout_file,
 .recipes-record-form .form-section-heading {
   grid-column: 1 / -1;
@@ -34934,18 +34886,8 @@ textarea {
     grid-column: 3;
   }
 
-  .layout-design-head,
-  .layout-attachment-preview {
+  .layout-design-head {
     grid-template-columns: 1fr;
-  }
-
-  .layout-attachment-preview {
-    justify-items: center;
-  }
-
-  .layout-attachment-meta {
-    justify-items: center;
-    text-align: center;
   }
 }
 
