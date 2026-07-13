@@ -158,6 +158,8 @@ function scheduleTicketFallback(row) {
     box_item_number: row.box_item_number,
     linked_box_item_number: row.linked_box_item_number,
     box_name: row.box_name,
+    job_notes: row.job_notes,
+    finishing_notes: row.job_finishing_notes,
   };
 }
 
@@ -307,6 +309,15 @@ function DetailItem({ label, value }) {
   );
 }
 
+function ScheduleNoteBlock({ label, value, emptyText }) {
+  return (
+    <article className={`schedule-note-block ${value ? "has-note" : ""}`}>
+      <span>{label}</span>
+      <p>{value || emptyText}</p>
+    </article>
+  );
+}
+
 function ScheduleFact({ label, value }) {
   return (
     <span className="schedule-qty-line">
@@ -404,6 +415,12 @@ function ScheduleDetailOverlay({ row, lookups, currentUser, onClose, onFlexDieRe
             <DetailItem label="Ship / Stock" value={`${formatQty(row.quantity_to_ship)} / ${formatQty(row.quantity_to_stock)}`} />
             <DetailItem label="Scheduled By" value={row.scheduled_by} />
           </div>
+        </section>
+
+        <section className="schedule-note-grid">
+          <ScheduleNoteBlock label="Operator Run Note" value={ticket?.job_notes} emptyText="No operator run note on this ticket." />
+          <ScheduleNoteBlock label="CSR Schedule Note" value={row.notes} emptyText="No CSR schedule note entered." />
+          {ticket?.finishing_notes && <ScheduleNoteBlock label="Finishing Note" value={ticket.finishing_notes} />}
         </section>
 
         <section className="schedule-operator-sections">

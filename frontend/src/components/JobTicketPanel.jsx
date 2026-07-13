@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, XCircle } from "lucide-react";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
+import RecipeOptionsView from "./RecipeOptionsView";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
 const tabs = [
   { key: "general", label: "General" },
+  { key: "specs", label: "Specs" },
   { key: "labels", label: "Labels" },
   { key: "history", label: "History" },
   { key: "editor", label: "Editor" },
@@ -467,6 +469,15 @@ function PackagingInventoryTable({ title, type, rows }) {
         <p className="muted">No linked {isCore ? "core" : "box"} inventory is available yet.</p>
       )}
     </div>
+  );
+}
+
+function JobNoteBlock({ title, value, emptyText = "No note entered." }) {
+  return (
+    <article className={`job-note-block ${value ? "has-note" : ""}`}>
+      <span>{title}</span>
+      <p>{value || emptyText}</p>
+    </article>
   );
 }
 
@@ -1173,14 +1184,14 @@ function orderFootageReports(group) {
       key: `order-${order.id}`,
       date: order.scheduled_date || order.due_date || order.order_date,
       footage: numeric(order.actual_footage),
-      report: order.footage_report || order.operator_note,
+      report: order.footage_report,
       source: order.order_number || `Order ${order.id}`,
     })),
     ...group.schedules.map((schedule) => ({
       key: `schedule-${schedule.id}`,
       date: dateValue(schedule),
       footage: numeric(schedule.actual_footage),
-      report: schedule.footage_report || schedule.notes,
+      report: schedule.footage_report,
       source: `Schedule ${schedule.id}`,
     })),
   ].filter((row) => row.footage > 0 || row.report);
@@ -1281,7 +1292,12 @@ function OrderHistoryGroupCard({ group }) {
                         { label: "Footage", value: numeric(schedule.actual_footage), suffix: " ft" },
                       ]}
                     />
-                    <em>{[schedule.scheduled_by ? `Scheduled by ${schedule.scheduled_by}` : "", schedule.operator ? `Operator ${schedule.operator}` : "", schedule.footage_report || schedule.notes].filter(Boolean).join(" / ") || "No footage report"}</em>
+                    <em>{[
+                      schedule.scheduled_by ? `Scheduled by ${schedule.scheduled_by}` : "",
+                      schedule.operator ? `Operator ${schedule.operator}` : "",
+                      schedule.footage_report ? `Footage: ${schedule.footage_report}` : "",
+                      schedule.notes ? `CSR note: ${schedule.notes}` : "",
+                    ].filter(Boolean).join(" / ") || "No schedule note"}</em>
                   </div>
                 ))}
               </div>
@@ -1372,6 +1388,18 @@ export default function JobTicketPanel({
 
   const materialInventory = useMemo(
     () => matchingMaterialInventory(ticket, lookups["raw-materials"]),
+    [ticket, lookups]
+  );
+  const recipeOptions = useMemo(
+    () => matchingRecipeOptions(ticket, lookups["recipe-options"]),
+    [ticket, lookups]
+  );
+  const boxInventory = useMemo(
+    () => matchingBoxInventory(ticket, lookups["box-inventory"]),
+    [ticket, lookups]
+  );
+  const coreInventory = useMemo(
+    () => matchingCoreInventory(ticket, lookups["core-inventory"]),
     [ticket, lookups]
   );
 
@@ -1695,6 +1723,142 @@ export default function JobTicketPanel({
               <span>{formatNumber(materialFeet, " ft")} available</span>
             </div>
             <RawMaterialInventoryTable rows={availableInventoryWithFeet} />
+          </section>
+        </div>
+      )}
+
+      {activeTab === "specs" && (
+        <div className="job-panel-section job-specs-panel">
+          <section className="job-specs-summary">
+            <div>
+              <p className="eyebrow">Specs</p>
+              <h3>{partNumber}</h3>
+              <span>{ticket.description || "No description entered."}</span>
+            </div>
+            <div className="job-specs-kpis">
+              <div>
+                <span>Size</span>
+                <strong>{`${formatInches(ticket.label_width_inches)} x ${formatInches(ticket.label_length_inches)}`}</strong>
+              </div>
+              <div>
+                <span>Material</span>
+                <strong>{materialTypeDisplay}</strong>
+              </div>
+              <div>
+                <span>Finishing</span>
+                <strong>{labelize(ticket.finishing_type)}</strong>
+              </div>
+              <div>
+                <span>Tooling</span>
+                <strong>{recipeOptions.length ? `${recipeOptions.length} option${recipeOptions.length === 1 ? "" : "s"}` : "--"}</strong>
+              </div>
+            </div>
+          </section>
+
+          <div className="job-specs-grid">
+            <section className="job-ticket-sheet-card job-spec-card">
+              <div className="job-ticket-card-head">
+                <strong>Job Information</strong>
+                <span>{ticket.ticket_number || "No ticket number"}</span>
+              </div>
+              <div className="job-info-list compact">
+                <InfoRow label="Customer" value={ticket.customer_display || ticket.customer_name} />
+                <InfoRow label="TSM ID" value={ticket.product_code} />
+                <InfoRow label="Job Number" value={ticket.job_name || ticket.ticket_number} />
+                <InfoRow label="Requested Qty" value={ticket.requested_quantity ? formatNumber(ticket.requested_quantity) : ""} />
+                <InfoRow label="Unit Type" value={labelize(ticket.unit_type)} />
+                <InfoRow label="Recipe" value={ticket.recipe_name} />
+                <InfoRow label="Description" value={ticket.description} wide />
+              </div>
+            </section>
+
+            <section className="job-ticket-sheet-card job-spec-card">
+              <div className="job-ticket-card-head">
+                <strong>Material & Label</strong>
+                <span>{ticket.material_spec_code || ticket.material_spec_name || materialTypeDisplay}</span>
+              </div>
+              <div className="job-info-list compact">
+                <InfoRow label="Material Type" value={materialTypeDisplay} />
+                <InfoRow label="Material Spec" value={[ticket.material_spec_code, ticket.material_spec_name].filter(Boolean).join(" / ")} />
+                <InfoRow label="Face" value={ticket.face_type} />
+                <InfoRow label="Liner" value={ticket.liner_type} />
+                <InfoRow label="Width" value={formatInches(ticket.label_width_inches)} />
+                <InfoRow label="Length" value={formatInches(ticket.label_length_inches)} />
+                <InfoRow label="Repeat" value={formatInches(ticket.repeat_inches)} />
+                <InfoRow label="Cutting" value={labelize(ticket.cutting_type)} />
+              </div>
+            </section>
+
+            <section className="job-ticket-sheet-card job-spec-card">
+              <div className="job-ticket-card-head">
+                <strong>Finishing</strong>
+                <span>{labelize(ticket.finishing_type)}</span>
+              </div>
+              <div className="job-info-list compact">
+                <InfoRow label="Finishing" value={labelize(ticket.finishing_type)} />
+                <InfoRow label={unitPerPackageLabel(ticket)} value={ticket.labels_per_unit ? formatNumber(ticket.labels_per_unit) : ""} />
+                <InfoRow label={unitsPerCartonLabel(ticket)} value={ticket.units_per_carton ? formatNumber(ticket.units_per_carton) : ""} />
+                <InfoRow label="Labels / Carton" value={ticket.labels_per_carton ? formatNumber(ticket.labels_per_carton) : ""} />
+                <InfoRow label="Core Size" value={formatInches(ticket.core_size_inches)} />
+                <InfoRow label="Wind" value={ticket.wind_direction ? `Wind ${ticket.wind_direction}` : ""} />
+                {ticket.finishing_type === "fanfold" && <InfoRow label="Fanfold Gear" value={ticket.fanfold_gear} />}
+                {ticket.finishing_type === "fanfold" && <InfoRow label={labelsPerFoldLabel(ticket)} value={ticket.labels_per_fold} />}
+                <InfoRow label="Ribbon" value={labelize(ticket.ribbon || "no_ribbon")} />
+                <InfoRow label="Laminate" value={labelize(ticket.laminate || "no_laminate")} />
+                <InfoRow label="Bagged" value={labelize(ticket.bagged || "not_bagged")} />
+              </div>
+            </section>
+
+            <section className="job-ticket-sheet-card job-spec-card">
+              <div className="job-ticket-card-head">
+                <strong>Packaging</strong>
+                <span>{ticket.linked_box_item_number || ticket.box_item_number || ticket.core_item_number || "--"}</span>
+              </div>
+              <div className="job-info-list compact">
+                <InfoRow label="Box Item #" value={ticket.linked_box_item_number || ticket.box_item_number} />
+                <InfoRow label="Box" value={ticket.box_name} />
+                <InfoRow label="Box Supplier" value={ticket.box_supplier} />
+                <InfoRow label="Core Item #" value={ticket.core_item_number} />
+                <InfoRow label="Core" value={ticket.core_name} />
+                <InfoRow label="Core Supplier" value={ticket.core_supplier} />
+              </div>
+            </section>
+          </div>
+
+          <section className="job-spec-notes-panel">
+            <JobNoteBlock title="Operator Run Note" value={ticket.job_notes} emptyText="No operator run note on this ticket." />
+            <JobNoteBlock title="Finishing Note" value={ticket.finishing_notes} emptyText="No finishing note on this ticket." />
+          </section>
+
+          <section className="job-spec-inventory-panel">
+            <div className="job-spec-section-head">
+              <PackageCheck size={16} />
+              <div>
+                <strong>Material & Packaging Availability</strong>
+                <span>{formatNumber(materialFeet, " ft")} raw material available</span>
+              </div>
+            </div>
+            <WidthFootageChart rows={availableInventoryWithFeet} loading={chartsLoading} />
+            <div className="job-packaging-inventory-grid">
+              <PackagingInventoryTable title="Box Inventory" type="box" rows={boxInventory} />
+              <PackagingInventoryTable title="Core Inventory" type="core" rows={coreInventory} />
+            </div>
+          </section>
+
+          <section className="job-spec-tooling-panel">
+            <div className="job-spec-section-head">
+              <Settings2 size={16} />
+              <div>
+                <strong>Tooling</strong>
+                <span>{ticket.recipe_name || "No recipe linked"}</span>
+              </div>
+            </div>
+            <RecipePressOverview rows={recipeOptions} />
+            {recipeOptions.length ? (
+              <RecipeOptionsView rows={recipeOptions} defaultOpenAll={recipeOptions.length <= 3} operatorName={currentUserName} />
+            ) : (
+              <p className="muted">No tooling options are linked to this job yet.</p>
+            )}
           </section>
         </div>
       )}

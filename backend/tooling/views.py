@@ -478,6 +478,19 @@ class ToolingRecipeOptionViewSet(BaseToolingViewSet):
         "press__name",
     ]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        recipe = self.request.query_params.get("recipe")
+        press = self.request.query_params.get("press")
+        is_active = self.request.query_params.get("is_active")
+        if recipe:
+            qs = qs.filter(recipe_id=recipe)
+        if press:
+            qs = qs.filter(press_id=press)
+        if is_active in {"true", "false"}:
+            qs = qs.filter(is_active=(is_active == "true"))
+        return qs
+
 class ToolingRecipeToolViewSet(BaseToolingViewSet):
     serializer_class = ToolingRecipeToolSerializer
     search_fields = [

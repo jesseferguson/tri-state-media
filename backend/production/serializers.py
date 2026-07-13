@@ -490,6 +490,8 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
     job_product_code = serializers.CharField(source="job_ticket.product_code", read_only=True)
     job_description = serializers.CharField(source="job_ticket.description", read_only=True)
+    job_notes = serializers.CharField(source="job_ticket.job_notes", read_only=True)
+    job_finishing_notes = serializers.CharField(source="job_ticket.finishing_notes", read_only=True)
     job_general_image_url = serializers.SerializerMethodField()
     job_general_image_source = serializers.SerializerMethodField()
     job_general_image_is_document = serializers.SerializerMethodField()

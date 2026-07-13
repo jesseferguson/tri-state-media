@@ -238,7 +238,8 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { job_ticket: selected.id }, 1000, true));
     if (selected.ticket_number) addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { legacy_job_ticket_id: selected.ticket_number }, 250, true));
     if (selected.product_code) addLookupSpec(specs, relationLookupSpec("job-ticket-usages", { legacy_job_ticket_id: selected.product_code }, 250, true));
-    addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 150));
+    if (selected.recipe) addLookupSpec(specs, relationLookupSpec("recipe-options", { recipe: selected.recipe }, 500, true));
+    else addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 150));
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 150));
@@ -389,7 +390,7 @@ function scheduleDefaultsForTicket(ticket, currentUser) {
     due_date: "",
     quantity_to_ship: 0,
     quantity_to_stock: 0,
-    notes: ticket?.job_notes || ticket?.finishing_notes || "",
+    notes: "",
     scheduled_by: currentUser?.name || "",
     last_updated_by: currentUser?.name || "",
     status: "unscheduled",

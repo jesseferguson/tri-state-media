@@ -927,7 +927,7 @@ class CustomerOrderManager(models.Manager):
                 "operator": schedule.operator,
                 "actual_footage": schedule.actual_footage,
                 "footage_report": schedule.footage_report,
-                "operator_note": schedule.notes,
+                "operator_note": schedule.job_ticket.job_notes,
             },
         )
 
@@ -954,7 +954,7 @@ class CustomerOrderManager(models.Manager):
             order.operator = schedule.operator
             order.actual_footage = schedule.actual_footage
             order.footage_report = schedule.footage_report
-            order.operator_note = schedule.notes
+            order.operator_note = schedule.job_ticket.job_notes
             order.save()
 
         actor = schedule.last_updated_by or schedule.scheduled_by or "system"

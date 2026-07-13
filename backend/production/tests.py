@@ -84,17 +84,21 @@ class FinishedInventoryOrderWorkflowTests(TestCase):
 
     def test_schedule_creates_short_order_number(self):
         ticket = self.make_ticket()
+        ticket.job_notes = "Run this job with the operator setup note."
+        ticket.save(update_fields=["job_notes"])
         schedule = ProductionSchedule.objects.create(
             job_ticket=ticket,
             quantity_to_ship=10,
             quantity_to_stock=5,
             scheduled_by="Tester",
+            notes="CSR context for this scheduled run.",
         )
 
         order = CustomerOrder.objects.get(schedule_entry=schedule)
 
         self.assertRegex(order.order_number, r"^ORD\d{6}-\d{4}$")
         self.assertEqual(order.job_ticket, ticket)
+        self.assertEqual(order.operator_note, ticket.job_notes)
 
     def test_receive_order_creates_linked_finished_inventory(self):
         ticket = self.make_ticket()

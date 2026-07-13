@@ -1073,7 +1073,7 @@ export const resources = [
         clearWhenHidden: "standard",
         helpText: "The Labels tab will automatically use this format.",
       },
-      { name: "job_notes", label: "Job Notes", type: "textarea" },
+      { name: "job_notes", label: "Operator Run Note", type: "textarea" },
     ],
   },
 
@@ -1151,7 +1151,7 @@ export const resources = [
       { name: "target_footage", label: "Planned Footage", type: "number", step: "0.01", helpText: "Used for operator progress and shift handoff." },
       { name: "actual_footage", label: "Actual Footage", type: "number", step: "0.01" },
       { name: "footage_report", label: "Footage Report", type: "textarea" },
-      { name: "notes", label: "Operator Note", type: "textarea" },
+      { name: "notes", label: "CSR Schedule Note", type: "textarea" },
     ],
   },
 
