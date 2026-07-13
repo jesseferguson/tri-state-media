@@ -1,8 +1,8 @@
 import { Fragment, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, Edit3, ExternalLink, FileText, Plus, Search, Trash2, Wrench, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, Edit3, ExternalLink, Plus, Search, Trash2, Wrench, X } from "lucide-react";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
-import { FilePreview } from "./FilePreview";
+import { isPdfUrl } from "./FilePreview";
 import { evaluateOption } from "./RecipeOptionsView";
 
 const GOOD_STATUSES = new Set(["active", "available", "in_stock", "in_use"]);
@@ -66,6 +66,11 @@ function layoutFileUrl(row) {
 
 function layoutFileName(row) {
   return row?.layout_file_name || String(layoutFileUrl(row)).split("/").pop() || "";
+}
+
+function layoutPdfEmbedUrl(url) {
+  const separator = String(url || "").includes("#") ? "&" : "#";
+  return `${url}${separator}toolbar=0&navpanes=0&scrollbar=0&view=Fit&zoom=page-fit`;
 }
 
 function layoutMatchesFilters(row, filters) {
@@ -133,7 +138,6 @@ function layoutRootChips(row) {
     choiceLabel("layoutShapeType", row.shape_type, "Shape"),
     choiceLabel("labelCutType", row.cutting_type, "Cut"),
     perfShortLabel(row) === "NP" ? "No Perf" : perfShortLabel(row),
-    layoutFileUrl(row) ? "File attached" : "",
   ].filter(Boolean);
 }
 
@@ -475,19 +479,46 @@ function CopyLayoutIdButton({ row, copiedId, onCopy }) {
   );
 }
 
+function LayoutArtworkPreview({ row, size = "expanded" }) {
+  const url = layoutFileUrl(row);
+  if (!url) return null;
+  const title = layoutFileName(row) || row.name || "Layout artwork";
+
+  return (
+    <div className={`layout-artwork-preview ${size}`} title={title}>
+      {isPdfUrl(url) ? (
+        <iframe src={layoutPdfEmbedUrl(url)} title={title} loading="lazy" />
+      ) : (
+        <img src={url} alt={title} />
+      )}
+    </div>
+  );
+}
+
+function LayoutRootArtwork({ row }) {
+  const url = layoutFileUrl(row);
+  if (!url) return null;
+
+  return (
+    <div className="layout-root-artwork-shell" onClick={(event) => event.stopPropagation()}>
+      <LayoutArtworkPreview row={row} size="main" />
+      <a className="layout-artwork-open" href={url} target="_blank" rel="noreferrer" title="Open layout artwork" aria-label="Open layout artwork">
+        <ExternalLink size={14} />
+      </a>
+    </div>
+  );
+}
+
 function LayoutAttachmentPreview({ row }) {
   const url = layoutFileUrl(row);
   if (!url) return null;
-  const name = layoutFileName(row) || "Layout file";
+  const name = layoutFileName(row) || "Layout artwork";
   return (
     <div className="layout-attachment-preview" onClick={(event) => event.stopPropagation()}>
-      <div className="layout-attachment-thumb">
-        <FilePreview url={url} title={name} compact />
-      </div>
-      <div>
-        <span><FileText size={13} /> Layout File</span>
+      <LayoutArtworkPreview row={row} />
+      <div className="layout-attachment-meta">
         <strong>{name}</strong>
-        <a href={url} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Open</a>
+        <a href={url} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Open full size</a>
       </div>
     </div>
   );
@@ -705,7 +736,7 @@ function LayoutGroup({
 
   return (
     <section className={`layout-group combined roll-root ${open ? "open" : ""} ${selected ? "selected" : ""}`}>
-      <div className="layout-group-head combined layout-root-head">
+      <div className={`layout-group-head combined layout-root-head ${singleLayout && layoutFileUrl(primaryRow) ? "has-artwork" : ""}`}>
         <button type="button" className="layout-root-toggle" onClick={toggleGroup}>
           <span className="layout-group-toggle">{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
           <span className="layout-root-stripe" aria-hidden="true" />
@@ -720,6 +751,8 @@ function LayoutGroup({
           )}
           <span className="layout-group-count layout-root-count">{countLabel}</span>
         </button>
+
+        {singleLayout && <LayoutRootArtwork row={primaryRow} />}
 
         {singleLayout && (
           <div className="layout-inline-actions layout-root-actions">
