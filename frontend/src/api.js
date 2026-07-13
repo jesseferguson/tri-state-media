@@ -55,6 +55,30 @@ async function request(url, options = {}) {
   return response.json();
 }
 
+export async function fetchFile(url, options = {}) {
+  const { headers: optionHeaders = {}, skipAuth = false, ...requestOptions } = options;
+  const token = skipAuth ? "" : getApiToken();
+  let response;
+  try {
+    response = await fetch(url, {
+      ...requestOptions,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...optionHeaders,
+      },
+    });
+  } catch (error) {
+    const target = typeof url === "string" ? url : url?.toString?.();
+    throw new Error(`Could not reach the file at ${target || "the requested endpoint"}. Refresh and try again. (${error.message || "Network request failed"})`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`.trim() || "File request failed");
+  }
+
+  return response;
+}
+
 export function apiEndpoint(endpoint, id = null) {
   return endpointUrl(endpoint, id);
 }

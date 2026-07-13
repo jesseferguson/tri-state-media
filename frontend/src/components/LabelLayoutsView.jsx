@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, Edit3, ExternalLink, LoaderCircle, Plus, Search, Trash2, Wrench, X } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { apiEndpoint } from "../api";
+import { apiEndpoint, fetchFile } from "../api";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { isPdfUrl } from "./FilePreview";
@@ -484,13 +484,45 @@ function CopyLayoutIdButton({ row, copiedId, onCopy }) {
 }
 
 function ArtworkImage({ src, fallbackSrc = "", title }) {
-  const [currentSrc, setCurrentSrc] = useState(src);
+  const [currentSrc, setCurrentSrc] = useState("");
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    setCurrentSrc(src);
+    let cancelled = false;
+    let objectUrl = "";
+    const controller = new AbortController();
+
+    setCurrentSrc("");
     setFailed(false);
-  }, [src]);
+
+    if (!src) return undefined;
+
+    async function loadImage() {
+      try {
+        const response = await fetchFile(src, { cache: "no-store", signal: controller.signal });
+        const blob = await response.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setCurrentSrc(objectUrl);
+      } catch (error) {
+        if (cancelled || error?.name === "AbortError") return;
+        if (fallbackSrc && fallbackSrc !== src) {
+          setCurrentSrc(fallbackSrc);
+        } else {
+          console.warn("Could not load layout artwork preview.", error);
+          setFailed(true);
+        }
+      }
+    }
+
+    loadImage();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [src, fallbackSrc]);
 
   if (!currentSrc || failed) {
     return (
@@ -532,11 +564,20 @@ function PdfArtworkImage({ url, fallbackUrl = "", title }) {
       let pdf = null;
       try {
         let response = null;
-        for (const source of sources) {
-          response = await fetch(source, { cache: "no-store", signal: controller.signal });
-          if (response.ok) break;
+        for (const [index, source] of sources.entries()) {
+          try {
+            response = await fetchFile(source, {
+              cache: "no-store",
+              signal: controller.signal,
+              skipAuth: index > 0,
+            });
+            break;
+          } catch (error) {
+            if (error?.name === "AbortError") throw error;
+            response = null;
+          }
         }
-        if (!response?.ok) throw new Error(`Could not load layout PDF preview (${response?.status || "no response"}).`);
+        if (!response?.ok) throw new Error("Could not load layout PDF preview.");
         const data = new Uint8Array(await response.arrayBuffer());
         const loadingTask = pdfjsLib.getDocument({
           data,
