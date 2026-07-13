@@ -112,7 +112,7 @@ class ApiAuthSecurityTests(TestCase):
                 b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
                 content_type="image/gif",
             ),
-            general_image_name="private-artwork.gif",
+            general_image_name="Private Artwork",
         )
 
         detail = self.client.get(
@@ -139,6 +139,8 @@ class ApiAuthSecurityTests(TestCase):
             HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(image_user)}",
         )
         self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed["Content-Type"], "image/gif")
+        self.assertIn('filename="Private Artwork.gif"', allowed["Content-Disposition"])
         self.assertTrue(b"".join(allowed.streaming_content).startswith(b"GIF89a"))
 
 
