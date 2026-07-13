@@ -3,8 +3,9 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
+from rest_framework.test import APIRequestFactory
 
 from materials.models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
 from tooling.models import FlexDie, Press, Supplier
@@ -24,6 +25,67 @@ from .models import (
     ProductionMaterialAssignment,
     ProductionSchedule,
 )
+from .auth import CompanyUserTokenAuthentication
+
+
+SECURE_REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "production.auth.CompanyUserTokenAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+}
+
+
+@override_settings(
+    API_AUTH_REQUIRED=True,
+    BLOCK_LEGACY_DEFAULT_ADMIN_PASSWORD=True,
+    REST_FRAMEWORK=SECURE_REST_FRAMEWORK,
+)
+class ApiAuthSecurityTests(TestCase):
+    def setUp(self):
+        self.role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        self.user = CompanyUser(username="secure-admin", name="Secure Admin", role=self.role, active=True)
+        self.user.set_password("StrongPass7&")
+        self.user.save()
+
+    def test_api_requires_signed_company_user_token(self):
+        factory = APIRequestFactory()
+        authenticator = CompanyUserTokenAuthentication()
+        self.assertIsNone(authenticator.authenticate(factory.get("/api/company-users/")))
+
+        sign_in = self.client.post(
+            reverse("company-sign-in"),
+            {"username": "secure-admin", "password": "StrongPass7&"},
+            content_type="application/json",
+        )
+        self.assertEqual(sign_in.status_code, 200, sign_in.content)
+        token = sign_in.json()["token"]
+
+        request = factory.get("/api/company-users/", HTTP_AUTHORIZATION=f"Bearer {token}")
+        authenticated_user, _token = authenticator.authenticate(request)
+        self.assertEqual(authenticated_user.pk, self.user.pk)
+
+    def test_legacy_default_admin_password_is_blocked(self):
+        legacy_password = "Blue" "labels7&"
+        admin, _ = CompanyUser.objects.get_or_create(username="admin", defaults={"name": "Admin", "role": self.role})
+        admin.role = self.role
+        admin.active = True
+        admin.set_password(legacy_password)
+        admin.save()
+
+        response = self.client.post(
+            reverse("company-sign-in"),
+            {"username": "admin", "password": legacy_password},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("legacy default admin password is blocked", response.json()["error"])
 
 
 class DataImportToolingTests(TestCase):

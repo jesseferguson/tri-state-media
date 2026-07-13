@@ -2018,6 +2018,7 @@ export const resources = [
         type: "imageUpload",
         imageSlot: "layout",
         uploadAction: "layout-file",
+        previewAction: "layout-file-preview",
         urlField: "layout_file_url",
         nameField: "layout_file_name",
         emptyText: "No layout file",

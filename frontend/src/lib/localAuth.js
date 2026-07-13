@@ -1,4 +1,5 @@
 import { createRecord, deleteRecord, fetchCollection, requestApi, updateRecord } from "../api";
+import { clearApiToken, getApiToken, setApiToken } from "./authToken";
 import { quoteCompanyKey } from "./quoteCompanies";
 
 export const userStorageKey = "tsm_company_users_v1";
@@ -50,17 +51,6 @@ export const defaultRoleDefinitions = [
     allowedResourceKeys: ["*"],
   },
 ];
-
-const defaultAdminUser = {
-  id: "user-admin",
-  username: "admin",
-  password: "Bluelabels7&",
-  name: "Admin",
-  role: "Admin",
-  quoteCompany: "tri_state_media",
-  active: true,
-  createdAt: "2026-05-15T00:00:00.000Z",
-};
 
 function canUseStorage() {
   return typeof window !== "undefined" && window.localStorage;
@@ -117,12 +107,12 @@ export function userIsAdmin(user) {
 
 export function publicUser(user) {
   if (!user) return null;
-  const { password, ...safeUser } = user;
+  const { password, apiToken, token, ...safeUser } = user;
   return safeUser;
 }
 
 export function loadUsers() {
-  if (!canUseStorage()) return [defaultAdminUser];
+  if (!canUseStorage()) return [];
 
   let users = [];
   try {
@@ -130,20 +120,6 @@ export function loadUsers() {
     users = Array.isArray(payload) ? payload.map(normalizeUser) : [];
   } catch {
     users = [];
-  }
-
-  const adminIndex = users.findIndex((user) => user.username.toLowerCase() === "admin");
-  if (adminIndex === -1) {
-    users = [defaultAdminUser, ...users];
-  } else {
-    users[adminIndex] = {
-      ...users[adminIndex],
-      username: "admin",
-      name: users[adminIndex].name || "Admin",
-      role: "Admin",
-      active: true,
-      password: users[adminIndex].password || defaultAdminUser.password,
-    };
   }
 
   saveUsers(users);
@@ -181,7 +157,7 @@ export function loadRoles() {
 
 export function saveUsers(users) {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(userStorageKey, JSON.stringify(users.map(normalizeUser)));
+  window.localStorage.setItem(userStorageKey, JSON.stringify(users.map((user) => ({ ...normalizeUser(user), password: "" }))));
 }
 
 export function saveRoles(roles) {
@@ -241,12 +217,12 @@ export async function deleteRoleFromApi(role) {
 }
 
 export function loadSessionUser(users = loadUsers()) {
-  if (!canUseStorage()) return null;
+  if (!canUseStorage() || !getApiToken()) return null;
   try {
     const session = JSON.parse(window.localStorage.getItem(sessionStorageKey) || "null");
     if (!session?.id) return null;
     const user = users.find((item) => item.id === session.id && item.active !== false);
-    return publicUser(user);
+    return publicUser(user || session);
   } catch {
     return null;
   }
@@ -260,14 +236,17 @@ export function saveSession(user) {
 export function clearSession() {
   if (!canUseStorage()) return;
   window.localStorage.removeItem(sessionStorageKey);
+  clearApiToken();
 }
 
 export async function signIn(username, password) {
   try {
     const payload = await requestApi("auth/sign-in", {
       method: "POST",
+      skipAuth: true,
       body: JSON.stringify({ username, password }),
     });
+    setApiToken(payload.token || "");
     saveSession(payload.user);
     saveUsers(payload.users ?? []);
     saveRoles(payload.roles ?? []);
@@ -277,28 +256,12 @@ export async function signIn(username, password) {
       roles: (payload.roles ?? []).map(normalizeRole),
     };
   } catch (apiError) {
-    if (!String(apiError.message || "").includes("Failed to fetch")) {
-      try {
-        const payload = JSON.parse(apiError.message);
-        return { error: payload.error || "Username or password is not correct." };
-      } catch {
-        return { error: apiError.message || "Username or password is not correct." };
-      }
+    clearApiToken();
+    try {
+      const payload = JSON.parse(apiError.message);
+      return { error: payload.error || payload.detail || "Username or password is not correct." };
+    } catch {
+      return { error: apiError.message || "Could not reach secure sign-in. Make sure the backend is running, then try again." };
     }
   }
-
-  const users = loadUsers();
-  const cleanUsername = String(username || "").trim().toLowerCase();
-  const user = users.find((item) => item.username.toLowerCase() === cleanUsername);
-
-  if (!user || user.password !== password) {
-    return { error: "Username or password is not correct." };
-  }
-
-  if (user.active === false) {
-    return { error: "This user is inactive. Ask an admin to reactivate the account." };
-  }
-
-  saveSession(user);
-  return { user: publicUser(user), users };
 }

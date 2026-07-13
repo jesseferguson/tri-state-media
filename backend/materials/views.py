@@ -12,6 +12,7 @@ from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from production.auth import company_user_from_request
 from tooling.models import Press
 from production.models import CompanyUser
 
@@ -55,6 +56,12 @@ from .zpl import rack_label_zpl, skid_label_zpl
 
 
 def _verified_company_user(request, *, admin_only=False):
+    user = company_user_from_request(request)
+    if user:
+        if admin_only and str(getattr(user.role, "name", "")).lower() != "admin":
+            return None
+        return user
+
     user_id = str(request.META.get("HTTP_X_COMPANY_USER_ID") or "").strip()
     username = str(request.META.get("HTTP_X_COMPANY_USERNAME") or "").strip()
     queryset = CompanyUser.objects.select_related("role").filter(active=True)

@@ -31,6 +31,7 @@ const int PROJECT_PORT = 8000;
 const bool USE_LOCAL_DATABASE_ONLY = true;
 const char* SPEED_PATH = USE_LOCAL_DATABASE_ONLY ? "/api/local-live-footage/eti/speed/" : "/api/live-footage-relay/eti/speed/";
 const char* DAILY_PATH = USE_LOCAL_DATABASE_ONLY ? "/api/local-live-footage/eti/daily/" : "/api/live-footage-relay/eti/daily/";
+const char* DEVICE_TOKEN = ""; // Optional: match Django LIVE_FOOTAGE_DEVICE_TOKEN.
 
 EthernetClient client;
 EthernetUDP udp;
@@ -367,6 +368,10 @@ bool sendHttpRequest(const char* method, const char* path, const char* payload) 
   client.println("User-Agent: TSM-ETI-Arduino-Ethernet");
   client.println("Connection: close");
   client.println("Content-Type: application/json");
+  if (strlen(DEVICE_TOKEN) > 0) {
+    client.print("X-Device-Token: ");
+    client.println(DEVICE_TOKEN);
+  }
   client.print("Content-Length: ");
   client.println(strlen(payload));
   client.println();

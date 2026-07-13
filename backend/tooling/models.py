@@ -1,18 +1,22 @@
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils.text import get_valid_filename
 
 
 def flex_die_image_upload_path(instance, filename):
     safe_name = str(instance.name or instance.pk or "flex-die").replace("/", "-").replace("\\", "-")
-    return f"tooling/flex-dies/{safe_name}/{uuid4().hex}-{filename}"
+    safe_filename = get_valid_filename(Path(str(filename or "upload")).name) or "upload"
+    return f"tooling/flex-dies/{safe_name}/{uuid4().hex}-{safe_filename}"
 
 
 def tooling_recipe_layout_upload_path(instance, filename):
     safe_name = str(instance.name or instance.pk or "label-layout").replace("/", "-").replace("\\", "-")
-    return f"tooling/label-layouts/{safe_name}/{uuid4().hex}-{filename}"
+    safe_filename = get_valid_filename(Path(str(filename or "upload")).name) or "upload"
+    return f"tooling/label-layouts/{safe_name}/{uuid4().hex}-{safe_filename}"
 
 
 # =========================

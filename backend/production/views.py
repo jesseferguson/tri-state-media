@@ -15,8 +15,9 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import filters, serializers, status, viewsets
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from materials.models import MaterialUsage, RawMaterialInventory
@@ -78,6 +79,8 @@ from .serializers import (
     QuoteRawMaterialSerializer,
     QuoteRecordSerializer,
 )
+from .auth import company_user_from_request, create_company_user_token, request_user_is_admin
+from .upload_security import validate_upload
 
 
 logger = logging.getLogger(__name__)
@@ -187,6 +190,20 @@ def _request_bool(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _device_token_allowed(request):
+    expected = getattr(settings, "LIVE_FOOTAGE_DEVICE_TOKEN", "")
+    if not expected:
+        return True
+    if request_user_is_admin(request):
+        return True
+    supplied = (
+        request.headers.get("X-Device-Token")
+        or request.query_params.get("token")
+        or request.data.get("device_token")
+    )
+    return supplied == expected
+
+
 ETI_DEVICE_SETTINGS_DEFAULTS = {
     "wheelDiameterInches": 3.0,
     "pulsesPerRevolution": 1,
@@ -264,19 +281,7 @@ def _press_goal_share_response(shares, *, exists=True, firebase_status=None, met
 
 
 def _verified_settings_admin(request):
-    user_id = str(request.META.get("HTTP_X_COMPANY_USER_ID") or "").strip()
-    username = str(request.META.get("HTTP_X_COMPANY_USERNAME") or "").strip()
-    queryset = CompanyUser.objects.select_related("role").filter(active=True, role__name__iexact="Admin")
-    if user_id.isdigit():
-        queryset = queryset.filter(pk=int(user_id))
-    elif username:
-        queryset = queryset.filter(username__iexact=username)
-    else:
-        return None
-    user = queryset.first()
-    if user and username and user.username.lower() != username.lower():
-        return None
-    return user
+    return company_user_from_request(request) if request_user_is_admin(request) else None
 
 
 def _eti_setting_number(data, key, minimum, maximum, integer=False):
@@ -504,7 +509,10 @@ def _local_live_chart_payload(shift_rows, known_keys, shift_start, shift_end, no
 
 
 @api_view(["POST", "PUT"])
+@permission_classes([AllowAny])
 def live_footage_relay(request, press, kind):
+    if not _device_token_allowed(request):
+        return Response({"detail": "Invalid device token."}, status=status.HTTP_403_FORBIDDEN)
     press_key = str(press or "").strip().lower()
     kind_key = str(kind or "").strip().lower()
     node = LIVE_FOOTAGE_RELAY_NODES.get(press_key, {}).get(kind_key)
@@ -816,7 +824,10 @@ def press_dashboard_qr_label(request):
 
 
 @api_view(["POST", "PUT"])
+@permission_classes([AllowAny])
 def local_live_footage_relay(request, press, kind):
+    if not _device_token_allowed(request):
+        return Response({"detail": "Invalid device token."}, status=status.HTTP_403_FORBIDDEN)
     press_slug, press_key, press_name = _local_press_info(press)
     kind_key = str(kind or "").strip().lower()
     if not press_slug:
@@ -864,6 +875,7 @@ def local_live_footage_relay(request, press, kind):
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def local_live_footage_snapshot(request):
     now = timezone.now()
     shift_start, shift_end = _local_live_shift_window(now)
@@ -926,7 +938,10 @@ def local_live_footage_snapshot(request):
 
 
 @api_view(["POST"])
+@permission_classes([AllowAny])
 def local_live_footage_reset_shift(request):
+    if not _device_token_allowed(request):
+        return Response({"detail": "Invalid device token."}, status=status.HTTP_403_FORBIDDEN)
     shift_start, shift_end = _local_live_shift_window()
     deleted, _ = LocalLiveFootageReading.objects.filter(recorded_at__gte=shift_start, recorded_at__lt=shift_end).delete()
     return Response({
@@ -1104,6 +1119,40 @@ class BaseProductionViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
 
+class AdminWriteMixin:
+    def _admin_write_allowed(self, request):
+        return not settings.API_AUTH_REQUIRED or request_user_is_admin(request)
+
+    def create(self, request, *args, **kwargs):
+        if not self._admin_write_allowed(request):
+            return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        if not self._admin_write_allowed(request):
+            return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        if not self._admin_write_allowed(request):
+            user = company_user_from_request(request)
+            target_id = str(kwargs.get(getattr(self, "lookup_url_kwarg", None) or self.lookup_field))
+            allowed_self_update = (
+                self.__class__.__name__ == "CompanyUserViewSet"
+                and user
+                and str(user.pk) == target_id
+                and set(request.data.keys()).issubset({"quoteCompany", "quote_company"})
+            )
+            if not allowed_self_update:
+                return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        if not self._admin_write_allowed(request):
+            return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
+
 class CustomerViewSet(BaseProductionViewSet):
     queryset = Customer.objects.all().order_by("name")
     serializer_class = CustomerSerializer
@@ -1125,14 +1174,14 @@ class CustomerViewSet(BaseProductionViewSet):
     ordering_fields = ["name", "customer_code", "is_active"]
 
 
-class CompanyRoleViewSet(BaseProductionViewSet):
+class CompanyRoleViewSet(AdminWriteMixin, BaseProductionViewSet):
     queryset = CompanyRole.objects.all().order_by("name")
     serializer_class = CompanyRoleSerializer
     search_fields = ["name", "description"]
     ordering_fields = ["name", "created_at"]
 
 
-class CompanyUserViewSet(BaseProductionViewSet):
+class CompanyUserViewSet(AdminWriteMixin, BaseProductionViewSet):
     queryset = CompanyUser.objects.select_related("role").all().order_by("name", "username")
     serializer_class = CompanyUserSerializer
     search_fields = ["name", "username", "role__name", "quote_company"]
@@ -1272,6 +1321,7 @@ class QuoteRecordViewSet(BaseProductionViewSet):
 
 
 @api_view(["POST"])
+@permission_classes([AllowAny])
 def company_sign_in(request):
     username = str(request.data.get("username", "")).strip().lower()
     password = str(request.data.get("password", ""))
@@ -1282,6 +1332,12 @@ def company_sign_in(request):
 
     if not user.check_password(password):
         return Response({"error": "Username or password is not correct."}, status=status.HTTP_400_BAD_REQUEST)
+    legacy_default_admin_password = "Blue" "labels7&"
+    if settings.BLOCK_LEGACY_DEFAULT_ADMIN_PASSWORD and username == "admin" and password == legacy_default_admin_password:
+        return Response(
+            {"error": "The legacy default admin password is blocked. Reset the admin password before signing in."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     if not user.active:
         return Response({"error": "This user is inactive. Ask an admin to reactivate the account."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1289,6 +1345,8 @@ def company_sign_in(request):
         "user": CompanyUserSerializer(user).data,
         "users": CompanyUserSerializer(CompanyUser.objects.select_related("role").all(), many=True).data,
         "roles": CompanyRoleSerializer(CompanyRole.objects.all(), many=True).data,
+        "token": create_company_user_token(user),
+        "expiresIn": settings.API_SESSION_SECONDS,
     })
 
 
@@ -1671,6 +1729,10 @@ class JobTicketViewSet(BaseProductionViewSet):
         upload = request.FILES.get("image")
         pending_storage_name = ""
         if upload:
+            try:
+                upload = validate_upload(upload, allow_images=True, field="image")
+            except serializers.ValidationError as error:
+                return Response(error.detail, status=status.HTTP_400_BAD_REQUEST)
             try:
                 pending_storage_name = default_storage.save(job_ticket_image_upload_path(ticket, upload.name), upload)
             except Exception as error:

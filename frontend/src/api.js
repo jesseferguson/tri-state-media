@@ -1,3 +1,5 @@
+import { getApiToken } from "./lib/authToken";
+
 const API_BASE = import.meta.env.VITE_TOOLING_API_BASE ?? "/api";
 
 function cleanBase(url) {
@@ -17,13 +19,15 @@ function absoluteUrl(url) {
 
 async function request(url, options = {}) {
   const bodyIsFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-  const { headers: optionHeaders = {}, ...requestOptions } = options;
+  const { headers: optionHeaders = {}, skipAuth = false, ...requestOptions } = options;
+  const token = skipAuth ? "" : getApiToken();
   let response;
   try {
     response = await fetch(url, {
       ...requestOptions,
       headers: {
         ...(bodyIsFormData ? {} : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...optionHeaders,
       },
     });

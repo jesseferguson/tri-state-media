@@ -2,8 +2,10 @@ from django.db import models
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.validators import RegexValidator
 from django.utils import timezone
+from django.utils.text import get_valid_filename
 from datetime import time
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 from materials.models import MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
@@ -29,7 +31,8 @@ QUOTE_WORKFLOW_STATUS_CHOICES = [
 
 def job_ticket_image_upload_path(instance, filename):
     safe_ticket = str(instance.ticket_number or instance.pk or "job-ticket").replace("/", "-").replace("\\", "-")
-    return f"production/job-tickets/{safe_ticket}/{uuid4().hex}-{filename}"
+    safe_filename = get_valid_filename(Path(str(filename or "upload")).name) or "upload"
+    return f"production/job-tickets/{safe_ticket}/{uuid4().hex}-{safe_filename}"
 
 
 class Customer(models.Model):
@@ -85,6 +88,16 @@ class CompanyUser(models.Model):
 
     def __str__(self):
         return f"{self.name} / {self.username}"
+
+    @property
+    def is_authenticated(self):
+        return True
+
+    def get_username(self):
+        return self.username
+
+    def get_full_name(self):
+        return self.name or self.username
 
     def set_password(self, raw_password):
         self.password_hash = make_password(raw_password)

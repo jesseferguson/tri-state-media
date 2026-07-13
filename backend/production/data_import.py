@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -35,8 +36,15 @@ from .models import (
     ProductionSchedule,
     QuoteRecord,
 )
+from .auth import request_user_is_admin
 
 MAX_IMPORT_MESSAGES = 250
+
+
+def admin_required_response(request):
+    if settings.API_AUTH_REQUIRED and not request_user_is_admin(request):
+        return Response({"detail": "Only an active Admin user can import or flush data."}, status=status.HTTP_403_FORBIDDEN)
+    return None
 
 
 JOB_TICKET_COLUMNS = [
@@ -1545,6 +1553,10 @@ def data_import_templates(request):
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
 def data_import_csv(request, import_type):
+    denied = admin_required_response(request)
+    if denied:
+        return denied
+
     import_type = normalize_key(import_type)
     importer = IMPORTERS.get(import_type)
     if not importer:
@@ -1629,6 +1641,10 @@ def flush_finished_inventory_data():
 @api_view(["POST"])
 @parser_classes([JSONParser])
 def data_flush(request):
+    denied = admin_required_response(request)
+    if denied:
+        return denied
+
     confirmation = str(request.data.get("confirmation", "")).strip()
     if confirmation != "DELETE DATA":
         return Response({"error": "Type DELETE DATA to confirm."}, status=status.HTTP_400_BAD_REQUEST)

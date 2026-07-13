@@ -3,7 +3,7 @@ import re
 
 from django.db.models import Q
 from django.http import FileResponse
-from rest_framework import filters, status, viewsets
+from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
@@ -46,6 +46,7 @@ from .serializers import (
     ToolingRecipeSerializer,
     ToolingRecipeToolSerializer,
 )
+from production.upload_security import safe_upload_name, validate_upload
 
 
 class BaseToolingViewSet(viewsets.ModelViewSet):
@@ -240,6 +241,10 @@ class FlexDieViewSet(BaseToolingViewSet):
         upload = request.FILES.get("image")
         if not upload:
             return Response({"image": ["Choose a dieline image to upload."]}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            upload = validate_upload(upload, allow_images=True, field="image")
+        except serializers.ValidationError as error:
+            return Response(error.detail, status=status.HTTP_400_BAD_REQUEST)
 
         current_file = die.dieline_image
         if current_file:
@@ -392,6 +397,10 @@ class ToolingRecipeViewSet(BaseToolingViewSet):
         upload = request.FILES.get("image") or request.FILES.get("file")
         if not upload:
             return Response({"file": ["Choose a layout image or PDF to upload."]}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            upload = validate_upload(upload, allow_images=True, allow_pdf=True, field="file")
+        except serializers.ValidationError as error:
+            return Response(error.detail, status=status.HTTP_400_BAD_REQUEST)
 
         current_file = recipe.layout_file
         if current_file:
@@ -408,7 +417,7 @@ class ToolingRecipeViewSet(BaseToolingViewSet):
             return Response({"error": "No layout file uploaded."}, status=status.HTTP_404_NOT_FOUND)
 
         file_name = recipe.layout_file_name or recipe.layout_file.name.rsplit("/", 1)[-1] or "layout-file"
-        safe_file_name = file_name.replace('"', "")
+        safe_file_name = safe_upload_name(file_name, "layout-file").replace('"', "").replace("\r", "").replace("\n", "")
         content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
         response = FileResponse(recipe.layout_file.open("rb"), content_type=content_type)
         response["Content-Disposition"] = f'inline; filename="{safe_file_name}"'

@@ -483,14 +483,47 @@ function CopyLayoutIdButton({ row, copiedId, onCopy }) {
   );
 }
 
-function PdfArtworkImage({ url, title }) {
+function ArtworkImage({ src, fallbackSrc = "", title }) {
+  const [currentSrc, setCurrentSrc] = useState(src);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setCurrentSrc(src);
+    setFailed(false);
+  }, [src]);
+
+  if (!currentSrc || failed) {
+    return (
+      <span className="layout-artwork-state failed" aria-hidden="true">
+        <ExternalLink size={18} />
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={currentSrc}
+      alt={title}
+      onError={() => {
+        if (fallbackSrc && currentSrc !== fallbackSrc) {
+          setCurrentSrc(fallbackSrc);
+        } else {
+          setFailed(true);
+        }
+      }}
+    />
+  );
+}
+
+function PdfArtworkImage({ url, fallbackUrl = "", title }) {
   const [previewSrc, setPreviewSrc] = useState("");
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
-    if (!url) return undefined;
+    const sources = [url, fallbackUrl].filter(Boolean);
+    if (!sources.length) return undefined;
 
     setPreviewSrc("");
     setFailed(false);
@@ -498,8 +531,12 @@ function PdfArtworkImage({ url, title }) {
     async function renderFirstPage() {
       let pdf = null;
       try {
-        const response = await fetch(url, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error(`Could not load layout PDF preview (${response.status}).`);
+        let response = null;
+        for (const source of sources) {
+          response = await fetch(source, { cache: "no-store", signal: controller.signal });
+          if (response.ok) break;
+        }
+        if (!response?.ok) throw new Error(`Could not load layout PDF preview (${response?.status || "no response"}).`);
         const data = new Uint8Array(await response.arrayBuffer());
         const loadingTask = pdfjsLib.getDocument({
           data,
@@ -549,7 +586,7 @@ function PdfArtworkImage({ url, title }) {
       cancelled = true;
       controller.abort();
     };
-  }, [url]);
+  }, [url, fallbackUrl]);
 
   if (previewSrc) return <img className="layout-artwork-rendered" src={previewSrc} alt={title} />;
 
@@ -569,9 +606,9 @@ function LayoutArtworkPreview({ row, size = "expanded" }) {
   return (
     <div className={`layout-artwork-preview ${size}`} title={title}>
       {isPdfUrl(url) ? (
-        <PdfArtworkImage url={previewUrl} title={title} />
+        <PdfArtworkImage url={previewUrl} fallbackUrl={url} title={title} />
       ) : (
-        <img src={previewUrl} alt={title} />
+        <ArtworkImage src={previewUrl} fallbackSrc={url} title={title} />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import os
 import dj_database_url
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
@@ -8,9 +9,14 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-only-for-local")
-
 DEBUG = os.environ.get("DEBUG", "False") == "True"
+
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "dev-secret-key-only-for-local"
+    else:
+        raise ImproperlyConfigured("Set SECRET_KEY in the environment before running without DEBUG=True.")
 
 FIREBASE_PRINT_QUEUE_BASE = os.environ.get(
     "FIREBASE_PRINT_QUEUE_BASE",
@@ -35,8 +41,11 @@ ALLOWED_HOSTS = [
     "192.168.1.134",
     "192.168.1.174",
     "tri-state-media-backend.onrender.com",
-    ".onrender.com",
 ]
+
+EXTRA_ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "")
+for host in [value.strip() for value in EXTRA_ALLOWED_HOSTS.split(",") if value.strip()]:
+    ALLOWED_HOSTS.append(host)
 
 LOCAL_BACKEND_HOST = os.environ.get("LOCAL_BACKEND_HOST")
 if LOCAL_BACKEND_HOST:
@@ -68,26 +77,52 @@ INSTALLED_APPS = [
 if os.environ.get("AWS_STORAGE_BUCKET_NAME"):
     INSTALLED_APPS.append("storages")
 
-CORS_ALLOW_ALL_ORIGINS = True
+def env_list(name, defaults=()):
+    values = [value.strip() for value in os.environ.get(name, "").split(",") if value.strip()]
+    return values or list(defaults)
+
+
+CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True" and DEBUG
 CORS_ALLOW_HEADERS = (
     *default_headers,
     "x-company-user-id",
     "x-company-username",
+    "x-device-token",
 )
 
-CORS_ALLOWED_ORIGINS = [
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://192.168.1.134:5173",
+    "http://192.168.1.174:5173",
     "https://tri-state-media-front-end.onrender.com",
-]
+])
 
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://192.168.1.134:5173",
-    "https://tri-state-media-front-end.onrender.com",
-]
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", CORS_ALLOWED_ORIGINS)
+
+API_AUTH_REQUIRED = os.environ.get("API_AUTH_REQUIRED", "False" if DEBUG else "True") == "True"
+API_SESSION_SECONDS = int(os.environ.get("API_SESSION_SECONDS", str(12 * 60 * 60)))
+LIVE_FOOTAGE_DEVICE_TOKEN = os.environ.get("LIVE_FOOTAGE_DEVICE_TOKEN", "")
+BLOCK_LEGACY_DEFAULT_ADMIN_PASSWORD = (
+    os.environ.get("BLOCK_LEGACY_DEFAULT_ADMIN_PASSWORD", "False" if DEBUG else "True") == "True"
+)
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_REFERRER_POLICY = "same-origin"
+
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("DATA_UPLOAD_MAX_MEMORY_SIZE", str(MAX_UPLOAD_BYTES)))
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("FILE_UPLOAD_MAX_MEMORY_SIZE", str(MAX_UPLOAD_BYTES)))
+
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS += [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://192.168.1.134:5173",
+        "http://192.168.1.174:5173",
+    ]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -167,12 +202,14 @@ STATIC_URL = 'static/'
 
 
 REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "production.auth.CompanyUserTokenAuthentication",
+    ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.AllowAny",
+        "rest_framework.permissions.IsAuthenticated" if API_AUTH_REQUIRED else "rest_framework.permissions.AllowAny",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
-        "rest_framework.renderers.BrowsableAPIRenderer",
     ],
     "DEFAULT_FILTER_BACKENDS": [
         "rest_framework.filters.SearchFilter",
@@ -183,6 +220,9 @@ REST_FRAMEWORK = {
     "PAGE_SIZE_QUERY_PARAM": "page_size",
     "MAX_PAGE_SIZE": 200,
 }
+
+if DEBUG:
+    REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"].append("rest_framework.renderers.BrowsableAPIRenderer")
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"

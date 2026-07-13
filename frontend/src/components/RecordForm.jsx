@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Plus, Search, Tag, X } from "lucide-react";
+import { apiEndpoint } from "../api";
 import { formatInches, getRecordTitle } from "../lib/format";
 import { PdfPreview, isPdfUrl } from "./FilePreview";
 
@@ -25,6 +26,28 @@ function normalizeInitial(fields, record, defaults = {}) {
   });
 
   return out;
+}
+
+function isImageFile(file) {
+  if (!(file instanceof File)) return false;
+  if (file.type?.startsWith("image/")) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name || "");
+}
+
+function SelectedImagePreview({ file, alt }) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    if (!isImageFile(file)) {
+      setUrl("");
+      return undefined;
+    }
+    const nextUrl = URL.createObjectURL(file);
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file]);
+
+  return url ? <img src={url} alt={alt} /> : null;
 }
 
 function clearHiddenFields(fields, nextForm) {
@@ -955,19 +978,27 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
           if (field.type === "imageUpload") {
             const existingImage = record?.job_images?.find((image) => image.slot === field.imageSlot);
             const existingUrl = record?.[field.urlField] || record?.[`${field.imageSlot}_image_url`] || record?.[`${field.imageSlot}_image`] || record?.[field.name] || existingImage?.url;
+            const existingPreviewUrl = field.previewAction && record?.id
+              ? `${apiEndpoint(resource.endpoint, record.id)}${String(field.previewAction).replace(/^\//, "").replace(/\/$/, "")}/`
+              : existingUrl;
             const existingName = record?.[field.nameField] || record?.[`${field.imageSlot}_image_name`] || existingImage?.name;
             const existingSource = existingImage?.source;
             const existingIsDocument = existingImage?.isDocument || isPdfUrl(existingUrl);
+            const selectedFile = value instanceof File ? value : null;
             return (
               <Fragment key={field.name}>
                 {sectionHeading}
                 <label className={`${fieldClass} image-upload-field`} htmlFor={id}>
                   <span>{fieldLabel}</span>
                   <div>
-                    {existingUrl && !existingIsDocument ? (
-                      <img src={existingUrl} alt={existingName || fieldLabel} />
+                    {selectedFile && isImageFile(selectedFile) ? (
+                      <SelectedImagePreview file={selectedFile} alt={selectedFile.name || fieldLabel} />
+                    ) : selectedFile ? (
+                      <em>{selectedFile.name || "File selected"}</em>
+                    ) : existingPreviewUrl && !existingIsDocument ? (
+                      <img src={existingPreviewUrl} alt={existingName || fieldLabel} />
                     ) : existingUrl ? (
-                      <PdfPreview url={existingUrl} title={existingName || fieldLabel} compact />
+                      <PdfPreview url={existingPreviewUrl || existingUrl} title={existingName || fieldLabel} compact />
                     ) : (
                       <em>{field.emptyText || "No file uploaded"}</em>
                     )}
