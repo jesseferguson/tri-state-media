@@ -2276,7 +2276,7 @@ export const resources = [
         choices: choiceLists.toolType,
         defaultValue: "flex_die",
         required: true,
-        helpText: "Pick Mag to open the searchable mag selector.",
+        helpText: "Choose the tooling family, then search by number, size, tooth count, status, or location.",
       },
 
       {
@@ -2292,7 +2292,10 @@ export const resources = [
         type: "searchRelation",
         relation: "flex-dies",
         searchable: true,
-        maxResults: 200,
+        maxResults: 300,
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
+        toolingPicker: true,
         showWhen: { tool_type: "flex_die" },
         clearWhenHidden: null,
         searchFields: [
@@ -2328,6 +2331,9 @@ export const resources = [
         relation: "mags",
         searchable: true,
         maxResults: 300,
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
+        toolingPicker: true,
         showWhen: { tool_type: "mag" },
         clearWhenHidden: null,
         searchFields: [
@@ -2352,7 +2358,10 @@ export const resources = [
         type: "searchRelation",
         relation: "perf-cylinders",
         searchable: true,
-        maxResults: 200,
+        maxResults: 300,
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
+        toolingPicker: true,
         showWhen: { tool_type: "perf_cylinder" },
         clearWhenHidden: null,
         searchFields: [
@@ -2376,7 +2385,10 @@ export const resources = [
         type: "searchRelation",
         relation: "perf-blade-setups",
         searchable: true,
-        maxResults: 200,
+        maxResults: 300,
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
+        toolingPicker: true,
         showWhen: { tool_type: "perf_blade_setup" },
         clearWhenHidden: null,
         searchFields: [

@@ -190,6 +190,76 @@ function formatTsmCode(prefix, sequence, group = "000") {
   return `${prefix}-${group}-${String(Math.max(1, Number(sequence) || 1)).padStart(3, "0")}`;
 }
 
+const TOOLING_PICKER_RELATIONS = new Set(["flex-dies", "mags", "perf-cylinders", "perf-blade-setups"]);
+const READY_TOOL_STATUSES = new Set(["active", "available", "in_stock", "in_use"]);
+const PROBLEM_TOOL_STATUSES = new Set(["inactive", "missing", "needs_ordered", "needs_repair", "ordered", "out_for_repair", "out_for_retool", "out_of_stock", "retired"]);
+
+function isToolingPickerField(field) {
+  return Boolean(field.toolingPicker) || TOOLING_PICKER_RELATIONS.has(field.relation);
+}
+
+function compactStatus(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function toolModeMatches(row, mode) {
+  if (mode === "ready") return READY_TOOL_STATUSES.has(compactStatus(row.status));
+  if (mode === "issues") return PROBLEM_TOOL_STATUSES.has(compactStatus(row.status));
+  return true;
+}
+
+function toolRelationName(field) {
+  if (field.relation === "mags") return "mags";
+  if (field.relation === "perf-cylinders") return "perf cylinders";
+  if (field.relation === "perf-blade-setups") return "blade setups";
+  return "flex dies";
+}
+
+function toolingSearchPlaceholder(field) {
+  if (field.relation === "mags") return "Search mag #, tooth, repeat, press, or location...";
+  if (field.relation === "perf-cylinders") return "Search perf cylinder, gear, width, status, or location...";
+  if (field.relation === "perf-blade-setups") return "Search blade setup, cylinder, blade count, or repeat...";
+  return "Search die #, size, repeat, gear, status, or location...";
+}
+
+function toolingMetricTags(row, field) {
+  if (!row) return [];
+  if (field.relation === "mags") {
+    return [
+      row.tooth_count ? `${row.tooth_count}T` : "",
+      row.repeat_inches ? `Repeat ${formatInches(row.repeat_inches)}` : "",
+      row.face_width_inches ? `Face ${formatInches(row.face_width_inches)}` : "",
+      row.status,
+      row.current_location_name || row.current_location_full_path,
+    ].filter(Boolean);
+  }
+  if (field.relation === "perf-cylinders") {
+    return [
+      row.gear_tooth_count ? `${row.gear_tooth_count}T` : "",
+      row.cylinder_width_inches ? `Width ${formatInches(row.cylinder_width_inches)}` : "",
+      row.max_blade_count ? `${row.max_blade_count} blades` : "",
+      row.status,
+      row.current_location_name || row.current_location_full_path,
+    ].filter(Boolean);
+  }
+  if (field.relation === "perf-blade-setups") {
+    return [
+      row.perf_cylinder_name,
+      row.blade_count ? `${row.blade_count} blades` : "",
+      row.standard_repeat_inches ? `Repeat ${formatInches(row.standard_repeat_inches)}` : "",
+      row.is_active === false ? "Inactive" : "Active",
+    ].filter(Boolean);
+  }
+  return [
+    row.label_width_inches && row.label_length_inches ? `${formatInches(row.label_width_inches)} x ${formatInches(row.label_length_inches)}` : "",
+    row.repeat_inches ? `Repeat ${formatInches(row.repeat_inches)}` : "",
+    row.gear ? `${row.gear}T` : "",
+    row.number_across && row.number_around ? `${row.number_across} x ${row.number_around}` : "",
+    row.status,
+    row.current_location_name || row.current_location_full_path,
+  ].filter(Boolean);
+}
+
 function selectedLookupRow(rows, id) {
   if (id === null || id === undefined || id === "") return null;
   return (rows ?? []).find((row) => String(row.id) === String(id)) ?? null;
@@ -730,6 +800,10 @@ function getRelationTitle(row, field) {
 }
 
 function getRelationSubtitle(row, field) {
+  if (isToolingPickerField(field)) {
+    return toolingMetricTags(row, field).join(" / ");
+  }
+
   if (field.relation === "suppliers") {
     const tags = splitTags(row.tags);
     const recommended = rowHasRecommendedSupplierTag(row, field) ? "Recommended" : "";
@@ -766,6 +840,8 @@ function lookupChoiceLabel(row, field) {
 function RelationPicker({ field, rows, value, onChange, id, required }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [toolFilter, setToolFilter] = useState("all");
+  const toolingPicker = isToolingPickerField(field);
   const scopedRows = useMemo(() => scopeRows(rows, field), [rows, field]);
   const optionRows = useMemo(() => groupRowsByFamily(scopedRows, field), [scopedRows, field]);
   const selected = scopedRows.find((row) => Number(row.id) === Number(value)) ?? rows.find((row) => Number(row.id) === Number(value));
@@ -773,7 +849,8 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const base = q ? optionRows.filter((row) => makeSearchText(row, field).includes(q) || getRelationTitle(row, field).toLowerCase().includes(q)) : optionRows;
+    const modeRows = toolingPicker ? optionRows.filter((row) => toolModeMatches(row, toolFilter)) : optionRows;
+    const base = q ? modeRows.filter((row) => makeSearchText(row, field).includes(q) || getRelationTitle(row, field).toLowerCase().includes(q)) : modeRows;
     const sorted = [...base].sort((a, b) => {
       if (field.recommendFromJobLayout) {
         const recipeScore = recipeMatchScore(b, field.recommendationContext ?? {}) - recipeMatchScore(a, field.recommendationContext ?? {});
@@ -784,10 +861,10 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
       return String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { numeric: true });
     });
     return sorted.slice(0, field.maxResults ?? 80);
-  }, [optionRows, query, field]);
+  }, [optionRows, query, field, toolingPicker, toolFilter]);
 
   return (
-    <div className="lookup-picker" onBlur={(event) => {
+    <div className={`lookup-picker ${toolingPicker ? "tooling-picker" : ""}`} onBlur={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
     }}>
       <input id={id} type="hidden" value={value ?? ""} required={required} readOnly />
@@ -797,20 +874,39 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
       </button>
 
       {open && (
-        <div className="lookup-menu">
+        <div className={`lookup-menu ${toolingPicker ? "tooling-menu" : ""}`}>
           <div className="lookup-search">
             <Search size={14} />
-            <input autoFocus value={query} placeholder={`Search ${field.label.toLowerCase()}...`} onChange={(event) => setQuery(event.target.value)} />
+            <input autoFocus value={query} placeholder={toolingPicker ? toolingSearchPlaceholder(field) : `Search ${field.label.toLowerCase()}...`} onChange={(event) => setQuery(event.target.value)} />
           </div>
+          {toolingPicker && (
+            <div className="tooling-picker-toolbar">
+              <span>{filtered.length} shown / {optionRows.length} {toolRelationName(field)}</span>
+              {[
+                ["all", "All"],
+                ["ready", "Ready"],
+                ["issues", "Needs Work"],
+              ].map(([mode, label]) => (
+                <button key={mode} type="button" className={toolFilter === mode ? "active" : ""} onClick={() => setToolFilter(mode)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="lookup-results">
             {filtered.map((row) => (
-              <button key={row.id} type="button" className={Number(row.id) === Number(value) ? "selected" : ""} onClick={() => { onChange(Number(row.id)); setOpen(false); setQuery(""); }}>
+              <button key={row.id} type="button" className={`${Number(row.id) === Number(value) ? "selected" : ""} ${toolingPicker ? "tooling-option" : ""}`} onClick={() => { onChange(Number(row.id)); setOpen(false); setQuery(""); }}>
                 <strong>{getRelationTitle(row, field)}</strong>
-                {field.relation === "suppliers" && <span>{getRelationSubtitle(row, field)}</span>}
+                {(field.relation === "suppliers" || toolingPicker) && <span>{getRelationSubtitle(row, field)}</span>}
+                {toolingPicker && (
+                  <div className="tooling-option-tags">
+                    {toolingMetricTags(row, field).slice(0, 6).map((tag) => <em key={tag}>{tag}</em>)}
+                  </div>
+                )}
                 <span>{[row.status, row.current_location_name, row.press_name, row.recipe_name].filter(Boolean).join(" · ")}</span>
               </button>
             ))}
-            {!filtered.length && <p>No matches found.</p>}
+            {!filtered.length && <p>{toolingPicker ? `No matching ${toolRelationName(field)} found. Try another number, size, tooth, location, or switch back to All.` : "No matches found."}</p>}
           </div>
         </div>
       )}
