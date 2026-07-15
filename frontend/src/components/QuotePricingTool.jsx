@@ -3937,18 +3937,6 @@ ${items.map((item) => {
                   </span>
                   <b>Offer 10k, 25k, 100k, and 1M+ options as a customer growth path.</b>
                 </label>
-                <label className={`quote-volume-control quote-continuous-control ${continuousRoll ? "active" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={continuousRoll}
-                    onChange={(event) => updateField("continuousRoll", event.target.checked)}
-                  />
-                  <span>
-                    <strong>Continuous Roll</strong>
-                    <em>{continuousRoll ? "Priced by finished inches" : "Standard labels or tags"}</em>
-                  </span>
-                  <b>No repeat or label count per roll; quantity is the finished length in inches.</b>
-                </label>
                 <div className="quote-top-grid quote-main-input-grid">
                   <Field label="Finished Material">
                     <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>
@@ -3985,6 +3973,18 @@ ${items.map((item) => {
                 )}
 
                 <div className="quote-simple-grid quote-secondary-input-grid">
+                  <label className={`quote-continuous-control ${continuousRoll ? "active" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked={continuousRoll}
+                      onChange={(event) => updateField("continuousRoll", event.target.checked)}
+                    />
+                    <span>
+                      <strong>Continuous Roll</strong>
+                      <em>{continuousRoll ? "Priced by finished inches" : "Standard labels or tags"}</em>
+                    </span>
+                    <b>No repeat or label count per roll; quantity is the finished length in inches.</b>
+                  </label>
                   {!continuousRoll && (
                     <Field label="Item Type">
                       <select value={form.unitType} onChange={(event) => updateField("unitType", event.target.value)}>
