@@ -396,8 +396,13 @@ function makeSearchText(row, field) {
 function matchesLookupFilters(row, filters = {}) {
   return Object.entries(filters ?? {}).every(([key, expected]) => {
     const actual = row?.[key];
-    if (Array.isArray(expected)) return expected.map(String).includes(String(actual ?? ""));
-    return String(actual ?? "") === String(expected);
+    const expectedValues = Array.isArray(expected)
+      ? expected
+      : String(expected ?? "").split(",");
+    return expectedValues
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+      .includes(String(actual ?? "").trim());
   });
 }
 
