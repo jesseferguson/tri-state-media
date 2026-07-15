@@ -2602,6 +2602,9 @@ export const resources = [
         label: "Location",
         type: "searchRelation",
         relation: "locations",
+        lookupFilters: { inventory_scope: "raw_material,shared" },
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
         searchable: true,
         tab: "Storage",
         searchFields: [
@@ -2806,6 +2809,9 @@ export const resources = [
         label: "Location",
         type: "searchRelation",
         relation: "locations",
+        lookupFilters: { inventory_scope: "raw_material,shared" },
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
         searchable: true,
         tab: "Storage",
         searchFields: [
@@ -2883,6 +2889,9 @@ export const resources = [
         label: "Location",
         type: "searchRelation",
         relation: "locations",
+        lookupFilters: { inventory_scope: "raw_material,shared" },
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
         searchable: true,
         searchFields: [
           "name",
@@ -2960,6 +2969,9 @@ export const resources = [
         label: "Location",
         type: "searchRelation",
         relation: "locations",
+        lookupFilters: { inventory_scope: "raw_material,shared" },
+        lookupFetchAll: true,
+        lookupPageSize: 1000,
         searchable: true,
         searchFields: [
           "name",
