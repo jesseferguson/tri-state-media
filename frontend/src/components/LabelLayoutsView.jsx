@@ -5,7 +5,7 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { apiEndpoint, fetchFile } from "../api";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
-import { isPdfUrl } from "./FilePreview";
+import { AuthenticatedFileLink, isPdfUrl } from "./FilePreview";
 import { evaluateOption } from "./RecipeOptionsView";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -664,9 +664,9 @@ function LayoutRootArtwork({ row }) {
   return (
     <div className="layout-root-artwork-shell" onClick={(event) => event.stopPropagation()}>
       <LayoutArtworkPreview row={row} size="main" />
-      <a className="layout-artwork-open" href={openUrl} target="_blank" rel="noreferrer" title="Open layout artwork" aria-label="Open layout artwork">
+      <AuthenticatedFileLink className="layout-artwork-open" href={openUrl} title="Open layout artwork" aria-label="Open layout artwork">
         <ExternalLink size={14} />
-      </a>
+      </AuthenticatedFileLink>
     </div>
   );
 }

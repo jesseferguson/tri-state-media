@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, XCircle } from "lucide-react";
-import { AuthenticatedImage, PdfPreview, isPdfUrl } from "./FilePreview";
+import { AuthenticatedFileLink, AuthenticatedImage, PdfPreview, isPdfUrl } from "./FilePreview";
 import RecipeOptionsView from "./RecipeOptionsView";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 
@@ -1027,8 +1027,8 @@ function JobTicketEventList({ events, emptyText, canApproveChanges = false, curr
             {artwork && (
               <div className="job-artwork-history-strip">
                 <span>Artwork history saved</span>
-                {artwork.previous?.url && <a href={artwork.previous.url} target="_blank" rel="noreferrer">Previous artwork</a>}
-                {artwork.next?.url && <a href={artwork.next.url} target="_blank" rel="noreferrer">Pending artwork</a>}
+                {artwork.previous?.url && <AuthenticatedFileLink href={artwork.previous.url}>Previous artwork</AuthenticatedFileLink>}
+                {artwork.next?.url && <AuthenticatedFileLink href={artwork.next.url}>Pending artwork</AuthenticatedFileLink>}
                 {artwork.change_description && <em>{artwork.change_description}</em>}
               </div>
             )}

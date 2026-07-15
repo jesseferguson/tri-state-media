@@ -17,13 +17,22 @@ function absoluteUrl(url) {
   return new URL(url, origin);
 }
 
+function isProtectedFileApiPath(pathname) {
+  return [
+    /^\/api\/job-tickets\/[^/]+\/images\/[^/]+\/preview\/?$/,
+    /^\/api\/recipes\/[^/]+\/layout-file-preview\/?$/,
+    /^\/api\/(?:flex-dies|rotary-dies)\/[^/]+\/dieline-image-preview\/?$/,
+  ].some((pattern) => pattern.test(pathname));
+}
+
 export function isApiUrl(url) {
   if (!url) return false;
   try {
     const target = absoluteUrl(url);
     const apiBase = absoluteUrl(cleanBase(API_BASE));
     const basePath = apiBase.pathname.replace(/\/$/, "");
-    return target.origin === apiBase.origin && (target.pathname === basePath || target.pathname.startsWith(`${basePath}/`));
+    const matchesConfiguredApi = target.pathname === basePath || target.pathname.startsWith(`${basePath}/`);
+    return (target.origin === apiBase.origin && matchesConfiguredApi) || isProtectedFileApiPath(target.pathname);
   } catch {
     return false;
   }

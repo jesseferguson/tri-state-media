@@ -92,12 +92,26 @@ export function calculateAutoRepeat({ labelLength, gap }) {
   return Math.max(0, toQuoteNumber(labelLength) + Math.max(0, toQuoteNumber(gap)));
 }
 
+export function isContinuousQuoteRoll(input = {}) {
+  return input.continuousRoll === true ||
+    input.continuousRoll === "true" ||
+    input.continuousRoll === 1 ||
+    input.continuousRoll === "1";
+}
+
 export function calculateRunFootage({ quantity, repeat, numberAcross }) {
   const labelQuantity = Math.max(0, toQuoteNumber(quantity));
   const repeatInches = Math.max(0, toQuoteNumber(repeat));
   const lanes = Math.max(0, Math.floor(toQuoteNumber(numberAcross)));
   if (labelQuantity <= 0 || repeatInches <= 0 || lanes <= 0) return 0;
   return (labelQuantity * repeatInches) / 12 / lanes;
+}
+
+export function calculateContinuousRunFootage({ quantity, numberAcross }) {
+  const finishedLengthInches = Math.max(0, toQuoteNumber(quantity));
+  const lanes = Math.max(0, Math.floor(toQuoteNumber(numberAcross)));
+  if (finishedLengthInches <= 0 || lanes <= 0) return 0;
+  return finishedLengthInches / 12 / lanes;
 }
 
 export function calculateRecommendedWastePercent({ runFootage, colorCount }) {
@@ -143,9 +157,10 @@ function coreMarkupSurchargePercent(coreSizeValue) {
 }
 
 export function calculateQuotePricing(input) {
+  const continuousRoll = isContinuousQuoteRoll(input);
   const labelWidth = toQuoteNumber(input.labelWidth);
   const labelLength = toQuoteNumber(input.labelLength);
-  const repeat = calculateAutoRepeat(input);
+  const repeat = continuousRoll ? 0 : calculateAutoRepeat(input);
   const quantity = toQuoteNumber(input.quantity);
   const materialWidth = toQuoteNumber(input.materialWidth);
   const gap = Math.max(0, toQuoteNumber(input.gap));
@@ -162,17 +177,29 @@ export function calculateQuotePricing(input) {
     : suggestedAcross;
   const numberAcross = Math.max(0, Math.floor(requestedAcross));
   const totalLayoutWidth = calculateLayoutWidth({ labelWidth, gap, numberAcross, sideTrim });
-  const hasProductionInputs = repeat > 0 && quantity > 0 && materialWidth > 0 && numberAcross > 0;
+  const hasProductionInputs = continuousRoll
+    ? labelWidth > 0 && quantity > 0 && materialWidth > 0 && numberAcross > 0
+    : repeat > 0 && quantity > 0 && materialWidth > 0 && numberAcross > 0;
   const fits = hasProductionInputs && totalLayoutWidth <= materialWidth + EPSILON;
   const widthDelta = materialWidth - totalLayoutWidth;
   const widthUsagePercent = materialWidth > 0 ? (totalLayoutWidth / materialWidth) * 100 : 0;
-  const finishedMsi = labelWidth > 0 && labelLength > 0 && quantity > 0
-    ? (labelWidth * labelLength * quantity) / 1000
+  const finishedMsi = continuousRoll
+    ? labelWidth > 0 && quantity > 0
+      ? (labelWidth * quantity) / 1000
+      : 0
+    : labelWidth > 0 && labelLength > 0 && quantity > 0
+      ? (labelWidth * labelLength * quantity) / 1000
+      : 0;
+  const runFootage = fits
+    ? continuousRoll
+      ? calculateContinuousRunFootage({ quantity, numberAcross })
+      : calculateRunFootage({ quantity, repeat, numberAcross })
     : 0;
-  const runFootage = fits ? calculateRunFootage({ quantity, repeat, numberAcross }) : 0;
   const wasteRecommendation = calculateRecommendedWastePercent({ runFootage, colorCount });
   const baseMaterialMsi = fits
-    ? (repeat * quantity * materialWidth) / (1000 * numberAcross)
+    ? continuousRoll
+      ? (quantity * materialWidth) / (1000 * numberAcross)
+      : (repeat * quantity * materialWidth) / (1000 * numberAcross)
     : 0;
   const wasteMultiplier = 1 + wastePercent / 100;
   const wasteMsi = baseMaterialMsi * (wastePercent / 100);
@@ -217,6 +244,7 @@ export function calculateQuotePricing(input) {
     coatingCount,
     colorMsiCost,
     coatingMsiCost,
+    continuousRoll,
     suggestedAcross,
     numberAcross,
     totalLayoutWidth,

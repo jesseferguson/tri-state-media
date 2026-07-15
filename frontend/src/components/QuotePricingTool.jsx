@@ -11,6 +11,7 @@ import {
   componentLabelForFinishedMaterial,
   finishedComponentSlots,
   finishedMaterialAdderFields,
+  isContinuousQuoteRoll,
   quoteExtraCostFields,
   quoteRateDefaults,
   rateCost,
@@ -68,6 +69,7 @@ const wasteRecommendationFieldNames = new Set([
   "acrossMode",
   "numberAcross",
   "colorCount",
+  "continuousRoll",
 ]);
 
 const initialForm = {
@@ -86,6 +88,7 @@ const initialForm = {
   labelsPerUnit: "",
   labelsPerCarton: "",
   volumePricingEnabled: false,
+  continuousRoll: false,
   acrossMode: "auto",
   numberAcross: "",
   wastePercent: "7",
@@ -222,12 +225,47 @@ function quoteVolumePricingEnabled(form = {}) {
   return form.volumePricingEnabled === true || form.volumePricingEnabled === "true" || form.volumePricingEnabled === 1 || form.volumePricingEnabled === "1";
 }
 
+function quoteContinuousRollEnabled(form = {}) {
+  return isContinuousQuoteRoll(form);
+}
+
+function quoteItemContinuousRoll(item, quote = {}) {
+  if (item?.form && Object.prototype.hasOwnProperty.call(item.form, "continuousRoll")) {
+    return quoteContinuousRollEnabled(item.form);
+  }
+  return quoteContinuousRollEnabled(quote?.form || {});
+}
+
 function quoteItemVolumePricingEnabled(item, quote = {}) {
   return quoteVolumePricingEnabled(item?.form || quote?.form || {});
 }
 
-function quoteTierQuantityLabel(option, unitType, compact = false) {
+function quotePriceBasisLabel(continuousRoll = false, compact = false) {
+  return continuousRoll ? (compact ? "1k in" : "1,000 in") : "M";
+}
+
+function quoteContinuousLengthLabel(value, compact = false) {
+  const length = Math.max(0, toQuoteNumber(value));
+  if (compact) {
+    const shortLength = length >= 1000000
+      ? `${numberFormatter.format(length / 1000000)}M`
+      : length >= 1000
+        ? `${numberFormatter.format(length / 1000)}k`
+        : numberFormatter.format(length);
+    return `${shortLength} in`;
+  }
+  return `${Math.round(length).toLocaleString()} in`;
+}
+
+function quoteTierQuantityLabel(option, unitType, compact = false, continuousRoll = false) {
   const quantity = Math.max(0, toQuoteNumber(option?.quantity));
+  if (continuousRoll) {
+    if (compact) {
+      const compactLabel = quoteContinuousLengthLabel(quantity, true);
+      return option?.plus ? compactLabel.replace(" in", "+ in") : compactLabel;
+    }
+    return `${option?.label || Math.round(quantity).toLocaleString()}${option?.plus ? "+" : ""} in`;
+  }
   const unit = quoteUnitLabel(unitType, true);
   if (compact) {
     const shortQuantity = quantity >= 1000000
@@ -240,12 +278,13 @@ function quoteTierQuantityLabel(option, unitType, compact = false) {
   return `${option?.label || Math.round(quantity).toLocaleString()}${option?.plus ? "+" : ""} ${unit}`;
 }
 
-function quoteTierRowFromPricing(option, unitType, pricing) {
+function quoteTierRowFromPricing(option, unitType, pricing, continuousRoll = false) {
   return {
     quantity: Math.max(0, toQuoteNumber(option?.quantity)),
-    quantityLabel: quoteTierQuantityLabel(option, unitType),
-    compactQuantityLabel: quoteTierQuantityLabel(option, unitType, true),
+    quantityLabel: quoteTierQuantityLabel(option, unitType, false, continuousRoll),
+    compactQuantityLabel: quoteTierQuantityLabel(option, unitType, true, continuousRoll),
     unitType,
+    continuousRoll,
     fits: Boolean(pricing?.fits),
     runFootage: Number(pricing?.runFootage || 0),
     wastePercent: Number(pricing?.wastePercent || 0),
@@ -285,6 +324,7 @@ function quoteItemTierRows(item, quote = {}) {
   const form = item?.form || quote?.form || {};
   if (!quoteVolumePricingEnabled(form)) return [];
   const unitType = quoteItemUnitType(item, quote);
+  const continuousRoll = quoteItemContinuousRoll(item, quote);
   const storedTiers = new Map(
     (Array.isArray(item?.pricing?.tiers) ? item.pricing.tiers : [])
       .map((tier) => [String(Math.round(toQuoteNumber(tier.quantity, 0))), tier])
@@ -293,11 +333,13 @@ function quoteItemTierRows(item, quote = {}) {
   const tiers = quoteTierQuantityOptions.map((option) => {
     const stored = storedTiers.get(String(option.quantity));
     if (stored && Number.isFinite(Number(stored.pricePerThousand))) {
+      const storedContinuousRoll = stored.continuousRoll === true || stored.continuousRoll === "true" || continuousRoll;
       return {
         quantity: option.quantity,
-        quantityLabel: stored.quantityLabel || quoteTierQuantityLabel(option, stored.unitType || unitType),
-        compactQuantityLabel: stored.compactQuantityLabel || quoteTierQuantityLabel(option, stored.unitType || unitType, true),
+        quantityLabel: stored.quantityLabel || quoteTierQuantityLabel(option, stored.unitType || unitType, false, storedContinuousRoll),
+        compactQuantityLabel: stored.compactQuantityLabel || quoteTierQuantityLabel(option, stored.unitType || unitType, true, storedContinuousRoll),
         unitType: quoteUnitType(stored.unitType || unitType),
+        continuousRoll: storedContinuousRoll,
         fits: stored.fits !== false,
         runFootage: Number(stored.runFootage || 0),
         wastePercent: Number(stored.wastePercent || 0),
@@ -306,7 +348,7 @@ function quoteItemTierRows(item, quote = {}) {
         sellPrice: Number(stored.sellPrice || 0),
       };
     }
-    return quoteTierRowFromPricing(option, unitType, calculateQuoteTierPricing(form, option.quantity));
+    return quoteTierRowFromPricing(option, unitType, calculateQuoteTierPricing(form, option.quantity), continuousRoll);
   });
   return quoteVisibleTierRows(tiers);
 }
@@ -315,7 +357,7 @@ function quoteTierSummaryLines(item, quote = {}) {
   const tiers = quoteItemTierRows(item, quote);
   const chunks = tiers.map((tier) => (
     tier.fits
-      ? `${tier.compactQuantityLabel} at ${money(tier.pricePerThousand)}/M`
+      ? `${tier.compactQuantityLabel} at ${money(tier.pricePerThousand)}/${quotePriceBasisLabel(tier.continuousRoll, true)}`
       : `${tier.compactQuantityLabel} needs review`
   ));
   return [
@@ -816,8 +858,17 @@ function quotePublicMaterialName(quote) {
   return quote.materialName;
 }
 
+function quoteContinuousRollDescription(form = {}) {
+  const width = toQuoteNumber(form.labelWidth, NaN);
+  const length = toQuoteNumber(form.quantity, NaN);
+  const widthLabel = Number.isFinite(width) && width > 0 ? `${numberFormatter.format(width)}" wide` : "";
+  const lengthLabel = Number.isFinite(length) && length > 0 ? `${Math.round(length).toLocaleString()} in finished length` : "";
+  return [widthLabel, lengthLabel, "continuous roll"].filter(Boolean).join(", ");
+}
+
 function quoteDescription(quote) {
   const form = quote?.form || {};
+  if (quoteContinuousRollEnabled(form)) return quote?.jobName || quoteContinuousRollDescription(form);
   return quote?.jobName || `${form.labelWidth || 0}" x ${form.labelLength || 0}" ${quoteUnitLabel(form.unitType)}`;
 }
 
@@ -848,16 +899,24 @@ function quoteLineMaterialDescription(item, quote) {
 
 function quoteLinePrimaryDescription(item, quote) {
   const form = item?.form || quote?.form || {};
+  const continuousRoll = quoteContinuousRollEnabled(form);
   const unitType = quoteItemUnitType(item, quote);
-  const size = form.labelWidth && form.labelLength ? `${form.labelWidth} x ${form.labelLength}` : "";
   const materialDescription = quoteLineMaterialDescription(item, quote);
+  const coreLabel = quoteCoreLabel(form.coreSize);
+  if (continuousRoll) {
+    return [
+      quoteContinuousRollDescription(form),
+      materialDescription,
+      coreLabel,
+    ].filter(Boolean).join(", ") || quoteDescription(quote);
+  }
+  const size = form.labelWidth && form.labelLength ? `${form.labelWidth} x ${form.labelLength}` : "";
   const materialHasUnit = new RegExp(`\\b${quoteUnitLabel(unitType)}s?\\b`, "i").test(materialDescription);
   const productDescription = [
     materialDescription,
     materialHasUnit ? "" : quoteItemUnitTitle(item, quote),
   ].filter(Boolean).join(" ");
   const finishing = form.finishingType ? quoteFinishingLabel(form.finishingType).replace(/s$/, "") : "";
-  const coreLabel = quoteCoreLabel(form.coreSize);
   return [
     [size, productDescription].filter(Boolean).join(" "),
     finishing,
@@ -867,6 +926,7 @@ function quoteLinePrimaryDescription(item, quote) {
 
 function quoteLinePackagingRows(item, quote) {
   const form = item?.form || quote?.form || {};
+  if (quoteContinuousRollEnabled(form)) return [];
   const unitType = quoteItemUnitType(item, quote);
   const rows = [];
   const labelsPerUnit = toQuoteNumber(form.labelsPerUnit, NaN);
@@ -892,10 +952,17 @@ function quoteLinePriceSummary(item, quote) {
 }
 
 function quoteLinePriceSummaryRows(item, quote) {
+  const continuousRoll = quoteItemContinuousRoll(item, quote);
   const unitType = quoteItemUnitType(item, quote);
   const pricePerItem = Number(item?.pricing?.pricePerLabel || 0);
   const pricePerThousand = Number(item?.pricing?.pricePerThousand || 0);
   const labelsPerCarton = toQuoteNumber(item?.form?.labelsPerCarton, NaN);
+  if (continuousRoll) {
+    return [
+      `${quoteCompactUnitMoney(pricePerItem)}/in`,
+      `${money(pricePerThousand)}/${quotePriceBasisLabel(true)}`,
+    ];
+  }
   const rows = [
     `${quoteCompactUnitMoney(pricePerItem)}/${quoteUnitLabel(unitType)}`,
     `${money(pricePerThousand)}/thousand`,
@@ -958,6 +1025,7 @@ function quoteCoreMarkupSurchargeForQuote(quote) {
 
 function quoteItemDescription(item, quote) {
   const form = item.form || {};
+  if (quoteContinuousRollEnabled(form)) return item.itemName || quote.jobName || quoteContinuousRollDescription(form);
   return item.itemName || quote.jobName || `${form.labelWidth || 0}" x ${form.labelLength || 0}" ${quoteItemUnitLabel(item, quote)}`;
 }
 
@@ -1021,6 +1089,9 @@ function quoteLineDescriptionRows(item, quote) {
 
 function quoteTableQuantity(item, unitOfMeasure = quoteDefaultUnitOfMeasure) {
   const quantity = Number(item.form?.quantity || item.pricing?.quantity || 0);
+  if (quoteItemContinuousRoll(item)) {
+    return Number.isFinite(quantity) ? Math.round(quantity).toLocaleString() : "0";
+  }
   if (unitOfMeasure === "M") {
     return Number.isFinite(quantity)
       ? (quantity / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })
@@ -1030,11 +1101,13 @@ function quoteTableQuantity(item, unitOfMeasure = quoteDefaultUnitOfMeasure) {
 }
 
 function quoteTableUnitPrice(item, unitOfMeasure = quoteDefaultUnitOfMeasure) {
+  if (quoteItemContinuousRoll(item)) return unitMoney(Number(item.pricing?.pricePerLabel || 0));
   if (unitOfMeasure === "M") return money(Number(item.pricing?.pricePerThousand || 0));
   return unitMoney(Number(item.pricing?.pricePerLabel || 0));
 }
 
-function quoteTableUomLabel(unitOfMeasure = quoteDefaultUnitOfMeasure) {
+function quoteTableUomLabel(unitOfMeasure = quoteDefaultUnitOfMeasure, item = null) {
+  if (item && quoteItemContinuousRoll(item)) return "IN";
   return unitOfMeasure === "EA" ? "EA" : "M";
 }
 
@@ -1080,12 +1153,13 @@ function loadQuoteLogoForPdf(logoSrc) {
 function quoteCustomerDetailRows(quote) {
   const items = quoteItems(quote);
   const singleItem = items.length === 1 ? items[0] : null;
+  const continuousRoll = singleItem ? quoteItemContinuousRoll(singleItem, quote) : false;
   const rows = [
-    ["Item Size", items.length > 1 ? "Multiple items" : `${quote.form.labelWidth}" x ${quote.form.labelLength}" ${quoteItemUnitLabel(singleItem, quote)}`],
-    ["Item Type", items.length > 1 ? "Multiple item types" : quoteItemUnitTitle(singleItem, quote)],
+    ["Item Size", items.length > 1 ? "Multiple items" : continuousRoll ? quoteContinuousRollDescription(singleItem?.form || quote.form) : `${quote.form.labelWidth}" x ${quote.form.labelLength}" ${quoteItemUnitLabel(singleItem, quote)}`],
+    ["Item Type", items.length > 1 ? "Multiple item types" : continuousRoll ? "Continuous Roll" : quoteItemUnitTitle(singleItem, quote)],
     ["Finished Material", items.length > 1 ? "Multiple materials" : quotePublicMaterialName(quote)],
     ["Finishing", items.length > 1 ? "Multiple finishings" : quoteFinishingLabel(singleItem?.form?.finishingType || quote.form?.finishingType)],
-    ["Quantity", Number(quoteTotals(quote).quantity || quote.form.quantity || 0).toLocaleString()],
+    ["Quantity", continuousRoll ? quoteContinuousLengthLabel(quoteTotals(quote).quantity || quote.form.quantity || 0) : Number(quoteTotals(quote).quantity || quote.form.quantity || 0).toLocaleString()],
     ["Quote Number", quote.quoteNumber],
     ["Quote Date", quoteDateLabel(quote.createdAt)],
   ];
@@ -1097,11 +1171,12 @@ function quoteCustomerPriceRows(quote) {
   const totals = quoteTotals(quote);
   const items = quoteItems(quote);
   const singleItem = items.length === 1 ? items[0] : null;
+  const continuousRoll = singleItem ? quoteItemContinuousRoll(singleItem, quote) : false;
   const unitTitle = quoteItemUnitTitle(singleItem, quote);
   return [
-    ["Quantity", Number(totals.quantity || quote.form.quantity || 0).toLocaleString()],
-    ["Price / M", money(totals.pricePerThousand)],
-    [`Price / ${unitTitle}`, unitMoney(totals.pricePerLabel)],
+    ["Quantity", continuousRoll ? quoteContinuousLengthLabel(totals.quantity || quote.form.quantity || 0) : Number(totals.quantity || quote.form.quantity || 0).toLocaleString()],
+    [`Price / ${quotePriceBasisLabel(continuousRoll)}`, money(totals.pricePerThousand)],
+    [`Price / ${continuousRoll ? "Inch" : unitTitle}`, unitMoney(totals.pricePerLabel)],
     ["Quoted Total", money(totals.sellPrice)],
   ];
 }
@@ -1276,6 +1351,9 @@ function quoteInternalSections(quote) {
       },
     ];
   }
+  const singleItem = items[0];
+  const singleForm = singleItem?.form || quote.form || {};
+  const continuousRoll = quoteItemContinuousRoll(singleItem, quote);
   return [
     {
       title: "Quote Inputs",
@@ -1293,15 +1371,19 @@ function quoteInternalSections(quote) {
     {
       title: "Material + Layout",
       rows: [
-        ["Item Type", quoteItemUnitTitle(items[0], quote)],
+        ["Item Type", continuousRoll ? "Continuous Roll" : quoteItemUnitTitle(singleItem, quote)],
         ["Proof Note", quote.form?.itemNote || "--"],
         ["Finished Material", quote.materialName || "Manual MSI Cost"],
         ["Material Source", quote.materialSource || "manual"],
         ["Components", quote.materialComponents || "--"],
-        ["Finishing", quoteFinishingLabel(quote.form?.finishingType)],
+        ["Finishing", continuousRoll ? "Continuous Roll" : quoteFinishingLabel(quote.form?.finishingType)],
         ["Core", quoteCoreLabel(quote.form?.coreSize) || "--"],
-        [`${quoteItemUnitTitle(items[0], quote, true)} / ${quoteItemContainerLabel(quote.form || {})}`, quote.form?.labelsPerUnit || "--"],
-        [`${quoteItemUnitTitle(items[0], quote, true)} / Carton`, quote.form?.labelsPerCarton || "--"],
+        ...(continuousRoll
+          ? [["Finished Length", quoteContinuousLengthLabel(singleForm.quantity || quote.form?.quantity || 0)]]
+          : [
+              [`${quoteItemUnitTitle(singleItem, quote, true)} / ${quoteItemContainerLabel(quote.form || {})}`, quote.form?.labelsPerUnit || "--"],
+              [`${quoteItemUnitTitle(singleItem, quote, true)} / Carton`, quote.form?.labelsPerCarton || "--"],
+            ]),
         ["Material Width", number(Number(quote.form?.materialWidth || 0), '"')],
         ["Number Across", quote.pricing?.numberAcross || "--"],
         ["Layout Width", number(Number(quote.pricing?.totalLayoutWidth || 0), '"')],
@@ -1312,11 +1394,11 @@ function quoteInternalSections(quote) {
     {
       title: "MSI Calculation",
       rows: [
-        ["Item Size", `${quote.form?.labelWidth || 0}" x ${quote.form?.labelLength || 0}" ${quoteItemUnitLabel(items[0], quote)}`],
-        ["Auto Repeat", number(Number(quote.pricing?.repeat || quote.form?.repeat || 0), '"')],
+        ["Item Size", continuousRoll ? quoteContinuousRollDescription(singleForm) : `${quote.form?.labelWidth || 0}" x ${quote.form?.labelLength || 0}" ${quoteItemUnitLabel(singleItem, quote)}`],
+        ...(continuousRoll ? [] : [["Auto Repeat", number(Number(quote.pricing?.repeat || quote.form?.repeat || 0), '"')]]),
         ["Run Footage", number(Number(quote.pricing?.runFootage || 0), " ft")],
-        ["Quantity", Number(quote.form?.quantity || 0).toLocaleString()],
-        ["Finished Item MSI", number(Number(quote.pricing?.finishedMsi || 0))],
+        [continuousRoll ? "Finished Length" : "Quantity", continuousRoll ? quoteContinuousLengthLabel(quote.form?.quantity || 0) : Number(quote.form?.quantity || 0).toLocaleString()],
+        [continuousRoll ? "Finished Roll MSI" : "Finished Item MSI", number(Number(quote.pricing?.finishedMsi || 0))],
         ["Base Material MSI", number(Number(quote.pricing?.baseMaterialMsi || 0))],
         ["Waste Percent", percent(Number(quote.form?.wastePercent || 0))],
         ["Recommended Waste", percent(Number(quote.pricing?.recommendedWastePercent || 0))],
@@ -1346,8 +1428,8 @@ function quoteInternalSections(quote) {
           ? [["Core Markup", `+${percent(quoteCoreMarkupSurchargeForQuote(quote))} included for non-3" core`]]
           : []),
         ["Sell Price", money(Number(quote.pricing?.sellPrice || 0))],
-        ["Price / M", money(Number(quote.pricing?.pricePerThousand || 0))],
-        [`Price / ${quoteItemUnitTitle(items[0], quote)}`, unitMoney(Number(quote.pricing?.pricePerLabel || 0))],
+        [`Price / ${quotePriceBasisLabel(continuousRoll)}`, money(Number(quote.pricing?.pricePerThousand || 0))],
+        [`Price / ${continuousRoll ? "Inch" : quoteItemUnitTitle(singleItem, quote)}`, unitMoney(Number(quote.pricing?.pricePerLabel || 0))],
         ["Profit Dollars", money(Number(quote.pricing?.profit || 0))],
         ["Actual Margin", percent(quoteActualMargin(quote))],
         ["Actual Markup", percent(quoteActualMarkup(quote))],
@@ -1356,7 +1438,7 @@ function quoteInternalSections(quote) {
     {
       title: "Form Snapshot",
       rows: [
-        ["Gap", number(Number(quote.form?.gap || 0), '"')],
+        [continuousRoll ? "Lane Gap" : "Gap", number(Number(quote.form?.gap || 0), '"')],
         ["Side Trim", number(Number(quote.form?.sideTrim || 0), '"')],
         ["Lane Mode", quote.form?.acrossMode || "auto"],
         ["Manual Across", quote.form?.numberAcross || "--"],
@@ -1426,6 +1508,7 @@ function quoteSearchText(quote) {
     quote.productCode,
     quote.materialName,
     quoteItems(quote).map((item) => quoteFinishingLabel(item.form?.finishingType)).join(" "),
+    quoteItems(quote).map((item) => quoteItemContinuousRoll(item, quote) ? "continuous roll" : "").join(" "),
     quotePreparedByName(quote),
     quotePreparedByRole(quote),
     quoteApprovalLabel(quote),
@@ -1448,7 +1531,8 @@ function quoteEmailSubject(quote) {
 function quoteEmailBody(quote, quoteLink) {
   const items = quoteItems(quote);
   const itemRows = items.map((item) => {
-    const unit = quoteUnitLabel(quoteItemUnitType(item, quote));
+    const continuousRoll = quoteItemContinuousRoll(item, quote);
+    const unit = continuousRoll ? "inch" : quoteUnitLabel(quoteItemUnitType(item, quote));
     const price = quoteCompactUnitMoney(Number(item?.pricing?.pricePerLabel || 0));
     return {
       description: quoteLinePrimaryDescription(item, quote),
@@ -1648,20 +1732,20 @@ function FinishedMaterialForm({ form, rawMaterials, materialMasterTypes = [], up
 function QuoteVolumeOffer({ item, quote }) {
   const tiers = quoteItemTierRows(item, quote);
   if (!tiers.length) return null;
-  const unitTitle = quoteItemUnitTitle(item, quote);
+  const continuousRoll = quoteItemContinuousRoll(item, quote);
   return (
     <div className="quote-volume-offer">
       <header>
         <span>Volume Savings</span>
         <strong>Better pricing as this order grows</strong>
-        <em>Optional {quoteUnitLabel(quoteItemUnitType(item, quote), true)} priced from the same approved spec.</em>
+        <em>{continuousRoll ? "Optional finished lengths priced from the same approved spec." : `Optional ${quoteUnitLabel(quoteItemUnitType(item, quote), true)} priced from the same approved spec.`}</em>
       </header>
       <div className="quote-volume-options">
         {tiers.map((tier) => (
           <article key={`${item?.id || quoteLinePartNumber(item, quote)}-${tier.quantity}`}>
             <span>{tier.quantityLabel}</span>
-            <strong>{tier.fits ? `${money(tier.pricePerThousand)} / M` : "Quote review needed"}</strong>
-            <em>{tier.fits ? `${unitMoney(tier.pricePerItem)} per ${quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier"}</em>
+            <strong>{tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review needed"}</strong>
+            <em>{tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier"}</em>
           </article>
         ))}
       </div>
@@ -1673,10 +1757,11 @@ function quoteVolumeOfferHtml(item, quote) {
   const tiers = quoteItemTierRows(item, quote);
   if (!tiers.length) return "";
   const unitType = quoteItemUnitType(item, quote);
+  const continuousRoll = quoteItemContinuousRoll(item, quote);
   return [
-    `<div class="sales-volume-offer"><div class="sales-volume-copy"><span>Volume Savings</span><strong>Better pricing as this order grows</strong><em>Optional ${escapeHtml(quoteUnitLabel(unitType, true))} priced from the same approved spec.</em></div>`,
+    `<div class="sales-volume-offer"><div class="sales-volume-copy"><span>Volume Savings</span><strong>Better pricing as this order grows</strong><em>${escapeHtml(continuousRoll ? "Optional finished lengths priced from the same approved spec." : `Optional ${quoteUnitLabel(unitType, true)} priced from the same approved spec.`)}</em></div>`,
     `<div class="sales-volume-options">`,
-    tiers.map((tier) => `<article><span>${escapeHtml(tier.quantityLabel)}</span><strong>${escapeHtml(tier.fits ? `${money(tier.pricePerThousand)} / M` : "Quote review needed")}</strong><em>${escapeHtml(tier.fits ? `${unitMoney(tier.pricePerItem)} per ${quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier")}</em></article>`).join(""),
+    tiers.map((tier) => `<article><span>${escapeHtml(tier.quantityLabel)}</span><strong>${escapeHtml(tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review needed")}</strong><em>${escapeHtml(tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier")}</em></article>`).join(""),
     `</div></div>`,
   ].join("");
 }
@@ -1743,7 +1828,7 @@ function QuoteDocument({ quote }) {
                     {quoteLineDescriptionRows(item, quote).map((line, lineIndex) => <span key={`${line}-${lineIndex}`}>{line}</span>)}
                   </td>
                   <td>{quoteTableQuantity(item, salesInfo.unitOfMeasure)}</td>
-                  <td>{quoteTableUomLabel(salesInfo.unitOfMeasure)}</td>
+                  <td>{quoteTableUomLabel(salesInfo.unitOfMeasure, item)}</td>
                   <td>{quoteTableUnitPrice(item, salesInfo.unitOfMeasure)}</td>
                   <td>{money(Number(item.pricing?.sellPrice || 0))}</td>
                 </tr>
@@ -1805,6 +1890,7 @@ function InternalQuoteBreakdown({ quote, materialOptions = [] }) {
   const totalCost = Number(totals.totalCost || 0);
   const sellPrice = Number(totals.sellPrice || 0);
   const profit = Number(totals.profit || 0);
+  const continuousRoll = items.length === 1 ? quoteItemContinuousRoll(items[0], quote) : false;
 
   return (
     <article className="quote-internal-breakdown">
@@ -1835,7 +1921,9 @@ function InternalQuoteBreakdown({ quote, materialOptions = [] }) {
           <section className="quote-internal-formula">
             <span>Material formula</span>
             <code>
-              ({quote.pricing?.repeat || quote.form?.repeat || 0} repeat x {Number(quote.form?.quantity || 0).toLocaleString()} {quoteItemUnitLabel(items[0], quote, true)} x {quote.form?.materialWidth || 0}" web) / (1000 x {quote.pricing?.numberAcross || 0} across) x {number(Number(quote.pricing?.wasteMultiplier || 1))} waste x {unitMoney(msiUnitCost)}
+              {continuousRoll
+                ? `(${quoteContinuousLengthLabel(quote.form?.quantity || 0)} finished length x ${quote.form?.materialWidth || 0}" web) / (1000 x ${quote.pricing?.numberAcross || 0} across) x ${number(Number(quote.pricing?.wasteMultiplier || 1))} waste x ${unitMoney(msiUnitCost)}`
+                : `(${quote.pricing?.repeat || quote.form?.repeat || 0} repeat x ${Number(quote.form?.quantity || 0).toLocaleString()} ${quoteItemUnitLabel(items[0], quote, true)} x ${quote.form?.materialWidth || 0}" web) / (1000 x ${quote.pricing?.numberAcross || 0} across) x ${number(Number(quote.pricing?.wasteMultiplier || 1))} waste x ${unitMoney(msiUnitCost)}`}
             </code>
           </section>
           <section className="quote-current-msi-note">
@@ -2090,12 +2178,14 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     form.coatingCount,
     form.colorMsiCost,
     form.coatingMsiCost,
+    form.continuousRoll,
   ]);
   const currentProfitHealth = useMemo(() => profitHealth(pricing, selectedMaterial, form.pricingMode), [pricing, selectedMaterial, form.pricingMode]);
   const fitTone = pricing.fits ? "ready" : "bad";
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
   const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
   const volumePricingEnabled = quoteVolumePricingEnabled(form);
+  const continuousRoll = quoteContinuousRollEnabled(form);
   const wasteMatchesRecommendation = Math.abs(toQuoteNumber(form.wastePercent) - toQuoteNumber(pricing.recommendedWastePercent)) < 0.01;
   const selectedQuoteIsMine = selectedQuote ? quoteBelongsToPerson(selectedQuote, currentUserQuoteKey(currentUser), currentUser) : false;
   const selectedQuoteWorkflowStatus = selectedQuote ? quoteWorkflowStatus(selectedQuote) : "active";
@@ -2404,6 +2494,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
         labelLength: dimensions.length,
         gap: dimensions.gap,
         quantity: quantity.quantity,
+        continuousRoll: false,
         unitType: selectedJobTicket.unit_type || material?.unitType || prev.unitType,
         finishingType: selectedJobTicket.finishing_type || prev.finishingType,
         coreSize: nextCoreSize,
@@ -2473,6 +2564,15 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
           prev.pricingMode,
           coreMarkupDelta(prev.coreSize, value)
         );
+      }
+      if (name === "continuousRoll") {
+        if (value) {
+          next.finishingType = "rolls";
+          next.labelsPerUnit = "";
+          next.labelsPerCarton = "";
+        } else if (!next.labelLength) {
+          next.labelLength = initialForm.labelLength;
+        }
       }
       return next;
     });
@@ -2625,11 +2725,22 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     setForm((prev) => ({ ...prev, acrossMode: "manual", numberAcross: String(numberAcross) }));
   }
 
+  function quoteFormSnapshot(sourceForm = form, pricingSnapshot = pricing) {
+    const continuous = quoteContinuousRollEnabled(sourceForm);
+    return {
+      ...sourceForm,
+      labelLength: continuous ? "" : sourceForm.labelLength,
+      repeat: continuous ? "" : String(pricingSnapshot.repeat),
+      labelsPerUnit: continuous ? "" : sourceForm.labelsPerUnit,
+      labelsPerCarton: continuous ? "" : sourceForm.labelsPerCarton,
+    };
+  }
+
   function buildCurrentQuoteItem(itemId = "") {
     const itemName = quoteInfo.itemName.trim() || (quoteInfo.linkMode === "ticket"
       ? selectedJobTicket?.job_name || selectedJobTicket?.product_name || "Job ticket item"
       : quoteInfo.jobName || "Manual quote item");
-    const itemForm = { ...form, repeat: String(pricing.repeat) };
+    const itemForm = quoteFormSnapshot(form, pricing);
     const itemPricing = { ...pricing };
     const itemForTiers = { form: itemForm, pricing: itemPricing };
     const pricingSnapshot = quoteVolumePricingEnabled(itemForm)
@@ -2671,6 +2782,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       ? [buildCurrentQuoteItem(quoteEditContext.primaryItemId), ...quoteItemsDraft]
       : quoteItemsDraft.length ? quoteItemsDraft : [buildCurrentQuoteItem()];
     const totals = quoteTotals({ form: { items }, pricing: { items } });
+    const formSnapshot = quoteFormSnapshot(form, pricing);
     const createdAt = quoteEditContext?.createdAt || new Date().toISOString();
     const salesQuote = {
       customerId: recordCustomer?.id ? String(recordCustomer.id) : quoteInfo.customerId,
@@ -2719,7 +2831,7 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       materialName: items.length === 1 ? items[0].materialName : "Multiple materials",
       materialSource: items.length === 1 ? items[0].materialSource : "multiple",
       materialComponents: items.length === 1 ? items[0].materialComponents : `${items.length} quoted items`,
-      form: { ...form, itemName: quoteInfo.itemName.trim(), repeat: String(pricing.repeat), items, salesQuote },
+      form: { ...formSnapshot, itemName: quoteInfo.itemName.trim(), items, salesQuote },
       pricing: { ...totals, items },
     };
     return record;
@@ -2932,11 +3044,13 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
     const sourceForm = primaryItem?.form || quote.form || {};
     const sourcePricing = primaryItem?.pricing || quote.pricing || {};
     const salesInfo = quoteSalesInfo(quote);
+    const sourceContinuousRoll = quoteContinuousRollEnabled(sourceForm);
     const nextForm = {
       ...initialForm,
       ...sourceForm,
       selectedMaterialId: sourceForm.selectedMaterialId || primaryItem?.materialId || "manual",
-      repeat: sourceForm.repeat || initialForm.repeat,
+      labelLength: sourceContinuousRoll ? sourceForm.labelLength || "" : sourceForm.labelLength || initialForm.labelLength,
+      repeat: sourceContinuousRoll ? "" : sourceForm.repeat || initialForm.repeat,
     };
     if (
       quoteCoreHasMarkupSurcharge(nextForm.coreSize) &&
@@ -3044,7 +3158,7 @@ ${quoteLines.length ? `<div class="quote-for"><span>Quotation for:</span>${quote
 <section class="item"><table class="sales-table"><thead><tr><th>Part Number &amp; Description</th><th>Qty</th><th>UoM</th><th>Per Unit US$</th><th>Extended US$</th></tr></thead><tbody>
 ${items.map((item) => {
   const volumeHtml = quoteVolumeOfferHtml(item, quote);
-  return `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr>${volumeHtml ? `<tr class="sales-volume-row"><td colspan="5">${volumeHtml}</td></tr>` : ""}`;
+  return `<tr><td><strong>${escapeHtml(clipText(quoteLinePartNumber(item, quote), 52))}</strong>${quoteLineDescriptionRows(item, quote).map((line) => `<span>${escapeHtml(clipText(line, 86))}</span>`).join("")}</td><td>${escapeHtml(quoteTableQuantity(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(quoteTableUomLabel(salesInfo.unitOfMeasure, item))}</td><td>${escapeHtml(quoteTableUnitPrice(item, salesInfo.unitOfMeasure))}</td><td>${escapeHtml(money(Number(item.pricing?.sellPrice || 0)))}</td></tr>${volumeHtml ? `<tr class="sales-volume-row"><td colspan="5">${volumeHtml}</td></tr>` : ""}`;
 }).join("")}
 </tbody><tfoot><tr><td colspan="4">Total in US$</td><td>${escapeHtml(money(totals.sellPrice))}</td></tr></tfoot></table>
 </section>
@@ -3266,11 +3380,11 @@ ${items.map((item) => {
           fillBox(cardX, cardY, cardWidth, cardHeight, 1);
           box(cardX, cardY, cardWidth, cardHeight);
           text(cardX + 5, cardY + 22, 7, tier.compactQuantityLabel, "F2", 0, { maxWidth: cardWidth - 10, minSize: 7 });
-          text(cardX + 5, cardY + 11, 7, tier.fits ? `${money(tier.pricePerThousand)} / M` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 7 });
+          text(cardX + 5, cardY + 11, 7, tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 7 });
         });
       }
       textRight(columns[2] - 8, yBase, tableBodyFontSize, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12, tableMinFontSize);
-      textRight(columns[3] - 8, yBase, tableBodyFontSize, quoteTableUomLabel(salesInfo.unitOfMeasure), "F1", 0, columns[3] - columns[2] - 12, tableMinFontSize);
+      textRight(columns[3] - 8, yBase, tableBodyFontSize, quoteTableUomLabel(salesInfo.unitOfMeasure, item), "F1", 0, columns[3] - columns[2] - 12, tableMinFontSize);
       textRight(columns[4] - 8, yBase, tableBodyFontSize, quoteTableUnitPrice(item, salesInfo.unitOfMeasure), "F1", 0, columns[4] - columns[3] - 12, tableMinFontSize);
       textRight(columns[5] - 8, yBase, tableBodyFontSize, money(Number(item.pricing?.sellPrice || 0)), "F1", 0, columns[5] - columns[4] - 12, tableMinFontSize);
       rowTop = mainBottom - volumeHeight;
@@ -3805,8 +3919,8 @@ ${items.map((item) => {
                     </Field>
                     <Field label="UoM">
                       <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
-                        <option value="M">M - per 1,000 {quoteUnitLabel(form.unitType, true)}</option>
-                        <option value="EA">EA - each {quoteUnitLabel(form.unitType)}</option>
+                        <option value="M">M - per 1,000 {continuousRoll ? "inches" : quoteUnitLabel(form.unitType, true)}</option>
+                        <option value="EA">EA - each {continuousRoll ? "inch" : quoteUnitLabel(form.unitType)}</option>
                       </select>
                     </Field>
                   </div>
@@ -3823,6 +3937,18 @@ ${items.map((item) => {
                   </span>
                   <b>Offer 10k, 25k, 100k, and 1M+ options as a customer growth path.</b>
                 </label>
+                <label className={`quote-volume-control quote-continuous-control ${continuousRoll ? "active" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={continuousRoll}
+                    onChange={(event) => updateField("continuousRoll", event.target.checked)}
+                  />
+                  <span>
+                    <strong>Continuous Roll</strong>
+                    <em>{continuousRoll ? "Priced by finished inches" : "Standard labels or tags"}</em>
+                  </span>
+                  <b>No repeat or label count per roll; quantity is the finished length in inches.</b>
+                </label>
                 <div className="quote-top-grid quote-main-input-grid">
                   <Field label="Finished Material">
                     <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>
@@ -3832,8 +3958,8 @@ ${items.map((item) => {
                       ))}
                     </select>
                   </Field>
-                  <Field label="Quantity" suffix={quoteUnitLabel(form.unitType, true)}>
-                    <input type="number" step="1" value={form.quantity} onChange={(event) => updateField("quantity", event.target.value)} />
+                  <Field label={continuousRoll ? "Finished Length" : "Quantity"} suffix={continuousRoll ? "in" : quoteUnitLabel(form.unitType, true)}>
+                    <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.quantity} onChange={(event) => updateField("quantity", event.target.value)} />
                   </Field>
                   <Field label="Waste" suffix="%">
                     <input type="number" step="0.01" value={form.wastePercent} onChange={(event) => updateField("wastePercent", event.target.value)} />
@@ -3859,25 +3985,31 @@ ${items.map((item) => {
                 )}
 
                 <div className="quote-simple-grid quote-secondary-input-grid">
-                  <Field label="Item Type">
-                    <select value={form.unitType} onChange={(event) => updateField("unitType", event.target.value)}>
-                      {quoteUnitTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                    </select>
-                  </Field>
-                  <Field label={`${quoteUnitTitle(form.unitType)} Width`} suffix="in">
+                  {!continuousRoll && (
+                    <Field label="Item Type">
+                      <select value={form.unitType} onChange={(event) => updateField("unitType", event.target.value)}>
+                        {quoteUnitTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  <Field label={continuousRoll ? "Lane Width" : `${quoteUnitTitle(form.unitType)} Width`} suffix="in">
                     <input type="number" step="0.0001" value={form.labelWidth} onChange={(event) => updateField("labelWidth", event.target.value)} />
                   </Field>
-                  <Field label={`${quoteUnitTitle(form.unitType)} Length`} suffix="in">
-                    <input type="number" step="0.0001" value={form.labelLength} onChange={(event) => updateField("labelLength", event.target.value)} />
-                  </Field>
-                  <Field label="Gap" suffix="in">
+                  {!continuousRoll && (
+                    <Field label={`${quoteUnitTitle(form.unitType)} Length`} suffix="in">
+                      <input type="number" step="0.0001" value={form.labelLength} onChange={(event) => updateField("labelLength", event.target.value)} />
+                    </Field>
+                  )}
+                  <Field label={continuousRoll ? "Lane Gap" : "Gap"} suffix="in">
                     <input type="number" step="0.0001" value={form.gap} onChange={(event) => updateField("gap", event.target.value)} />
                   </Field>
-                  <Field label="Finishing">
-                    <select value={form.finishingType} onChange={(event) => updateField("finishingType", event.target.value)}>
-                      {quoteFinishingTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                    </select>
-                  </Field>
+                  {!continuousRoll && (
+                    <Field label="Finishing">
+                      <select value={form.finishingType} onChange={(event) => updateField("finishingType", event.target.value)}>
+                        {quoteFinishingTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                      </select>
+                    </Field>
+                  )}
                   <Field label="Core Size">
                     <select value={form.coreSize} onChange={(event) => updateField("coreSize", event.target.value)}>
                       {quoteCoreSizeChoices.map((size) => (
@@ -3885,12 +4017,16 @@ ${items.map((item) => {
                       ))}
                     </select>
                   </Field>
-                  <Field label={`${quoteUnitTitle(form.unitType, true)} / ${quoteItemContainerLabel(form)}`}>
-                    <input type="number" step="1" min="0" value={form.labelsPerUnit} onChange={(event) => updateField("labelsPerUnit", event.target.value)} />
-                  </Field>
-                  <Field label={`${quoteUnitTitle(form.unitType, true)} / Carton`}>
-                    <input type="number" step="1" min="0" value={form.labelsPerCarton} onChange={(event) => updateField("labelsPerCarton", event.target.value)} />
-                  </Field>
+                  {!continuousRoll && (
+                    <>
+                      <Field label={`${quoteUnitTitle(form.unitType, true)} / ${quoteItemContainerLabel(form)}`}>
+                        <input type="number" step="1" min="0" value={form.labelsPerUnit} onChange={(event) => updateField("labelsPerUnit", event.target.value)} />
+                      </Field>
+                      <Field label={`${quoteUnitTitle(form.unitType, true)} / Carton`}>
+                        <input type="number" step="1" min="0" value={form.labelsPerCarton} onChange={(event) => updateField("labelsPerCarton", event.target.value)} />
+                      </Field>
+                    </>
+                  )}
                   <label className="quote-field quote-field-wide">
                     <span>Proof Note</span>
                     <input value={form.itemNote} onChange={(event) => updateField("itemNote", event.target.value)} placeholder="Yellow border" />
@@ -3924,8 +4060,12 @@ ${items.map((item) => {
 
                 <div className="quote-auto-repeat">
                   <Ruler size={15} />
-                  <span>Repeat is calculated automatically from {quoteUnitLabel(form.unitType)} length plus gap.</span>
-                  <strong>{number(pricing.repeat, '"')}</strong>
+                  <span>
+                    {continuousRoll
+                      ? "Continuous roll uses the finished inch total directly; no repeat is calculated."
+                      : `Repeat is calculated automatically from ${quoteUnitLabel(form.unitType)} length plus gap.`}
+                  </span>
+                  <strong>{continuousRoll ? quoteContinuousLengthLabel(pricing.quantity) : number(pricing.repeat, '"')}</strong>
                 </div>
                 <div className="quote-waste-recommendation">
                   <CheckCircle2 size={15} />
@@ -4004,12 +4144,12 @@ ${items.map((item) => {
               <div className="quote-total-card">
                 <span>Estimated Quote</span>
                 <strong>{money(pricing.sellPrice)}</strong>
-                <em>{money(pricing.pricePerThousand)} / M</em>
+                <em>{money(pricing.pricePerThousand)} / {quotePriceBasisLabel(continuousRoll, true)}</em>
               </div>
 
               {volumePricingEnabled && (
                 <div className="quote-volume-preview">
-                  <QuoteVolumeOffer item={{ id: "current-volume-preview", form: { ...form, repeat: String(pricing.repeat) }, pricing }} quote={{ form }} />
+                  <QuoteVolumeOffer item={{ id: "current-volume-preview", form: quoteFormSnapshot(form, pricing), pricing }} quote={{ form }} />
                 </div>
               )}
 
@@ -4022,11 +4162,13 @@ ${items.map((item) => {
                   <em>{currentProfitHealth.displayLabel} {percent(currentProfitHealth.displayCurrent)} / target {percent(currentProfitHealth.displayTarget)}</em>
                   <small>{currentProfitHealth.secondaryLabel}</small>
                 </div>
-                <Metric label={`Price / ${quoteUnitTitle(form.unitType)}`} value={unitMoney(pricing.pricePerLabel)} />
+                <Metric label={`Price / ${continuousRoll ? "Inch" : quoteUnitTitle(form.unitType)}`} value={unitMoney(pricing.pricePerLabel)} />
               </div>
 
               <div className="quote-breakdown">
-                <BreakdownRow label="Auto Repeat" value={number(pricing.repeat, '"')} />
+                {continuousRoll
+                  ? <BreakdownRow label="Finished Length" value={quoteContinuousLengthLabel(pricing.quantity)} />
+                  : <BreakdownRow label="Auto Repeat" value={number(pricing.repeat, '"')} />}
                 <BreakdownRow label="Run Footage" value={number(pricing.runFootage, " ft")} />
                 <BreakdownRow label="Number Across" value={pricing.numberAcross || "--"} />
                 <BreakdownRow label="Unused Width" value={pricing.widthDelta >= 0 ? number(pricing.widthDelta, '"') : `Over ${number(Math.abs(pricing.widthDelta), '"')}`} />

@@ -66,6 +66,57 @@ export function AuthenticatedImage({ src, alt = "", className = "", ...props }) 
   return <img className={className || undefined} src={resolvedSrc} alt={alt} {...props} />;
 }
 
+export function AuthenticatedFileLink({ href, children, className = "", title = "", ...props }) {
+  const [opening, setOpening] = useState(false);
+  const protectedUrl = isApiUrl(href);
+
+  if (!href) return null;
+
+  async function openProtectedFile(event) {
+    event.preventDefault();
+    if (opening) return;
+
+    const tab = typeof window !== "undefined" ? window.open("", "_blank", "noopener,noreferrer") : null;
+    setOpening(true);
+
+    try {
+      const response = await fetchFile(href, { cache: "no-store" });
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      if (tab) {
+        tab.location.href = objectUrl;
+      } else {
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        link.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
+    } catch (error) {
+      if (tab) tab.close();
+      console.warn("Could not open protected file.", error);
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  return (
+    <a
+      className={className || undefined}
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={title || undefined}
+      aria-busy={opening ? "true" : undefined}
+      onClick={protectedUrl ? openProtectedFile : undefined}
+      {...props}
+    >
+      {children}
+    </a>
+  );
+}
+
 export function PdfPreview({ url, title = "PDF preview", compact = false, showOpenLink = !compact }) {
   const resolvedUrl = useProtectedObjectUrl(url);
   if (!url || !resolvedUrl) return null;

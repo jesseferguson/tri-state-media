@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Edit3, X } from "lucide-react";
 import { getRecordTitle, groupBy, labelize } from "../lib/format";
+import { AuthenticatedFileLink } from "./FilePreview";
 
 const GOOD_STATUSES = new Set(["in_stock", "in_use", "available", "active"]);
 
@@ -461,7 +462,7 @@ function ToolDetails({ title, tool, onClose, onFlexDieReorder, onFlexDieCountUpd
         <Detail label="Parent" value={locationParentText(tool)} />
       </div>
       {d.dieline_image_url && (
-        <a className="tool-dieline-link" href={d.dieline_image_url} target="_blank" rel="noreferrer">View dieline image</a>
+        <AuthenticatedFileLink className="tool-dieline-link" href={d.dieline_image_url}>View dieline image</AuthenticatedFileLink>
       )}
       {canManageDie && (
         <div className="tool-die-actions">
