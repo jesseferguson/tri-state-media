@@ -254,7 +254,7 @@ function quoteContinuousLengthLabel(value, compact = false) {
         : numberFormatter.format(length);
     return `${shortLength} in`;
   }
-  return `${Math.round(length).toLocaleString()} in`;
+  return `${numberFormatter.format(length)} in`;
 }
 
 function quoteTierQuantityLabel(option, unitType, compact = false, continuousRoll = false) {
@@ -926,7 +926,7 @@ function quoteLinePrimaryDescription(item, quote) {
 
 function quoteLinePackagingRows(item, quote) {
   const form = item?.form || quote?.form || {};
-  if (quoteContinuousRollEnabled(form)) return [];
+  if (quoteContinuousRollEnabled(form)) return quoteContinuousPackagingRows(form);
   const unitType = quoteItemUnitType(item, quote);
   const rows = [];
   const labelsPerUnit = toQuoteNumber(form.labelsPerUnit, NaN);
@@ -936,6 +936,19 @@ function quoteLinePackagingRows(item, quote) {
   const labelsPerCarton = toQuoteNumber(form.labelsPerCarton, NaN);
   if (Number.isFinite(labelsPerCarton) && labelsPerCarton > 0) {
     rows.push(`${Math.round(labelsPerCarton).toLocaleString()} ${quoteUnitLabel(unitType, true)} per carton`);
+  }
+  return rows;
+}
+
+function quoteContinuousPackagingRows(form = {}) {
+  const rows = [];
+  const inchesPerRoll = toQuoteNumber(form.labelsPerUnit, NaN);
+  if (Number.isFinite(inchesPerRoll) && inchesPerRoll > 0) {
+    rows.push(`${quoteContinuousLengthLabel(inchesPerRoll)} per roll`);
+  }
+  const inchesPerCarton = toQuoteNumber(form.labelsPerCarton, NaN);
+  if (Number.isFinite(inchesPerCarton) && inchesPerCarton > 0) {
+    rows.push(`${quoteContinuousLengthLabel(inchesPerCarton)} per carton`);
   }
   return rows;
 }
@@ -958,10 +971,14 @@ function quoteLinePriceSummaryRows(item, quote) {
   const pricePerThousand = Number(item?.pricing?.pricePerThousand || 0);
   const labelsPerCarton = toQuoteNumber(item?.form?.labelsPerCarton, NaN);
   if (continuousRoll) {
-    return [
+    const rows = [
       `${quoteCompactUnitMoney(pricePerItem)}/in`,
       `${money(pricePerThousand)}/${quotePriceBasisLabel(true)}`,
     ];
+    if (Number.isFinite(labelsPerCarton) && labelsPerCarton > 0) {
+      rows.push(`${money(pricePerItem * labelsPerCarton)}/carton`);
+    }
+    return rows;
   }
   const rows = [
     `${quoteCompactUnitMoney(pricePerItem)}/${quoteUnitLabel(unitType)}`,
@@ -1379,7 +1396,11 @@ function quoteInternalSections(quote) {
         ["Finishing", continuousRoll ? "Continuous Roll" : quoteFinishingLabel(quote.form?.finishingType)],
         ["Core", quoteCoreLabel(quote.form?.coreSize) || "--"],
         ...(continuousRoll
-          ? [["Finished Length", quoteContinuousLengthLabel(singleForm.quantity || quote.form?.quantity || 0)]]
+          ? [
+              ["Finished Length", quoteContinuousLengthLabel(singleForm.quantity || quote.form?.quantity || 0)],
+              ["Inches / Roll", singleForm.labelsPerUnit ? quoteContinuousLengthLabel(singleForm.labelsPerUnit) : "--"],
+              ["Inches / Carton", singleForm.labelsPerCarton ? quoteContinuousLengthLabel(singleForm.labelsPerCarton) : "--"],
+            ]
           : [
               [`${quoteItemUnitTitle(singleItem, quote, true)} / ${quoteItemContainerLabel(quote.form || {})}`, quote.form?.labelsPerUnit || "--"],
               [`${quoteItemUnitTitle(singleItem, quote, true)} / Carton`, quote.form?.labelsPerCarton || "--"],
@@ -2568,8 +2589,6 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       if (name === "continuousRoll") {
         if (value) {
           next.finishingType = "rolls";
-          next.labelsPerUnit = "";
-          next.labelsPerCarton = "";
         } else if (!next.labelLength) {
           next.labelLength = initialForm.labelLength;
         }
@@ -2731,8 +2750,8 @@ export default function QuotePricingTool({ currentUser, initialJobTicketId = "",
       ...sourceForm,
       labelLength: continuous ? "" : sourceForm.labelLength,
       repeat: continuous ? "" : String(pricingSnapshot.repeat),
-      labelsPerUnit: continuous ? "" : sourceForm.labelsPerUnit,
-      labelsPerCarton: continuous ? "" : sourceForm.labelsPerCarton,
+      labelsPerUnit: sourceForm.labelsPerUnit,
+      labelsPerCarton: sourceForm.labelsPerCarton,
     };
   }
 
@@ -3983,7 +4002,7 @@ ${items.map((item) => {
                       <strong>Continuous Roll</strong>
                       <em>{continuousRoll ? "Priced by finished inches" : "Standard labels or tags"}</em>
                     </span>
-                    <b>No repeat or label count per roll; quantity is the finished length in inches.</b>
+                    <b>No repeat or label length; quantity and packaging are entered as finished inches.</b>
                   </label>
                   {!continuousRoll && (
                     <Field label="Item Type">
@@ -4017,16 +4036,12 @@ ${items.map((item) => {
                       ))}
                     </select>
                   </Field>
-                  {!continuousRoll && (
-                    <>
-                      <Field label={`${quoteUnitTitle(form.unitType, true)} / ${quoteItemContainerLabel(form)}`}>
-                        <input type="number" step="1" min="0" value={form.labelsPerUnit} onChange={(event) => updateField("labelsPerUnit", event.target.value)} />
-                      </Field>
-                      <Field label={`${quoteUnitTitle(form.unitType, true)} / Carton`}>
-                        <input type="number" step="1" min="0" value={form.labelsPerCarton} onChange={(event) => updateField("labelsPerCarton", event.target.value)} />
-                      </Field>
-                    </>
-                  )}
+                  <Field label={continuousRoll ? "Inches / Roll" : `${quoteUnitTitle(form.unitType, true)} / ${quoteItemContainerLabel(form)}`} suffix={continuousRoll ? "in" : ""}>
+                    <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.labelsPerUnit} onChange={(event) => updateField("labelsPerUnit", event.target.value)} />
+                  </Field>
+                  <Field label={continuousRoll ? "Inches / Carton" : `${quoteUnitTitle(form.unitType, true)} / Carton`} suffix={continuousRoll ? "in" : ""}>
+                    <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.labelsPerCarton} onChange={(event) => updateField("labelsPerCarton", event.target.value)} />
+                  </Field>
                   <label className="quote-field quote-field-wide">
                     <span>Proof Note</span>
                     <input value={form.itemNote} onChange={(event) => updateField("itemNote", event.target.value)} placeholder="Yellow border" />
