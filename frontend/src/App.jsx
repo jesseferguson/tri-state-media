@@ -3474,7 +3474,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
 
         {toolingWorkspaceForm && toolingWorkspaceResource && (
           <section className="tooling-form-overlay" role="dialog" aria-modal="true" aria-label={`${toolingWorkspaceForm.mode === "edit" ? "Edit" : "Add"} ${toolingWorkspaceResource.singular}`}>
-            <div className="tooling-form-window">
+            <div className={`tooling-form-window ${toolingWorkspaceResource.key === "recipe-tools" ? "recipe-tools-window" : ""}`}>
               <RecordForm
                 resource={toolingWorkspaceResource}
                 record={toolingWorkspaceForm.mode === "edit" ? toolingWorkspaceForm.record : null}
