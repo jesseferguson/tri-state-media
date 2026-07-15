@@ -35,6 +35,7 @@ const quoteTierQuantityOptions = [
   { quantity: 10000, label: "10,000" },
   { quantity: 25000, label: "25,000" },
   { quantity: 100000, label: "100,000" },
+  { quantity: 500000, label: "500,000" },
   { quantity: 1000000, label: "1,000,000", plus: true },
 ];
 const quoteUnitTypeChoices = [
@@ -3161,7 +3162,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:2px solid #0b1f5e;padding-bottom:10px}
 .brand{min-width:0;flex:1}.brand img{max-width:${quoteCompany.printLogoWidth};height:auto;display:block}.title{text-align:right;min-width:1.75in}.title span{display:block;color:#111827;font-size:16px;font-weight:700}.title strong{display:block;margin-top:4px;font-size:12px;color:#344054}.title em{display:block;margin-top:18px;color:#667085;font-size:12px;font-style:normal;font-weight:700;text-transform:uppercase}.title b{display:block;margin-top:3px;font-size:18px}
 .meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:14px;margin-top:18px}.meta.date-only{grid-template-columns:minmax(280px,.62fr);justify-content:end}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:104px minmax(0,1fr);border-top:1px solid #111827;min-height:28px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{min-width:0;padding:6px 7px;font-size:12px;overflow-wrap:anywhere}
-.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:13%}.sales-table th:nth-child(3){width:6%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}.sales-table .sales-volume-row td{padding:0;border-left:0;background:#f8fafc;text-align:left}.sales-volume-offer{padding:10px 11px;border-top:1px solid #d9e1ea}.sales-volume-copy span{display:block;margin:0;color:#0b1f5e;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.sales-volume-copy strong{display:block;margin-top:2px;color:#111827;font-size:11px}.sales-volume-copy em{display:block;margin-top:2px;color:#475467;font-size:9.5px;font-style:normal}.sales-volume-options{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}.sales-volume-options article{padding:7px 6px;border:1px solid #cfd8e3;background:#fff}.sales-volume-options article span{margin:0;color:#0b1f5e;font-size:9px;font-weight:800}.sales-volume-options article strong{margin-top:3px;color:#111827;font-size:10px}.sales-volume-options article em{display:block;margin-top:2px;color:#475467;font-size:8.7px;font-style:normal;line-height:1.2}
+.item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:13%}.sales-table th:nth-child(3){width:6%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}.sales-table .sales-volume-row td{padding:0;border-left:0;background:#f8fafc;text-align:left}.sales-volume-offer{padding:10px 11px;border-top:1px solid #d9e1ea}.sales-volume-copy span{display:block;margin:0;color:#0b1f5e;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.sales-volume-copy strong{display:block;margin-top:2px;color:#111827;font-size:11px}.sales-volume-copy em{display:block;margin-top:2px;color:#475467;font-size:9.5px;font-style:normal}.sales-volume-options{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}.sales-volume-options article{padding:7px 5px;border:1px solid #cfd8e3;background:#fff}.sales-volume-options article span{margin:0;color:#0b1f5e;font-size:8.5px;font-weight:800}.sales-volume-options article strong{margin-top:3px;color:#111827;font-size:9.5px}.sales-volume-options article em{display:block;margin-top:2px;color:#475467;font-size:8.2px;font-style:normal;line-height:1.2}
 .signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-row{display:grid;grid-template-columns:128px 1fr;align-items:end;gap:10px;min-height:26px;margin-bottom:8px;font-size:12px}.sig-row span{font-weight:700;white-space:nowrap}.sig-row b{display:block;min-height:18px;border-bottom:1.2px solid #111827;font-size:12px}.sig-box strong{display:block;margin-top:8px;font-size:12px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px;line-height:1.35}.contact span{margin-top:16px;font-size:12px;font-weight:700}.contact em{margin-top:8px;font-size:12px;font-style:normal}
 .terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}
 @media print{body{background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{width:auto;max-width:7.8in;min-height:auto;margin:0 auto;padding:0}.no-print{display:none}}
@@ -3335,7 +3336,7 @@ ${items.map((item) => {
         tierRows,
         drawVolumeOffer,
         mainHeight: drawVolumeOffer ? 136 : compactRowHeight,
-        volumeHeight: drawVolumeOffer ? 92 : 0,
+        volumeHeight: drawVolumeOffer ? 104 : 0,
       };
     });
     const columns = [42, 302, 372, 404, 488, 570];
@@ -3386,20 +3387,22 @@ ${items.map((item) => {
         const offerX = 50;
         const offerWidth = tableWidth - 16;
         const offerBottom = volumeBottom + 10;
-        const visibleTiers = tierRows.slice(0, 4);
+        const visibleTiers = tierRows.slice(0, 5);
         const cardGap = 8;
         const cardWidth = (offerWidth - Math.max(0, visibleTiers.length - 1) * cardGap) / Math.max(1, visibleTiers.length);
-        const cardHeight = 36;
+        const cardHeight = 48;
         fillBox(tableX, volumeBottom, tableWidth, volumeHeight, 0.97);
         text(offerX, volumeTop - 18, 8, "Volume Savings", "F2", 0, { maxWidth: offerWidth, minSize: 8 });
         text(offerX, volumeTop - 31, 7, "Better pricing as this order grows", "F1", 0, { maxWidth: offerWidth, minSize: 7 });
-        tierRows.slice(0, 4).forEach((tier, tierIndex) => {
+        visibleTiers.forEach((tier, tierIndex) => {
           const cardX = offerX + tierIndex * (cardWidth + cardGap);
           const cardY = offerBottom;
-          fillBox(cardX, cardY, cardWidth, cardHeight, 1);
+          fillBox(cardX, cardY, cardWidth, cardHeight, tierIndex === visibleTiers.length - 1 ? 0.96 : 1);
           box(cardX, cardY, cardWidth, cardHeight);
-          text(cardX + 5, cardY + 22, 7, tier.compactQuantityLabel, "F2", 0, { maxWidth: cardWidth - 10, minSize: 7 });
-          text(cardX + 5, cardY + 11, 7, tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 7 });
+          fillBox(cardX, cardY + cardHeight - 5, cardWidth, 5, tierIndex === visibleTiers.length - 1 ? 0.68 : 0.82);
+          text(cardX + 5, cardY + 33, 7, tier.quantityLabel, "F2", 0, { maxWidth: cardWidth - 10, minSize: 6 });
+          text(cardX + 5, cardY + 21, 7, tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 6 });
+          text(cardX + 5, cardY + 9, 6, tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout needs review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 5 });
         });
       }
       textRight(columns[2] - 8, yBase, tableBodyFontSize, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12, tableMinFontSize);
