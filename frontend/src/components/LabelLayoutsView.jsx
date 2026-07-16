@@ -385,7 +385,8 @@ function buildToolSlots(recipe, option, tools) {
   const perfTools = assigned.filter(isPerfRoleTool);
 
   const needsUndercut = optionNeedsUndercut(option, assigned);
-  const needsPerf = recipeNeedsExternalPerf(recipe, option) || perfTools.length > 0;
+  const operation = externalOperation(recipe, option);
+  const needsPerf = operation !== "none" || perfTools.length > 0;
   const mainMags = mags.filter(isMainTool);
   const mainDies = dies.filter(isMainTool);
   const undercutMags = mags.filter(isUndercutTool);
@@ -410,13 +411,21 @@ function buildToolSlots(recipe, option, tools) {
   }
 
   if (needsPerf) {
-    const operation = externalOperation(recipe, option);
     slots.push({
       key: "perf",
       label: operation === "sheeted" ? "Sheeter Setup" : "Perf Setup",
       missing: operation === "sheeted" ? "Sheeter setup missing" : "Perf tooling missing",
       requestGroup: "PERF",
       tool: perf,
+    });
+  } else {
+    slots.push({
+      key: "no-perf",
+      label: "No Perf",
+      title: "No Perf",
+      status: "Not Required",
+      note: "No external perf or sheeter setup needed.",
+      informational: true,
     });
   }
 
@@ -732,6 +741,21 @@ function LayoutOptionLoading() {
 }
 
 function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen }) {
+  if (slot.informational) {
+    return (
+      <div className="layout-chain-card info">
+        <div className="layout-chain-main">
+          <div className="layout-chain-title-row">
+            <span className="layout-chain-type">{slot.label}</span>
+            <small className="layout-chain-state neutral">{slot.status}</small>
+          </div>
+          <strong>{slot.title}</strong>
+          <small className="layout-chain-location">{slot.note}</small>
+        </div>
+      </div>
+    );
+  }
+
   if (!slot.tool) {
     return (
       <button type="button" className="layout-chain-card missing" onClick={() => onAddTooling(option, slot.requestGroup)}>

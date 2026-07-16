@@ -16033,6 +16033,12 @@ p, .muted { color: #7a7a7a; }
 .layout-chain-card.bad { border-left-color: #dc2626; background: #fff7f7; }
 .layout-chain-card.neutral { border-left-color: #94a3b8; }
 
+.layout-chain-card.info {
+  grid-template-columns: minmax(0, 1fr);
+  border-left-color: #0f766e;
+  background: linear-gradient(180deg, #f0fdfa 0%, #ffffff 100%);
+}
+
 .layout-chain-card.missing {
   border-style: dashed;
   border-left-color: #f59e0b;
