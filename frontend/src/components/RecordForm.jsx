@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Plus, Search, Tag, X } from "lucide-react";
 import { apiEndpoint } from "../api";
-import { formatInches, getRecordTitle } from "../lib/format";
+import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { AuthenticatedImage, PdfPreview, isPdfUrl } from "./FilePreview";
 
 function normalizeInitial(fields, record, defaults = {}) {
@@ -222,6 +222,39 @@ function toolingSearchPlaceholder(field) {
   return "Search die #, size, repeat, gear, status, or location...";
 }
 
+function cleanToolLabel(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (/^[A-Z0-9#/\-. ]+$/.test(text)) return text;
+  return labelize(text);
+}
+
+function flexDieSizeMaterial(row) {
+  const size = row.label_width_inches && row.label_length_inches
+    ? `${formatInches(row.label_width_inches)} x ${formatInches(row.label_length_inches)}`
+    : "";
+  const material = cleanToolLabel(row.face_type || row.material_family || row.liner_type);
+  return [size, material].filter(Boolean).join(" ");
+}
+
+function flexDieAroundAcrossText(row) {
+  const around = row.number_across ?? row.across;
+  const across = row.number_around ?? row.around;
+  return [
+    around || around === 0 ? `${around} Around` : "",
+    across || across === 0 ? `${across} Across` : "",
+  ].filter(Boolean).join(" ");
+}
+
+function flexDieTitle(row) {
+  const name = row.name ?? getRecordTitle(row);
+  const details = [
+    flexDieSizeMaterial(row),
+    flexDieAroundAcrossText(row),
+  ].filter(Boolean).join(", ");
+  return [name, details].filter(Boolean).join(" - ");
+}
+
 function toolingMetricTags(row, field) {
   if (!row) return [];
   if (field.relation === "mags") {
@@ -251,10 +284,11 @@ function toolingMetricTags(row, field) {
     ].filter(Boolean);
   }
   return [
-    row.label_width_inches && row.label_length_inches ? `${formatInches(row.label_width_inches)} x ${formatInches(row.label_length_inches)}` : "",
+    flexDieSizeMaterial(row),
+    flexDieAroundAcrossText(row),
     row.repeat_inches ? `Repeat ${formatInches(row.repeat_inches)}` : "",
     row.gear ? `${row.gear}T` : "",
-    row.number_across && row.number_around ? `${row.number_across} x ${row.number_around}` : "",
+    row.liner_type ? cleanToolLabel(row.liner_type) : "",
     row.status,
     row.current_location_name || row.current_location_full_path,
   ].filter(Boolean);
@@ -781,7 +815,7 @@ function getRelationTitle(row, field) {
   }
 
   if (field.relation === "flex-dies") {
-    return `${row.name ?? getRecordTitle(row)}${row.gear ? ` · ${row.gear}T` : ""}${row.number_across && row.number_around ? ` · ${row.number_across}×${row.number_around}` : ""}`;
+    return flexDieTitle(row);
   }
 
   if (field.relation === "mags") {
