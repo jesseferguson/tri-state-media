@@ -82,18 +82,13 @@ function layoutMatchesFilters(row, filters) {
   if (!matchesNumberFilter(row.label_length_inches, filters.length)) return false;
   if (!matchesNumberFilter(row.repeat_inches, filters.repeat)) return false;
 
-  const perfQuery = compactSearchText(filters.perf);
-  if (perfQuery) {
-    const perfSource = [
-      perfText(row),
-      perfShortLabel(row),
-      perfShortLabel(row) === "NP" ? "No Perf" : "",
-      row.perf_option,
-      row.internal_perf_option,
-      row.perf_notes,
-      row.internal_perf_notes,
-    ].join(" ").toLowerCase();
-    if (!perfSource.includes(perfQuery)) return false;
+  const perfFilter = normalized(filters.perf).replaceAll(" ", "_").replaceAll("-", "_");
+  if (perfFilter) {
+    const operation = externalOperation(row);
+    const hasPerf = rowHasPerf(row);
+    if (perfFilter === "sheeted" && operation !== "sheeted") return false;
+    if (perfFilter === "perf" && !hasPerf) return false;
+    if (perfFilter === "none" && (operation !== "none" || hasPerf)) return false;
   }
 
   const tpiQuery = compactSearchText(filters.tpi);
@@ -355,6 +350,15 @@ function recipeNeedsPerf(recipe, option) {
     source.requires_internal_perf === true ||
     normalized(source.perf_option ?? option?.perf_option) === "perf" ||
     normalized(source.internal_perf_option ?? option?.internal_perf_option) === "perf"
+  );
+}
+
+function rowHasPerf(row) {
+  return (
+    externalOperation(row) === "perf" ||
+    recipeNeedsPerf(row, null) ||
+    row?.requires_internal_perf === true ||
+    Boolean(row?.internal_perf_tpi)
   );
 }
 
@@ -1022,8 +1026,13 @@ export default function LabelLayoutsView({
           <input value={filters.repeat} onChange={(event) => updateFilter("repeat", event.target.value)} placeholder="3.125" />
         </label>
         <label>
-          <span>Perf</span>
-          <input value={filters.perf} onChange={(event) => updateFilter("perf", event.target.value)} placeholder="NP / perf" />
+          <span>Cut / Perf</span>
+          <select value={filters.perf} onChange={(event) => updateFilter("perf", event.target.value)}>
+            <option value="">All</option>
+            <option value="sheeted">Sheeter / sheeter cut</option>
+            <option value="perf">Perf</option>
+            <option value="none">No Perf</option>
+          </select>
         </label>
         <label>
           <span>TPI</span>

@@ -34665,7 +34665,8 @@ textarea {
   text-transform: uppercase;
 }
 
-.layout-search-panel input {
+.layout-search-panel input,
+.layout-search-panel select {
   width: 100%;
   min-height: 34px;
   padding: 7px 9px;
@@ -34677,7 +34678,12 @@ textarea {
   font-weight: 800;
 }
 
-.layout-search-panel input:focus {
+.layout-search-panel select {
+  cursor: pointer;
+}
+
+.layout-search-panel input:focus,
+.layout-search-panel select:focus {
   border-color: #93c5fd;
   outline: 2px solid rgba(147, 197, 253, .28);
 }
