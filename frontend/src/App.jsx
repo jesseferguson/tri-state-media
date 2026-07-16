@@ -3119,6 +3119,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     rows={visibleRows}
                     recipeOptions={lookupQuery.data?.["recipe-options"] ?? []}
                     recipeTools={lookupQuery.data?.["recipe-tools"] ?? []}
+                    loading={listQuery.isLoading || (lookupQuery.isLoading && !lookupQuery.data && !selected)}
+                    setupLoading={lookupQuery.isLoading && !lookupQuery.data}
                     selectedId={selected?.id}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}

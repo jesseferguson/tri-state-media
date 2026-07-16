@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Copy, Edit3, ExternalLink, LoaderCircle, Plus, Search, Trash2, Wrench, X } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -675,6 +675,62 @@ function LayoutRootArtwork({ row }) {
   );
 }
 
+function LayoutLoadingScreen() {
+  return (
+    <section className="layout-loading-screen" role="status" aria-live="polite">
+      <div className="layout-loading-hero">
+        <div className="layout-loading-mark" aria-hidden="true">
+          <LoaderCircle size={23} />
+          <span />
+          <span />
+        </div>
+        <div className="layout-loading-copy">
+          <span>Label Layouts</span>
+          <strong>Loading layout library</strong>
+          <em>Syncing artwork, press setups, and tooling assignments.</em>
+        </div>
+      </div>
+      <div className="layout-loading-progress" aria-hidden="true"><span /></div>
+      <div className="layout-loading-rows" aria-hidden="true">
+        {[0, 1, 2, 3].map((row) => (
+          <div className="layout-loading-row" key={row}>
+            <span />
+            <span />
+            <span />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LayoutSubmenuLoading({ countLabel }) {
+  return (
+    <div className="layout-submenu-loading" role="status" aria-live="polite">
+      <span className="layout-loading-spinner" aria-hidden="true"><LoaderCircle size={18} /></span>
+      <div>
+        <strong>Opening layout details</strong>
+        <span>{countLabel}</span>
+      </div>
+      <div className="layout-submenu-skeleton" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
+  );
+}
+
+function LayoutOptionLoading() {
+  return (
+    <div className="layout-option-loading" role="status" aria-live="polite">
+      <span className="layout-loading-spinner" aria-hidden="true"><LoaderCircle size={16} /></span>
+      <strong>Loading press setup</strong>
+      <span aria-hidden="true" />
+    </div>
+  );
+}
+
 function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen }) {
   if (!slot.tool) {
     return (
@@ -727,7 +783,9 @@ function ChainToolCard({ slot, option, onAddTooling, onEdit, onDelete, onOpen })
 
 function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDeletePressOption, onAddTooling, onEditTooling, onDeleteTooling, renderToolDetail }) {
   const [open, setOpen] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [detailTool, setDetailTool] = useState(null);
+  const openingTimerRef = useRef(null);
   const tools = optionTools(option, toolRows, option.tools);
   const sharedReadiness = evaluateOption({ ...option, recipe_details: option.recipe_details ?? recipe, tools });
   const readiness = {
@@ -738,10 +796,30 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
   const plan = buildToolSlots(recipe, option, tools);
   const { slots } = plan;
 
+  useEffect(() => () => {
+    if (openingTimerRef.current) window.clearTimeout(openingTimerRef.current);
+  }, []);
+
+  function togglePressOption() {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (openingTimerRef.current) window.clearTimeout(openingTimerRef.current);
+    if (!nextOpen) {
+      setOpening(false);
+      setDetailTool(null);
+      return;
+    }
+    setOpening(true);
+    openingTimerRef.current = window.setTimeout(() => {
+      setOpening(false);
+      openingTimerRef.current = null;
+    }, 320);
+  }
+
   return (
     <article className={`layout-press-card ${readiness.tone} ${open ? "open" : ""}`}>
       <header className="layout-press-head">
-        <button type="button" className="layout-press-title-button" onClick={() => setOpen((value) => !value)}>
+        <button type="button" className="layout-press-title-button" onClick={togglePressOption}>
           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
           <div>
             <strong>{option.press_name || "No press"}</strong>
@@ -759,13 +837,15 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
         </div>
       </header>
 
-      {open && readiness.problems.length > 0 && (
+      {open && opening && <LayoutOptionLoading />}
+
+      {open && !opening && readiness.problems.length > 0 && (
         <div className="layout-helper-line">
           {readiness.problems.slice(0, 4).map((problem) => <span key={problem}>{problem}</span>)}
         </div>
       )}
 
-      {open && (
+      {open && !opening && (
         <div className="layout-tool-chain">
           {slots.map((slot, index) => (
             <Fragment key={slot.key}>
@@ -783,7 +863,7 @@ function PressOptionCard({ recipe, option, toolRows, onEditPressOption, onDelete
         </div>
       )}
 
-      {open && detailTool && renderToolDetail && (
+      {open && !opening && detailTool && renderToolDetail && (
         <div className="layout-inline-tool-detail">
           {renderToolDetail(detailTool, () => setDetailTool(null))}
         </div>
@@ -868,6 +948,8 @@ function LayoutGroup({
   toolRows,
   selectedId,
   openKeys,
+  opening,
+  setupLoading,
   toggleOpen,
   actions,
 }) {
@@ -877,6 +959,7 @@ function LayoutGroup({
   const selected = group.rows.some((row) => selectedId === row.id);
   const setupLabel = `${group.optionCount} setup${group.optionCount === 1 ? "" : "s"}`;
   const countLabel = singleLayout ? setupLabel : `${group.rows.length} layouts / ${setupLabel}`;
+  const submenuLoading = open && (opening || (setupLoading && selected));
 
   function toggleGroup() {
     if (primaryRow?.id) actions.onSelect?.(primaryRow);
@@ -914,8 +997,10 @@ function LayoutGroup({
       </div>
 
       {open && (
-        <div className="layout-group-body combined">
-          {group.rows.map((row) => (
+        <div className={`layout-group-body combined ${submenuLoading ? "is-loading" : ""}`}>
+          {submenuLoading ? (
+            <LayoutSubmenuLoading countLabel={countLabel} />
+          ) : group.rows.map((row) => (
             <LayoutCard
               key={row.id}
               row={row}
@@ -936,6 +1021,8 @@ export default function LabelLayoutsView({
   rows,
   recipeOptions = [],
   recipeTools = [],
+  loading = false,
+  setupLoading = false,
   selectedId,
   onSelect,
   onEdit,
@@ -949,8 +1036,10 @@ export default function LabelLayoutsView({
   renderToolDetail,
 }) {
   const [openKeys, setOpenKeys] = useState(() => new Set());
+  const [openingKeys, setOpeningKeys] = useState(() => new Set());
   const [filters, setFilters] = useState({ width: "", length: "", repeat: "", perf: "", tpi: "" });
   const [copiedId, setCopiedId] = useState("");
+  const openingTimersRef = useRef(new Map());
 
   const optionsByRecipe = useMemo(() => {
     const map = new Map();
@@ -973,6 +1062,42 @@ export default function LabelLayoutsView({
 
   function clearFilters() {
     setFilters({ width: "", length: "", repeat: "", perf: "", tpi: "" });
+  }
+
+  useEffect(() => () => {
+    openingTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    openingTimersRef.current.clear();
+  }, []);
+
+  function stopOpeningLoader(key) {
+    const timer = openingTimersRef.current.get(key);
+    if (timer) window.clearTimeout(timer);
+    openingTimersRef.current.delete(key);
+    setOpeningKeys((current) => {
+      if (!current.has(key)) return current;
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  }
+
+  function startOpeningLoader(key) {
+    stopOpeningLoader(key);
+    setOpeningKeys((current) => {
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+    const timer = window.setTimeout(() => {
+      setOpeningKeys((current) => {
+        if (!current.has(key)) return current;
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      openingTimersRef.current.delete(key);
+    }, 460);
+    openingTimersRef.current.set(key, timer);
   }
 
   async function copyLayoutId(row) {
@@ -1000,13 +1125,19 @@ export default function LabelLayoutsView({
   }
 
   function toggleOpen(id) {
+    const key = String(id ?? "");
+    const opening = !openKeys.has(key);
     setOpenKeys((current) => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
+    if (opening) startOpeningLoader(key);
+    else stopOpeningLoader(key);
   }
+
+  if (loading) return <LayoutLoadingScreen />;
 
   if (!rows?.length) return <p className="label-layout-empty">No label layouts match this view.</p>;
 
@@ -1051,6 +1182,8 @@ export default function LabelLayoutsView({
           toolRows={recipeTools}
           selectedId={selectedId}
           openKeys={openKeys}
+          opening={openingKeys.has(group.key)}
+          setupLoading={setupLoading}
           toggleOpen={toggleOpen}
           actions={{
             onSelect,
