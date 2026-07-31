@@ -1119,6 +1119,7 @@ class FinishedInventory(models.Model):
     STATUS_CHOICES = [
         ("available", "Available"),
         ("allocated", "Allocated"),
+        ("moved", "Moved"),
         ("shipped", "Shipped"),
         ("on_hold", "On Hold"),
         ("scrapped", "Scrapped"),
@@ -1215,6 +1216,8 @@ class FinishedInventory(models.Model):
         if self.customer_order_id and not self.job_ticket_id:
             self.job_ticket = self.customer_order.job_ticket
         super().save(*args, **kwargs)
+        if getattr(self, "_skip_material_usage_sync", False):
+            return
         if not self.material_inventory_id or not self.material_length_feet:
             return
 

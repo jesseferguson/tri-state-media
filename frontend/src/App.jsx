@@ -1326,6 +1326,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const [rollOpen, setRollOpen] = useState(false);
   const [inventoryDeleteCandidate, setInventoryDeleteCandidate] = useState(null);
   const [finishedInventoryOpen, setFinishedInventoryOpen] = useState(false);
+  const [finishedInventoryNotice, setFinishedInventoryNotice] = useState(null);
   const [finishedMaterialOpen, setFinishedMaterialOpen] = useState(false);
   const [finishedMaterialStartSchedule, setFinishedMaterialStartSchedule] = useState(false);
   const [materialTypeOpen, setMaterialTypeOpen] = useState(false);
@@ -1421,6 +1422,16 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [mobilePageMenuOpen]);
+
+  useEffect(() => {
+    if (!finishedInventoryNotice) return undefined;
+    const timer = window.setTimeout(() => setFinishedInventoryNotice(null), 4200);
+    return () => window.clearTimeout(timer);
+  }, [finishedInventoryNotice]);
+
+  function showFinishedInventoryNotice(message) {
+    setFinishedInventoryNotice({ id: Date.now(), message });
+  }
 
   useEffect(() => {
     if (activeKeyAllowed) return;
@@ -2178,6 +2189,20 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
       setSelected(saved ?? selected);
+      showFinishedInventoryNotice(`${getRecordTitle(saved ?? selected)} was sent out successfully.`);
+    },
+  });
+
+  const finishedInventoryMoveMutation = useMutation({
+    mutationFn: ({ id, payload }) => postRecordAction("finished-inventory", id, "move-item", payload),
+    onSuccess: (result) => {
+      const destination = result?.destination ?? null;
+      queryClient.invalidateQueries({ queryKey: ["collection", "finished-inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      if (destination) setSelected(destination);
+      showFinishedInventoryNotice(result?.completed || `${getRecordTitle(destination ?? selected)} moved successfully.`);
     },
   });
 
@@ -3091,10 +3116,13 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                   <FinishedInventoryView
                     rows={visibleRows}
                     selectedId={selected?.id}
+                    loading={listQuery.isLoading || (listQuery.isFetching && !visibleRows.length)}
                     onSelect={(row) => {
                       setSelected(row);
                       setFormMode(null);
                       setUsageOpen(false);
+                      finishedInventorySendMutation.reset();
+                      finishedInventoryMoveMutation.reset();
                       setFinishedInventoryOpen(true);
                     }}
                   />
@@ -3573,13 +3601,23 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           <FinishedInventoryWindow
             item={selected}
             usageRows={usageRows}
+            locations={lookupQuery.data?.locations ?? []}
+            inventoryRows={rows}
             sending={finishedInventorySendMutation.isPending}
-            onClose={() => setFinishedInventoryOpen(false)}
+            moving={finishedInventoryMoveMutation.isPending}
+            sendError={apiErrorMessage(finishedInventorySendMutation.error)}
+            moveError={apiErrorMessage(finishedInventoryMoveMutation.error)}
+            onClose={() => {
+              setFinishedInventoryOpen(false);
+              finishedInventorySendMutation.reset();
+              finishedInventoryMoveMutation.reset();
+            }}
             onEdit={() => {
               setFinishedInventoryOpen(false);
               setFormMode("edit");
             }}
             onSendOut={(payload) => finishedInventorySendMutation.mutateAsync({ id: selected.id, payload })}
+            onMoveItem={(payload) => finishedInventoryMoveMutation.mutateAsync({ id: selected.id, payload })}
           />
         )}
 
@@ -3693,6 +3731,13 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               setFormMode("edit");
             }}
           />
+        )}
+
+        {finishedInventoryNotice && (
+          <div className="finished-inventory-toast" role="status" aria-live="polite">
+            <BadgeCheck size={18} />
+            <span>{finishedInventoryNotice.message}</span>
+          </div>
         )}
       </section>
     </main>

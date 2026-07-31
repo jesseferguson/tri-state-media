@@ -54,6 +54,7 @@ export const choiceLists = {
   finishedInventoryStatus: [
     ["available", "Available"],
     ["allocated", "Allocated"],
+    ["moved", "Moved"],
     ["shipped", "Shipped"],
     ["on_hold", "On Hold"],
     ["scrapped", "Scrapped"],

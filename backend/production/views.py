@@ -2476,6 +2476,7 @@ class LocalLiveFootageReadingViewSet(BaseProductionViewSet):
 
 class FinishedInventoryViewSet(BaseProductionViewSet):
     serializer_class = FinishedInventorySerializer
+    inactive_statuses = ["shipped", "scrapped", "moved"]
     search_fields = [
         "name",
         "sku",
@@ -2544,6 +2545,60 @@ class FinishedInventoryViewSet(BaseProductionViewSet):
         if status_value:
             qs = qs.filter(status=status_value)
         return qs
+
+    def finished_item_key(self, inventory):
+        if inventory.job_ticket_id:
+            item_id = f"job:{inventory.job_ticket_id}"
+        elif inventory.sku:
+            item_id = f"sku:{str(inventory.sku).strip().lower()}"
+        else:
+            item_id = f"name:{str(inventory.name).strip().lower()}"
+        return (
+            item_id,
+            str(inventory.unit or "").strip().lower(),
+            str(inventory.face_type or "").strip().lower(),
+            str(inventory.liner_type or "").strip().lower(),
+            str(inventory.recipe_id or ""),
+            str(inventory.recipe_option_id or ""),
+        )
+
+    def matching_finished_items(self, inventory, location):
+        qs = (
+            FinishedInventory.objects.select_for_update()
+            .filter(location=location, quantity__gt=0, unit=inventory.unit)
+            .exclude(pk=inventory.pk)
+            .exclude(status__in=self.inactive_statuses)
+            .order_by("-run_date", "name", "id")
+        )
+        if inventory.job_ticket_id:
+            qs = qs.filter(job_ticket_id=inventory.job_ticket_id)
+        elif inventory.sku:
+            qs = qs.filter(sku__iexact=str(inventory.sku).strip())
+        else:
+            qs = qs.filter(name__iexact=str(inventory.name).strip())
+
+        if inventory.face_type:
+            qs = qs.filter(face_type__iexact=str(inventory.face_type).strip())
+        else:
+            qs = qs.filter(face_type="")
+        if inventory.liner_type:
+            qs = qs.filter(liner_type__iexact=str(inventory.liner_type).strip())
+        else:
+            qs = qs.filter(liner_type="")
+        if inventory.recipe_id:
+            qs = qs.filter(recipe_id=inventory.recipe_id)
+        else:
+            qs = qs.filter(recipe__isnull=True)
+        if inventory.recipe_option_id:
+            qs = qs.filter(recipe_option_id=inventory.recipe_option_id)
+        else:
+            qs = qs.filter(recipe_option__isnull=True)
+        return qs
+
+    def location_is_mixed(self, location):
+        rows = FinishedInventory.objects.filter(location=location, quantity__gt=0).exclude(status__in=self.inactive_statuses)
+        keys = {self.finished_item_key(row) for row in rows}
+        return len(keys) > 1
 
     @action(detail=False, methods=["post"], url_path="receive-order")
     def receive_order(self, request):
@@ -2678,3 +2733,147 @@ class FinishedInventoryViewSet(BaseProductionViewSet):
             inventory.save(update_fields=["quantity", "status", "updated_at"])
 
         return Response(self.get_serializer(inventory).data)
+
+    @action(detail=True, methods=["post"], url_path="move-item")
+    def move_item(self, request, pk=None):
+        inventory = self.get_object()
+        raw_quantity = request.data.get("quantity")
+        location_id = request.data.get("location") or request.data.get("location_id")
+
+        if raw_quantity in ["", None]:
+            return Response({"quantity": ["Enter the quantity to move."]}, status=status.HTTP_400_BAD_REQUEST)
+        if not location_id:
+            return Response({"location": ["Choose the destination location."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            quantity = Decimal(str(raw_quantity))
+        except (InvalidOperation, ValueError):
+            return Response({"quantity": ["Enter a valid quantity."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        if quantity <= 0:
+            return Response({"quantity": ["Quantity must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        location = ToolingLocation.objects.filter(pk=location_id).first()
+        if not location:
+            return Response({"location": ["Destination location was not found."]}, status=status.HTTP_404_NOT_FOUND)
+        if location.inventory_scope == "raw_material":
+            return Response({"location": ["Choose a Finished Product or Shared location."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        moved_date = parse_date(str(request.data.get("moved_date") or request.data.get("move_date") or "")) or timezone.localdate()
+        moved_by = str(request.data.get("moved_by") or request.data.get("used_by") or "").strip()
+        notes = str(request.data.get("notes") or "").strip()
+        destination_label = location.full_path()
+        source_label = inventory.location.full_path() if inventory.location_id else "No location"
+
+        with transaction.atomic():
+            inventory = (
+                FinishedInventory.objects.select_for_update()
+                .select_related("job_ticket", "customer_order", "material_inventory", "recipe", "recipe_option", "location")
+                .get(pk=inventory.pk)
+            )
+            available = Decimal(inventory.quantity or 0)
+            if inventory.status in self.inactive_statuses or available <= 0:
+                return Response({"detail": "This finished item is not available to move."}, status=status.HTTP_409_CONFLICT)
+            if quantity > available:
+                return Response(
+                    {"quantity": [f"Only {available} {inventory.unit or 'units'} are available."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            target = self.matching_finished_items(inventory, location).first()
+            if not target and inventory.location_id == location.id:
+                return Response({"location": ["This item is already in that location."]}, status=status.HTTP_400_BAD_REQUEST)
+
+            remaining = max(Decimal("0"), available - quantity)
+            created_destination = False
+            merged = False
+
+            if target:
+                target.quantity = Decimal(target.quantity or 0) + quantity
+                if target.status == "moved":
+                    target.status = "available"
+                target._skip_material_usage_sync = True
+                target.save(update_fields=["quantity", "status", "updated_at"])
+                destination = target
+                merged = True
+            elif remaining == 0:
+                inventory.location = location
+                if inventory.status == "moved":
+                    inventory.status = "available"
+                inventory._skip_material_usage_sync = True
+                inventory.save(update_fields=["location", "status", "updated_at"])
+                destination = inventory
+            else:
+                destination = FinishedInventory(
+                    name=inventory.name,
+                    sku=inventory.sku,
+                    job_ticket=inventory.job_ticket,
+                    customer_order=inventory.customer_order,
+                    order_number=inventory.order_number,
+                    material_inventory=inventory.material_inventory,
+                    recipe=inventory.recipe,
+                    recipe_option=inventory.recipe_option,
+                    location=location,
+                    material_width_inches=inventory.material_width_inches,
+                    material_length_feet=inventory.material_length_feet,
+                    face_type=inventory.face_type,
+                    liner_type=inventory.liner_type,
+                    liner_serial_number=inventory.liner_serial_number,
+                    face_serial_number=inventory.face_serial_number,
+                    quantity=quantity,
+                    unit=inventory.unit,
+                    status=inventory.status,
+                    operator=inventory.operator,
+                    suboperator=inventory.suboperator,
+                    run_date=inventory.run_date,
+                    notes=inventory.notes,
+                )
+                destination._skip_material_usage_sync = True
+                destination.save()
+                created_destination = True
+
+            if destination.pk != inventory.pk:
+                inventory.quantity = remaining
+                if remaining <= 0:
+                    inventory.status = "moved"
+                elif inventory.status == "moved":
+                    inventory.status = "available"
+                inventory._skip_material_usage_sync = True
+                inventory.save(update_fields=["quantity", "status", "updated_at"])
+
+            MaterialUsage.objects.create(
+                finished_inventory=destination,
+                usage_type="adjustment",
+                quantity=quantity,
+                unit=inventory.unit or "each",
+                used_date=moved_date,
+                used_by=moved_by,
+                reference=f"Moved from {source_label}",
+                notes=notes or f"Moved {quantity} {inventory.unit or 'units'} from {source_label} to {destination_label}.",
+            )
+
+        source = (
+            FinishedInventory.objects.select_related("job_ticket", "customer_order", "material_inventory", "recipe", "recipe_option", "location")
+            .filter(pk=inventory.pk)
+            .first()
+        )
+        destination = (
+            FinishedInventory.objects.select_related("job_ticket", "customer_order", "material_inventory", "recipe", "recipe_option", "location")
+            .get(pk=destination.pk)
+        )
+        mixed = self.location_is_mixed(location)
+        if merged:
+            completed = f"{inventory.name} moved to {destination_label} and added to the matching item."
+        elif mixed:
+            completed = f"{inventory.name} moved to {destination_label}. This location is now a mixed skid."
+        else:
+            completed = f"{inventory.name} moved to {destination_label}."
+
+        return Response({
+            "source": self.get_serializer(source).data if source else None,
+            "destination": self.get_serializer(destination).data,
+            "merged": merged,
+            "created_destination": created_destination,
+            "mixed": mixed,
+            "completed": completed,
+        })

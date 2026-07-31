@@ -8,7 +8,7 @@ from django.urls import reverse
 from rest_framework.test import APIRequestFactory
 
 from materials.models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
-from tooling.models import FlexDie, Press, Supplier
+from tooling.models import FlexDie, Press, Supplier, ToolingLocation
 
 from .models import (
     CompanyRole,
@@ -261,6 +261,104 @@ class FinishedInventoryOrderWorkflowTests(TestCase):
         self.assertIsNone(item.customer_order)
         self.assertEqual(item.job_ticket, ticket)
         self.assertEqual(item.quantity, Decimal("3"))
+
+    def test_move_item_merges_into_matching_finished_inventory(self):
+        ticket = self.make_ticket()
+        source_location = ToolingLocation.objects.create(
+            name="Finished A1",
+            code="FIN-A1",
+            inventory_scope="finished_product",
+        )
+        destination_location = ToolingLocation.objects.create(
+            name="Finished B1",
+            code="FIN-B1",
+            inventory_scope="finished_product",
+        )
+        source = FinishedInventory.objects.create(
+            name="Test job",
+            sku="TSM-100",
+            job_ticket=ticket,
+            quantity=Decimal("4"),
+            unit="carton",
+            location=source_location,
+        )
+        destination = FinishedInventory.objects.create(
+            name="Test job",
+            sku="TSM-100",
+            job_ticket=ticket,
+            quantity=Decimal("3"),
+            unit="carton",
+            location=destination_location,
+        )
+
+        response = self.client.post(
+            reverse("finished-inventory-move-item", args=[source.id]),
+            {
+                "quantity": "4",
+                "location": destination_location.id,
+                "moved_by": "Warehouse",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        source.refresh_from_db()
+        destination.refresh_from_db()
+        self.assertEqual(source.quantity, Decimal("0"))
+        self.assertEqual(source.status, "moved")
+        self.assertEqual(destination.quantity, Decimal("7"))
+        self.assertTrue(response.json()["merged"])
+        self.assertFalse(response.json()["mixed"])
+        self.assertTrue(MaterialUsage.objects.filter(finished_inventory=destination, usage_type="adjustment").exists())
+
+    def test_move_item_to_location_with_different_item_reports_mixed(self):
+        source_ticket = self.make_ticket(ticket_number="JT-101", product_code="TSM-101")
+        other_ticket = self.make_ticket(ticket_number="JT-102", product_code="TSM-102")
+        source_location = ToolingLocation.objects.create(
+            name="Finished A2",
+            code="FIN-A2",
+            inventory_scope="finished_product",
+        )
+        destination_location = ToolingLocation.objects.create(
+            name="Finished C1",
+            code="FIN-C1",
+            inventory_scope="finished_product",
+        )
+        source = FinishedInventory.objects.create(
+            name="Item One",
+            sku="TSM-101",
+            job_ticket=source_ticket,
+            quantity=Decimal("5"),
+            unit="carton",
+            location=source_location,
+        )
+        FinishedInventory.objects.create(
+            name="Item Two",
+            sku="TSM-102",
+            job_ticket=other_ticket,
+            quantity=Decimal("2"),
+            unit="carton",
+            location=destination_location,
+        )
+
+        response = self.client.post(
+            reverse("finished-inventory-move-item", args=[source.id]),
+            {
+                "quantity": "5",
+                "location": destination_location.id,
+                "moved_by": "Warehouse",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        source.refresh_from_db()
+        self.assertEqual(source.location, destination_location)
+        self.assertEqual(source.quantity, Decimal("5"))
+        self.assertEqual(source.status, "available")
+        self.assertFalse(response.json()["merged"])
+        self.assertTrue(response.json()["mixed"])
+        self.assertIn("mixed skid", response.json()["completed"])
 
 
 class JobTicketHistoryTests(TestCase):
