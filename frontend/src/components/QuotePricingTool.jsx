@@ -357,9 +357,11 @@ function calculateQuoteTierPricing(form, quantity) {
   });
 }
 
-function quoteTierVisiblePriceKey(tier) {
-  if (!tier?.fits) return "review";
-  return String(Math.round(Number(tier.pricePerThousand || 0) * 100));
+function quoteTierVisiblePriceCents(tier) {
+  if (!tier?.fits) return null;
+  const price = Number(tier.pricePerThousand || 0);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return Math.round(price * 100);
 }
 
 function quoteVisibleTierRows(tiers = []) {
@@ -368,7 +370,13 @@ function quoteVisibleTierRows(tiers = []) {
     .sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0))
     .forEach((tier) => {
       const previous = visible[visible.length - 1];
-      if (previous && quoteTierVisiblePriceKey(previous) === quoteTierVisiblePriceKey(tier)) return;
+      if (previous) {
+        const previousPriceCents = quoteTierVisiblePriceCents(previous);
+        const tierPriceCents = quoteTierVisiblePriceCents(tier);
+        if (previousPriceCents === null && tierPriceCents === null) return;
+        if (previousPriceCents !== null && tierPriceCents === null) return;
+        if (previousPriceCents !== null && tierPriceCents >= previousPriceCents) return;
+      }
       visible.push(tier);
     });
   return visible;
