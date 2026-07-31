@@ -4043,17 +4043,22 @@ ${items.map((item) => {
                     <strong>Volume Pricing</strong>
                     <em>{volumePricingEnabled ? "Included on this item" : "Off for this item"}</em>
                   </span>
-                  <b>Offer standard breaks plus customer-requested quantities.</b>
+                  <b>Standard breaks: 10k, 25k, 100k, 500k, and 1M+. Add customer-requested quantities below.</b>
                 </label>
                 {volumePricingEnabled && (
                   <div className="quote-volume-custom-panel">
+                    <div className="quote-volume-custom-head">
+                      <strong>Customer-Specific Volume Quantities</strong>
+                      <span>Use this when a customer asks for extra counts outside the standard breaks.</span>
+                    </div>
                     <label className="quote-field quote-field-wide">
-                      <span>Customer Qty Breaks</span>
+                      <span>Requested Quantities</span>
                       <textarea
                         value={form.volumeCustomQuantities}
                         onChange={(event) => updateField("volumeCustomQuantities", event.target.value)}
                         placeholder={continuousRoll ? "120,000\n300,000\n750,000" : "12,500\n75,000\n250,000"}
                       />
+                      <em className="quote-volume-custom-note">Enter one per line or separate with commas. The quote skips duplicates and any tier that is not a lower price.</em>
                     </label>
                   </div>
                 )}
