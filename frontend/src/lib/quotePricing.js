@@ -2,21 +2,19 @@ const EPSILON = 0.000001;
 const nonStandardCoreMarkupSurchargePercent = 15;
 
 export const wasteRecommendationRules = [
-  { minFootage: 90000, wastePercent: 6, label: "90,000+ ft" },
-  { minFootage: 50000, wastePercent: 7, label: "50,000-89,999 ft" },
-  { minFootage: 20000, wastePercent: 7.5, label: "20,000-49,999 ft" },
-  { minFootage: 10000, wastePercent: 8, label: "10,000-19,999 ft" },
-  { minFootage: 5000, wastePercent: 10, label: "5,000-9,999 ft" },
-  { minFootage: 0, wastePercent: 25, label: "under 5,000 ft" },
+  { minFootage: 40000, wastePercent: 5, label: "40,000+ ft" },
+  { minFootage: 10000.000001, wastePercent: 8, label: "10,001-39,999 ft" },
+  { minFootage: 5000.000001, wastePercent: 15, label: "5,001-10,000 ft" },
+  { minFootage: 2500.000001, wastePercent: 50, label: "2,501-5,000 ft" },
+  { minFootage: 0, wastePercent: 75, label: "0-2,500 ft" },
 ];
 
 export const colorWasteRecommendationRules = [
-  { minFootage: 90000, wastePercentPerColor: 0.25, label: "90,000+ ft" },
-  { minFootage: 50000, wastePercentPerColor: 0.5, label: "50,000-89,999 ft" },
-  { minFootage: 20000, wastePercentPerColor: 1, label: "20,000-49,999 ft" },
-  { minFootage: 10000, wastePercentPerColor: 1.5, label: "10,000-19,999 ft" },
-  { minFootage: 5000, wastePercentPerColor: 3, label: "5,000-9,999 ft" },
-  { minFootage: 0, wastePercentPerColor: 6, label: "under 5,000 ft" },
+  { minFootage: 40000, wastePercentPerColor: 0, label: "40,000+ ft" },
+  { minFootage: 10000.000001, wastePercentPerColor: 0, label: "10,001-39,999 ft" },
+  { minFootage: 5000.000001, wastePercentPerColor: 0, label: "5,001-10,000 ft" },
+  { minFootage: 2500.000001, wastePercentPerColor: 0, label: "2,501-5,000 ft" },
+  { minFootage: 0, wastePercentPerColor: 0, label: "0-2,500 ft" },
 ];
 
 export const quoteExtraCostFields = [

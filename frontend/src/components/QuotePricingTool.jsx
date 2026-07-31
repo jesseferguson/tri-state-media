@@ -31,6 +31,7 @@ const percentFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits:
 const quoteDefaultExpirationDays = 30;
 const quoteDefaultUnitOfMeasure = "M";
 const quoteThankYouMessage = "Thank you for the opportunity to serve...";
+const quoteFitForUseStatement = 'Customers are responsible for their own "Fit-For Use" testing in all end use applications.';
 const quoteTierQuantityOptions = [
   { quantity: 10000, label: "10,000" },
   { quantity: 25000, label: "25,000" },
@@ -38,6 +39,7 @@ const quoteTierQuantityOptions = [
   { quantity: 500000, label: "500,000" },
   { quantity: 1000000, label: "1,000,000", plus: true },
 ];
+const quotePdfVolumeTierLimit = 10;
 const quoteUnitTypeChoices = [
   ["label", "Label"],
   ["tag", "Tag"],
@@ -89,6 +91,7 @@ const initialForm = {
   labelsPerUnit: "",
   labelsPerCarton: "",
   volumePricingEnabled: false,
+  volumeCustomQuantities: "",
   continuousRoll: false,
   acrossMode: "auto",
   numberAcross: "",
@@ -279,6 +282,56 @@ function quoteTierQuantityLabel(option, unitType, compact = false, continuousRol
   return `${option?.label || Math.round(quantity).toLocaleString()}${option?.plus ? "+" : ""} ${unit}`;
 }
 
+function quoteTierQuantityKey(value) {
+  const quantity = toQuoteNumber(value, NaN);
+  if (!Number.isFinite(quantity) || quantity <= 0) return "";
+  return String(Math.round(quantity * 10000) / 10000);
+}
+
+function quoteCustomTierQuantityOptions(value = "") {
+  const matches = String(value || "").match(/\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g) || [];
+  const seen = new Set();
+  return matches
+    .map((match) => toQuoteNumber(match, NaN))
+    .filter((quantity) => Number.isFinite(quantity) && quantity > 0)
+    .map((quantity) => ({ quantity }))
+    .filter((option) => {
+      const key = quoteTierQuantityKey(option.quantity);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function quoteTierOptionsForForm(form = {}) {
+  const merged = new Map();
+  const addOption = (option) => {
+    const key = quoteTierQuantityKey(option?.quantity);
+    if (!key || merged.has(key)) return;
+    merged.set(key, option);
+  };
+  quoteTierQuantityOptions.forEach(addOption);
+  quoteCustomTierQuantityOptions(form.volumeCustomQuantities).forEach(addOption);
+  return [...merged.values()].sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
+}
+
+function quotePdfVolumeLayout(tierCount = 0) {
+  const visibleCount = Math.min(Math.max(0, Number(tierCount) || 0), quotePdfVolumeTierLimit);
+  const columns = Math.min(5, Math.max(1, visibleCount));
+  const rows = Math.max(1, Math.ceil(visibleCount / columns));
+  const cardHeight = visibleCount > 5 ? 38 : 44;
+  const rowGap = 7;
+  const cardAreaHeight = rows * cardHeight + Math.max(0, rows - 1) * rowGap;
+  return {
+    visibleCount,
+    columns,
+    rows,
+    cardHeight,
+    rowGap,
+    volumeHeight: cardAreaHeight + 56,
+  };
+}
+
 function quoteTierRowFromPricing(option, unitType, pricing, continuousRoll = false) {
   return {
     quantity: Math.max(0, toQuoteNumber(option?.quantity)),
@@ -331,8 +384,17 @@ function quoteItemTierRows(item, quote = {}) {
       .map((tier) => [String(Math.round(toQuoteNumber(tier.quantity, 0))), tier])
   );
 
-  const tiers = quoteTierQuantityOptions.map((option) => {
-    const stored = storedTiers.get(String(option.quantity));
+  const tierOptions = quoteTierOptionsForForm(form);
+  storedTiers.forEach((stored) => {
+    const quantity = toQuoteNumber(stored.quantity, NaN);
+    if (!Number.isFinite(quantity) || quantity <= 0) return;
+    if (tierOptions.some((option) => quoteTierQuantityKey(option.quantity) === quoteTierQuantityKey(quantity))) return;
+    tierOptions.push({ quantity });
+  });
+  tierOptions.sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
+
+  const tiers = tierOptions.map((option) => {
+    const stored = storedTiers.get(String(Math.round(toQuoteNumber(option.quantity, 0))));
     if (stored && Number.isFinite(Number(stored.pricePerThousand))) {
       const storedContinuousRoll = stored.continuousRoll === true || stored.continuousRoll === "true" || continuousRoll;
       return {
@@ -1895,6 +1957,7 @@ function QuoteDocument({ quote }) {
         <ul>
           {terms.map((term) => <li key={term}>{term}</li>)}
         </ul>
+        <strong className="quote-doc-fit-for-use">{quoteFitForUseStatement}</strong>
       </section>
     </article>
   );
@@ -3164,7 +3227,7 @@ body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
 .meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:14px;margin-top:18px}.meta.date-only{grid-template-columns:minmax(280px,.62fr);justify-content:end}.quote-for{min-height:84px}.quote-for span,.date-card span{display:block;color:#344054;font-size:12px;font-weight:700}.quote-for strong{display:block;margin-top:10px;font-size:13px}.quote-for em{display:block;margin-top:3px;color:#111827;font-size:12px;font-style:normal}.date-card{border:1.4px solid #111827}.date-card div{display:grid;grid-template-columns:104px minmax(0,1fr);border-top:1px solid #111827;min-height:28px}.date-card div:first-child{border-top:0}.date-card span{padding:6px 7px;border-right:1px solid #111827}.date-card strong{min-width:0;padding:6px 7px;font-size:12px;overflow-wrap:anywhere}
 .item{margin-top:18px}.sales-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111827}.sales-table th{background:#111827;color:#fff;font-size:10.5px;text-align:left;padding:7px 6px;line-height:1.15}.sales-table th:nth-child(n+2),.sales-table td:nth-child(n+2){text-align:right}.sales-table td{vertical-align:top;border-top:1px solid #111827;border-left:1px solid #d1d5db;padding:8px 6px;font-size:10.5px;line-height:1.28;overflow-wrap:anywhere;word-break:break-word}.sales-table td:first-child{border-left:0}.sales-table td:nth-child(n+2){overflow-wrap:normal;word-break:normal}.sales-table th:nth-child(1){width:46%}.sales-table th:nth-child(2){width:13%}.sales-table th:nth-child(3){width:6%}.sales-table th:nth-child(4){width:17%}.sales-table th:nth-child(5){width:18%}.sales-table strong{display:block;font-size:11px;line-height:1.22;overflow-wrap:anywhere}.sales-table span{display:block;margin-top:4px;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}.sales-table tfoot td{background:#f3f4f6;font-weight:700}.sales-table tfoot td:first-child{text-align:right}.sales-table .sales-volume-row td{padding:0;border-left:0;background:#f8fafc;text-align:left}.sales-volume-offer{padding:10px 11px;border-top:1px solid #d9e1ea}.sales-volume-copy span{display:block;margin:0;color:#0b1f5e;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.sales-volume-copy strong{display:block;margin-top:2px;color:#111827;font-size:11px}.sales-volume-copy em{display:block;margin-top:2px;color:#475467;font-size:9.5px;font-style:normal}.sales-volume-options{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}.sales-volume-options article{padding:7px 5px;border:1px solid #cfd8e3;background:#fff}.sales-volume-options article span{margin:0;color:#0b1f5e;font-size:8.5px;font-weight:800}.sales-volume-options article strong{margin-top:3px;color:#111827;font-size:9.5px}.sales-volume-options article em{display:block;margin-top:2px;color:#475467;font-size:8.2px;font-style:normal;line-height:1.2}
 .signature{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.sig-box{padding:10px 12px}.sig-row{display:grid;grid-template-columns:128px 1fr;align-items:end;gap:10px;min-height:26px;margin-bottom:8px;font-size:12px}.sig-row span{font-weight:700;white-space:nowrap}.sig-row b{display:block;min-height:18px;border-bottom:1.2px solid #111827;font-size:12px}.sig-box strong{display:block;margin-top:8px;font-size:12px;line-height:1.35}.contact{border:1.3px solid #111827;background:#f2f2f2;padding:16px 14px;text-align:right}.contact strong,.contact span,.contact em{display:block}.contact strong{font-size:12px;line-height:1.35}.contact span{margin-top:16px;font-size:12px;font-weight:700}.contact em{margin-top:8px;font-size:12px;font-style:normal}
-.terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}
+.terms{margin-top:16px;border-top:1px solid #d1d5db;padding-top:10px}.terms p{margin:0 0 8px;font-size:12px;line-height:1.35;white-space:pre-wrap}.terms ul{margin:0;padding-left:14px}.terms li{margin:0 0 5px;font-size:12px;line-height:1.32}.terms strong{display:block;margin-top:9px;font-size:12px;line-height:1.35;font-weight:700}
 @media print{body{background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{width:auto;max-width:7.8in;min-height:auto;margin:0 auto;padding:0}.no-print{display:none}}
 </style>
 </head>
@@ -3183,7 +3246,7 @@ ${items.map((item) => {
 </tbody><tfoot><tr><td colspan="4">Total in US$</td><td>${escapeHtml(money(totals.sellPrice))}</td></tr></tfoot></table>
 </section>
 <section class="signature"><div class="sig-box"><div class="sig-row"><span>Client P.O.</span><b>${escapeHtml(salesInfo.clientPo || "")}</b></div><div class="sig-row"><span>Authorized Signature</span><b></b></div><div class="sig-row"><span>Printed Name</span><b></b></div><div class="sig-row"><span>Title</span><b></b></div><div class="sig-row"><span>Date</span><b></b></div><strong>**Please provide both the Bill To and Ship To addresses when submitting your order.**</strong></div><div class="contact"><strong>${escapeHtml(quoteThankYouMessage)}</strong><span>${escapeHtml(quoteCompanyTeamName(quoteCompany))}</span>${quote.contactEmail ? `<em>${escapeHtml(quote.contactEmail)}</em>` : ""}</div></section>
-<section class="terms">${quote.notes ? `<p>${escapeHtml(quote.notes)}</p>` : ""}<ul>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ul></section>
+<section class="terms">${quote.notes ? `<p>${escapeHtml(quote.notes)}</p>` : ""}<ul>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ul><strong>${escapeHtml(quoteFitForUseStatement)}</strong></section>
 </main>
 <script>window.print();</script>
 </body>
@@ -3331,12 +3394,13 @@ ${items.map((item) => {
     const itemLayouts = visibleItems.map((item) => {
       const tierRows = quoteItemTierRows(item, quote);
       const drawVolumeOffer = drawVolumeBands && tierRows.length > 0;
+      const volumeLayout = quotePdfVolumeLayout(tierRows.length);
       return {
         item,
         tierRows,
         drawVolumeOffer,
         mainHeight: drawVolumeOffer ? 136 : compactRowHeight,
-        volumeHeight: drawVolumeOffer ? 104 : 0,
+        volumeHeight: drawVolumeOffer ? volumeLayout.volumeHeight : 0,
       };
     });
     const columns = [42, 302, 372, 404, 488, 570];
@@ -3387,22 +3451,26 @@ ${items.map((item) => {
         const offerX = 50;
         const offerWidth = tableWidth - 16;
         const offerBottom = volumeBottom + 10;
-        const visibleTiers = tierRows.slice(0, 5);
+        const visibleTiers = tierRows.slice(0, quotePdfVolumeTierLimit);
+        const volumeLayout = quotePdfVolumeLayout(visibleTiers.length);
         const cardGap = 8;
-        const cardWidth = (offerWidth - Math.max(0, visibleTiers.length - 1) * cardGap) / Math.max(1, visibleTiers.length);
-        const cardHeight = 48;
+        const cardWidth = (offerWidth - Math.max(0, volumeLayout.columns - 1) * cardGap) / volumeLayout.columns;
+        const cardHeight = volumeLayout.cardHeight;
+        const firstCardY = offerBottom + (volumeLayout.rows - 1) * (cardHeight + volumeLayout.rowGap);
         fillBox(tableX, volumeBottom, tableWidth, volumeHeight, 0.97);
         text(offerX, volumeTop - 18, 8, "Volume Savings", "F2", 0, { maxWidth: offerWidth, minSize: 8 });
         text(offerX, volumeTop - 31, 7, "Better pricing as this order grows", "F1", 0, { maxWidth: offerWidth, minSize: 7 });
         visibleTiers.forEach((tier, tierIndex) => {
-          const cardX = offerX + tierIndex * (cardWidth + cardGap);
-          const cardY = offerBottom;
+          const tierColumn = tierIndex % volumeLayout.columns;
+          const tierRow = Math.floor(tierIndex / volumeLayout.columns);
+          const cardX = offerX + tierColumn * (cardWidth + cardGap);
+          const cardY = firstCardY - tierRow * (cardHeight + volumeLayout.rowGap);
           fillBox(cardX, cardY, cardWidth, cardHeight, tierIndex === visibleTiers.length - 1 ? 0.96 : 1);
           box(cardX, cardY, cardWidth, cardHeight);
           fillBox(cardX, cardY + cardHeight - 5, cardWidth, 5, tierIndex === visibleTiers.length - 1 ? 0.68 : 0.82);
-          text(cardX + 5, cardY + 33, 7, tier.quantityLabel, "F2", 0, { maxWidth: cardWidth - 10, minSize: 6 });
-          text(cardX + 5, cardY + 21, 7, tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 6 });
-          text(cardX + 5, cardY + 9, 6, tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout needs review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 5 });
+          text(cardX + 5, cardY + cardHeight - 15, 6.5, tier.quantityLabel, "F2", 0, { maxWidth: cardWidth - 10, minSize: 5.5 });
+          text(cardX + 5, cardY + cardHeight - 26, 6.5, tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 5.5 });
+          text(cardX + 5, cardY + 6, 5.5, tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout needs review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 5 });
         });
       }
       textRight(columns[2] - 8, yBase, tableBodyFontSize, quoteTableQuantity(item, salesInfo.unitOfMeasure), "F1", 0, columns[2] - columns[1] - 12, tableMinFontSize);
@@ -3415,7 +3483,16 @@ ${items.map((item) => {
     textRight(columns[4] - 8, tableBottom + 9, tableBodyFontSize, "Total in US$", "F2", 0, columns[4] - columns[3] - 12, tableMinFontSize);
     textRight(columns[5] - 8, tableBottom + 9, tableBodyFontSize, money(totals.sellPrice), "F2", 0, columns[5] - columns[4] - 12, tableMinFontSize);
 
-    const signatureTop = tableBottom - 28;
+    const extendedVolumeLayout = itemLayouts.some((layout) => layout.volumeHeight > 110);
+    const signatureTop = tableBottom - (extendedVolumeLayout ? 18 : 28);
+    const signatureStep = extendedVolumeLayout ? 16 : 20;
+    const signatureNoteOffset = extendedVolumeLayout ? 88 : 108;
+    const signatureNoteSecondOffset = extendedVolumeLayout ? 100 : 122;
+    const contactBoxOffset = extendedVolumeLayout ? 106 : 126;
+    const contactBoxHeight = extendedVolumeLayout ? 112 : 136;
+    const contactMessageOffset = extendedVolumeLayout ? 20 : 24;
+    const contactTeamOffset = extendedVolumeLayout ? 52 : 62;
+    const contactEmailOffset = extendedVolumeLayout ? 76 : 88;
     const signatureLeftX = 54;
     const signatureLineStart = 172;
     const signatureLineEnd = 306;
@@ -3427,21 +3504,21 @@ ${items.map((item) => {
       ["Date", ""],
     ];
     signatureRows.forEach(([label, value], index) => {
-      const y = signatureTop - index * 20;
+      const y = signatureTop - index * signatureStep;
       text(signatureLeftX, y, 8, label, "F2", 0, { maxWidth: signatureLineStart - signatureLeftX - 12 });
       line(signatureLineStart, y - 2, signatureLineEnd, y - 2);
       if (value) text(signatureLineStart + 4, y + 1, 8, value, "F1", 0, { maxWidth: signatureLineEnd - signatureLineStart - 8 });
     });
-    text(signatureLeftX, signatureTop - 108, 8, "**Please provide both the Bill To and Ship To addresses", "F2", 0, { maxWidth: 250 });
-    text(signatureLeftX, signatureTop - 122, 8, "when submitting your order.**", "F2", 0, { maxWidth: 250 });
+    text(signatureLeftX, signatureTop - signatureNoteOffset, 8, "**Please provide both the Bill To and Ship To addresses", "F2", 0, { maxWidth: 250 });
+    text(signatureLeftX, signatureTop - signatureNoteSecondOffset, 8, "when submitting your order.**", "F2", 0, { maxWidth: 250 });
 
-    fillBox(330, signatureTop - 126, 240, 136, 0.92);
-    box(330, signatureTop - 126, 240, 136);
-    textLines(348, signatureTop - 24, 10, wrapPdfText(quoteThankYouMessage, 204, 10, "F2", 2), "F2", 0, 15);
-    textRight(552, signatureTop - 62, 8, quoteCompanyTeamName(quoteCompany), "F2", 0, 204);
-    if (quote.contactEmail) textRight(552, signatureTop - 88, 8, quote.contactEmail, "F1", 0, 204);
+    fillBox(330, signatureTop - contactBoxOffset, 240, contactBoxHeight, 0.92);
+    box(330, signatureTop - contactBoxOffset, 240, contactBoxHeight);
+    textLines(348, signatureTop - contactMessageOffset, 10, wrapPdfText(quoteThankYouMessage, 204, 10, "F2", 2), "F2", 0, 15);
+    textRight(552, signatureTop - contactTeamOffset, 8, quoteCompanyTeamName(quoteCompany), "F2", 0, 204);
+    if (quote.contactEmail) textRight(552, signatureTop - contactEmailOffset, 8, quote.contactEmail, "F1", 0, 204);
 
-    let termsY = signatureTop - 150;
+    let termsY = signatureTop - (extendedVolumeLayout ? 118 : 150);
     if (quote.notes) {
       wrapPdfText(quote.notes, 520, 8, "F1", 2).forEach((lineText) => {
         text(42, termsY, 8, lineText);
@@ -3453,6 +3530,7 @@ ${items.map((item) => {
       text(42, termsY, 6, `* ${term}`, "F1", 0, { maxWidth: 520 });
       termsY -= 14;
     });
+    text(42, termsY - 2, 7, quoteFitForUseStatement, "F2", 0, { maxWidth: 520, minSize: 6 });
 
     const stream = commands.join("\n");
     const contentObjectNumber = logoImage ? 7 : 6;
@@ -3957,8 +4035,20 @@ ${items.map((item) => {
                     <strong>Volume Pricing</strong>
                     <em>{volumePricingEnabled ? "Included on this item" : "Off for this item"}</em>
                   </span>
-                  <b>Offer 10k, 25k, 100k, and 1M+ options as a customer growth path.</b>
+                  <b>Offer standard breaks plus customer-requested quantities.</b>
                 </label>
+                {volumePricingEnabled && (
+                  <div className="quote-volume-custom-panel">
+                    <label className="quote-field quote-field-wide">
+                      <span>Customer Qty Breaks</span>
+                      <textarea
+                        value={form.volumeCustomQuantities}
+                        onChange={(event) => updateField("volumeCustomQuantities", event.target.value)}
+                        placeholder={continuousRoll ? "120,000\n300,000\n750,000" : "12,500\n75,000\n250,000"}
+                      />
+                    </label>
+                  </div>
+                )}
                 <div className="quote-top-grid quote-main-input-grid">
                   <Field label="Finished Material">
                     <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>
@@ -4092,9 +4182,9 @@ ${items.map((item) => {
                     <strong>{percent(pricing.recommendedWastePercent)}</strong>
                     <em>
                       {number(pricing.runFootage, " ft")} run / {percent(pricing.baseWastePercent)} base
-                      {pricing.colorCount > 0
+                      {pricing.colorWastePercentPerColor > 0 && (pricing.colorCount > 0
                         ? ` + ${percent(pricing.colorWastePercentPerColor)} per color (${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} = ${percent(pricing.colorWastePercent)})`
-                        : ` + ${percent(pricing.colorWastePercentPerColor)} per color`}
+                        : ` + ${percent(pricing.colorWastePercentPerColor)} per color`)}
                     </em>
                     {pricing.coreMarkupSurchargePercent > 0 && (
                       <em className="quote-core-surcharge-note">Core markup +15%: non-3" cores add 15% to markup.</em>

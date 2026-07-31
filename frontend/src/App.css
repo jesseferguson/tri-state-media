@@ -11294,6 +11294,20 @@ p, .muted { color: #7a7a7a; }
   font-weight: 850;
 }
 
+.quote-volume-custom-panel {
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #d7e4f2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.quote-volume-custom-panel textarea {
+  min-height: 70px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
 .quote-volume-preview {
   min-width: 0;
   border: 1px solid #d9e1ea;
@@ -12826,6 +12840,14 @@ p, .muted { color: #7a7a7a; }
   margin-bottom: 6px;
   color: #344054;
   font-size: .68rem;
+  line-height: 1.35;
+}
+
+.quote-doc-fit-for-use {
+  display: block;
+  margin-top: 9px;
+  color: #111827;
+  font-size: .7rem;
   line-height: 1.35;
 }
 
