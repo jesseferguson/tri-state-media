@@ -255,13 +255,25 @@ export default function FlexDieDetailPanel({
           </div>
         </div>
         <div className="flex-die-actions">
-          <button className="ghost-btn" type="button" onClick={() => setPrintDialogOpen(true)} disabled={!onPrintFolderLabel}><Printer size={15} /> Print Folder Label</button>
+          <button className="ghost-btn" type="button" onClick={() => setPrintDialogOpen(true)} disabled={!onPrintFolderLabel}>
+            <Printer size={15} />
+            <span className="desktop-label">Print Folder Label</span>
+            <span className="mobile-label">Print</span>
+          </button>
           <button className="primary-btn" type="button" onClick={onEdit}><Edit3 size={15} /> Edit</button>
           <button className="danger-btn" type="button" onClick={onDelete}><Trash2 size={15} /> Delete</button>
         </div>
       </header>
 
       {printNotice && <p className="flex-die-print-success">{printNotice}</p>}
+
+      <nav className="flex-die-folder-nav" aria-label="Flex die folder sections">
+        <a href="#flex-die-summary">Summary</a>
+        <a href="#flex-die-specs">Specs</a>
+        <a href="#flex-die-serials">Serials</a>
+        <a href="#flex-die-actions">Actions</a>
+        <a href="#flex-die-history">History</a>
+      </nav>
 
       {tone !== "ready" && (
         <div className={`flex-die-alert ${tone}`}>
@@ -271,7 +283,7 @@ export default function FlexDieDetailPanel({
         </div>
       )}
 
-      <section className="flex-die-at-a-glance">
+      <section className="flex-die-at-a-glance" id="flex-die-summary">
         <div className="flex-die-across-hero">
           <span>Across</span>
           <strong>{die.number_across || "--"}</strong>
@@ -303,16 +315,7 @@ export default function FlexDieDetailPanel({
         </form>
       )}
 
-      <section className="flex-die-image-card">
-        {imageUrl ? <AuthenticatedImage src={imageUrl} alt={die.dieline_image_name || die.name} /> : <div><ImageIcon size={22} /><span>No dieline image</span></div>}
-        {imageUrl && onDeleteDieline && (
-          <button className="ghost-btn xs" type="button" onClick={() => run("image", onDeleteDieline)}>
-            <Trash2 size={12} /> Delete Image
-          </button>
-        )}
-      </section>
-
-      <section className="flex-die-detail-grid">
+      <section className="flex-die-detail-grid" id="flex-die-specs">
         <Detail label="Size" value={`${formatInches(die.label_width_inches)} x ${formatInches(die.label_length_inches)}`} />
         <Detail label="Repeat" value={formatInches(die.repeat_inches)} />
         <Detail label="Gap" value={formatInches(die.gap_across_inches)} />
@@ -323,6 +326,15 @@ export default function FlexDieDetailPanel({
         <Detail label="Liner" value={die.liner_type} />
         <Detail label="Original Serial" value={die.original_serial_number} />
         <Detail label="Location" value={die.current_location_full_path || die.current_location_name} />
+      </section>
+
+      <section className="flex-die-image-card">
+        {imageUrl ? <AuthenticatedImage src={imageUrl} alt={die.dieline_image_name || die.name} /> : <div><ImageIcon size={22} /><span>No dieline image</span></div>}
+        {imageUrl && onDeleteDieline && (
+          <button className="ghost-btn xs" type="button" onClick={() => run("image", onDeleteDieline)}>
+            <Trash2 size={12} /> Delete Image
+          </button>
+        )}
       </section>
 
       <section className="flex-die-section management">
@@ -340,7 +352,7 @@ export default function FlexDieDetailPanel({
         </div>
       </section>
 
-      <section className="flex-die-section">
+      <section className="flex-die-section" id="flex-die-serials">
         <div className="type-section-head">
           <strong>Serial History</strong>
           <span>{serials.length} recorded</span>
@@ -362,7 +374,7 @@ export default function FlexDieDetailPanel({
         <UsageList rows={usageRows} />
       </section>
 
-      <section className="flex-die-control-grid">
+      <section className="flex-die-control-grid" id="flex-die-actions">
         <form onSubmit={(event) => { event.preventDefault(); run("request", () => onRequestReorder(requestNote)); }}>
           <strong><PackagePlus size={14} /> Request Die</strong>
           <textarea value={requestNote} onChange={(event) => setRequestNote(event.target.value)} placeholder="Optional note for production engineering" />
@@ -401,7 +413,7 @@ export default function FlexDieDetailPanel({
         <OrderTimeline rows={orderRows} />
       </section>
 
-      <section className="flex-die-section">
+      <section className="flex-die-section" id="flex-die-history">
         <div className="type-section-head">
           <strong>Requests + History</strong>
           <span>{historyRows.length} events</span>
