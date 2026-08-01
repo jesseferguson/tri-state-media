@@ -1,6 +1,10 @@
 import { getApiToken } from "./lib/authToken";
 
 const API_BASE = import.meta.env.VITE_TOOLING_API_BASE ?? "/api";
+export const AUTH_SESSION_ENDED_EVENT = "tsm-auth-session-ended";
+export const AUTH_SESSION_ENDED_MESSAGE = "Your access was denied or your login expired. Please sign in again.";
+
+let sessionEndedDispatched = false;
 
 function cleanBase(url) {
   return url.replace(/\/$/, "");
@@ -38,6 +42,32 @@ export function isApiUrl(url) {
   }
 }
 
+async function responseErrorMessage(response) {
+  let message = `${response.status} ${response.statusText}`;
+  try {
+    const payload = await response.clone().json();
+    message = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  } catch {
+    try {
+      message = await response.clone().text();
+    } catch {
+      message = `${response.status} ${response.statusText}`;
+    }
+  }
+  return message;
+}
+
+function notifySessionEnded(response) {
+  if (sessionEndedDispatched || typeof window === "undefined") return;
+  sessionEndedDispatched = true;
+  window.dispatchEvent(new CustomEvent(AUTH_SESSION_ENDED_EVENT, {
+    detail: {
+      status: response.status,
+      message: AUTH_SESSION_ENDED_MESSAGE,
+    },
+  }));
+}
+
 async function request(url, options = {}) {
   const bodyIsFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const { headers: optionHeaders = {}, skipAuth = false, ...requestOptions } = options;
@@ -57,17 +87,14 @@ async function request(url, options = {}) {
     throw new Error(`Could not reach the API at ${target || "the requested endpoint"}. Make sure the backend server is running, then refresh and try again. (${error.message || "Network request failed"})`);
   }
 
+  if (response.ok) {
+    sessionEndedDispatched = false;
+  }
+
   if (!response.ok) {
-    let message = `${response.status} ${response.statusText}`;
-    try {
-      const payload = await response.json();
-      message = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
-    } catch {
-      try {
-        message = await response.text();
-      } catch {
-        message = `${response.status} ${response.statusText}`;
-      }
+    const message = await responseErrorMessage(response);
+    if (!skipAuth && (response.status === 401 || response.status === 403)) {
+      notifySessionEnded(response);
     }
     throw new Error(message || "Request failed");
   }
@@ -93,8 +120,16 @@ export async function fetchFile(url, options = {}) {
     throw new Error(`Could not reach the file at ${target || "the requested endpoint"}. Refresh and try again. (${error.message || "Network request failed"})`);
   }
 
+  if (response.ok) {
+    sessionEndedDispatched = false;
+  }
+
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`.trim() || "File request failed");
+    const message = await responseErrorMessage(response);
+    if (!skipAuth && (response.status === 401 || response.status === 403)) {
+      notifySessionEnded(response);
+    }
+    throw new Error(message || `${response.status} ${response.statusText}`.trim() || "File request failed");
   }
 
   return response;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, Building2, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Menu, Plus, QrCode, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
-import { createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
+import { AUTH_SESSION_ENDED_EVENT, AUTH_SESSION_ENDED_MESSAGE, createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
@@ -520,7 +520,7 @@ function isTriStateMaterial(row) {
   return /tri\s*-?\s*state\s+media/i.test(String(row?.company || ""));
 }
 
-function SignInScreen({ onSignIn }) {
+function SignInScreen({ onSignIn, message = "" }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -542,6 +542,8 @@ function SignInScreen({ onSignIn }) {
     setSubmitting(false);
     if (result?.error) setError(result.error);
   }
+
+  const authMessage = error || message;
 
   return (
     <main className="auth-screen">
@@ -569,7 +571,7 @@ function SignInScreen({ onSignIn }) {
             <span>Password</span>
             <input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" />
           </label>
-          {error && <div className="auth-error">{error}</div>}
+          {authMessage && <div className="auth-error">{authMessage}</div>}
           <button className="primary-btn" type="submit" disabled={submitting}><LogIn size={16} /> {submitting ? "Signing In..." : "Sign In"}</button>
         </form>
       </section>
@@ -1115,10 +1117,26 @@ function AccountMenu({
 }
 
 export default function App() {
+  const queryClient = useQueryClient();
   const [users, setUsers] = useState(() => loadUsers());
   const [roleDefinitions, setRoleDefinitions] = useState(() => loadRoles());
   const [currentUser, setCurrentUser] = useState(() => loadSessionUser());
   const [userPanelOpen, setUserPanelOpen] = useState(false);
+  const [signInMessage, setSignInMessage] = useState("");
+
+  useEffect(() => {
+    function handleSessionEnded(event) {
+      const message = event.detail?.message || AUTH_SESSION_ENDED_MESSAGE;
+      clearSession();
+      queryClient.clear();
+      setCurrentUser(null);
+      setUserPanelOpen(false);
+      setSignInMessage(message);
+    }
+
+    window.addEventListener(AUTH_SESSION_ENDED_EVENT, handleSessionEnded);
+    return () => window.removeEventListener(AUTH_SESSION_ENDED_EVENT, handleSessionEnded);
+  }, [queryClient]);
 
   useEffect(() => {
     let alive = true;
@@ -1170,13 +1188,16 @@ export default function App() {
     setUsers(result.users);
     if (result.roles) setRoleDefinitions(result.roles);
     setCurrentUser(result.user);
+    setSignInMessage("");
     return result;
   }
 
   function handleSignOut() {
     clearSession();
+    queryClient.clear();
     setCurrentUser(null);
     setUserPanelOpen(false);
+    setSignInMessage("");
   }
 
   async function handleQuoteCompanyChange(value) {
@@ -1258,7 +1279,7 @@ export default function App() {
     await refreshCompanyAccess();
   }
 
-  if (!currentUser) return <SignInScreen onSignIn={handleSignIn} />;
+  if (!currentUser) return <SignInScreen onSignIn={handleSignIn} message={signInMessage} />;
 
   return (
     <>
