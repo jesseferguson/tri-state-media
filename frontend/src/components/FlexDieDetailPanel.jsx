@@ -42,7 +42,6 @@ function FlexDiePrintDialog({ die, presses = [], busy, error, onPrint, onClose }
     darkness: "",
   }));
   const selectedPress = presses.find((press) => String(press.id) === String(form.press));
-  const targetCount = die.target_die_count || die.active_die_count || "--";
 
   useEffect(() => {
     if (!selectedPress) return;
@@ -70,13 +69,17 @@ function FlexDiePrintDialog({ die, presses = [], busy, error, onPrint, onClose }
           <section>
             <b>Across {die.number_across || "--"}</b>
             <b>Around {die.number_around || "--"}</b>
+            <b>Width {formatInches(die.label_width_inches)}</b>
+            <b>Length {formatInches(die.label_length_inches)}</b>
             <b>Gear {die.gear ? `${die.gear}T` : "--"}</b>
             <b>Web {formatInches(die.web_width_inches)}</b>
             <b>Face {labelize(die.face_type)}</b>
             <b>Cut {labelize(die.cutting_type)}</b>
-            <b>Should Have {targetCount}</b>
-            <b>Serial {die.original_serial_number || "--"}</b>
           </section>
+          <div className="flex-die-label-preview-serial">
+            <span>Current Original Serial Number</span>
+            <strong>{die.original_serial_number || "--"}</strong>
+          </div>
         </div>
         <div className="storage-form-grid">
           <label className="wide">

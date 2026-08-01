@@ -4372,6 +4372,21 @@ tbody tr:hover, tbody tr.selected { background: rgba(14, 165, 233, .14); }
   overflow-wrap: anywhere;
 }
 
+.flex-die-label-preview-serial {
+  grid-column: 1 / -1;
+  padding: 8px 9px;
+  border: 2px solid #101828;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.flex-die-label-preview-serial strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 1.12rem;
+  line-height: 1.08;
+}
+
 .flex-die-loading-screen {
   min-height: min(520px, calc(100dvh - 220px));
   display: grid;
@@ -36070,8 +36085,10 @@ textarea {
 
 @media (max-width: 640px) {
   .flex-die-folder-overlay {
-    align-items: stretch;
-    overflow-y: auto;
+    display: block;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
     padding: 0;
     background: #f8fafc;
     backdrop-filter: none;
@@ -36079,26 +36096,31 @@ textarea {
 
   .flex-die-folder-window {
     width: 100%;
-    min-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
     max-height: none;
+    display: flex;
+    flex-direction: column;
     margin: 0;
-    overflow: visible;
+    overflow: hidden;
     border: 0;
     border-radius: 0;
     box-shadow: none;
   }
 
   .flex-die-folder-window-head {
-    position: sticky;
-    top: 0;
+    flex: 0 0 auto;
     z-index: 40;
     justify-content: flex-start;
     padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+    border-bottom: 1px solid #dce6f1;
     box-shadow: 0 8px 18px rgba(15, 23, 42, .08);
   }
 
   .flex-die-folder-window-head .ghost-btn {
     width: auto;
+    flex: 0 0 auto;
     min-height: 36px;
     padding: 7px 10px;
     border-radius: 9px;
@@ -36106,9 +36128,13 @@ textarea {
   }
 
   .flex-die-folder-window > .flex-die-detail-panel {
-    overflow: visible;
-    padding: 10px max(10px, env(safe-area-inset-left)) calc(22px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-right));
-    gap: 10px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 10px max(10px, env(safe-area-inset-left)) calc(28px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-right));
+    gap: 12px;
     border: 0;
     border-radius: 0;
     background: #f8fafc;
@@ -36116,8 +36142,8 @@ textarea {
 
   .flex-die-detail-head {
     display: grid;
-    gap: 8px;
-    padding: 10px;
+    gap: 10px;
+    padding: 12px;
     border: 1px solid #dce6f1;
     border-radius: 12px;
     background: #ffffff;
@@ -36129,9 +36155,19 @@ textarea {
 
   .flex-die-detail-head h2 {
     margin-bottom: 7px;
-    font-size: 1.42rem;
-    line-height: 1.02;
+    font-size: 1.26rem;
+    line-height: 1.08;
     overflow-wrap: anywhere;
+  }
+
+  .flex-die-head-pills {
+    gap: 5px;
+  }
+
+  .flex-die-count-pill,
+  .flex-die-status-pill {
+    max-width: 100%;
+    font-size: .66rem;
   }
 
   .flex-die-actions {
@@ -36145,10 +36181,12 @@ textarea {
   .flex-die-actions .ghost-btn,
   .flex-die-actions .danger-btn {
     width: 100%;
+    min-width: 0;
     min-height: 38px;
     padding: 7px 6px;
     border-radius: 9px;
     font-size: .72rem;
+    white-space: normal;
   }
 
   .flex-die-actions .desktop-label {
@@ -36160,19 +36198,15 @@ textarea {
   }
 
   .flex-die-folder-nav {
-    position: sticky;
-    top: calc(51px + env(safe-area-inset-top));
-    z-index: 35;
-    margin: 0 -10px;
-    padding: 6px 10px;
-    border-right: 0;
-    border-left: 0;
-    border-radius: 0;
-    box-shadow: 0 7px 14px rgba(15, 23, 42, .07);
+    position: static;
+    margin: 0;
+    padding: 6px;
+    border-radius: 12px;
+    box-shadow: none;
   }
 
   .flex-die-folder-nav a {
-    min-width: 74px;
+    min-width: 76px;
     min-height: 34px;
     padding: 7px 9px;
     font-size: .72rem;
@@ -36183,12 +36217,13 @@ textarea {
   #flex-die-serials,
   #flex-die-actions,
   #flex-die-history {
-    scroll-margin-top: 112px;
+    scroll-margin-top: 12px;
   }
 
   .flex-die-alert {
     grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
+    padding: 10px;
   }
 
   .flex-die-alert span {
@@ -36197,11 +36232,16 @@ textarea {
 
   .flex-die-at-a-glance {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 7px;
+    gap: 8px;
+  }
+
+  .flex-die-across-hero,
+  .flex-die-at-a-glance > div:nth-child(4) {
+    grid-column: 1 / -1;
   }
 
   .flex-die-at-a-glance > div {
-    padding: 9px;
+    padding: 10px;
     border-radius: 10px;
   }
 
@@ -36213,28 +36253,77 @@ textarea {
   }
 
   .flex-die-across-hero strong {
-    font-size: 2rem;
+    font-size: 2.15rem;
   }
 
   .flex-die-detail-grid,
   .flex-die-management-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .flex-die-management-stat:last-child {
-    grid-column: 1 / -1;
+    grid-column: auto;
+  }
+
+  .flex-die-detail-grid div,
+  .flex-die-management-stat,
+  .flex-die-order-list article,
+  .flex-die-usage-list article,
+  .flex-die-history-list article {
+    padding: 10px;
+  }
+
+  .flex-die-detail-grid span,
+  .flex-die-section .type-section-head span,
+  .flex-die-management-stat span {
+    font-size: .64rem;
+  }
+
+  .flex-die-detail-grid strong,
+  .flex-die-management-stat strong,
+  .flex-die-order-list strong,
+  .flex-die-usage-list strong,
+  .flex-die-history-list strong {
+    font-size: .82rem;
+    line-height: 1.25;
+  }
+
+  .flex-die-section .type-section-head {
+    display: grid;
+    gap: 3px;
+    align-items: start;
+  }
+
+  .flex-die-serial-list {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .flex-die-serial-list span {
+    min-width: 0;
+    border-radius: 9px;
+    overflow-wrap: anywhere;
   }
 
   .flex-die-image-card {
-    min-height: 120px;
-    max-height: 220px;
+    min-height: 150px;
+    max-height: 240px;
     border-radius: 10px;
   }
 
   .flex-die-image-card img,
   .flex-die-image-card > div {
-    min-height: 120px;
-    max-height: 220px;
+    min-height: 150px;
+    max-height: 240px;
+  }
+
+  .flex-die-status-form {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .flex-die-status-form .primary-btn {
+    width: 100%;
   }
 
   .flex-die-control-grid {
@@ -36246,7 +36335,7 @@ textarea {
   }
 
   .flex-die-control-grid textarea {
-    min-height: 48px;
+    min-height: 64px;
   }
 
   .flex-die-usage-list article {
@@ -36263,6 +36352,11 @@ textarea {
     width: 100%;
     max-height: 100dvh;
     border-radius: 0;
+  }
+
+  .flex-die-folder-window > .flex-die-loading-screen {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 }
 

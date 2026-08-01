@@ -20,16 +20,15 @@ def zpl_label_value(value):
 
 def flex_die_folder_label_zpl(die, scan_url, *, darkness="20", speed="5", copies=1):
     width = zpl_inches(die.web_width_inches or die.computed_web_width_inches)
-    target_count = die.target_die_count or die.active_die_count or ""
     fields = [
         ("ACROSS", die.number_across),
         ("AROUND", die.number_around),
+        ("WIDTH", zpl_inches(die.label_width_inches)),
+        ("LENGTH", zpl_inches(die.label_length_inches)),
         ("GEAR", f"{die.gear}T" if die.gear else ""),
         ("WEB WIDTH", width),
         ("FACE", die.face_type),
         ("CUT", die.get_cutting_type_display()),
-        ("SHOULD HAVE", target_count),
-        ("ORIG SERIAL", die.original_serial_number),
     ]
 
     lines = [
