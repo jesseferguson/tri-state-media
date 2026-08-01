@@ -284,7 +284,9 @@ class ToolingPrintQueueTests(TestCase):
         firebase_request = mocked_urlopen.call_args.args[0]
         self.assertIn("/TEST_PRINT_SERVER_JOBS/SHARED.json", firebase_request.full_url)
         body = json.loads(firebase_request.data.decode("utf-8"))
-        self.assertEqual(body["TYPE"], "FLEX_DIE_FOLDER_LABEL_2_5X5")
+        self.assertEqual(body["TYPE"], "SKID_LABEL_3X3")
+        self.assertEqual(body["Label Type"], "FLEX_DIE_FOLDER_LABEL_2_5X5")
+        self.assertEqual(body["Print Format"], "ZPL")
         self.assertEqual(body["Printer"], "192.168.1.70")
         self.assertEqual(body["Printer Port"], 9101)
         self.assertEqual(body["SPEED"], "7")
@@ -306,5 +308,6 @@ class ToolingPrintQueueTests(TestCase):
         self.assertIn("FC123", body["ZPL"])
         self.assertIn("flexDieId=", body["ZPL"])
         self.assertEqual(response.json()["labelType"], "FLEX_DIE_FOLDER_LABEL_2_5X5")
+        self.assertEqual(response.json()["firebaseType"], "SKID_LABEL_3X3")
         self.assertEqual(response.json()["labelSize"], "2.5x5")
         self.assertTrue(ToolingHistory.objects.filter(flex_die=die, event_type="label_printed").exists())

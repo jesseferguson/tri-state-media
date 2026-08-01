@@ -312,8 +312,12 @@ class FlexDieViewSet(BaseToolingViewSet):
         zpl = flex_die_folder_label_zpl(die, scan_url, darkness=darkness, speed=speed, copies=copies)
         queue_key = _firebase_safe_key(press.printer_queue_key or press.name or printer_ip)
         label_type = "FLEX_DIE_FOLDER_LABEL_2_5X5"
+        firebase_type = "SKID_LABEL_3X3"
         payload = {
-            "TYPE": label_type,
+            # The ESP32 print server already recognizes this as a raw-ZPL job type.
+            "TYPE": firebase_type,
+            "Label Type": label_type,
+            "Print Format": "ZPL",
             "Printer": printer_ip,
             "Printer Port": _positive_int(request.data.get("printer_port") or press.printer_port, 9100),
             "SPEED": speed,
@@ -361,6 +365,7 @@ class FlexDieViewSet(BaseToolingViewSet):
             {
                 "ok": True,
                 "labelType": label_type,
+                "firebaseType": firebase_type,
                 "queueKey": queue_key,
                 "firebaseKey": firebase_key,
                 "firebaseStatus": firebase_status,
