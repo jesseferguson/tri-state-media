@@ -1,6 +1,10 @@
 import re
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlparse
 
+from django.conf import settings
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -47,6 +51,7 @@ from .serializers import (
 from production.auth import request_user_has_resource_access
 from production.file_responses import private_file_response
 from production.upload_security import validate_upload
+from .zpl import flex_die_folder_label_zpl
 
 
 class BaseToolingViewSet(viewsets.ModelViewSet):
@@ -266,6 +271,105 @@ class FlexDieViewSet(BaseToolingViewSet):
             die.dieline_image,
             display_name=die.dieline_image_name,
             fallback_name="dieline-image",
+        )
+
+    @action(detail=True, methods=["post"], url_path="print-folder-label")
+    def print_folder_label(self, request, pk=None):
+        from production.views import (
+            FIREBASE_PRINT_QUEUE_BASE,
+            FIREBASE_PRINT_QUEUE_NAME,
+            FIREBASE_PRINT_QUEUE_ROOT,
+            _firebase_post_json,
+            _firebase_safe_key,
+            _positive_int,
+            _print_text,
+        )
+
+        die = self.get_object()
+        required_key = "rotary-dies" if self.tooling_kind == "rotary_die" else "flex-dies"
+        if not request_user_has_resource_access(request, required_key):
+            return Response({"detail": "You do not have access to print this tooling label."}, status=status.HTTP_403_FORBIDDEN)
+
+        press_id = request.data.get("press")
+        press = Press.objects.filter(pk=press_id).first() if press_id else None
+        if not press:
+            return Response({"press": ["Select the printer for this flex die folder label."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        printer_ip = _print_text(request.data, "printer_ip", press.printer_ip)
+        if not printer_ip:
+            return Response(
+                {"printer": [f"Add a printer IP for {press.name} before printing this flex die folder label."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        frontend_base = _print_text(request.data, "frontend_url", settings.FRONTEND_PUBLIC_URL).rstrip("/")
+        if urlparse(frontend_base).hostname in {"localhost", "127.0.0.1"}:
+            frontend_base = settings.FRONTEND_PUBLIC_URL.rstrip("/")
+        scan_url = f"{frontend_base}/?{urlencode({'flexDieId': die.pk})}"
+        speed = _print_text(request.data, "speed", press.printer_speed or "5")
+        darkness = _print_text(request.data, "darkness", press.printer_darkness or "20")
+        copies = _positive_int(request.data.get("copies"), 1)
+        zpl = flex_die_folder_label_zpl(die, scan_url, darkness=darkness, speed=speed, copies=copies)
+        queue_key = _firebase_safe_key(press.printer_queue_key or press.name or printer_ip)
+        label_type = "FLEX_DIE_FOLDER_LABEL_2_5X5"
+        payload = {
+            "TYPE": label_type,
+            "Printer": printer_ip,
+            "Printer Port": _positive_int(request.data.get("printer_port") or press.printer_port, 9100),
+            "SPEED": speed,
+            "DARKNESS": darkness,
+            "Total Ship Stock": copies,
+            "Scan URL": scan_url,
+            "Flex Die ID": die.pk,
+            "Flex Die Number": die.name,
+            "Label Size": "2.5x5",
+            "Queue Key": queue_key,
+            "ZPL": zpl,
+            "Queued By": _print_text(request.data, "performed_by"),
+            "Queued At": timezone.now().isoformat(),
+        }
+
+        try:
+            firebase_status, firebase_payload = _firebase_post_json(
+                FIREBASE_PRINT_QUEUE_BASE,
+                [FIREBASE_PRINT_QUEUE_ROOT, FIREBASE_PRINT_QUEUE_NAME],
+                payload,
+            )
+        except HTTPError as error:
+            return Response(
+                {"detail": "Firebase rejected the flex die folder label print job.", "firebase_status": error.code},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except URLError as error:
+            return Response(
+                {"detail": "Could not reach Firebase to queue the flex die folder label.", "error": str(error.reason)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        firebase_key = str(firebase_payload.get("name") or "")
+        self.create_history(
+            die,
+            "label_printed",
+            f"{payload.get('Queued By') or 'system'} queued a 2.5 x 5 folder label for {die.name}.",
+            request,
+            notes=f"Printer: {press.name} / {printer_ip}. Scan URL: {scan_url}",
+        )
+        return Response(
+            {
+                "ok": True,
+                "labelType": label_type,
+                "queueKey": queue_key,
+                "firebaseKey": firebase_key,
+                "firebaseStatus": firebase_status,
+                "printerIp": printer_ip,
+                "printerPort": payload["Printer Port"],
+                "printerSpeed": speed,
+                "printerDarkness": darkness,
+                "copies": copies,
+                "scanUrl": scan_url,
+                "labelSize": "2.5x5",
+            },
+            status=status.HTTP_201_CREATED,
         )
 
     @action(detail=True, methods=["post"], url_path="request-reorder")

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserQRCodeSvgWriter } from "@zxing/browser";
-import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Printer, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Printer, QrCode, Save, Trash2, X } from "lucide-react";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { AuthenticatedImage } from "./FilePreview";
@@ -35,90 +34,70 @@ function Detail({ label, value }) {
   );
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function flexDieScanUrl(die) {
-  if (typeof window === "undefined") return "";
-  const url = new URL(window.location.origin + window.location.pathname);
-  url.searchParams.set("flexDieId", die.id);
-  return url.toString();
-}
-
-function labelMetric(label, value) {
-  return `<div class="metric"><span>${escapeHtml(label)}</span><b>${escapeHtml(value || "--")}</b></div>`;
-}
-
-function printFlexDieFolderLabel(die) {
-  const url = flexDieScanUrl(die);
-  const printWindow = window.open("", "_blank", "width=420,height=720");
-  if (!printWindow) {
-    window.alert("Could not open the label print window. Please allow pop-ups for this site.");
-    return;
-  }
-
-  const qrSvg = new BrowserQRCodeSvgWriter().write(url, 168, 168).outerHTML;
-  const fdNumber = getRecordTitle(die);
+function FlexDiePrintDialog({ die, presses = [], busy, error, onPrint, onClose }) {
+  const [form, setForm] = useState(() => ({
+    press: presses.find((press) => press.printer_ip)?.id || "",
+    copies: 1,
+    speed: "",
+    darkness: "",
+  }));
+  const selectedPress = presses.find((press) => String(press.id) === String(form.press));
   const targetCount = die.target_die_count || die.active_die_count || "--";
-  const metrics = [
-    labelMetric("Across", die.number_across),
-    labelMetric("Around", die.number_around),
-    labelMetric("Gear", die.gear ? `${die.gear}T` : ""),
-    labelMetric("Web Width", formatInches(die.web_width_inches)),
-    labelMetric("Face", labelize(die.face_type)),
-    labelMetric("Cut", labelize(die.cutting_type)),
-    labelMetric("Target Dies", targetCount),
-  ].join("");
 
-  printWindow.document.write(`<!doctype html>
-<html>
-<head>
-<title>${escapeHtml(fdNumber)} Folder Label</title>
-<style>
-@page { size: 2.5in 5in; margin: 0; }
-* { box-sizing: border-box; }
-html, body { width: 2.5in; height: 5in; margin: 0; padding: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; }
-body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.label { width: 2.5in; height: 5in; padding: .13in; display: flex; flex-direction: column; gap: .08in; overflow: hidden; border: 1px solid transparent; }
-.topline { display: flex; align-items: flex-start; justify-content: space-between; gap: .08in; border-bottom: 2px solid #000; padding-bottom: .06in; }
-.topline span { display: block; font-size: 6.5pt; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
-.topline strong { display: block; max-width: 1.55in; font-size: 24pt; line-height: .9; font-weight: 900; overflow-wrap: anywhere; }
-.qr { width: .72in; height: .72in; flex: 0 0 auto; }
-.qr svg { width: 100%; height: 100%; display: block; }
-.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: .045in; }
-.metric { min-height: .38in; padding: .04in .045in; border: 1.5px solid #000; display: flex; flex-direction: column; justify-content: center; }
-.metric span { font-size: 6.2pt; font-weight: 900; text-transform: uppercase; }
-.metric b { margin-top: .02in; font-size: 13pt; line-height: 1; font-weight: 900; overflow-wrap: anywhere; }
-.serial { margin-top: auto; padding-top: .055in; border-top: 2px solid #000; }
-.serial span { display: block; font-size: 6.2pt; font-weight: 900; text-transform: uppercase; }
-.serial b { display: block; font-size: 11pt; line-height: 1.05; font-weight: 900; overflow-wrap: anywhere; }
-.url { margin-top: .02in; font-size: 5.2pt; line-height: 1.1; overflow-wrap: anywhere; }
-@media print { .no-print { display: none; } }
-</style>
-</head>
-<body>
-<main class="label">
-  <section class="topline">
-    <div><span>Flex Die Folder</span><strong>${escapeHtml(fdNumber)}</strong></div>
-    <div class="qr">${qrSvg}</div>
-  </section>
-  <section class="metrics">${metrics}</section>
-  <section class="serial">
-    <span>Current Original Serial Number</span>
-    <b>${escapeHtml(die.original_serial_number || "--")}</b>
-    <div class="url">${escapeHtml(url)}</div>
-  </section>
-</main>
-<script>window.focus(); window.print();</script>
-</body>
-</html>`);
-  printWindow.document.close();
+  useEffect(() => {
+    if (!selectedPress) return;
+    setForm((current) => ({
+      ...current,
+      speed: current.speed || selectedPress.printer_speed || "5",
+      darkness: current.darkness || selectedPress.printer_darkness || "20",
+    }));
+  }, [selectedPress?.id]);
+
+  return (
+    <div className="storage-modal-overlay" role="presentation" onMouseDown={onClose}>
+      <form className="storage-modal flex-die-print-modal" onSubmit={(event) => { event.preventDefault(); onPrint(form); }} onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <div><span>2.5 x 5 Zebra Label</span><h3>Print {getRecordTitle(die)}</h3></div>
+          <button type="button" onClick={onClose} aria-label="Close"><X size={19} /></button>
+        </header>
+        <div className="flex-die-label-preview">
+          <div>
+            <span>Flex Die Folder</span>
+            <strong>{getRecordTitle(die)}</strong>
+            <em>QR opens live folder info</em>
+          </div>
+          <QrCode size={88} />
+          <section>
+            <b>Across {die.number_across || "--"}</b>
+            <b>Around {die.number_around || "--"}</b>
+            <b>Gear {die.gear ? `${die.gear}T` : "--"}</b>
+            <b>Web {formatInches(die.web_width_inches)}</b>
+            <b>Face {labelize(die.face_type)}</b>
+            <b>Cut {labelize(die.cutting_type)}</b>
+            <b>Should Have {targetCount}</b>
+            <b>Serial {die.original_serial_number || "--"}</b>
+          </section>
+        </div>
+        <div className="storage-form-grid">
+          <label className="wide">
+            <span>Printer</span>
+            <select value={form.press} onChange={(event) => setForm((current) => ({ ...current, press: event.target.value, speed: "", darkness: "" }))} required>
+              <option value="">Choose printer</option>
+              {presses.filter((press) => press.printer_ip).map((press) => <option value={press.id} key={press.id}>{press.name} / {press.printer_ip}</option>)}
+            </select>
+          </label>
+          <label><span>Copies</span><input type="number" min="1" max="20" value={form.copies} onChange={(event) => setForm((current) => ({ ...current, copies: event.target.value }))} /></label>
+          <label><span>Speed</span><input type="number" min="1" max="14" value={form.speed} onChange={(event) => setForm((current) => ({ ...current, speed: event.target.value }))} /></label>
+          <label><span>Darkness</span><input type="number" min="0" max="30" value={form.darkness} onChange={(event) => setForm((current) => ({ ...current, darkness: event.target.value }))} /></label>
+        </div>
+        {error && <div className="storage-message error"><AlertTriangle size={17} /><span>{error}</span></div>}
+        <footer>
+          <button className="ghost-btn" type="button" onClick={onClose}>Cancel</button>
+          <button className="primary-btn" type="submit" disabled={busy || !form.press}><Printer size={16} /> {busy ? "Queueing..." : "Print Label"}</button>
+        </footer>
+      </form>
+    </div>
+  );
 }
 
 function HistoryList({ rows }) {
@@ -197,7 +176,13 @@ export default function FlexDieDetailPanel({
   onAdjustCount,
   onDeleteDieline,
   onUpdateStatus,
+  onPrintFolderLabel,
+  presses = [],
+  printingLabel = false,
+  printLabelError = "",
 }) {
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printNotice, setPrintNotice] = useState("");
   const [requestNote, setRequestNote] = useState("");
   const [orderNote, setOrderNote] = useState("");
   const [receiveSerial, setReceiveSerial] = useState("");
@@ -220,6 +205,8 @@ export default function FlexDieDetailPanel({
     setStatusValue(die?.status ?? "in_stock");
     setCountNote("");
     setError("");
+    setPrintDialogOpen(false);
+    setPrintNotice("");
   }, [die?.id, die?.active_die_count, die?.status]);
 
   async function run(actionName, action) {
@@ -242,6 +229,18 @@ export default function FlexDieDetailPanel({
     }
   }
 
+  async function printFolderLabel(form) {
+    if (!onPrintFolderLabel) return;
+    setPrintNotice("");
+    try {
+      await onPrintFolderLabel(form);
+      setPrintDialogOpen(false);
+      setPrintNotice(`Folder label queued for ${getRecordTitle(die)}.`);
+    } catch {
+      // The mutation error is shown in the dialog through printLabelError.
+    }
+  }
+
   return (
     <aside className="flex-die-detail-panel compact-card">
       <header className="flex-die-detail-head">
@@ -256,11 +255,13 @@ export default function FlexDieDetailPanel({
           </div>
         </div>
         <div className="flex-die-actions">
-          <button className="ghost-btn" type="button" onClick={() => printFlexDieFolderLabel(die)}><Printer size={15} /> Print Folder Label</button>
+          <button className="ghost-btn" type="button" onClick={() => setPrintDialogOpen(true)} disabled={!onPrintFolderLabel}><Printer size={15} /> Print Folder Label</button>
           <button className="primary-btn" type="button" onClick={onEdit}><Edit3 size={15} /> Edit</button>
           <button className="danger-btn" type="button" onClick={onDelete}><Trash2 size={15} /> Delete</button>
         </div>
       </header>
+
+      {printNotice && <p className="flex-die-print-success">{printNotice}</p>}
 
       {tone !== "ready" && (
         <div className={`flex-die-alert ${tone}`}>
@@ -407,6 +408,17 @@ export default function FlexDieDetailPanel({
         </div>
         <HistoryList rows={historyRows} />
       </section>
+
+      {printDialogOpen && (
+        <FlexDiePrintDialog
+          die={die}
+          presses={presses}
+          busy={printingLabel}
+          error={printLabelError}
+          onPrint={printFolderLabel}
+          onClose={() => setPrintDialogOpen(false)}
+        />
+      )}
     </aside>
   );
 }

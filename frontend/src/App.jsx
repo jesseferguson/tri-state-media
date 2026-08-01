@@ -263,9 +263,12 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 500));
   }
 
-  if (resource.key === "flex-dies" && selected?.id) {
-    addLookupSpec(specs, relationLookupSpec("history", { flex_die: selected.id }, 250));
-    addLookupSpec(specs, relationLookupSpec("recipe-tools", { flex_die: selected.id }, 500, true));
+  if (resource.key === "flex-dies") {
+    addLookupSpec(specs, relationLookupSpec("presses", {}, 500, true));
+    if (selected?.id) {
+      addLookupSpec(specs, relationLookupSpec("history", { flex_die: selected.id }, 250));
+      addLookupSpec(specs, relationLookupSpec("recipe-tools", { flex_die: selected.id }, 500, true));
+    }
   }
 
   if (resource.key === "recipes") {
@@ -2458,6 +2461,22 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     },
   });
 
+  const flexDieFolderLabelMutation = useMutation({
+    mutationFn: async ({ die, form }) => {
+      if (!die?.id) throw new Error("No flex die selected.");
+      return postRecordAction("flex-dies", die.id, "print-folder-label", {
+        ...form,
+        performed_by: currentUserForView?.name || "",
+        frontend_url: window.location.origin,
+      }, {
+        headers: companyUserHeaders(currentUserForView),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   const jobTicketScheduleCreateMutation = useMutation({
     mutationFn: (payload) => createRecord("production-schedule", {
       ...payload,
@@ -2932,6 +2951,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
         {jobTicketChangeApprovalMutation.error && <div className="error-box">{jobTicketChangeApprovalMutation.error.message}</div>}
         {jobTicketPrintMutation.error && <div className="error-box">{jobTicketPrintMutation.error.message}</div>}
+        {flexDieFolderLabelMutation.error && <div className="error-box">{flexDieFolderLabelMutation.error.message}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {materialTypeSaveMutation.error && <div className="error-box">{materialTypeSaveMutation.error.message}</div>}
         {materialTypeDeleteMutation.error && <div className="error-box">{materialTypeDeleteMutation.error.message}</div>}
@@ -3601,6 +3621,10 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     record: selectedToolingItem,
                     payload,
                   })}
+                  presses={lookupQuery.data?.presses ?? []}
+                  printingLabel={flexDieFolderLabelMutation.isPending}
+                  printLabelError={flexDieFolderLabelMutation.error?.message || ""}
+                  onPrintFolderLabel={(form) => flexDieFolderLabelMutation.mutateAsync({ die: selectedToolingItem, form })}
                 />
               ) : (
                 <FlexDieLoadingScreen compact error="No flex die record is selected." />

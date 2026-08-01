@@ -1,9 +1,15 @@
+import json
+from decimal import Decimal
+from unittest.mock import patch
+
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from production.models import CompanyRole, CompanyUser
 from .models import (
+    FlexDie,
     Mag,
     PerfBladeSetup,
     PerfCylinder,
