@@ -2951,7 +2951,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         {jobTicketEditMutation.error && <div className="error-box">{jobTicketEditMutation.error.message}</div>}
         {jobTicketChangeApprovalMutation.error && <div className="error-box">{jobTicketChangeApprovalMutation.error.message}</div>}
         {jobTicketPrintMutation.error && <div className="error-box">{jobTicketPrintMutation.error.message}</div>}
-        {flexDieFolderLabelMutation.error && <div className="error-box">{flexDieFolderLabelMutation.error.message}</div>}
+        {flexDieFolderLabelMutation.error && <div className="error-box">{apiErrorMessage(flexDieFolderLabelMutation.error)}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {materialTypeSaveMutation.error && <div className="error-box">{materialTypeSaveMutation.error.message}</div>}
         {materialTypeDeleteMutation.error && <div className="error-box">{materialTypeDeleteMutation.error.message}</div>}
@@ -3623,7 +3623,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                   })}
                   presses={lookupQuery.data?.presses ?? []}
                   printingLabel={flexDieFolderLabelMutation.isPending}
-                  printLabelError={flexDieFolderLabelMutation.error?.message || ""}
+                  printLabelError={apiErrorMessage(flexDieFolderLabelMutation.error)}
                   onPrintFolderLabel={(form) => flexDieFolderLabelMutation.mutateAsync({ die: selectedToolingItem, form })}
                 />
               ) : (

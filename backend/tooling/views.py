@@ -323,6 +323,9 @@ class FlexDieViewSet(BaseToolingViewSet):
             "Flex Die ID": die.pk,
             "Flex Die Number": die.name,
             "Label Size": "2.5x5",
+            "Label Width Inches": "2.5",
+            "Label Length Inches": "5",
+            "Tooling Kind": die.tooling_kind,
             "Queue Key": queue_key,
             "ZPL": zpl,
             "Queued By": _print_text(request.data, "performed_by"),
@@ -361,6 +364,11 @@ class FlexDieViewSet(BaseToolingViewSet):
                 "queueKey": queue_key,
                 "firebaseKey": firebase_key,
                 "firebaseStatus": firebase_status,
+                "firebasePath": (
+                    f"/{FIREBASE_PRINT_QUEUE_ROOT}/{FIREBASE_PRINT_QUEUE_NAME}/{firebase_key}"
+                    if firebase_key
+                    else f"/{FIREBASE_PRINT_QUEUE_ROOT}/{FIREBASE_PRINT_QUEUE_NAME}"
+                ),
                 "printerIp": printer_ip,
                 "printerPort": payload["Printer Port"],
                 "printerSpeed": speed,

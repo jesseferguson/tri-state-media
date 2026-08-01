@@ -216,3 +216,95 @@ class ToolingApiTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["name"], "Standard Setup")
         self.assertTrue(response.data["can_run"])
+
+
+class ToolingPrintQueueTests(TestCase):
+    class FirebaseResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return b'{"name":"flex-die-label-1"}'
+
+    def setUp(self):
+        self.client = APIClient()
+        self.role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        self.user = CompanyUser(username="tooling-print-admin", name="Admin", role=self.role, password_hash="")
+        self.user.set_password("pw")
+        self.user.save()
+        self.headers = {
+            "HTTP_X_COMPANY_USER_ID": str(self.user.id),
+            "HTTP_X_COMPANY_USERNAME": self.user.username,
+        }
+        self.press = Press.objects.create(
+            name="ETI",
+            printer_ip="192.168.1.70",
+            printer_port=9101,
+            printer_speed="7",
+            printer_darkness="14",
+            printer_queue_key="ETI",
+        )
+
+    def test_flex_die_folder_label_queues_2_5_by_5_zpl(self):
+        die = FlexDie.objects.create(
+            name="FD-13-100",
+            label_width_inches=Decimal("3"),
+            label_length_inches=Decimal("4"),
+            repeat_inches=Decimal("4.125"),
+            gap_across_inches=Decimal("0.125"),
+            number_across=2,
+            number_around=1,
+            gear=99,
+            face_type="paper",
+            cutting_type="to_liner",
+            original_serial_number="FC123",
+            active_die_count=2,
+            target_die_count=4,
+        )
+
+        with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
+            response = self.client.post(
+                reverse("flex-die-print-folder-label", args=[die.id]),
+                {
+                    "press": self.press.id,
+                    "copies": 2,
+                    "frontend_url": "https://plant.example.com",
+                    "performed_by": "Tool Room",
+                },
+                format="json",
+                **self.headers,
+            )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        firebase_request = mocked_urlopen.call_args.args[0]
+        self.assertIn("/TEST_PRINT_SERVER_JOBS/SHARED.json", firebase_request.full_url)
+        body = json.loads(firebase_request.data.decode("utf-8"))
+        self.assertEqual(body["TYPE"], "FLEX_DIE_FOLDER_LABEL_2_5X5")
+        self.assertEqual(body["Printer"], "192.168.1.70")
+        self.assertEqual(body["Printer Port"], 9101)
+        self.assertEqual(body["SPEED"], "7")
+        self.assertEqual(body["DARKNESS"], "14")
+        self.assertEqual(body["Total Ship Stock"], 2)
+        self.assertEqual(body["Label Size"], "2.5x5")
+        self.assertEqual(body["Label Width Inches"], "2.5")
+        self.assertEqual(body["Label Length Inches"], "5")
+        self.assertEqual(body["Tooling Kind"], "flex_die")
+        self.assertIn("^PW508", body["ZPL"])
+        self.assertIn("^LL1015", body["ZPL"])
+        self.assertIn("^BQN,2,5", body["ZPL"])
+        self.assertIn("FD-13-100", body["ZPL"])
+        self.assertIn("ACROSS", body["ZPL"])
+        self.assertIn("AROUND", body["ZPL"])
+        self.assertIn("WEB WIDTH", body["ZPL"])
+        self.assertIn('6.125"', body["ZPL"])
+        self.assertIn("SHOULD HAVE", body["ZPL"])
+        self.assertIn("FC123", body["ZPL"])
+        self.assertIn("flexDieId=", body["ZPL"])
+        self.assertEqual(response.json()["labelType"], "FLEX_DIE_FOLDER_LABEL_2_5X5")
+        self.assertEqual(response.json()["labelSize"], "2.5x5")
+        self.assertTrue(ToolingHistory.objects.filter(flex_die=die, event_type="label_printed").exists())

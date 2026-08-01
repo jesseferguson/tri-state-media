@@ -949,6 +949,7 @@ class ToolingHistory(models.Model):
         ("die_ordered", "Die Ordered"),
         ("die_received", "Die Received"),
         ("die_count_adjusted", "Die Count Adjusted"),
+        ("label_printed", "Label Printed"),
     ]
 
     tooling_type = models.CharField(max_length=30, choices=TOOLING_TYPE_CHOICES)
