@@ -2,7 +2,8 @@ import { getApiToken } from "./lib/authToken";
 
 const API_BASE = import.meta.env.VITE_TOOLING_API_BASE ?? "/api";
 export const AUTH_SESSION_ENDED_EVENT = "tsm-auth-session-ended";
-export const AUTH_SESSION_ENDED_MESSAGE = "Your access was denied or your login expired. Please sign in again.";
+export const AUTH_ACCOUNT_INACTIVE_MESSAGE = "Your account is currently marked inactive. Please contact an administrator if you need access.";
+export const AUTH_SESSION_ENDED_MESSAGE = "Your secure session ended. Please sign in again to continue.";
 
 let sessionEndedDispatched = false;
 
@@ -42,28 +43,39 @@ export function isApiUrl(url) {
   }
 }
 
-async function responseErrorMessage(response) {
+async function responseErrorInfo(response) {
   let message = `${response.status} ${response.statusText}`;
+  let detail = "";
   try {
     const payload = await response.clone().json();
+    detail = typeof payload === "string" ? payload : String(payload.detail || payload.error || "");
     message = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   } catch {
     try {
-      message = await response.clone().text();
+      detail = await response.clone().text();
+      message = detail;
     } catch {
       message = `${response.status} ${response.statusText}`;
     }
   }
-  return message;
+  return { message, detail };
 }
 
-function notifySessionEnded(response) {
+function sessionEndedMessage(errorInfo) {
+  const text = `${errorInfo?.detail || ""} ${errorInfo?.message || ""}`.toLowerCase();
+  if (text.includes("inactive") || text.includes("no longer active")) {
+    return AUTH_ACCOUNT_INACTIVE_MESSAGE;
+  }
+  return AUTH_SESSION_ENDED_MESSAGE;
+}
+
+function notifySessionEnded(response, errorInfo) {
   if (sessionEndedDispatched || typeof window === "undefined") return;
   sessionEndedDispatched = true;
   window.dispatchEvent(new CustomEvent(AUTH_SESSION_ENDED_EVENT, {
     detail: {
       status: response.status,
-      message: AUTH_SESSION_ENDED_MESSAGE,
+      message: sessionEndedMessage(errorInfo),
     },
   }));
 }
@@ -92,11 +104,11 @@ async function request(url, options = {}) {
   }
 
   if (!response.ok) {
-    const message = await responseErrorMessage(response);
+    const errorInfo = await responseErrorInfo(response);
     if (!skipAuth && (response.status === 401 || response.status === 403)) {
-      notifySessionEnded(response);
+      notifySessionEnded(response, errorInfo);
     }
-    throw new Error(message || "Request failed");
+    throw new Error(errorInfo.message || "Request failed");
   }
 
   if (response.status === 204) return null;
@@ -125,11 +137,11 @@ export async function fetchFile(url, options = {}) {
   }
 
   if (!response.ok) {
-    const message = await responseErrorMessage(response);
+    const errorInfo = await responseErrorInfo(response);
     if (!skipAuth && (response.status === 401 || response.status === 403)) {
-      notifySessionEnded(response);
+      notifySessionEnded(response, errorInfo);
     }
-    throw new Error(message || `${response.status} ${response.statusText}`.trim() || "File request failed");
+    throw new Error(errorInfo.message || `${response.status} ${response.statusText}`.trim() || "File request failed");
   }
 
   return response;
