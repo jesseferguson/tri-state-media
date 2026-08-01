@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, Building2, ChevronDown, ChevronRight, KeyRound, LogIn, LogOut, Menu, Plus, QrCode, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
-import { AUTH_SESSION_ENDED_EVENT, AUTH_SESSION_ENDED_MESSAGE, createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, updateRecord, uploadRecordAction } from "./api";
+import { BadgeCheck, Building2, ChevronDown, ChevronRight, KeyRound, LoaderCircle, LogIn, LogOut, Menu, Plus, QrCode, RefreshCcw, Search, Shield, ShieldCheck, UserCog, UserPlus, Users, X } from "lucide-react";
+import { AUTH_SESSION_ENDED_EVENT, AUTH_SESSION_ENDED_MESSAGE, createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, requestApi, updateRecord, uploadRecordAction } from "./api";
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
@@ -531,6 +531,7 @@ function SignInScreen({ onSignIn, message = "" }) {
     if (params.get("skidToken")) return { label: "Skid", detail: "Sign in to open this skid." };
     if (params.get("rollTagId") || params.get("inventoryId")) return { label: "Roll", detail: "Sign in to open this material roll." };
     if (params.get("rackToken")) return { label: "Rack", detail: "Sign in to open this rack." };
+    if (params.get("flexDieId")) return { label: "Flex Die", detail: "Sign in to open this flex die folder." };
     if (params.get("pressDashboard")) return { label: "Press", detail: "Sign in to open this press footage dashboard." };
     return null;
   })();
@@ -1306,6 +1307,29 @@ export default function App() {
   );
 }
 
+function FlexDieLoadingScreen({ scanned = false, compact = false, error = "" }) {
+  return (
+    <section className={`flex-die-loading-screen ${compact ? "compact" : ""}`} role="status" aria-live="polite">
+      <div className="flex-die-loading-mark">
+        <QrCode size={compact ? 24 : 30} />
+        <LoaderCircle className="flex-die-loading-spinner" size={compact ? 48 : 62} />
+      </div>
+      <div className="flex-die-loading-copy">
+        <span>{scanned ? "Scanned folder link" : "Tooling library"}</span>
+        <h2>{scanned ? "Opening Flex Die" : "Loading Flex Dies"}</h2>
+        <p>{error || (scanned ? "Loading the current folder information..." : "Fetching the die list, labels, and reorder details...")}</p>
+      </div>
+      {!error && (
+        <div className="flex-die-loading-bars" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers, onOpenUserAdmin, onQuoteCompanyChange, onSignOut }) {
   const queryClient = useQueryClient();
   const [activeKey, setActiveKey] = useState(() => {
@@ -1314,6 +1338,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       if (params.get("skidToken")) return "skids";
       if (params.get("rackToken")) return "racks";
       if (params.get("rollTagId") || params.get("inventoryId")) return "material-handling";
+      if (params.get("flexDieId")) return "flex-dies";
       if (params.get("pressDashboard")) return "live-footage";
     }
     return defaultResourceKeyForRole(roleDefinitions, currentUser?.role);
@@ -1329,6 +1354,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   ));
   const [scannedRackToken, setScannedRackToken] = useState(() => (
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("rackToken") || "" : ""
+  ));
+  const [linkedFlexDieId, setLinkedFlexDieId] = useState(() => (
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("flexDieId") || "" : ""
   ));
   const [pressDashboardKey, setPressDashboardKey] = useState(() => (
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("pressDashboard") || "" : ""
@@ -1387,7 +1415,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       ? "racks"
       : linkedRollTagId || linkedInventoryId
         ? "material-handling"
-        : "";
+        : linkedFlexDieId
+          ? "flex-dies"
+          : "";
   const allowedResources = useMemo(() => {
     const visible = visibleResourcesForRole(roleDefinitions, viewRoleName);
     const directResource = directScanResourceKey ? resourceMap[directScanResourceKey] : null;
@@ -1513,11 +1543,35 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     refetchOnReconnect: true,
   });
 
+  const flexDieScanQuery = useQuery({
+    queryKey: ["flex-die-scan", linkedFlexDieId],
+    queryFn: () => requestApi(`flex-dies/${linkedFlexDieId}`),
+    enabled: Boolean(linkedFlexDieId && resource.key === "flex-dies"),
+    retry: 1,
+    staleTime: 30_000,
+  });
+
   const rows = useMemo(() => {
     const base = listQuery.data?.results ?? [];
     if (resource.key !== "raw-materials") return base;
     return mergeRows(base, localInventoryRows);
   }, [listQuery.data, localInventoryRows, resource.key]);
+
+  useEffect(() => {
+    if (!linkedFlexDieId) return;
+    if (resource.key !== "flex-dies") setActiveKey("flex-dies");
+    setFormMode(null);
+    setFlexDieDetailOpen(true);
+  }, [linkedFlexDieId, resource.key]);
+
+  useEffect(() => {
+    if (!linkedFlexDieId || resource.key !== "flex-dies") return;
+    const scannedDie = flexDieScanQuery.data || rows.find((row) => String(row.id) === String(linkedFlexDieId));
+    if (!scannedDie) return;
+    setSelected(scannedDie);
+    setFormMode(null);
+    setFlexDieDetailOpen(true);
+  }, [flexDieScanQuery.data, linkedFlexDieId, resource.key, rows]);
 
   useEffect(() => {
     if (!selected?.id || formMode) return;
@@ -2475,12 +2529,27 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     await refreshFlexDie(saved);
   }
 
+  function clearFlexDieScanLink() {
+    setLinkedFlexDieId("");
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("flexDieId")) return;
+    url.searchParams.delete("flexDieId");
+    window.history.replaceState({}, "", url);
+  }
+
+  function closeFlexDieFolder() {
+    setFlexDieDetailOpen(false);
+    if (linkedFlexDieId) clearFlexDieScanLink();
+  }
+
   function switchResource(key) {
     if (!allowedResources.some((item) => item.key === key)) return;
     setActiveKey(key);
     setSelected(null);
     setFormMode(null);
     setFlexDieDetailOpen(false);
+    clearFlexDieScanLink();
     setCreateDefaults({});
     setMaterialSupplierReturnKey("");
     setUsageOpen(false);
@@ -2526,6 +2595,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   }
 
   function openFlexDieFolder(row) {
+    clearFlexDieScanLink();
     setSelected(row);
     setFormMode(null);
     setFlexDieDetailOpen(true);
@@ -2659,6 +2729,14 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const selectedToolingItem = selected && toolingItemPageKeys.has(resource.key)
     ? (toolingItemOverrides[`${resource.key}:${selected.id}`] ?? selected)
     : selected;
+  const flexDieScanActive = Boolean(linkedFlexDieId && resource.key === "flex-dies");
+  const flexDieFolderLoading = resource.key === "flex-dies" && (
+    Boolean(flexDieScanActive && (flexDieScanQuery.isLoading || !selectedToolingItem)) ||
+    Boolean(flexDieDetailOpen && selectedToolingItem && lookupQuery.isLoading)
+  );
+  const flexDieFolderError = flexDieScanActive && flexDieScanQuery.error
+    ? `Could not open that flex die: ${flexDieScanQuery.error.message}`
+    : "";
 
   const liveFootageFullView = resource.viewMode === "liveFootage" && liveFootageTvMode;
   const materialWorkspaceView = ["material-handling", "skids", "racks"].includes(resource.key);
@@ -2869,7 +2947,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         )}
         {lookupQuery.error && <div className="error-box">Could not load lookup data: {lookupQuery.error.message}</div>}
 
-        {resource.viewMode === "quoteCalculator" ? (
+        {resource.key === "flex-dies" && listQuery.isLoading ? (
+          <FlexDieLoadingScreen scanned={Boolean(linkedFlexDieId)} />
+        ) : resource.viewMode === "quoteCalculator" ? (
           <QuotePricingTool
             currentUser={currentUserForView}
             initialJobTicketId={quoteJobTicketId}
@@ -3493,32 +3573,38 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           </section>
         )}
 
-        {flexDieDetailOpen && resource.key === "flex-dies" && selectedToolingItem && !showingFlexDieFormOverlay && (
-          <section className="flex-die-folder-overlay" role="dialog" aria-modal="true" aria-label={`${getRecordTitle(selectedToolingItem)} flex die folder`}>
+        {flexDieDetailOpen && resource.key === "flex-dies" && !showingFlexDieFormOverlay && (
+          <section className="flex-die-folder-overlay" role="dialog" aria-modal="true" aria-label={`${selectedToolingItem ? getRecordTitle(selectedToolingItem) : "Loading"} flex die folder`}>
             <div className="flex-die-folder-window">
               <header className="flex-die-folder-window-head">
-                <button className="ghost-btn" type="button" onClick={() => setFlexDieDetailOpen(false)}>
+                <button className="ghost-btn" type="button" onClick={closeFlexDieFolder}>
                   <X size={16} /> Close
                 </button>
               </header>
 
-              <FlexDieDetailPanel
-                die={selectedToolingItem}
-                historyRows={selectedFlexDieHistory}
-                usageRows={selectedFlexDieUsageRows}
-                onEdit={() => setFormMode("edit")}
-                onDelete={() => deleteMutation.mutate()}
-                onRequestReorder={(note) => requestFlexDieReorder(selectedToolingItem, note)}
-                onMarkOrdered={(note) => markFlexDieOrdered(selectedToolingItem, note)}
-                onReceiveDie={(payload) => receiveFlexDie(selectedToolingItem, payload)}
-                onAdjustCount={(payload) => adjustFlexDieCount(selectedToolingItem, payload)}
-                onDeleteDieline={() => deleteFlexDieDieline(selectedToolingItem)}
-                onUpdateStatus={(payload) => toolingItemStatusMutation.mutateAsync({
-                  resourceKey: "flex-dies",
-                  record: selectedToolingItem,
-                  payload,
-                })}
-              />
+              {flexDieFolderLoading || flexDieFolderError ? (
+                <FlexDieLoadingScreen compact scanned={Boolean(linkedFlexDieId)} error={flexDieFolderError} />
+              ) : selectedToolingItem ? (
+                <FlexDieDetailPanel
+                  die={selectedToolingItem}
+                  historyRows={selectedFlexDieHistory}
+                  usageRows={selectedFlexDieUsageRows}
+                  onEdit={() => setFormMode("edit")}
+                  onDelete={() => deleteMutation.mutate()}
+                  onRequestReorder={(note) => requestFlexDieReorder(selectedToolingItem, note)}
+                  onMarkOrdered={(note) => markFlexDieOrdered(selectedToolingItem, note)}
+                  onReceiveDie={(payload) => receiveFlexDie(selectedToolingItem, payload)}
+                  onAdjustCount={(payload) => adjustFlexDieCount(selectedToolingItem, payload)}
+                  onDeleteDieline={() => deleteFlexDieDieline(selectedToolingItem)}
+                  onUpdateStatus={(payload) => toolingItemStatusMutation.mutateAsync({
+                    resourceKey: "flex-dies",
+                    record: selectedToolingItem,
+                    payload,
+                  })}
+                />
+              ) : (
+                <FlexDieLoadingScreen compact error="No flex die record is selected." />
+              )}
             </div>
           </section>
         )}

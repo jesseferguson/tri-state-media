@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Save, Trash2 } from "lucide-react";
+import { BrowserQRCodeSvgWriter } from "@zxing/browser";
+import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Printer, Save, Trash2 } from "lucide-react";
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { AuthenticatedImage } from "./FilePreview";
@@ -32,6 +33,92 @@ function Detail({ label, value }) {
       <strong title={String(value ?? "--")}>{value || "--"}</strong>
     </div>
   );
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function flexDieScanUrl(die) {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.origin + window.location.pathname);
+  url.searchParams.set("flexDieId", die.id);
+  return url.toString();
+}
+
+function labelMetric(label, value) {
+  return `<div class="metric"><span>${escapeHtml(label)}</span><b>${escapeHtml(value || "--")}</b></div>`;
+}
+
+function printFlexDieFolderLabel(die) {
+  const url = flexDieScanUrl(die);
+  const printWindow = window.open("", "_blank", "width=420,height=720");
+  if (!printWindow) {
+    window.alert("Could not open the label print window. Please allow pop-ups for this site.");
+    return;
+  }
+
+  const qrSvg = new BrowserQRCodeSvgWriter().write(url, 168, 168).outerHTML;
+  const fdNumber = getRecordTitle(die);
+  const targetCount = die.target_die_count || die.active_die_count || "--";
+  const metrics = [
+    labelMetric("Across", die.number_across),
+    labelMetric("Around", die.number_around),
+    labelMetric("Gear", die.gear ? `${die.gear}T` : ""),
+    labelMetric("Web Width", formatInches(die.web_width_inches)),
+    labelMetric("Face", labelize(die.face_type)),
+    labelMetric("Cut", labelize(die.cutting_type)),
+    labelMetric("Target Dies", targetCount),
+  ].join("");
+
+  printWindow.document.write(`<!doctype html>
+<html>
+<head>
+<title>${escapeHtml(fdNumber)} Folder Label</title>
+<style>
+@page { size: 2.5in 5in; margin: 0; }
+* { box-sizing: border-box; }
+html, body { width: 2.5in; height: 5in; margin: 0; padding: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; }
+body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.label { width: 2.5in; height: 5in; padding: .13in; display: flex; flex-direction: column; gap: .08in; overflow: hidden; border: 1px solid transparent; }
+.topline { display: flex; align-items: flex-start; justify-content: space-between; gap: .08in; border-bottom: 2px solid #000; padding-bottom: .06in; }
+.topline span { display: block; font-size: 6.5pt; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
+.topline strong { display: block; max-width: 1.55in; font-size: 24pt; line-height: .9; font-weight: 900; overflow-wrap: anywhere; }
+.qr { width: .72in; height: .72in; flex: 0 0 auto; }
+.qr svg { width: 100%; height: 100%; display: block; }
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: .045in; }
+.metric { min-height: .38in; padding: .04in .045in; border: 1.5px solid #000; display: flex; flex-direction: column; justify-content: center; }
+.metric span { font-size: 6.2pt; font-weight: 900; text-transform: uppercase; }
+.metric b { margin-top: .02in; font-size: 13pt; line-height: 1; font-weight: 900; overflow-wrap: anywhere; }
+.serial { margin-top: auto; padding-top: .055in; border-top: 2px solid #000; }
+.serial span { display: block; font-size: 6.2pt; font-weight: 900; text-transform: uppercase; }
+.serial b { display: block; font-size: 11pt; line-height: 1.05; font-weight: 900; overflow-wrap: anywhere; }
+.url { margin-top: .02in; font-size: 5.2pt; line-height: 1.1; overflow-wrap: anywhere; }
+@media print { .no-print { display: none; } }
+</style>
+</head>
+<body>
+<main class="label">
+  <section class="topline">
+    <div><span>Flex Die Folder</span><strong>${escapeHtml(fdNumber)}</strong></div>
+    <div class="qr">${qrSvg}</div>
+  </section>
+  <section class="metrics">${metrics}</section>
+  <section class="serial">
+    <span>Current Original Serial Number</span>
+    <b>${escapeHtml(die.original_serial_number || "--")}</b>
+    <div class="url">${escapeHtml(url)}</div>
+  </section>
+</main>
+<script>window.focus(); window.print();</script>
+</body>
+</html>`);
+  printWindow.document.close();
 }
 
 function HistoryList({ rows }) {
@@ -169,6 +256,7 @@ export default function FlexDieDetailPanel({
           </div>
         </div>
         <div className="flex-die-actions">
+          <button className="ghost-btn" type="button" onClick={() => printFlexDieFolderLabel(die)}><Printer size={15} /> Print Folder Label</button>
           <button className="primary-btn" type="button" onClick={onEdit}><Edit3 size={15} /> Edit</button>
           <button className="danger-btn" type="button" onClick={onDelete}><Trash2 size={15} /> Delete</button>
         </div>
