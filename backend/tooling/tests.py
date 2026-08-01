@@ -282,7 +282,7 @@ class ToolingPrintQueueTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         firebase_request = mocked_urlopen.call_args.args[0]
-        self.assertIn("/TEST_PRINT_SERVER_JOBS/SHARED.json", firebase_request.full_url)
+        self.assertIn("/TEST_PRESS_001/print_node.json", firebase_request.full_url)
         body = json.loads(firebase_request.data.decode("utf-8"))
         self.assertEqual(body["TYPE"], "SKID_LABEL_3X3")
         self.assertEqual(body["Label Type"], "FLEX_DIE_FOLDER_LABEL_2_5X5")

@@ -24,11 +24,11 @@ FIREBASE_PRINT_QUEUE_BASE = os.environ.get(
 ).rstrip("/")
 FIREBASE_PRINT_QUEUE_ROOT = os.environ.get(
     "FIREBASE_PRINT_QUEUE_ROOT",
-    "TEST_PRINT_SERVER_JOBS",
+    "TEST_PRESS_001",
 ).strip("/")
 FIREBASE_PRINT_QUEUE_NAME = os.environ.get(
     "FIREBASE_PRINT_QUEUE_NAME",
-    "SHARED",
+    "print_node",
 ).strip("/")
 FRONTEND_PUBLIC_URL = os.environ.get(
     "FRONTEND_PUBLIC_URL",

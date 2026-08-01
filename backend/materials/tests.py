@@ -113,7 +113,7 @@ class CoaterRollTagPrintQueueTests(TestCase):
         self.assertEqual(response.status_code, 201, response.content)
         firebase_request = mocked_urlopen.call_args.args[0]
         body = json.loads(firebase_request.data.decode("utf-8"))
-        self.assertIn("/TEST_PRINT_SERVER_JOBS/SHARED.json", firebase_request.full_url)
+        self.assertIn("/TEST_PRESS_001/print_node.json", firebase_request.full_url)
         self.assertEqual(body["TYPE"], "COATER")
         self.assertEqual(body["Printer"], "192.168.1.72")
         self.assertEqual(body["Printer Port"], 9101)
