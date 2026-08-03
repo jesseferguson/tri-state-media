@@ -11,6 +11,7 @@ import {
   PackageOpen,
   PackageMinus,
   PackageCheck,
+  PackagePlus,
   Printer,
   Ruler,
   Scissors,
