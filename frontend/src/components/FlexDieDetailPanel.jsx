@@ -305,46 +305,53 @@ export default function FlexDieDetailPanel({
 
   return (
     <aside className="flex-die-detail-panel compact-card">
-      <header className="flex-die-detail-head flex-die-folder-hero" id="flex-die-summary">
-        <div className="flex-die-folder-identity">
-          <p className="eyebrow">Flex Die Folder</p>
-          <h2>{fdNumber}</h2>
-          <div className="flex-die-head-pills">
-            <span className={`flex-die-count-pill ${tone}`}>
-              {activeCount} active / {targetCount} target
-            </span>
-            <span className={`flex-die-status-pill ${die.status || "in_stock"}`}>{labelize(die.status)}</span>
+      <section className="flex-die-overview-panel" id="flex-die-summary">
+        <header className="flex-die-detail-head flex-die-folder-hero">
+          <div className="flex-die-folder-identity">
+            <p className="eyebrow">Flex Die Folder</p>
+            <h2>{fdNumber}</h2>
+            <div className="flex-die-head-pills">
+              <span className={`flex-die-count-pill ${tone}`}>
+                {activeCount} active / {targetCount} target
+              </span>
+              <span className={`flex-die-status-pill ${die.status || "in_stock"}`}>{labelize(die.status)}</span>
+            </div>
           </div>
-        </div>
-        <div className="flex-die-hero-side">
-          <div className="flex-die-location-card">
-            <span>Location</span>
-            <strong title={location}>{location}</strong>
-            <em>{die.supplier_name || "No supplier assigned"}</em>
+          <div className="flex-die-hero-side">
+            <div className="flex-die-folder-meta-grid">
+              <div className="flex-die-folder-meta-card">
+                <span>Location</span>
+                <strong title={location}>{location}</strong>
+              </div>
+              <div className="flex-die-folder-meta-card">
+                <span>Current Supplier</span>
+                <strong title={die.supplier_name || "No supplier assigned"}>{die.supplier_name || "No supplier assigned"}</strong>
+              </div>
+            </div>
+            <div className="flex-die-actions">
+              <button className="ghost-btn" type="button" onClick={() => setPrintDialogOpen(true)} disabled={!onPrintFolderLabel}>
+                <Printer size={15} />
+                <span className="desktop-label">Print Folder Label</span>
+                <span className="mobile-label">Print</span>
+              </button>
+              <button className="primary-btn" type="button" onClick={onEdit}><Edit3 size={15} /> Edit</button>
+              <button className="danger-btn" type="button" onClick={onDelete}><Trash2 size={15} /> Delete</button>
+            </div>
           </div>
-          <div className="flex-die-actions">
-            <button className="ghost-btn" type="button" onClick={() => setPrintDialogOpen(true)} disabled={!onPrintFolderLabel}>
-              <Printer size={15} />
-              <span className="desktop-label">Print Folder Label</span>
-              <span className="mobile-label">Print</span>
-            </button>
-            <button className="primary-btn" type="button" onClick={onEdit}><Edit3 size={15} /> Edit</button>
-            <button className="danger-btn" type="button" onClick={onDelete}><Trash2 size={15} /> Delete</button>
-          </div>
-        </div>
-      </header>
+        </header>
 
-      {printNotice && <p className="flex-die-print-success">{printNotice}</p>}
+        {printNotice && <p className="flex-die-print-success">{printNotice}</p>}
 
-      {tone !== "ready" && <InlineAlert tone={tone} />}
+        {tone !== "ready" && <InlineAlert tone={tone} />}
 
-      <section className="flex-die-critical-specs" aria-label="Primary flex die specs">
-        <PrimarySpec label="Across" value={die.number_across || "--"} detail="number across" tone="primary" />
-        <PrimarySpec label="Around" value={die.number_around || "--"} detail="number around" />
-        <PrimarySpec label="Gear" value={die.gear ? `${die.gear}T` : "--"} detail="tooth count" />
-        <PrimarySpec label="Repeat" value={formatInches(die.repeat_inches)} detail="label repeat" />
-        <PrimarySpec label="Shape" value={labelize(die.shape_type)} detail="label shape" />
-        <PrimarySpec label="Web Width" value={webWidth} detail="total web width" />
+        <section className="flex-die-critical-specs" aria-label="Primary flex die specs">
+          <PrimarySpec label="Across" value={die.number_across || "--"} detail="number across" tone="primary" />
+          <PrimarySpec label="Around" value={die.number_around || "--"} detail="number around" />
+          <PrimarySpec label="Gear" value={die.gear ? `${die.gear}T` : "--"} detail="tooth count" />
+          <PrimarySpec label="Repeat" value={formatInches(die.repeat_inches)} detail="label repeat" />
+          <PrimarySpec label="Shape" value={labelize(die.shape_type)} detail="label shape" />
+          <PrimarySpec label="Web Width" value={webWidth} detail="total web width" />
+        </section>
       </section>
 
       <nav className="flex-die-folder-nav" aria-label="Flex die folder sections">
