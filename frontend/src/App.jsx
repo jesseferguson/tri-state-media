@@ -1793,6 +1793,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     || roleHasResourceAccess(roleDefinitions, viewRoleName, "job-ticket-change-approval");
   const canManageQuoteMaterials = roleHasResourceAccess(roleDefinitions, viewRoleName, "quote-material-admin");
   const canApproveQuotes = roleHasResourceAccess(roleDefinitions, viewRoleName, "quote-approval");
+  const canProcessFlexDieRequests = roleHasResourceAccess(roleDefinitions, viewRoleName, "flex-die-requests");
   const jobTicketScheduleResource = useMemo(() => {
     const schedule = resourceMap["production-schedule"];
     const hiddenOnTicket = new Set([
@@ -2500,6 +2501,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   async function refreshFlexDie(saved = null) {
     if (saved && resource.key === "flex-dies") setSelected(saved);
     await queryClient.invalidateQueries({ queryKey: ["collection", "flex-dies"] });
+    await queryClient.invalidateQueries({ queryKey: ["flex-die-requests"] });
     await queryClient.invalidateQueries({ queryKey: ["lookups"] });
   }
 
@@ -2802,7 +2804,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           </div>
         </div>
         <div className="mobile-shell-actions">
-          <MessagesCenter currentUser={currentUser} users={users} compact showToast={false} />
+          <MessagesCenter currentUser={currentUser} users={users} compact showToast={false} canProcessFlexDieRequests={canProcessFlexDieRequests} />
         </div>
       </section>
 
@@ -2930,7 +2932,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
             {!resource.disableCreate && !showingStaticView && (
               <button className="primary-btn" type="button" onClick={() => { setSelected(null); setFlexDieDetailOpen(false); setCreateDefaults(resource.key === "material-coated-stock" && materialOwnerTab === "tri_state" ? { company: "Tri-State Media" } : {}); setFormMode("create"); }}><Plus size={16} /> {resource.key === "raw-materials" ? "Add Inventory Roll" : resource.key === "material-coated-stock" ? "Add Material" : "Add"}</button>
             )}
-            <MessagesCenter currentUser={currentUser} users={users} />
+            <MessagesCenter currentUser={currentUser} users={users} canProcessFlexDieRequests={canProcessFlexDieRequests} />
             <AccountMenu
               currentUser={currentUser}
               canManageUsers={canManageUsers}
@@ -3392,6 +3394,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                         record: selectedToolingItem,
                         payload,
                       })}
+                      currentUser={currentUserForView}
+                      canProcessFlexDieRequests={canProcessFlexDieRequests}
+                      onRequestsChanged={() => refreshFlexDie(selectedToolingItem)}
                     />
                   ) : toolingItemPageKeys.has(resource.key) ? (
                     <ToolingItemDetailPanel
@@ -3621,6 +3626,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     record: selectedToolingItem,
                     payload,
                   })}
+                  currentUser={currentUserForView}
+                  canProcessFlexDieRequests={canProcessFlexDieRequests}
+                  onRequestsChanged={() => refreshFlexDie(selectedToolingItem)}
                   presses={lookupQuery.data?.presses ?? []}
                   printingLabel={flexDieFolderLabelMutation.isPending}
                   printLabelError={apiErrorMessage(flexDieFolderLabelMutation.error)}

@@ -17,6 +17,7 @@ RESOURCE_KEYS_BY_BASENAME = {
     "customer-order-event": ("customer-order-events", "customer-orders", "production-schedule"),
     "finished-inventory": ("finished-inventory", "job-tickets", "production-schedule"),
     "flex-die": ("flex-dies", "recipes", "recipe-options", "recipe-tools", "job-tickets", "production-schedule"),
+    "flex-die-request": ("flex-die-requests",),
     "history": ("history", "flex-dies", "rotary-dies", "mags"),
     "job-ticket": ("job-tickets", "quote-calculator", "production-schedule"),
     "job-ticket-event": ("job-ticket-events", "job-ticket-change-approval", "job-tickets"),

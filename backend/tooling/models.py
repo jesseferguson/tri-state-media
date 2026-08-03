@@ -361,6 +361,43 @@ class FlexDie(models.Model):
         return f"{self.name} - {self.label_width_inches}\" x {self.label_length_inches}\""
 
 
+class FlexDieRequest(models.Model):
+    STATUS_CHOICES = [
+        ("requested", "Requested"),
+        ("ordered", "Ordered"),
+        ("received", "Received"),
+        ("closed_without_order", "Closed Without Order"),
+    ]
+
+    flex_die = models.ForeignKey(FlexDie, on_delete=models.CASCADE, related_name="requests")
+    status = models.CharField(max_length=40, choices=STATUS_CHOICES, default="requested", db_index=True)
+    requested_by = models.CharField(max_length=100, blank=True)
+    request_notes = models.TextField(blank=True)
+    ordered_by = models.CharField(max_length=100, blank=True)
+    ordered_notes = models.TextField(blank=True)
+    ordered_at = models.DateTimeField(null=True, blank=True)
+    received_by = models.CharField(max_length=100, blank=True)
+    received_notes = models.TextField(blank=True)
+    received_serial_number = models.CharField(max_length=100, blank=True)
+    received_quantity = models.PositiveIntegerField(default=0)
+    received_at = models.DateTimeField(null=True, blank=True)
+    closed_by = models.CharField(max_length=100, blank=True)
+    closed_reason = models.TextField(blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-created_at"]
+
+    @property
+    def is_open(self):
+        return self.status in {"requested", "ordered"}
+
+    def __str__(self):
+        return f"{self.flex_die.name} / {self.get_status_display()}"
+
+
 class PerfCylinder(models.Model):
     STATUS_CHOICES = [
         ("ordered", "Ordered"),
@@ -948,6 +985,7 @@ class ToolingHistory(models.Model):
         ("die_reorder_requested", "Die Reorder Requested"),
         ("die_ordered", "Die Ordered"),
         ("die_received", "Die Received"),
+        ("die_request_closed", "Die Request Closed"),
         ("die_count_adjusted", "Die Count Adjusted"),
         ("label_printed", "Label Printed"),
     ]

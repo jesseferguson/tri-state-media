@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from production.models import CompanyRole, CompanyUser
 from .models import (
     FlexDie,
+    FlexDieRequest,
     Mag,
     PerfBladeSetup,
     PerfCylinder,
@@ -216,6 +217,102 @@ class ToolingApiTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["name"], "Standard Setup")
         self.assertTrue(response.data["can_run"])
+
+
+class FlexDieRequestWorkflowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.die = FlexDie.objects.create(
+            name="FD-13-381",
+            label_width_inches=Decimal("4"),
+            label_length_inches=Decimal("6"),
+            repeat_inches=Decimal("6"),
+            gap_across_inches=Decimal("0.188"),
+            number_across=3,
+            number_around=2,
+            gear=96,
+            active_die_count=1,
+            target_die_count=1,
+        )
+
+    def test_request_reorder_creates_open_request_record(self):
+        response = self.client.post(
+            reverse("flex-die-request-reorder", args=[self.die.id]),
+            {"requested_by": "Operator", "notes": "Need another die for production."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        request_record = FlexDieRequest.objects.get(flex_die=self.die)
+        self.assertEqual(request_record.status, "requested")
+        self.assertEqual(request_record.requested_by, "Operator")
+        self.assertEqual(request_record.request_notes, "Need another die for production.")
+        self.assertTrue(ToolingHistory.objects.filter(flex_die=self.die, event_type="die_reorder_requested").exists())
+
+    def test_request_can_be_marked_ordered(self):
+        request_record = FlexDieRequest.objects.create(
+            flex_die=self.die,
+            requested_by="Operator",
+            request_notes="Need a spare.",
+        )
+
+        response = self.client.post(
+            reverse("flex-die-request-mark-ordered", args=[request_record.id]),
+            {"performed_by": "Tool Room", "notes": "Ordered from current supplier."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        request_record.refresh_from_db()
+        self.die.refresh_from_db()
+        self.assertEqual(request_record.status, "ordered")
+        self.assertEqual(request_record.ordered_by, "Tool Room")
+        self.assertEqual(self.die.status, "ordered")
+        self.assertTrue(ToolingHistory.objects.filter(flex_die=self.die, event_type="die_ordered").exists())
+
+    def test_request_can_be_received_and_updates_die_count(self):
+        request_record = FlexDieRequest.objects.create(
+            flex_die=self.die,
+            status="ordered",
+            requested_by="Operator",
+            ordered_by="Tool Room",
+        )
+
+        response = self.client.post(
+            reverse("flex-die-request-receive", args=[request_record.id]),
+            {"received_by": "Tool Room", "quantity": 2, "serial_number": "MOD26-001", "notes": "Received complete."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        request_record.refresh_from_db()
+        self.die.refresh_from_db()
+        self.assertEqual(request_record.status, "received")
+        self.assertEqual(request_record.received_quantity, 2)
+        self.assertEqual(self.die.active_die_count, 3)
+        self.assertEqual(self.die.status, "in_stock")
+        self.assertIn("MOD26-001", self.die.serial_numbers)
+        self.assertTrue(ToolingHistory.objects.filter(flex_die=self.die, event_type="die_received").exists())
+
+    def test_request_can_be_closed_without_order(self):
+        request_record = FlexDieRequest.objects.create(
+            flex_die=self.die,
+            requested_by="Operator",
+            request_notes="Need a 4 across die instead.",
+        )
+
+        response = self.client.post(
+            reverse("flex-die-request-close-without-order", args=[request_record.id]),
+            {"performed_by": "Tool Room", "reason": "Specs belong in a different FD folder."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        request_record.refresh_from_db()
+        self.assertEqual(request_record.status, "closed_without_order")
+        self.assertEqual(request_record.closed_by, "Tool Room")
+        self.assertEqual(request_record.closed_reason, "Specs belong in a different FD folder.")
+        self.assertTrue(ToolingHistory.objects.filter(flex_die=self.die, event_type="die_request_closed").exists())
 
 
 class ToolingPrintQueueTests(TestCase):

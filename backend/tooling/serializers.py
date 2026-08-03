@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from .models import (
     FlexDie,
+    FlexDieRequest,
     FinishedInventory,
     JobTicket,
     Mag,
@@ -87,6 +88,27 @@ class FlexDieSerializer(serializers.ModelSerializer):
 
     def get_dieline_image(self, obj):
         return self.get_dieline_image_url(obj)
+
+
+class FlexDieRequestSerializer(serializers.ModelSerializer):
+    flex_die_name = serializers.CharField(source="flex_die.name", read_only=True)
+    flex_die_status = serializers.CharField(source="flex_die.status", read_only=True)
+    flex_die_active_die_count = serializers.IntegerField(source="flex_die.active_die_count", read_only=True)
+    flex_die_target_die_count = serializers.IntegerField(source="flex_die.target_die_count", read_only=True)
+    flex_die_number_across = serializers.IntegerField(source="flex_die.number_across", read_only=True)
+    flex_die_number_around = serializers.IntegerField(source="flex_die.number_around", read_only=True)
+    flex_die_gear = serializers.IntegerField(source="flex_die.gear", read_only=True)
+    flex_die_repeat_inches = serializers.DecimalField(source="flex_die.repeat_inches", max_digits=7, decimal_places=3, read_only=True)
+    flex_die_web_width_inches = serializers.DecimalField(source="flex_die.web_width_inches", max_digits=7, decimal_places=3, read_only=True)
+    flex_die_shape_type = serializers.CharField(source="flex_die.shape_type", read_only=True)
+    flex_die_supplier_name = serializers.CharField(source="flex_die.supplier.name", read_only=True)
+    flex_die_location_name = serializers.CharField(source="flex_die.current_location.name", read_only=True)
+    flex_die_location_full_path = serializers.ReadOnlyField(source="flex_die.current_location.full_path")
+    is_open = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = FlexDieRequest
+        fields = "__all__"
 
 class PerfCylinderSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)

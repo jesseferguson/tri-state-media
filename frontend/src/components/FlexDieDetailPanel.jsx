@@ -3,6 +3,7 @@ import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Printer, Qr
 import { choiceLists } from "../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../lib/format";
 import { AuthenticatedImage } from "./FilePreview";
+import FlexDieRequestQueue from "./FlexDieRequestQueue";
 
 function numberValue(value) {
   const next = Number(value ?? 0);
@@ -226,6 +227,9 @@ export default function FlexDieDetailPanel({
   onUpdateStatus,
   onPrintFolderLabel,
   presses = [],
+  currentUser = null,
+  canProcessFlexDieRequests = false,
+  onRequestsChanged,
   printingLabel = false,
   printLabelError = "",
 }) {
@@ -442,6 +446,17 @@ export default function FlexDieDetailPanel({
           </div>
         </div>
       </section>
+
+      <FlexDieRequestQueue
+        currentUser={currentUser}
+        flexDieId={die.id}
+        canProcess={canProcessFlexDieRequests}
+        compact
+        showControls={false}
+        title="Open Requests For This Folder"
+        emptyText="No open requests for this flex die folder."
+        onChanged={onRequestsChanged}
+      />
 
       <section className="flex-die-section" id="flex-die-serials">
         <div className="type-section-head">

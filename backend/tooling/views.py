@@ -12,6 +12,7 @@ from rest_framework.response import Response
 
 from .models import (
     FlexDie,
+    FlexDieRequest,
     FinishedInventory,
     JobTicket,
     Mag,
@@ -31,6 +32,7 @@ from .models import (
 )
 from .serializers import (
     FlexDieSerializer,
+    FlexDieRequestSerializer,
     FinishedInventorySerializer,
     JobTicketSerializer,
     MagSerializer,
@@ -400,6 +402,12 @@ class FlexDieViewSet(BaseToolingViewSet):
             request,
             notes=note,
         )
+        FlexDieRequest.objects.create(
+            flex_die=die,
+            status="requested",
+            requested_by=actor,
+            request_notes=note,
+        )
         return Response(self.get_serializer(die).data)
 
     @action(detail=True, methods=["post"], url_path="mark-ordered")
@@ -468,6 +476,158 @@ class FlexDieViewSet(BaseToolingViewSet):
             notes=note,
         )
         return Response(self.get_serializer(die).data)
+
+
+class FlexDieRequestViewSet(BaseToolingViewSet):
+    serializer_class = FlexDieRequestSerializer
+    search_fields = [
+        "flex_die__name",
+        "flex_die__supplier__name",
+        "flex_die__current_location__name",
+        "requested_by",
+        "request_notes",
+        "ordered_notes",
+        "received_notes",
+        "closed_reason",
+        "status",
+    ]
+    ordering_fields = ["created_at", "updated_at", "status", "flex_die__name"]
+
+    def get_queryset(self):
+        qs = (
+            FlexDieRequest.objects.select_related(
+                "flex_die",
+                "flex_die__supplier",
+                "flex_die__current_location",
+            )
+            .all()
+            .order_by("-updated_at", "-created_at")
+        )
+        flex_die = self.request.query_params.get("flex_die")
+        if flex_die:
+            qs = qs.filter(flex_die_id=flex_die)
+
+        status_filter = str(self.request.query_params.get("status") or "").strip()
+        if status_filter:
+            qs = qs.filter(status__in=[value.strip() for value in status_filter.split(",") if value.strip()])
+
+        open_filter = str(self.request.query_params.get("open") or "").strip().lower()
+        if open_filter in {"1", "true", "yes"}:
+            qs = qs.filter(status__in=["requested", "ordered"])
+        elif open_filter in {"0", "false", "no"}:
+            qs = qs.exclude(status__in=["requested", "ordered"])
+
+        return qs
+
+    def create_history(self, flex_die_request, event_type, summary, request, notes=""):
+        return ToolingHistory.objects.create(
+            tooling_type="flex_die",
+            flex_die=flex_die_request.flex_die,
+            event_type=event_type,
+            performed_by=str(request.data.get("performed_by", "") or "").strip() or "system",
+            summary=summary[:200],
+            notes=notes,
+        )
+
+    @action(detail=True, methods=["post"], url_path="mark-ordered")
+    def mark_ordered(self, request, pk=None):
+        flex_die_request = self.get_object()
+        if flex_die_request.status not in {"requested", "ordered"}:
+            return Response({"detail": "Only open flex die requests can be marked ordered."}, status=status.HTTP_400_BAD_REQUEST)
+
+        actor = str(request.data.get("performed_by", "") or "").strip() or "system"
+        note = str(request.data.get("notes", "") or "").strip()
+        flex_die_request.status = "ordered"
+        flex_die_request.ordered_by = actor
+        flex_die_request.ordered_notes = note
+        flex_die_request.ordered_at = timezone.now()
+        flex_die_request.save(update_fields=["status", "ordered_by", "ordered_notes", "ordered_at", "updated_at"])
+
+        die = flex_die_request.flex_die
+        die.status = "ordered"
+        die.save(update_fields=["status"])
+        self.create_history(
+            flex_die_request,
+            "die_ordered",
+            f"{actor} marked request #{flex_die_request.pk} for {die.name} ordered.",
+            request,
+            notes=note,
+        )
+        return Response(self.get_serializer(flex_die_request).data)
+
+    @action(detail=True, methods=["post"], url_path="receive")
+    def receive(self, request, pk=None):
+        flex_die_request = self.get_object()
+        if flex_die_request.status not in {"requested", "ordered"}:
+            return Response({"detail": "Only open flex die requests can be received."}, status=status.HTTP_400_BAD_REQUEST)
+
+        quantity = request.data.get("quantity", 1)
+        try:
+            quantity = max(1, int(quantity))
+        except (TypeError, ValueError):
+            return Response({"quantity": ["Enter a valid whole number."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        actor = str(request.data.get("received_by", "") or request.data.get("performed_by", "") or "").strip() or "system"
+        serial = str(request.data.get("serial_number", "") or "").strip()
+        note = str(request.data.get("notes", "") or "").strip()
+
+        flex_die_request.status = "received"
+        flex_die_request.received_by = actor
+        flex_die_request.received_notes = note
+        flex_die_request.received_serial_number = serial
+        flex_die_request.received_quantity = quantity
+        flex_die_request.received_at = timezone.now()
+        flex_die_request.save(update_fields=[
+            "status",
+            "received_by",
+            "received_notes",
+            "received_serial_number",
+            "received_quantity",
+            "received_at",
+            "updated_at",
+        ])
+
+        die = flex_die_request.flex_die
+        serials = [line.strip() for line in (die.serial_numbers or "").splitlines() if line.strip()]
+        if serial and serial not in serials:
+            serials.append(serial)
+        die.serial_numbers = "\n".join(serials)
+        die.active_die_count = die.active_die_count + quantity
+        die.status = "in_stock"
+        die.save(update_fields=["serial_numbers", "active_die_count", "status", "web_width_inches"])
+        self.create_history(
+            flex_die_request,
+            "die_received",
+            f"{actor} received {quantity} die for request #{flex_die_request.pk} / {die.name}.",
+            request,
+            notes="\n".join([part for part in [f"Serial: {serial}" if serial else "", note] if part]),
+        )
+        return Response(self.get_serializer(flex_die_request).data)
+
+    @action(detail=True, methods=["post"], url_path="close-without-order")
+    def close_without_order(self, request, pk=None):
+        flex_die_request = self.get_object()
+        if flex_die_request.status not in {"requested", "ordered"}:
+            return Response({"detail": "This flex die request is already closed."}, status=status.HTTP_400_BAD_REQUEST)
+
+        actor = str(request.data.get("performed_by", "") or "").strip() or "system"
+        reason = str(request.data.get("reason", "") or request.data.get("notes", "") or "").strip()
+        if not reason:
+            return Response({"reason": ["Enter why this request is being closed without ordering."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        flex_die_request.status = "closed_without_order"
+        flex_die_request.closed_by = actor
+        flex_die_request.closed_reason = reason
+        flex_die_request.closed_at = timezone.now()
+        flex_die_request.save(update_fields=["status", "closed_by", "closed_reason", "closed_at", "updated_at"])
+        self.create_history(
+            flex_die_request,
+            "die_request_closed",
+            f"{actor} closed request #{flex_die_request.pk} for {flex_die_request.flex_die.name} without ordering.",
+            request,
+            notes=reason,
+        )
+        return Response(self.get_serializer(flex_die_request).data)
 
 
 class RotaryDieViewSet(FlexDieViewSet):

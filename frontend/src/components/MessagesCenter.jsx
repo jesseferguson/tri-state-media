@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, CheckCheck, Inbox, MessageCircle, Plus, Search, Send, Users, X } from "lucide-react";
+import { Bell, CheckCheck, Inbox, MessageCircle, PackagePlus, Plus, Search, Send, Users, X } from "lucide-react";
 import { createRecord, fetchCollection, requestApi } from "../api";
+import FlexDieRequestQueue from "./FlexDieRequestQueue";
 
 function userId(user) {
   return String(user?.id || user?.username || "").trim();
@@ -28,7 +29,7 @@ function participantNames(thread, currentUser) {
   return names.filter((name) => String(name || "").toLowerCase() !== currentName).join(", ") || "Just you";
 }
 
-export default function MessagesCenter({ currentUser, users = [], compact = false, showToast = true }) {
+export default function MessagesCenter({ currentUser, users = [], compact = false, showToast = true, canProcessFlexDieRequests = false }) {
   const queryClient = useQueryClient();
   const viewerId = userId(currentUser);
   const [open, setOpen] = useState(false);
@@ -39,6 +40,7 @@ export default function MessagesCenter({ currentUser, users = [], compact = fals
   const [subject, setSubject] = useState("");
   const [firstMessage, setFirstMessage] = useState("");
   const [reply, setReply] = useState("");
+  const [activeView, setActiveView] = useState("messages");
 
   const activeUsers = useMemo(
     () => (users ?? []).filter((user) => user?.active !== false && userId(user) && userId(user) !== viewerId),
@@ -147,6 +149,10 @@ export default function MessagesCenter({ currentUser, users = [], compact = fals
   }, [open, selectedThreadId, threads]);
 
   useEffect(() => {
+    if (!canProcessFlexDieRequests && activeView !== "messages") setActiveView("messages");
+  }, [activeView, canProcessFlexDieRequests]);
+
+  useEffect(() => {
     if (!open || !selectedThread?.unreadCount || markReadMutation.isPending) return;
     markReadMutation.mutate(selectedThread.id);
   }, [open, selectedThread?.id, selectedThread?.unreadCount]);
@@ -206,6 +212,27 @@ export default function MessagesCenter({ currentUser, users = [], compact = fals
               </div>
             </header>
 
+            {canProcessFlexDieRequests && (
+              <nav className="messages-tabs" aria-label="Messages sections">
+                <button className={activeView === "messages" ? "active" : ""} type="button" onClick={() => setActiveView("messages")}>
+                  <MessageCircle size={15} /> Messages
+                </button>
+                <button className={activeView === "flex-die-requests" ? "active" : ""} type="button" onClick={() => setActiveView("flex-die-requests")}>
+                  <PackagePlus size={15} /> Flex Die Requests
+                </button>
+              </nav>
+            )}
+
+            {activeView === "flex-die-requests" ? (
+              <div className="messages-request-pane">
+                <FlexDieRequestQueue
+                  currentUser={currentUser}
+                  canProcess={canProcessFlexDieRequests}
+                  title="Flex Die Requests"
+                  emptyText="No flex die requests need attention."
+                />
+              </div>
+            ) : (
             <div className="messages-layout">
               <aside className="messages-thread-pane">
                 <label className="messages-search">
@@ -325,6 +352,7 @@ export default function MessagesCenter({ currentUser, users = [], compact = fals
                 )}
               </section>
             </div>
+            )}
           </div>
         </section>
       )}

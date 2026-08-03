@@ -2,6 +2,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     FlexDieViewSet,
+    FlexDieRequestViewSet,
     MagViewSet,
     PerfBladeSetupViewSet,
     PerfBladeViewSet,
@@ -24,6 +25,7 @@ router.register("locations", ToolingLocationViewSet, basename="location")
 router.register("presses", PressViewSet, basename="press")
 router.register("mags", MagViewSet, basename="mag")
 router.register("flex-dies", FlexDieViewSet, basename="flex-die")
+router.register("flex-die-requests", FlexDieRequestViewSet, basename="flex-die-request")
 router.register("rotary-dies", RotaryDieViewSet, basename="rotary-die")
 router.register("perf-cylinders", PerfCylinderViewSet, basename="perf-cylinder")
 router.register("perf-blade-setups", PerfBladeSetupViewSet, basename="perf-blade-setup")

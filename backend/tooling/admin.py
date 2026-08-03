@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     FlexDie,
+    FlexDieRequest,
     Mag,
     PerfBlade,
     PerfBladeSetup,
@@ -111,6 +112,30 @@ class FlexDieAdmin(admin.ModelAdmin):
     search_fields = ("name", "original_serial_number", "serial_numbers", "face_type", "liner_type")
     autocomplete_fields = ("supplier", "last_quote_supplier", "current_location")
     exclude = ("tool_number", "drawing_number", "compatible_mags", "notes")
+
+
+@admin.register(FlexDieRequest)
+class FlexDieRequestAdmin(admin.ModelAdmin):
+    list_display = (
+        "created_at",
+        "flex_die",
+        "status",
+        "requested_by",
+        "ordered_by",
+        "received_by",
+        "closed_by",
+    )
+    list_filter = ("status", "created_at", "ordered_at", "received_at", "closed_at")
+    search_fields = (
+        "flex_die__name",
+        "requested_by",
+        "request_notes",
+        "ordered_notes",
+        "received_notes",
+        "closed_reason",
+    )
+    autocomplete_fields = ("flex_die",)
+    date_hierarchy = "created_at"
 
 
 @admin.register(PerfCylinder)
