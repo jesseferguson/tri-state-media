@@ -88,6 +88,7 @@ export default function FlexDieRequestQueue({
   showControls = true,
   title = "Flex Die Requests",
   emptyText = "No open flex die requests.",
+  embedded = false,
   onChanged,
 }) {
   const queryClient = useQueryClient();
@@ -156,7 +157,7 @@ export default function FlexDieRequestQueue({
   if (!canProcess) return null;
 
   return (
-    <section className={`flex-die-request-queue ${compact ? "compact" : ""}`}>
+    <section className={`flex-die-request-queue ${compact ? "compact" : ""} ${embedded ? "embedded" : ""}`}>
       <header className="flex-die-request-head">
         <div>
           <strong>{title}</strong>

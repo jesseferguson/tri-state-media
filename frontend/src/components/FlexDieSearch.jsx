@@ -13,13 +13,13 @@ function hasActiveFilter(filters) {
   return Object.values(filters ?? {}).some((value) => String(value ?? "").trim() !== "");
 }
 
-export default function FlexDieSearch({ filters, setFilters, liners = [], resultCount = 0, totalCount = 0, resourceLabel = "Flex Die" }) {
+export default function FlexDieSearch({ filters, setFilters, liners = [], resultCount = 0, totalCount = 0, resourceLabel = "Flex Die", embedded = false }) {
   function set(name, value) {
     setFilters((prev) => ({ ...prev, [name]: value }));
   }
 
   return (
-    <section className="flex-die-search-panel search-panel compact-card">
+    <section className={`flex-die-search-panel search-panel ${embedded ? "embedded" : "compact-card"}`}>
       <div className="flex-die-search-head">
         <label className="field flex-die-search-main">
           <span>{resourceLabel} Lookup</span>

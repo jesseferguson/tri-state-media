@@ -5,9 +5,9 @@ import { AUTH_SESSION_ENDED_EVENT, AUTH_SESSION_ENDED_MESSAGE, createRecord, del
 import { resourceGroups, resourceMap, resources } from "./resourceConfig";
 import RecordForm from "./components/RecordForm";
 import ResourceTable from "./components/ResourceTable";
-import FlexDieSearch from "./components/FlexDieSearch";
 import FlexDieDetailPanel from "./components/FlexDieDetailPanel";
 import FlexDieTable from "./components/FlexDieTable";
+import FlexDieWorkspacePanel from "./components/FlexDieWorkspacePanel";
 import FinishedInventoryView, { FinishedInventoryWindow } from "./components/FinishedInventoryView";
 import FinishedMaterialWindow from "./components/FinishedMaterialWindow";
 import FootageReportsView from "./components/FootageReportsView";
@@ -3072,13 +3072,18 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         ) : (
           <>
             {resource.searchMode === "flexDie" ? (
-              <FlexDieSearch
+              <FlexDieWorkspacePanel
                 filters={flexFilters}
                 setFilters={setFlexFilters}
                 liners={lookupQuery.data?.materials ?? []}
+                rows={rows}
                 resultCount={visibleRows.length}
                 totalCount={rows.length}
                 resourceLabel={resource.singular}
+                currentUser={currentUserForView}
+                canProcessFlexDieRequests={canProcessFlexDieRequests}
+                loading={listQuery.isFetching && !rows.length}
+                onRequestsChanged={() => refreshFlexDie()}
               />
             ) : (
               <section className="search-line compact-card">
