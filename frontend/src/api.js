@@ -69,6 +69,22 @@ function sessionEndedMessage(errorInfo) {
   return AUTH_SESSION_ENDED_MESSAGE;
 }
 
+function isSessionEndingAuthError(response, errorInfo) {
+  if (response.status === 401) return true;
+  if (response.status !== 403) return false;
+
+  const text = `${errorInfo?.detail || ""} ${errorInfo?.message || ""}`.toLowerCase();
+  return [
+    "authentication credentials were not provided",
+    "not authenticated",
+    "sign-in expired",
+    "invalid sign-in token",
+    "sign-in changed",
+    "no longer active",
+    "currently marked inactive",
+  ].some((phrase) => text.includes(phrase));
+}
+
 function notifySessionEnded(response, errorInfo) {
   if (sessionEndedDispatched || typeof window === "undefined") return;
   sessionEndedDispatched = true;
@@ -105,7 +121,7 @@ async function request(url, options = {}) {
 
   if (!response.ok) {
     const errorInfo = await responseErrorInfo(response);
-    if (!skipAuth && (response.status === 401 || response.status === 403)) {
+    if (!skipAuth && isSessionEndingAuthError(response, errorInfo)) {
       notifySessionEnded(response, errorInfo);
     }
     throw new Error(errorInfo.message || "Request failed");
@@ -138,7 +154,7 @@ export async function fetchFile(url, options = {}) {
 
   if (!response.ok) {
     const errorInfo = await responseErrorInfo(response);
-    if (!skipAuth && (response.status === 401 || response.status === 403)) {
+    if (!skipAuth && isSessionEndingAuthError(response, errorInfo)) {
       notifySessionEnded(response, errorInfo);
     }
     throw new Error(errorInfo.message || `${response.status} ${response.statusText}`.trim() || "File request failed");

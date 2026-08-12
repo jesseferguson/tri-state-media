@@ -93,9 +93,17 @@ FIREBASE_PRINT_QUEUE_BASE = settings.FIREBASE_PRINT_QUEUE_BASE
 FIREBASE_PRINT_QUEUE_ROOT = settings.FIREBASE_PRINT_QUEUE_ROOT
 FIREBASE_PRINT_QUEUE_NAME = settings.FIREBASE_PRINT_QUEUE_NAME
 LIVE_FOOTAGE_RELAY_NODES = {
+    "18azt": {
+        "speed": ("PUT", "/18Aztech_CURRENT_SPEED.json?print=silent"),
+        "daily": ("POST", "/18Aztech_SPEED.json?print=silent"),
+    },
     "eti": {
         "speed": ("PUT", "/ETI_CURRENT_SPEED.json?print=silent"),
         "daily": ("POST", "/ETI_SPEED.json?print=silent"),
+    },
+    "17nil": {
+        "speed": ("PUT", "/17Nilpeter_CURRENT_SPEED.json?print=silent"),
+        "daily": ("POST", "/17Nilpeter_SPEED.json?print=silent"),
     },
 }
 
@@ -530,6 +538,9 @@ def live_footage_relay(request, press, kind):
         if current_speed < 0 or current_speed > 700:
             return Response({"currentSpeed": ["Speed must be between 0 and 700 FPM."]}, status=status.HTTP_400_BAD_REQUEST)
         payload = {"currentSpeed": current_speed, "timestamp": timestamp}
+        device_health = request.data.get("device")
+        if isinstance(device_health, dict):
+            payload["device"] = device_health
     else:
         footage = round(_relay_number(request.data.get("footage"), 0), 1)
         if footage < 0 or footage > 5000:
@@ -1172,12 +1183,26 @@ class CompanyRoleViewSet(AdminWriteMixin, BaseProductionViewSet):
     search_fields = ["name", "description"]
     ordering_fields = ["name", "created_at"]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if not settings.API_AUTH_REQUIRED or request_user_is_admin(self.request):
+            return queryset
+        user = company_user_from_request(self.request)
+        return queryset.filter(pk=getattr(user, "role_id", None)) if user else queryset.none()
+
 
 class CompanyUserViewSet(AdminWriteMixin, BaseProductionViewSet):
     queryset = CompanyUser.objects.select_related("role").all().order_by("name", "username")
     serializer_class = CompanyUserSerializer
     search_fields = ["name", "username", "role__name", "quote_company"]
     ordering_fields = ["name", "username", "quote_company", "active", "created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if not settings.API_AUTH_REQUIRED or request_user_is_admin(self.request):
+            return queryset
+        user = company_user_from_request(self.request)
+        return queryset.filter(pk=getattr(user, "pk", None)) if user else queryset.none()
 
 
 class MessageThreadViewSet(BaseProductionViewSet):
@@ -1333,10 +1358,17 @@ def company_sign_in(request):
     if not user.active:
         return Response({"error": "This user is inactive. Ask an admin to reactivate the account."}, status=status.HTTP_400_BAD_REQUEST)
 
+    is_admin = str(getattr(user.role, "name", "") or "").lower() == "admin"
+    users = CompanyUser.objects.select_related("role").all()
+    roles = CompanyRole.objects.all()
+    if not is_admin:
+        users = users.filter(pk=user.pk)
+        roles = roles.filter(pk=user.role_id)
+
     return Response({
         "user": CompanyUserSerializer(user).data,
-        "users": CompanyUserSerializer(CompanyUser.objects.select_related("role").all(), many=True).data,
-        "roles": CompanyRoleSerializer(CompanyRole.objects.all(), many=True).data,
+        "users": CompanyUserSerializer(users, many=True).data,
+        "roles": CompanyRoleSerializer(roles, many=True).data,
         "token": create_company_user_token(user),
         "expiresIn": settings.API_SESSION_SECONDS,
     })

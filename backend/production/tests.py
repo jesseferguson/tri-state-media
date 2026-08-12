@@ -87,6 +87,49 @@ class ApiAuthSecurityTests(TestCase):
         self.assertEqual(response.status_code, 400, response.content)
         self.assertIn("legacy default admin password is blocked", response.json()["error"])
 
+    def test_non_admin_company_access_payloads_are_scoped_to_self(self):
+        csr_role = CompanyRole.objects.create(name="CSRT", allowed_resource_keys=["job-tickets", "customers"])
+        shipping_role = CompanyRole.objects.create(name="Shipping", allowed_resource_keys=["finished-inventory"])
+        rachel = CompanyUser(username="rachel", name="Rachel", role=csr_role, active=True)
+        rachel.set_password("StrongPass7&")
+        rachel.save()
+        other_user = CompanyUser(username="other-user", name="Other User", role=shipping_role, active=True)
+        other_user.set_password("StrongPass7&")
+        other_user.save()
+
+        def results(payload):
+            return payload.get("results", payload) if isinstance(payload, dict) else payload
+
+        rachel_sign_in = self.client.post(
+            reverse("company-sign-in"),
+            {"username": "rachel", "password": "StrongPass7&"},
+            content_type="application/json",
+        )
+        self.assertEqual(rachel_sign_in.status_code, 200, rachel_sign_in.content)
+        rachel_payload = rachel_sign_in.json()
+        self.assertEqual([user["username"] for user in rachel_payload["users"]], ["rachel"])
+        self.assertEqual([role["name"] for role in rachel_payload["roles"]], ["CSRT"])
+
+        auth_header = f"Bearer {rachel_payload['token']}"
+        users_response = self.client.get(reverse("company-user-list"), HTTP_AUTHORIZATION=auth_header)
+        roles_response = self.client.get(reverse("company-role-list"), HTTP_AUTHORIZATION=auth_header)
+        self.assertEqual(users_response.status_code, 200, users_response.content)
+        self.assertEqual(roles_response.status_code, 200, roles_response.content)
+        self.assertEqual([user["username"] for user in results(users_response.json())], ["rachel"])
+        self.assertEqual([role["name"] for role in results(roles_response.json())], ["CSRT"])
+
+        admin_sign_in = self.client.post(
+            reverse("company-sign-in"),
+            {"username": "secure-admin", "password": "StrongPass7&"},
+            content_type="application/json",
+        )
+        self.assertEqual(admin_sign_in.status_code, 200, admin_sign_in.content)
+        admin_payload = admin_sign_in.json()
+        self.assertIn("rachel", {user["username"] for user in admin_payload["users"]})
+        self.assertIn("other-user", {user["username"] for user in admin_payload["users"]})
+        self.assertIn("CSRT", {role["name"] for role in admin_payload["roles"]})
+        self.assertIn("Shipping", {role["name"] for role in admin_payload["roles"]})
+
     def test_job_ticket_image_preview_does_not_expose_public_storage_url(self):
         image_role = CompanyRole.objects.create(
             name="Image Viewer",
@@ -686,6 +729,65 @@ class LocalLiveFootageTests(TestCase):
         eti = next(row for row in response.json()["presses"] if row["key"] == "ETI")
         self.assertEqual(eti["speed"], 88)
         self.assertEqual(eti["totalFootage"], 12.5)
+
+
+class LiveFootageRelayTests(TestCase):
+    class FirebaseResponse:
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    def test_speed_relay_forwards_device_health_to_firebase(self):
+        payload = {
+            "currentSpeed": 247,
+            "timestamp": 1782760000,
+            "device": {
+                "wifi": True,
+                "lastHttp": -1,
+                "lastMessage": "Connection refused",
+            },
+        }
+
+        with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
+            response = self.client.put(
+                reverse("live-footage-relay", args=["eti", "speed"]),
+                payload,
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        firebase_request = mocked_urlopen.call_args.args[0]
+        self.assertEqual(firebase_request.get_method(), "PUT")
+        body = json.loads(firebase_request.data.decode("utf-8"))
+        self.assertEqual(body["currentSpeed"], 247)
+        self.assertEqual(body["device"]["lastMessage"], "Connection refused")
+
+    def test_relay_maps_all_esp32_press_nodes(self):
+        cases = [
+            ("18azt", "speed", "put", "/18Aztech_CURRENT_SPEED.json?print=silent"),
+            ("18azt", "daily", "post", "/18Aztech_SPEED.json?print=silent"),
+            ("17nil", "speed", "put", "/17Nilpeter_CURRENT_SPEED.json?print=silent"),
+            ("17nil", "daily", "post", "/17Nilpeter_SPEED.json?print=silent"),
+        ]
+
+        for press, kind, method, expected_path in cases:
+            with self.subTest(press=press, kind=kind):
+                payload = {"currentSpeed": 100, "timestamp": 1782760000} if kind == "speed" else {"footage": 12.5, "timestamp": 1782760000}
+                with patch("production.views.urlopen", return_value=self.FirebaseResponse()) as mocked_urlopen:
+                    request_method = getattr(self.client, method)
+                    response = request_method(
+                        reverse("live-footage-relay", args=[press, kind]),
+                        payload,
+                        content_type="application/json",
+                    )
+
+                self.assertEqual(response.status_code, 200, response.content)
+                firebase_request = mocked_urlopen.call_args.args[0]
+                self.assertTrue(firebase_request.full_url.endswith(expected_path), firebase_request.full_url)
 
 
 class ScheduledMaterialWorkflowTests(TestCase):

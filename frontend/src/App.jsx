@@ -1143,6 +1143,7 @@ export default function App() {
   }, [queryClient]);
 
   useEffect(() => {
+    if (!currentUser || !userIsAdmin(currentUser)) return undefined;
     let alive = true;
     Promise.all([loadUsersFromApi(), loadRolesFromApi()])
       .then(([apiUsers, apiRoles]) => {
@@ -1184,7 +1185,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [currentUser?.id, currentUser?.role]);
 
   async function handleSignIn(username, password) {
     const result = await signIn(username, password);
