@@ -1,7 +1,8 @@
 from django.conf import settings
 from django.core import signing
 from django.utils.crypto import constant_time_compare, salted_hmac
-from rest_framework import authentication, exceptions, permissions
+from rest_framework import authentication, exceptions, permissions, status
+from rest_framework.response import Response
 
 
 TOKEN_SALT = "tri-state-media.company-user-token"
@@ -89,6 +90,9 @@ def _bearer_token(request):
 class CompanyUserTokenAuthentication(authentication.BaseAuthentication):
     keyword = "Bearer"
 
+    def authenticate_header(self, request):
+        return self.keyword
+
     def authenticate(self, request):
         token = _bearer_token(request)
         if not token:
@@ -144,6 +148,16 @@ def user_has_resource_access(user, resource_key):
 
 def request_user_has_resource_access(request, resource_key):
     return user_has_resource_access(company_user_from_request(request), resource_key)
+
+
+def resource_access_denied_response(request, detail):
+    if company_user_from_request(request):
+        return Response({"detail": detail}, status=status.HTTP_403_FORBIDDEN)
+    return Response(
+        {"detail": "Authentication credentials were not provided."},
+        status=status.HTTP_401_UNAUTHORIZED,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 class HasCompanyResourceAccess(permissions.BasePermission):

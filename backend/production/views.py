@@ -79,7 +79,7 @@ from .serializers import (
     QuoteRawMaterialSerializer,
     QuoteRecordSerializer,
 )
-from .auth import company_user_from_request, create_company_user_token, request_user_has_resource_access, request_user_is_admin
+from .auth import company_user_from_request, create_company_user_token, request_user_has_resource_access, request_user_is_admin, resource_access_denied_response
 from .file_responses import private_file_response
 from .upload_security import validate_upload
 
@@ -1803,7 +1803,7 @@ class JobTicketViewSet(BaseProductionViewSet):
         if slot not in self.image_slots:
             return Response({"error": "Unknown image slot."}, status=status.HTTP_400_BAD_REQUEST)
         if not request_user_has_resource_access(request, "job-ticket-images"):
-            return Response({"detail": "You do not have access to job ticket images."}, status=status.HTTP_403_FORBIDDEN)
+            return resource_access_denied_response(request, "You do not have access to job ticket images.")
 
         image = getattr(ticket, f"{slot}_image")
         if not image:

@@ -50,7 +50,7 @@ from .serializers import (
     ToolingRecipeSerializer,
     ToolingRecipeToolSerializer,
 )
-from production.auth import request_user_has_resource_access
+from production.auth import request_user_has_resource_access, resource_access_denied_response
 from production.file_responses import private_file_response
 from production.upload_security import validate_upload
 from .zpl import flex_die_folder_label_zpl
@@ -266,7 +266,7 @@ class FlexDieViewSet(BaseToolingViewSet):
         die = self.get_object()
         required_key = "rotary-dies" if self.tooling_kind == "rotary_die" else "flex-dies"
         if not request_user_has_resource_access(request, required_key):
-            return Response({"detail": "You do not have access to this dieline image."}, status=status.HTTP_403_FORBIDDEN)
+            return resource_access_denied_response(request, "You do not have access to this dieline image.")
         if not die.dieline_image:
             return Response({"error": "No dieline image uploaded."}, status=status.HTTP_404_NOT_FOUND)
         return private_file_response(
@@ -290,7 +290,7 @@ class FlexDieViewSet(BaseToolingViewSet):
         die = self.get_object()
         required_key = "rotary-dies" if self.tooling_kind == "rotary_die" else "flex-dies"
         if not request_user_has_resource_access(request, required_key):
-            return Response({"detail": "You do not have access to print this tooling label."}, status=status.HTTP_403_FORBIDDEN)
+            return resource_access_denied_response(request, "You do not have access to print this tooling label.")
 
         press_id = request.data.get("press")
         press = Press.objects.filter(pk=press_id).first() if press_id else None
@@ -705,7 +705,7 @@ class ToolingRecipeViewSet(BaseToolingViewSet):
     def layout_file_preview(self, request, pk=None):
         recipe = self.get_object()
         if not request_user_has_resource_access(request, "recipes"):
-            return Response({"detail": "You do not have access to this layout file."}, status=status.HTTP_403_FORBIDDEN)
+            return resource_access_denied_response(request, "You do not have access to this layout file.")
         if not recipe.layout_file:
             return Response({"error": "No layout file uploaded."}, status=status.HTTP_404_NOT_FOUND)
 

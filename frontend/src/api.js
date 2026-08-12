@@ -71,18 +71,7 @@ function sessionEndedMessage(errorInfo) {
 
 function isSessionEndingAuthError(response, errorInfo) {
   if (response.status === 401) return true;
-  if (response.status !== 403) return false;
-
-  const text = `${errorInfo?.detail || ""} ${errorInfo?.message || ""}`.toLowerCase();
-  return [
-    "authentication credentials were not provided",
-    "not authenticated",
-    "sign-in expired",
-    "invalid sign-in token",
-    "sign-in changed",
-    "no longer active",
-    "currently marked inactive",
-  ].some((phrase) => text.includes(phrase));
+  return false;
 }
 
 function notifySessionEnded(response, errorInfo) {

@@ -57,6 +57,7 @@ class ApiAuthSecurityTests(TestCase):
         factory = APIRequestFactory()
         authenticator = CompanyUserTokenAuthentication()
         self.assertIsNone(authenticator.authenticate(factory.get("/api/company-users/")))
+        self.assertEqual(authenticator.authenticate_header(factory.get("/api/company-users/")), "Bearer")
 
         sign_in = self.client.post(
             reverse("company-sign-in"),
@@ -69,6 +70,17 @@ class ApiAuthSecurityTests(TestCase):
         request = factory.get("/api/company-users/", HTTP_AUTHORIZATION=f"Bearer {token}")
         authenticated_user, _token = authenticator.authenticate(request)
         self.assertEqual(authenticated_user.pk, self.user.pk)
+
+    def test_inactive_user_token_returns_auth_failure(self):
+        token = create_company_user_token(self.user)
+        self.user.active = False
+        self.user.save(update_fields=["active"])
+
+        response = self.client.get(reverse("company-user-list"), HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        self.assertEqual(response.status_code, 401, response.content)
+        self.assertEqual(response["WWW-Authenticate"], "Bearer")
+        self.assertIn("no longer active", response.json()["detail"])
 
     def test_legacy_default_admin_password_is_blocked(self):
         legacy_password = "Blue" "labels7&"
@@ -169,7 +181,7 @@ class ApiAuthSecurityTests(TestCase):
         self.assertNotIn("private-artwork.gif", image_url)
 
         unauthenticated = self.client.get(reverse("job-ticket-image-preview", args=[ticket.pk, "general"]))
-        self.assertEqual(unauthenticated.status_code, 403, unauthenticated.content)
+        self.assertEqual(unauthenticated.status_code, 401, unauthenticated.content)
 
         denied = self.client.get(
             reverse("job-ticket-image-preview", args=[ticket.pk, "general"]),
