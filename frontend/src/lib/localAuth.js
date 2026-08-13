@@ -87,8 +87,9 @@ export function canDeleteMaterialRoll(user = {}) {
 export function normalizeRole(role = {}) {
   const name = String(role.name || "").trim();
   const defaultRole = defaultRoleDefinitions.find((item) => item.name.toLowerCase() === name.toLowerCase());
-  const allowedResourceKeys = Array.isArray(role.allowedResourceKeys)
-    ? role.allowedResourceKeys.map(String).filter(Boolean)
+  const roleAllowedKeys = Array.isArray(role.allowedResourceKeys) ? role.allowedResourceKeys : role.allowed_resource_keys;
+  const allowedResourceKeys = Array.isArray(roleAllowedKeys)
+    ? roleAllowedKeys.map(String).filter(Boolean)
     : defaultRole?.allowedResourceKeys ?? [];
 
   return {

@@ -142,6 +142,44 @@ class ApiAuthSecurityTests(TestCase):
         self.assertIn("CSRT", {role["name"] for role in admin_payload["roles"]})
         self.assertIn("Shipping", {role["name"] for role in admin_payload["roles"]})
 
+    def test_csr_can_load_production_schedule_startup_endpoints(self):
+        csr_role = CompanyRole.objects.create(
+            name="CSR Startup",
+            allowed_resource_keys=[
+                "quote-calculator",
+                "customers",
+                "job-tickets",
+                "production-schedule",
+                "customer-orders",
+                "footage-reports",
+            ],
+        )
+        rachel = CompanyUser(username="rachel-csr", name="Rachel CSR", role=csr_role, active=True)
+        rachel.set_password("StrongPass7&")
+        rachel.save()
+
+        sign_in = self.client.post(
+            reverse("company-sign-in"),
+            {"username": "rachel-csr", "password": "StrongPass7&"},
+            content_type="application/json",
+        )
+        self.assertEqual(sign_in.status_code, 200, sign_in.content)
+        auth_header = f"Bearer {sign_in.json()['token']}"
+
+        for label, path in [
+            ("schedule", "/api/production-schedule/?page_size=15"),
+            ("job tickets", "/api/job-tickets/?page_size=1000"),
+            ("raw materials", "/api/raw-materials/?material_type=coated_stock&page_size=1000"),
+            ("recipe options", "/api/recipe-options/?page_size=1000"),
+            ("box inventory", "/api/box-inventory/?page_size=250"),
+            ("core inventory", "/api/core-inventory/?page_size=250"),
+            ("message threads", f"/api/message-threads/?viewer={rachel.pk}&page_size=100"),
+            ("current user", "/api/company-users/?page_size=500"),
+            ("current role", "/api/company-roles/?page_size=100"),
+        ]:
+            response = self.client.get(path, HTTP_AUTHORIZATION=auth_header)
+            self.assertEqual(response.status_code, 200, f"{label}: {response.content!r}")
+
     def test_job_ticket_image_preview_does_not_expose_public_storage_url(self):
         image_role = CompanyRole.objects.create(
             name="Image Viewer",

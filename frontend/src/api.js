@@ -70,8 +70,18 @@ function sessionEndedMessage(errorInfo) {
 }
 
 function isSessionEndingAuthError(response, errorInfo) {
-  if (response.status === 401) return true;
-  return false;
+  if (response.status !== 401) return false;
+  const text = `${errorInfo?.detail || ""} ${errorInfo?.message || ""}`.toLowerCase();
+  if (!text.trim()) return true;
+  return [
+    "authentication credentials were not provided",
+    "not authenticated",
+    "invalid sign-in token",
+    "sign-in expired",
+    "sign-in changed",
+    "no longer active",
+    "inactive",
+  ].some((phrase) => text.includes(phrase));
 }
 
 function notifySessionEnded(response, errorInfo) {
