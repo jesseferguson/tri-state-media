@@ -24972,6 +24972,12 @@ textarea {
   color: #c2410c;
   font-size: .72rem;
   font-weight: 950;
+  cursor: pointer;
+}
+
+.customer-record-alert:hover {
+  border-color: #fdba74;
+  background: #ffedd5;
 }
 
 .customer-record-actions {
@@ -25118,6 +25124,68 @@ textarea {
   color: #475467;
   font-size: .82rem;
   line-height: 1.5;
+}
+
+.customer-ticket-preview-card {
+  display: grid;
+  align-content: start;
+}
+
+.customer-ticket-preview-list {
+  display: grid;
+  max-height: 236px;
+  overflow: auto;
+}
+
+.customer-ticket-preview-list button {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 0;
+  border-top: 1px solid #eef2f7;
+  background: #ffffff;
+  color: #101828;
+  text-align: left;
+  cursor: pointer;
+}
+
+.customer-ticket-preview-list button:first-child {
+  border-top: 0;
+}
+
+.customer-ticket-preview-list button:hover {
+  background: #f8fafc;
+}
+
+.customer-ticket-preview-list strong,
+.customer-ticket-preview-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-ticket-preview-list strong {
+  font-size: .8rem;
+}
+
+.customer-ticket-preview-list span {
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.customer-ticket-preview-list p {
+  margin: 0;
+  padding: 14px 12px;
+  color: #667085;
+  font-size: .8rem;
+}
+
+.customer-ticket-preview-card footer {
+  padding: 10px 12px;
+  border-top: 1px solid #eef2f7;
 }
 
 .customer-notes p {
@@ -25564,6 +25632,314 @@ textarea {
   font-weight: 850;
 }
 
+.customer-ticket-page {
+  display: grid;
+  grid-template-columns: minmax(300px, .42fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.customer-ticket-queue,
+.customer-ticket-detail {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.customer-ticket-queue > header,
+.customer-ticket-detail > header {
+  justify-content: space-between;
+}
+
+.customer-ticket-queue > header span,
+.customer-ticket-detail > header span {
+  display: block;
+  margin-top: 2px;
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.customer-ticket-mini-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid #eef2f7;
+  background: #fbfcfe;
+}
+
+.customer-ticket-mini-stats span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #e4e9f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #667085;
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.customer-ticket-mini-stats b {
+  color: #0f172a;
+  font-size: .95rem;
+}
+
+.customer-ticket-queue-list {
+  display: grid;
+  max-height: min(680px, calc(100vh - 300px));
+  overflow: auto;
+}
+
+.customer-ticket-queue-list > p {
+  margin: 0;
+  padding: 16px;
+  color: #667085;
+  font-size: .8rem;
+}
+
+.customer-ticket-queue-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  padding: 11px 12px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-top: 1px solid #eef2f7;
+  background: #ffffff;
+  color: #101828;
+  text-align: left;
+  cursor: pointer;
+}
+
+.customer-ticket-queue-item:first-child {
+  border-top: 0;
+}
+
+.customer-ticket-queue-item.open {
+  border-left-color: #ef4444;
+}
+
+.customer-ticket-queue-item.watch {
+  border-left-color: #f59e0b;
+}
+
+.customer-ticket-queue-item.info {
+  border-left-color: #2563eb;
+}
+
+.customer-ticket-queue-item.active,
+.customer-ticket-queue-item:hover {
+  background: #f8fafc;
+}
+
+.customer-ticket-queue-item.active {
+  box-shadow: inset 0 0 0 1px #86efac;
+}
+
+.customer-ticket-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #ecfdf3;
+  color: #0f766e;
+}
+
+.customer-ticket-copy,
+.customer-ticket-side {
+  min-width: 0;
+}
+
+.customer-ticket-copy strong,
+.customer-ticket-copy em,
+.customer-ticket-side b,
+.customer-ticket-side i {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-ticket-copy strong {
+  color: #101828;
+  font-size: .8rem;
+}
+
+.customer-ticket-copy em,
+.customer-ticket-side i {
+  margin-top: 3px;
+  color: #667085;
+  font-size: .67rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.customer-ticket-side {
+  max-width: 120px;
+  text-align: right;
+}
+
+.customer-ticket-side b {
+  color: #0f172a;
+  font-size: .7rem;
+  font-weight: 950;
+}
+
+.customer-ticket-detail > header .customer-crm-status {
+  margin-left: auto;
+}
+
+.customer-ticket-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.customer-ticket-detail-meta span {
+  padding: 5px 8px;
+  border: 1px solid #e4e9f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475467;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.customer-ticket-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.customer-ticket-form label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.customer-ticket-form label.wide {
+  grid-column: 1 / -1;
+}
+
+.customer-ticket-form label > span,
+.customer-ticket-check span,
+.customer-ticket-history > strong {
+  color: #667085;
+  font-size: .66rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.customer-ticket-form input,
+.customer-ticket-form select,
+.customer-ticket-form textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #101828;
+  font: inherit;
+  font-size: .78rem;
+}
+
+.customer-ticket-form input,
+.customer-ticket-form select {
+  height: 36px;
+  padding: 0 9px;
+}
+
+.customer-ticket-form textarea {
+  min-height: 92px;
+  padding: 8px 9px;
+  resize: vertical;
+}
+
+.customer-ticket-form input:focus,
+.customer-ticket-form select:focus,
+.customer-ticket-form textarea:focus {
+  border-color: #14b8a6;
+  outline: 3px solid rgba(20, 184, 166, .14);
+}
+
+.customer-ticket-check {
+  align-content: end;
+  min-height: 36px;
+  padding-bottom: 3px;
+}
+
+.customer-ticket-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.customer-ticket-history {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.customer-ticket-history > div {
+  display: grid;
+  max-height: 160px;
+  overflow: auto;
+  border: 1px solid #e4e9f0;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.customer-ticket-history span {
+  padding: 8px 10px;
+  border-top: 1px solid #eef2f7;
+  color: #344054;
+  font-size: .75rem;
+  line-height: 1.4;
+}
+
+.customer-ticket-history span:first-child {
+  border-top: 0;
+}
+
+.customer-ticket-empty {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: #667085;
+  text-align: center;
+}
+
+.customer-ticket-empty svg {
+  color: #16a34a;
+}
+
+.customer-ticket-empty strong {
+  color: #101828;
+  font-size: .95rem;
+}
+
+.customer-ticket-empty p {
+  max-width: 320px;
+  margin: 0;
+  font-size: .8rem;
+  line-height: 1.5;
+}
+
 .customer-open-log-sheet {
   min-width: 0;
 }
@@ -25739,6 +26115,7 @@ textarea {
 }
 
 .customer-log-empty {
+  grid-column: 1 / -1;
   padding: 18px;
   color: #667085;
   font-size: .82rem;
@@ -25749,6 +26126,7 @@ textarea {
   .customer-home-hero,
   .customer-overview-grid,
   .customer-activity-page,
+  .customer-ticket-page,
   .customer-team-page {
     grid-template-columns: 1fr;
   }
@@ -25769,6 +26147,7 @@ textarea {
   .customer-work-page,
   .customer-search-grid,
   .customer-crm-fields,
+  .customer-ticket-form,
   .customer-team-picker {
     grid-template-columns: 1fr;
   }
@@ -25810,6 +26189,24 @@ textarea {
 
   .customer-record-actions button {
     flex: 1 1 auto;
+  }
+
+  .customer-ticket-actions {
+    justify-content: stretch;
+  }
+
+  .customer-ticket-actions button {
+    flex: 1 1 auto;
+  }
+
+  .customer-ticket-queue-item {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .customer-ticket-side {
+    grid-column: 2;
+    max-width: none;
+    text-align: left;
   }
 
   .customer-page-tabs {

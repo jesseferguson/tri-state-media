@@ -63,6 +63,7 @@ const TYPE_ICON = {
 
 const CUSTOMER_PAGES = [
   ["overview", "Overview"],
+  ["tickets", "Tickets"],
   ["activity", "Activity"],
   ["work", "Work"],
   ["team", "Team"],
@@ -99,9 +100,40 @@ function isOpenInteraction(interaction) {
   return String(interaction?.status || "open").toLowerCase() !== "closed";
 }
 
+function ticketTitle(interaction) {
+  return interaction?.subject || interaction?.email_subject || choiceLabel(INTERACTION_TYPES, interaction?.interaction_type);
+}
+
+function ticketReference(interaction) {
+  return interactionRelationLabel(interaction) || `CRM Ticket #${interaction?.id ?? ""}`.trim();
+}
+
 function sortDateValue(value) {
   const date = new Date(value || 0);
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function ticketSortValue(interaction) {
+  return sortDateValue(interaction?.follow_up_date || interaction?.updated_at || interaction?.occurred_at || interaction?.created_at);
+}
+
+function isAuditLine(value) {
+  return /^\[[^\]]+\]\s+.+/.test(String(value || "").trim());
+}
+
+function interactionAuditEntries(interaction) {
+  return String(interaction?.body || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(isAuditLine);
+}
+
+function interactionNotesWithoutAudit(interaction) {
+  return String(interaction?.body || "")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter((block) => block && !block.split(/\n+/).every(isAuditLine))
+    .join("\n\n");
 }
 
 function money(value) {
@@ -691,6 +723,257 @@ function OpenLogsSheet({ interactions = [], customersById = new Map(), ownerScop
   );
 }
 
+function TicketQueueItem({ ticket, active, onSelect }) {
+  const tone = interactionStatusTone(ticket.status);
+  const Icon = TYPE_ICON[ticket.interaction_type] || MessageCircle;
+  const reference = ticketReference(ticket);
+  return (
+    <button className={`customer-ticket-queue-item ${active ? "active" : ""} ${tone}`} type="button" onClick={() => onSelect?.(ticket)}>
+      <span className="customer-ticket-icon"><Icon size={15} /></span>
+      <span className="customer-ticket-copy">
+        <strong>{ticketTitle(ticket)}</strong>
+        <em>{reference}</em>
+      </span>
+      <span className="customer-ticket-side">
+        <b>{dateLabel(ticket.follow_up_date || ticket.updated_at || ticket.occurred_at)}</b>
+        <i>{choiceLabel(INTERACTION_STATUSES, ticket.status)}</i>
+      </span>
+    </button>
+  );
+}
+
+function CustomerTicketPreview({ tickets, onOpenTicket, onViewAll, loading }) {
+  return (
+    <section className="customer-page-card customer-ticket-preview-card">
+      <header>
+        <strong>Open Tickets</strong>
+        <span>{tickets.length}</span>
+      </header>
+      <div className="customer-ticket-preview-list">
+        {tickets.slice(0, 4).map((ticket) => (
+          <button type="button" key={ticket.id} onClick={() => onOpenTicket?.(ticket)}>
+            <strong>{ticketTitle(ticket)}</strong>
+            <span>{[choiceLabel(INTERACTION_STATUSES, ticket.status), ticket.follow_up_date ? `Follow up ${dateLabel(ticket.follow_up_date)}` : ""].filter(Boolean).join(" / ")}</span>
+          </button>
+        ))}
+        {!tickets.length && <p>{loading ? "Loading tickets..." : "No open customer tickets."}</p>}
+      </div>
+      <footer>
+        <button className="ghost-btn" type="button" onClick={onViewAll}>View Tickets</button>
+      </footer>
+    </section>
+  );
+}
+
+function TicketChangeHistory({ ticket }) {
+  const auditEntries = interactionAuditEntries(ticket);
+  return (
+    <div className="customer-ticket-history">
+      <strong>Change History</strong>
+      <div>
+        {auditEntries.map((entry, index) => <span key={`${ticket.id}-audit-${index}`}>{entry}</span>)}
+        {!auditEntries.length && <span>No saved changes have been logged yet.</span>}
+      </div>
+    </div>
+  );
+}
+
+function CustomerTicketDetail({ ticket, saving, onUpdate, onNotifyTeam }) {
+  const [form, setForm] = useState({
+    subject: ticket?.subject || ticket?.email_subject || "",
+    interaction_type: ticket?.interaction_type || "note",
+    status: ticket?.status || "open",
+    follow_up_date: ticket?.follow_up_date || "",
+    body: interactionNotesWithoutAudit(ticket),
+    pinned: Boolean(ticket?.pinned),
+  });
+  const [quickNote, setQuickNote] = useState("");
+  const tone = interactionStatusTone(form.status);
+  const relation = ticketReference(ticket);
+  const createdLine = [ticket?.created_by, dateTimeLabel(ticket?.created_at || ticket?.occurred_at)].filter(Boolean).join(" / ");
+  const updatedLine = [ticket?.updated_by, dateTimeLabel(ticket?.updated_at)].filter(Boolean).join(" / ");
+
+  useEffect(() => {
+    setForm({
+      subject: ticket?.subject || ticket?.email_subject || "",
+      interaction_type: ticket?.interaction_type || "note",
+      status: ticket?.status || "open",
+      follow_up_date: ticket?.follow_up_date || "",
+      body: interactionNotesWithoutAudit(ticket),
+      pinned: Boolean(ticket?.pinned),
+    });
+    setQuickNote("");
+  }, [ticket?.body, ticket?.follow_up_date, ticket?.id, ticket?.interaction_type, ticket?.pinned, ticket?.status, ticket?.subject, ticket?.updated_at]);
+
+  if (!ticket) {
+    return (
+      <section className="customer-ticket-detail customer-page-card">
+        <div className="customer-ticket-empty">
+          <CheckCircle2 size={22} />
+          <strong>No open ticket selected</strong>
+          <p>Open tickets for this customer will appear here when they need follow-up.</p>
+        </div>
+      </section>
+    );
+  }
+
+  function update(name, value) {
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function changeSummary(nextStatus = form.status) {
+    const changes = [];
+    if ((form.subject.trim() || ticketTitle(ticket)) !== (ticket.subject || ticket.email_subject || "")) changes.push("updated title");
+    if (form.interaction_type !== (ticket.interaction_type || "note")) changes.push("changed type");
+    if (nextStatus !== (ticket.status || "open")) changes.push(`changed status to ${choiceLabel(INTERACTION_STATUSES, nextStatus)}`);
+    if ((form.follow_up_date || "") !== (ticket.follow_up_date || "")) changes.push("changed follow-up date");
+    if (form.body !== interactionNotesWithoutAudit(ticket)) changes.push("updated notes");
+    if (form.pinned !== Boolean(ticket.pinned)) changes.push(form.pinned ? "pinned ticket" : "unpinned ticket");
+    if (quickNote.trim()) changes.push("added update note");
+    return changes.length ? changes.join(", ") : "reviewed ticket";
+  }
+
+  async function save(nextStatus = form.status) {
+    const auditBlock = interactionAuditEntries(ticket).join("\n");
+    const nextNotes = [form.body.trim(), quickNote.trim()].filter(Boolean).join("\n\n");
+    await onUpdate?.({
+      interaction: ticket,
+      payload: {
+        subject: form.subject.trim() || ticketTitle(ticket),
+        interaction_type: form.interaction_type,
+        status: nextStatus,
+        follow_up_date: form.follow_up_date || null,
+        body: [nextNotes, auditBlock].filter(Boolean).join("\n\n"),
+        pinned: form.pinned,
+      },
+      actionSummary: changeSummary(nextStatus),
+    });
+    setQuickNote("");
+    setForm((current) => ({ ...current, status: nextStatus, body: nextNotes }));
+  }
+
+  const dirty = (
+    (form.subject.trim() || ticketTitle(ticket)) !== (ticket.subject || ticket.email_subject || "")
+    || form.interaction_type !== (ticket.interaction_type || "note")
+    || form.status !== (ticket.status || "open")
+    || (form.follow_up_date || "") !== (ticket.follow_up_date || "")
+    || form.body !== interactionNotesWithoutAudit(ticket)
+    || form.pinned !== Boolean(ticket.pinned)
+    || Boolean(quickNote.trim())
+  );
+
+  return (
+    <section className="customer-ticket-detail customer-page-card">
+      <header>
+        <div>
+          <strong>{ticketTitle(ticket)}</strong>
+          <span>{relation}</span>
+        </div>
+        <span className={`customer-crm-status ${tone}`}>{choiceLabel(INTERACTION_STATUSES, form.status)}</span>
+      </header>
+
+      <div className="customer-ticket-detail-meta">
+        <span>Created {createdLine || "--"}</span>
+        <span>Updated {updatedLine || "--"}</span>
+        {ticket.follow_up_date && <span>Follow up {dateLabel(ticket.follow_up_date)}</span>}
+      </div>
+
+      <form className="customer-ticket-form" onSubmit={(event) => { event.preventDefault(); save(); }}>
+        <label className="wide">
+          <span>Ticket Title</span>
+          <input value={form.subject} onChange={(event) => update("subject", event.target.value)} maxLength={180} placeholder="What needs to be handled?" />
+        </label>
+        <label>
+          <span>Type</span>
+          <select value={form.interaction_type} onChange={(event) => update("interaction_type", event.target.value)}>
+            {INTERACTION_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Status</span>
+          <select value={form.status} onChange={(event) => update("status", event.target.value)}>
+            {INTERACTION_STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Follow-Up</span>
+          <input type="date" value={form.follow_up_date || ""} onChange={(event) => update("follow_up_date", event.target.value)} />
+        </label>
+        <label className="customer-ticket-check">
+          <input type="checkbox" checked={form.pinned} onChange={(event) => update("pinned", event.target.checked)} />
+          <span>Pinned</span>
+        </label>
+        <label className="wide">
+          <span>Ticket Notes</span>
+          <textarea value={form.body} onChange={(event) => update("body", event.target.value)} rows={7} placeholder="Current details, customer context, and next steps" />
+        </label>
+        <label className="wide">
+          <span>Add Update</span>
+          <textarea value={quickNote} onChange={(event) => setQuickNote(event.target.value)} rows={3} placeholder="Add what changed today" />
+        </label>
+        <div className="customer-ticket-actions">
+          <button className="ghost-btn" type="button" onClick={onNotifyTeam}>Notify Team</button>
+          <button className="ghost-btn" type="submit" disabled={saving || !onUpdate || !dirty}>{saving ? "Saving..." : "Save Changes"}</button>
+          <button className="primary-btn" type="button" onClick={() => save("closed")} disabled={saving || !onUpdate}>{saving ? "Closing..." : "Close Ticket"}</button>
+        </div>
+      </form>
+
+      <TicketChangeHistory ticket={ticket} />
+    </section>
+  );
+}
+
+function CustomerTicketWorkspace({ tickets, selectedTicketId, onSelectTicket, saving, onUpdate, onNotifyTeam, loading }) {
+  const sortedTickets = useMemo(() => (
+    [...tickets].sort((a, b) => {
+      if (Boolean(a.pinned) !== Boolean(b.pinned)) return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+      const aDate = ticketSortValue(a);
+      const bDate = ticketSortValue(b);
+      if (aDate && bDate && aDate !== bDate) return aDate - bDate;
+      if (aDate !== bDate) return aDate ? -1 : 1;
+      return sortDateValue(b.updated_at || b.created_at) - sortDateValue(a.updated_at || a.created_at);
+    })
+  ), [tickets]);
+  const selectedTicket = sortedTickets.find((ticket) => sameId(ticket.id, selectedTicketId)) || sortedTickets[0] || null;
+  const waitingInternal = sortedTickets.filter((ticket) => String(ticket.status) === "waiting_internal").length;
+  const waitingCustomer = sortedTickets.filter((ticket) => String(ticket.status) === "waiting_customer").length;
+
+  return (
+    <section className="customer-page-content customer-ticket-page">
+      <section className="customer-ticket-queue customer-page-card">
+        <header>
+          <div>
+            <strong>Ticket Queue</strong>
+            <span>{sortedTickets.length} open</span>
+          </div>
+        </header>
+        <div className="customer-ticket-mini-stats">
+          <span><b>{waitingInternal}</b> Internal</span>
+          <span><b>{waitingCustomer}</b> Customer</span>
+        </div>
+        <div className="customer-ticket-queue-list">
+          {sortedTickets.map((ticket) => (
+            <TicketQueueItem
+              key={ticket.id}
+              ticket={ticket}
+              active={sameId(ticket.id, selectedTicket?.id)}
+              onSelect={(row) => onSelectTicket?.(String(row.id))}
+            />
+          ))}
+          {!sortedTickets.length && <p>{loading ? "Loading tickets..." : "No open tickets for this customer."}</p>}
+        </div>
+      </section>
+
+      <CustomerTicketDetail
+        ticket={selectedTicket}
+        saving={saving}
+        onUpdate={onUpdate}
+        onNotifyTeam={onNotifyTeam}
+      />
+    </section>
+  );
+}
+
 function TeamNotifyPanel({ customer, users = [], currentUser, relationOptions, saving, onNotify }) {
   const [recipientIds, setRecipientIds] = useState([]);
   const [relatedValue, setRelatedValue] = useState("");
@@ -813,6 +1096,7 @@ export default function CustomerWorkspace({
   const [showInlineResults, setShowInlineResults] = useState(false);
   const [ownerScope, setOwnerScope] = useState("mine");
   const [showOpenLogs, setShowOpenLogs] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState("");
   const address = customerAddressLines(selected);
   const quoteTotalValue = quotes.reduce((sum, quote) => sum + quoteTotal(quote), 0);
   const openOrders = orders.filter(orderOpen);
@@ -853,7 +1137,20 @@ export default function CustomerWorkspace({
     })
   ), [interactions]);
   const selectedNotificationCount = selected ? (notificationCounts.get(String(selected.id)) || 0) : 0;
-  const openFollowUps = sortedInteractions.filter(isOpenInteraction).length;
+  const customerOpenTickets = useMemo(() => (
+    sortedInteractions
+      .filter(isOpenInteraction)
+      .sort((a, b) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+        const aDate = ticketSortValue(a);
+        const bDate = ticketSortValue(b);
+        if (aDate && bDate && aDate !== bDate) return aDate - bDate;
+        if (aDate !== bDate) return aDate ? -1 : 1;
+        return sortDateValue(b.updated_at || b.created_at) - sortDateValue(a.updated_at || a.created_at);
+      })
+  ), [sortedInteractions]);
+  const ticketBadgeCount = customerOpenTickets.length || selectedNotificationCount;
+  const openFollowUps = customerOpenTickets.length;
   const lastTouch = selected?.last_contacted_at || sortedInteractions.find((interaction) => ["email", "call", "meeting"].includes(interaction.interaction_type))?.occurred_at;
   const relationOptions = useMemo(() => [
     { value: "", label: "Account only" },
@@ -887,9 +1184,20 @@ export default function CustomerWorkspace({
   ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 10);
   const searchResults = sortedCustomerRows.slice(0, search.trim() ? 12 : 6);
 
+  useEffect(() => {
+    if (!selected?.id || !customerOpenTickets.length) {
+      setSelectedTicketId("");
+      return;
+    }
+    if (!customerOpenTickets.some((ticket) => sameId(ticket.id, selectedTicketId))) {
+      setSelectedTicketId(String(customerOpenTickets[0].id));
+    }
+  }, [customerOpenTickets, selected?.id, selectedTicketId]);
+
   function selectCustomer(row) {
     setActivePage("overview");
     setShowInlineResults(false);
+    setSelectedTicketId("");
     onSearchChange?.("");
     onSelect?.(row);
   }
@@ -904,6 +1212,11 @@ export default function CustomerWorkspace({
   function updateSearch(value) {
     onSearchChange?.(value);
     setShowInlineResults(Boolean(String(value || "").trim()));
+  }
+
+  function openTicket(ticket) {
+    setSelectedTicketId(String(ticket?.id || ""));
+    setActivePage("tickets");
   }
 
   if (!selected) {
@@ -1004,10 +1317,10 @@ export default function CustomerWorkspace({
             <h3>{selected.name}</h3>
             <p>{selected.customer_code ? `Customer ID ${selected.customer_code}` : "No Customer ID on file"}</p>
             {selectedNotificationCount > 0 && (
-              <strong className="customer-record-alert">
+              <button className="customer-record-alert" type="button" onClick={() => setActivePage("tickets")}>
                 <Bell size={14} />
-                {selectedNotificationCount} open log{selectedNotificationCount === 1 ? "" : "s"}
-              </strong>
+                {selectedNotificationCount} open ticket{selectedNotificationCount === 1 ? "" : "s"}
+              </button>
             )}
           </div>
           <div className="customer-record-actions">
@@ -1021,8 +1334,8 @@ export default function CustomerWorkspace({
           {CUSTOMER_PAGES.map(([key, label]) => (
             <button className={activePage === key ? "active" : ""} type="button" key={key} onClick={() => setActivePage(key)}>
               {label}
+              {key === "tickets" && ticketBadgeCount > 0 && <span>{ticketBadgeCount}</span>}
               {key === "activity" && sortedInteractions.length > 0 && <span>{sortedInteractions.length}</span>}
-              {key === "team" && selectedNotificationCount > 0 && <span>{selectedNotificationCount}</span>}
             </button>
           ))}
         </nav>
@@ -1031,9 +1344,9 @@ export default function CustomerWorkspace({
           <section className="customer-page-content customer-overview-page">
             <section className="customer-home-stats customer-overview-stats">
               <Metric label="Open Orders" value={openOrders.length.toLocaleString()} detail={`${orders.length} total order${orders.length === 1 ? "" : "s"}`} tone={openOrders.length ? "watch" : ""} />
-              <Metric label="Open Follow-Ups" value={openFollowUps.toLocaleString()} detail={`${sortedInteractions.length} CRM touch${sortedInteractions.length === 1 ? "" : "es"}`} />
+              <Metric label="Open Tickets" value={openFollowUps.toLocaleString()} detail={`${sortedInteractions.length} CRM touch${sortedInteractions.length === 1 ? "" : "es"}`} tone={openFollowUps ? "watch" : ""} />
               <Metric label="Quote Value" value={money(quoteTotalValue)} detail={`${quotes.length} saved quote${quotes.length === 1 ? "" : "s"}`} tone="money" />
-              <Metric label="Job Tickets" value={jobTickets.length.toLocaleString()} detail={`${number(shippedUnits)} labels to ship`} />
+              <Metric label="Production Jobs" value={jobTickets.length.toLocaleString()} detail={`${number(shippedUnits)} labels to ship`} />
             </section>
 
             <div className="customer-overview-grid">
@@ -1053,16 +1366,12 @@ export default function CustomerWorkspace({
                 </div>
               </section>
 
-              <section className="customer-page-card customer-focus-card">
-                <header><strong>Current Focus</strong></header>
-                <div>
-                  <CalendarDays size={18} />
-                  <span>Next Follow-Up</span>
-                  <strong>{dateLabel(selected.next_follow_up)}</strong>
-                  <p>{openFollowUps ? `${openFollowUps} open follow-up${openFollowUps === 1 ? "" : "s"} need attention.` : "No open follow-up is currently logged."}</p>
-                  <button className="ghost-btn" type="button" onClick={() => setActivePage("activity")}>Log Activity</button>
-                </div>
-              </section>
+              <CustomerTicketPreview
+                tickets={customerOpenTickets}
+                loading={loading}
+                onOpenTicket={openTicket}
+                onViewAll={() => setActivePage("tickets")}
+              />
 
               <section className="customer-page-card customer-notes">
                 <header><strong>Account Notes</strong></header>
@@ -1070,6 +1379,18 @@ export default function CustomerWorkspace({
               </section>
             </div>
           </section>
+        )}
+
+        {activePage === "tickets" && (
+          <CustomerTicketWorkspace
+            tickets={customerOpenTickets}
+            selectedTicketId={selectedTicketId}
+            onSelectTicket={setSelectedTicketId}
+            saving={openLogSaving}
+            onUpdate={onUpdateOpenLog}
+            onNotifyTeam={() => setActivePage("team")}
+            loading={loading}
+          />
         )}
 
         {activePage === "activity" && (
@@ -1111,7 +1432,7 @@ export default function CustomerWorkspace({
                 {!quotes.length && <p>{loading ? "Loading quotes..." : "No quotes found for this customer."}</p>}
               </div>
             </RelatedCard>
-            <RelatedCard icon={BriefcaseBusiness} title="Job Tickets" count={jobTickets.length}>
+            <RelatedCard icon={BriefcaseBusiness} title="Production Job Tickets" count={jobTickets.length}>
               <div className="customer-ticket-list">
                 {jobTickets.slice(0, 12).map((ticket) => <TicketRow key={ticket.id} ticket={ticket} />)}
                 {!jobTickets.length && <p>{loading ? "Loading job tickets..." : "No job tickets linked yet."}</p>}
