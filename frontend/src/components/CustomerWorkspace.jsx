@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   AtSign,
@@ -72,12 +72,36 @@ function sameId(a, b) {
   return String(a ?? "") === String(b ?? "");
 }
 
+function normalizedText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function userId(user) {
   return String(user?.id || user?.username || "").trim();
 }
 
 function userLabel(user) {
   return user?.name || user?.username || "User";
+}
+
+function customerMatchesOwner(customer, currentUser) {
+  const owner = normalizedText(customer?.account_owner);
+  const viewerNames = [currentUser?.name, currentUser?.username].map(normalizedText).filter(Boolean);
+  if (!owner || !viewerNames.length) return false;
+  return viewerNames.some((name) => owner === name || owner.includes(name) || name.includes(owner));
+}
+
+function interactionCustomerId(interaction) {
+  return String(interaction?.customer || interaction?.customer_id || interaction?.customerId || "").trim();
+}
+
+function isOpenInteraction(interaction) {
+  return String(interaction?.status || "open").toLowerCase() !== "closed";
+}
+
+function sortDateValue(value) {
+  const date = new Date(value || 0);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
 function money(value) {
@@ -243,16 +267,19 @@ function CustomerSearchInput({ value, onChange, count, total, autoFocus = false,
   );
 }
 
-function CustomerCard({ customer, selected, onSelect }) {
+function CustomerCard({ customer, selected, onSelect, notificationCount = 0 }) {
   const stage = choiceLabel(CRM_STAGES, customer.crm_stage || (customer.is_active === false ? "inactive" : "active"));
   return (
-    <button className={`customer-search-card ${selected ? "active" : ""}`} type="button" onClick={() => onSelect(customer)}>
+    <button className={`customer-search-card ${selected ? "active" : ""} ${notificationCount > 0 ? "has-notifications" : ""}`} type="button" onClick={() => onSelect(customer)}>
       <span className="customer-card-initial">{String(customer.name || "?").slice(0, 1).toUpperCase()}</span>
       <span>
         <strong>{customer.name || "Unnamed customer"}</strong>
         <em>{[customer.customer_code ? `ID ${customer.customer_code}` : "", customer.contact_name || customer.email || customer.phone].filter(Boolean).join(" / ") || "No contact on file"}</em>
       </span>
-      <b>{stage}</b>
+      <span className="customer-card-status">
+        <b>{stage}</b>
+        {notificationCount > 0 && <span className="customer-notification-badge" title={`${notificationCount} open notification${notificationCount === 1 ? "" : "s"}`}>{notificationCount}</span>}
+      </span>
     </button>
   );
 }
@@ -504,6 +531,166 @@ function InteractionRow({ interaction }) {
   );
 }
 
+function OpenLogRow({ interaction, customer, saving, onUpdate, onOpenCustomer }) {
+  const [form, setForm] = useState({
+    interaction_type: interaction.interaction_type || "note",
+    status: interaction.status || "open",
+    body: interaction.body || "",
+    follow_up_date: interaction.follow_up_date || "",
+  });
+
+  useEffect(() => {
+    setForm({
+      interaction_type: interaction.interaction_type || "note",
+      status: interaction.status || "open",
+      body: interaction.body || "",
+      follow_up_date: interaction.follow_up_date || "",
+    });
+  }, [interaction.body, interaction.follow_up_date, interaction.id, interaction.interaction_type, interaction.status, interaction.updated_at]);
+
+  const company = customer?.name || interaction.customer_name || "Unknown customer";
+  const contact = customer?.contact_name || interaction.email_to || "--";
+  const phone = customer?.phone || "--";
+  const tone = interactionStatusTone(form.status);
+  const lastActivity = interaction.updated_at || interaction.occurred_at || interaction.created_at;
+  const dirty = (
+    form.interaction_type !== (interaction.interaction_type || "note")
+    || form.status !== (interaction.status || "open")
+    || form.body !== (interaction.body || "")
+    || form.follow_up_date !== (interaction.follow_up_date || "")
+  );
+
+  function update(name, value) {
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function actionSummary(nextStatus) {
+    if (nextStatus === "closed") return "closed this open log";
+    const changes = [];
+    if (form.interaction_type !== (interaction.interaction_type || "note")) changes.push("changed contact type");
+    if (form.status !== (interaction.status || "open")) changes.push(`changed status to ${choiceLabel(INTERACTION_STATUSES, form.status)}`);
+    if (form.follow_up_date !== (interaction.follow_up_date || "")) changes.push("changed last follow-up");
+    if (form.body !== (interaction.body || "")) changes.push("updated notes");
+    return changes.length ? changes.join(", ") : "saved this open log";
+  }
+
+  async function save(nextStatus = form.status) {
+    await onUpdate?.({
+      interaction,
+      payload: {
+        interaction_type: form.interaction_type,
+        status: nextStatus,
+        body: form.body,
+        follow_up_date: form.follow_up_date || null,
+      },
+      actionSummary: actionSummary(nextStatus),
+    });
+    setForm((current) => ({ ...current, status: nextStatus }));
+  }
+
+  return (
+    <div className={`customer-log-row ${tone}`} role="row">
+      <div className="customer-log-cell company" role="cell">
+        <button type="button" onClick={() => customer?.id && onOpenCustomer?.(customer)} disabled={!customer?.id}>
+          <strong>{company}</strong>
+          <span>{customer?.customer_code ? `ID ${customer.customer_code}` : customer?.account_owner || "Open account"}</span>
+        </button>
+      </div>
+      <div className="customer-log-cell" role="cell">
+        <strong>{contact}</strong>
+        <span>{customer?.email || interaction.email_from || "--"}</span>
+      </div>
+      <div className="customer-log-cell compact" role="cell">
+        <strong>{phone}</strong>
+        <span>{customer?.account_owner || "Unassigned"}</span>
+      </div>
+      <label className="customer-log-cell editable" role="cell">
+        <select value={form.interaction_type} onChange={(event) => update("interaction_type", event.target.value)}>
+          {INTERACTION_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      <label className="customer-log-cell notes" role="cell">
+        <textarea value={form.body} onChange={(event) => update("body", event.target.value)} rows={3} placeholder="Add notes or next steps" />
+      </label>
+      <label className="customer-log-cell editable" role="cell">
+        <input type="date" value={form.follow_up_date || ""} onChange={(event) => update("follow_up_date", event.target.value)} />
+        <span>{lastActivity ? `Updated ${dateLabel(lastActivity)}` : "No update date"}</span>
+      </label>
+      <label className="customer-log-cell editable status" role="cell">
+        <select value={form.status} onChange={(event) => update("status", event.target.value)}>
+          {INTERACTION_STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <span className={`customer-crm-status ${tone}`}>{choiceLabel(INTERACTION_STATUSES, form.status)}</span>
+      </label>
+      <div className="customer-log-actions" role="cell">
+        <button className="ghost-btn xs" type="button" onClick={() => save()} disabled={saving || !onUpdate || !dirty}>Save</button>
+        <button className="primary-btn xs" type="button" onClick={() => save("closed")} disabled={saving || !onUpdate}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+function OpenLogsSheet({ interactions = [], customersById = new Map(), ownerScope, currentUser, saving, onUpdate, onOpenCustomer }) {
+  const rows = useMemo(() => (
+    interactions
+      .filter(isOpenInteraction)
+      .map((interaction) => {
+        const customer = customersById.get(interactionCustomerId(interaction)) || {
+          id: interactionCustomerId(interaction),
+          name: interaction.customer_name,
+        };
+        return { interaction, customer };
+      })
+      .filter(({ customer }) => ownerScope !== "mine" || !(currentUser?.name || currentUser?.username) || customerMatchesOwner(customer, currentUser))
+      .sort((a, b) => {
+        const dateDiff = sortDateValue(a.interaction.follow_up_date || a.interaction.occurred_at || a.interaction.created_at)
+          - sortDateValue(b.interaction.follow_up_date || b.interaction.occurred_at || b.interaction.created_at);
+        if (dateDiff) return dateDiff;
+        return String(a.customer?.name || "").localeCompare(String(b.customer?.name || ""));
+      })
+  ), [customersById, currentUser, interactions, ownerScope]);
+
+  return (
+    <section className="customer-open-log-sheet customer-page-card">
+      <header>
+        <div>
+          <strong>Open Logs</strong>
+          <span>{rows.length} item{rows.length === 1 ? "" : "s"} needing follow-up</span>
+        </div>
+      </header>
+      <div className="customer-open-log-scroll">
+        <div className="customer-log-table" role="table" aria-label="Open customer logs">
+          <div className="customer-log-head" role="row">
+            <span>Company</span>
+            <span>Primary Contact</span>
+            <span>Phone</span>
+            <span>Contact Type</span>
+            <span>Notes</span>
+            <span>Last Follow-Up</span>
+            <span>Status</span>
+            <span>Actions</span>
+          </div>
+          {rows.map(({ interaction, customer }) => (
+            <OpenLogRow
+              key={interaction.id}
+              interaction={interaction}
+              customer={customer}
+              saving={saving}
+              onUpdate={onUpdate}
+              onOpenCustomer={onOpenCustomer}
+            />
+          ))}
+          {!rows.length && (
+            <div className="customer-log-empty">
+              {ownerScope === "mine" ? "No open logs for your accounts." : "No open customer logs are waiting right now."}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function TeamNotifyPanel({ customer, users = [], currentUser, relationOptions, saving, onNotify }) {
   const [recipientIds, setRecipientIds] = useState([]);
   const [relatedValue, setRelatedValue] = useState("");
@@ -598,6 +785,7 @@ function TeamNotifyPanel({ customer, users = [], currentUser, relationOptions, s
 
 export default function CustomerWorkspace({
   rows,
+  allRows = rows,
   totalCount = 0,
   search = "",
   selected,
@@ -605,9 +793,11 @@ export default function CustomerWorkspace({
   orders = [],
   jobTickets = [],
   interactions = [],
+  openInteractions = [],
   users = [],
   currentUser,
   interactionSaving = false,
+  openLogSaving = false,
   notifyTeamSaving = false,
   loading = false,
   onSearchChange,
@@ -616,21 +806,54 @@ export default function CustomerWorkspace({
   onDelete,
   onQuote,
   onAddInteraction,
+  onUpdateOpenLog,
   onNotifyTeam,
 }) {
   const [activePage, setActivePage] = useState("overview");
   const [showInlineResults, setShowInlineResults] = useState(false);
+  const [ownerScope, setOwnerScope] = useState("mine");
+  const [showOpenLogs, setShowOpenLogs] = useState(false);
   const address = customerAddressLines(selected);
   const quoteTotalValue = quotes.reduce((sum, quote) => sum + quoteTotal(quote), 0);
   const openOrders = orders.filter(orderOpen);
   const shippedUnits = orders.reduce((sum, order) => sum + Number(order.quantity_to_ship || 0), 0);
+  const customersById = useMemo(() => new Map(allRows.map((row) => [String(row.id), row])), [allRows]);
+  const openInteractionRows = useMemo(() => openInteractions.filter(isOpenInteraction), [openInteractions]);
+  const notificationCounts = useMemo(() => {
+    const counts = new Map();
+    for (const interaction of openInteractionRows) {
+      const key = interactionCustomerId(interaction);
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  }, [openInteractionRows]);
+  const ownerFilteredRows = useMemo(() => (
+    ownerScope === "mine" && (currentUser?.name || currentUser?.username)
+      ? rows.filter((row) => customerMatchesOwner(row, currentUser))
+      : rows
+  ), [currentUser, ownerScope, rows]);
+  const sortedCustomerRows = useMemo(() => (
+    [...ownerFilteredRows].sort((a, b) => {
+      const notificationDiff = (notificationCounts.get(String(b.id)) || 0) - (notificationCounts.get(String(a.id)) || 0);
+      if (notificationDiff) return notificationDiff;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    })
+  ), [notificationCounts, ownerFilteredRows]);
+  const visibleOpenLogCount = useMemo(() => (
+    openInteractionRows.filter((interaction) => {
+      if (ownerScope !== "mine" || !(currentUser?.name || currentUser?.username)) return true;
+      const customer = customersById.get(interactionCustomerId(interaction));
+      return customerMatchesOwner(customer, currentUser);
+    }).length
+  ), [customersById, currentUser, openInteractionRows, ownerScope]);
   const sortedInteractions = useMemo(() => (
     [...interactions].sort((a, b) => {
       if (Boolean(a.pinned) !== Boolean(b.pinned)) return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
       return new Date(b.occurred_at || b.created_at || 0) - new Date(a.occurred_at || a.created_at || 0);
     })
   ), [interactions]);
-  const openFollowUps = sortedInteractions.filter((interaction) => interaction.follow_up_date && interaction.status !== "closed").length;
+  const selectedNotificationCount = selected ? (notificationCounts.get(String(selected.id)) || 0) : 0;
+  const openFollowUps = sortedInteractions.filter(isOpenInteraction).length;
   const lastTouch = selected?.last_contacted_at || sortedInteractions.find((interaction) => ["email", "call", "meeting"].includes(interaction.interaction_type))?.occurred_at;
   const relationOptions = useMemo(() => [
     { value: "", label: "Account only" },
@@ -662,7 +885,7 @@ export default function CustomerWorkspace({
       id: order.id || order.order_number,
     })),
   ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 10);
-  const searchResults = rows.slice(0, search.trim() ? 12 : 6);
+  const searchResults = sortedCustomerRows.slice(0, search.trim() ? 12 : 6);
 
   function selectCustomer(row) {
     setActivePage("overview");
@@ -691,27 +914,50 @@ export default function CustomerWorkspace({
             <div>
               <span>Customer CRM</span>
               <h3>Customer Accounts</h3>
-              <p>Search for a customer, open the account, and review notes, activity, jobs, quotes, and team messages in one place.</p>
+              <p>Search accounts, review open follow-ups, and keep customer notes, jobs, quotes, and team messages in one place.</p>
             </div>
             <div className="customer-home-search">
-              <CustomerSearchInput value={search} onChange={updateSearch} count={rows.length} total={totalCount || rows.length} autoFocus />
+              <CustomerSearchInput value={search} onChange={updateSearch} count={sortedCustomerRows.length} total={totalCount || rows.length} autoFocus />
+              <div className="customer-home-controls">
+                <div className="customer-scope-toggle" role="group" aria-label="Customer account scope">
+                  <button className={ownerScope === "mine" ? "active" : ""} type="button" onClick={() => setOwnerScope("mine")}>My Accounts</button>
+                  <button className={ownerScope === "all" ? "active" : ""} type="button" onClick={() => setOwnerScope("all")}>All Accounts</button>
+                </div>
+                <button className={`customer-open-log-toggle ${showOpenLogs ? "active" : ""}`} type="button" onClick={() => setShowOpenLogs((value) => !value)}>
+                  <Bell size={15} />
+                  {showOpenLogs ? "Hide Open Logs" : "Show Open Logs"}
+                  {visibleOpenLogCount > 0 && <span>{visibleOpenLogCount}</span>}
+                </button>
+              </div>
             </div>
           </section>
 
           <section className="customer-home-stats">
             <Metric label="Accounts" value={number(totalCount || rows.length)} detail="available customer records" />
-            <Metric label="Search Results" value={number(rows.length)} detail={search.trim() ? "matching this search" : "ready to search"} />
-            <Metric label="CRM Focus" value="4 Pages" detail="overview, activity, work, team" />
+            <Metric label={ownerScope === "mine" ? "My Results" : "Search Results"} value={number(sortedCustomerRows.length)} detail={search.trim() ? "matching this search" : ownerScope === "mine" ? "assigned to you" : "visible accounts"} />
+            <Metric label="Open Logs" value={number(visibleOpenLogCount)} detail="not closed yet" tone={visibleOpenLogCount ? "watch" : ""} />
           </section>
+
+          {showOpenLogs && (
+            <OpenLogsSheet
+              interactions={openInteractionRows}
+              customersById={customersById}
+              ownerScope={ownerScope}
+              currentUser={currentUser}
+              saving={openLogSaving}
+              onUpdate={onUpdateOpenLog}
+              onOpenCustomer={selectCustomer}
+            />
+          )}
 
           <section className="customer-results-panel">
             <header>
               <strong>{search.trim() ? "Matching Accounts" : "Start Here"}</strong>
-              <span>{search.trim() ? `${rows.length} result${rows.length === 1 ? "" : "s"}` : "Type above or open a recent account"}</span>
+              <span>{search.trim() ? `${sortedCustomerRows.length} result${sortedCustomerRows.length === 1 ? "" : "s"}` : "Open logs are sorted to the top"}</span>
             </header>
             <div className="customer-search-grid">
               {searchResults.map((customer) => (
-                <CustomerCard key={customer.id} customer={customer} onSelect={selectCustomer} />
+                <CustomerCard key={customer.id} customer={customer} notificationCount={notificationCounts.get(String(customer.id)) || 0} onSelect={selectCustomer} />
               ))}
               {!searchResults.length && <p>{loading ? "Loading customers..." : "No customers match this search."}</p>}
             </div>
@@ -732,15 +978,21 @@ export default function CustomerWorkspace({
           value={search}
           onChange={updateSearch}
           onFocus={() => setShowInlineResults(Boolean(search.trim()))}
-          count={rows.length}
+          count={sortedCustomerRows.length}
           total={totalCount || rows.length}
         />
         {showInlineResults && search.trim() && (
           <div className="customer-inline-results">
-            {rows.slice(0, 6).map((customer) => (
-              <CustomerCard key={customer.id} customer={customer} selected={sameId(customer.id, selected.id)} onSelect={selectCustomer} />
+            {sortedCustomerRows.slice(0, 6).map((customer) => (
+              <CustomerCard
+                key={customer.id}
+                customer={customer}
+                selected={sameId(customer.id, selected.id)}
+                notificationCount={notificationCounts.get(String(customer.id)) || 0}
+                onSelect={selectCustomer}
+              />
             ))}
-            {!rows.length && <p>No customers match this search.</p>}
+            {!sortedCustomerRows.length && <p>No customers match this search.</p>}
           </div>
         )}
       </header>
@@ -751,6 +1003,12 @@ export default function CustomerWorkspace({
             <span>{selected.is_active === false ? "Inactive Customer" : `${choiceLabel(CRM_STAGES, selected.crm_stage || "active")} Customer`}</span>
             <h3>{selected.name}</h3>
             <p>{selected.customer_code ? `Customer ID ${selected.customer_code}` : "No Customer ID on file"}</p>
+            {selectedNotificationCount > 0 && (
+              <strong className="customer-record-alert">
+                <Bell size={14} />
+                {selectedNotificationCount} open log{selectedNotificationCount === 1 ? "" : "s"}
+              </strong>
+            )}
           </div>
           <div className="customer-record-actions">
             <button className="ghost-btn" type="button" onClick={() => onQuote?.(selected)}>Quote</button>
@@ -764,7 +1022,7 @@ export default function CustomerWorkspace({
             <button className={activePage === key ? "active" : ""} type="button" key={key} onClick={() => setActivePage(key)}>
               {label}
               {key === "activity" && sortedInteractions.length > 0 && <span>{sortedInteractions.length}</span>}
-              {key === "team" && openFollowUps > 0 && <span>{openFollowUps}</span>}
+              {key === "team" && selectedNotificationCount > 0 && <span>{selectedNotificationCount}</span>}
             </button>
           ))}
         </nav>

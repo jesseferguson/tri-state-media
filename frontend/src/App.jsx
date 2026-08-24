@@ -213,6 +213,10 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { material: selected.id }, 150));
   }
 
+  if (resource.key === "customers") {
+    addLookupSpec(specs, { key: "customer-open-interactions", endpoint: "customer-interactions", ordering: "follow_up_date,-occurred_at", filters: { open: true }, pageSize: 1000, fetchAll: true });
+  }
+
   if (resource.key === "customers" && selected?.id) {
     addLookupSpec(specs, { key: "quote-records", endpoint: "quote-records", ordering: "-created_at", filters: { customer: selected.id }, pageSize: 1000, fetchAll: true });
     addLookupSpec(specs, relationLookupSpec("customer-orders", { customer: selected.id }, 1000, true));
@@ -2315,6 +2319,26 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     },
   });
 
+  const customerOpenLogUpdateMutation = useMutation({
+    mutationFn: ({ interaction, payload, actionSummary }) => {
+      if (!interaction?.id) throw new Error("Choose an open log before updating.");
+      const actor = messageUserLabel(currentUserForView);
+      const stamp = new Date().toLocaleString();
+      const auditLine = `[${stamp}] ${actor}: ${actionSummary || "updated this log"}.`;
+      const body = [String(payload?.body ?? interaction.body ?? "").trim(), auditLine].filter(Boolean).join("\n\n");
+      return updateRecord("customer-interactions", interaction.id, {
+        ...payload,
+        body,
+        updated_by: actor,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "customers"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-interactions"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   const customerNotifyTeamMutation = useMutation({
     mutationFn: async ({ customer, recipientIds = [], subject = "", body = "", relatedRecord = null }) => {
       if (!customer?.id) throw new Error("Choose a customer before notifying the team.");
@@ -3031,6 +3055,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         {flexDieFolderLabelMutation.error && <div className="error-box">{apiErrorMessage(flexDieFolderLabelMutation.error)}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {customerInteractionMutation.error && <div className="error-box">{apiErrorMessage(customerInteractionMutation.error)}</div>}
+        {customerOpenLogUpdateMutation.error && <div className="error-box">{apiErrorMessage(customerOpenLogUpdateMutation.error)}</div>}
         {customerNotifyTeamMutation.error && <div className="error-box">{apiErrorMessage(customerNotifyTeamMutation.error)}</div>}
         {materialTypeSaveMutation.error && <div className="error-box">{materialTypeSaveMutation.error.message}</div>}
         {materialTypeDeleteMutation.error && <div className="error-box">{materialTypeDeleteMutation.error.message}</div>}
@@ -3235,6 +3260,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 {resource.viewMode === "customers" ? (
                   <CustomerWorkspace
                     rows={visibleRows}
+                    allRows={rows}
                     totalCount={rows.length}
                     search={search}
                     selected={selected}
@@ -3242,9 +3268,11 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     orders={lookupQuery.data?.["customer-orders"] ?? []}
                     jobTickets={lookupQuery.data?.["job-tickets"] ?? []}
                     interactions={lookupQuery.data?.["customer-interactions"] ?? []}
+                    openInteractions={lookupQuery.data?.["customer-open-interactions"] ?? []}
                     users={users}
                     currentUser={currentUserForView}
                     interactionSaving={customerInteractionMutation.isPending}
+                    openLogSaving={customerOpenLogUpdateMutation.isPending}
                     notifyTeamSaving={customerNotifyTeamMutation.isPending}
                     loading={lookupQuery.isLoading && Boolean(selected)}
                     onSearchChange={setSearch}
@@ -3252,6 +3280,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
                     onDelete={confirmDeleteRecord}
                     onAddInteraction={(payload) => customerInteractionMutation.mutateAsync(payload)}
+                    onUpdateOpenLog={(payload) => customerOpenLogUpdateMutation.mutateAsync(payload)}
                     onNotifyTeam={(payload) => customerNotifyTeamMutation.mutateAsync(payload)}
                     onQuote={(customer) => {
                       setQuoteCustomerId(String(customer.id));
