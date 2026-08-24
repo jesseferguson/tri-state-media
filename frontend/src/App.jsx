@@ -84,6 +84,14 @@ function companyUserHeaders(user) {
   };
 }
 
+function messageUserId(user) {
+  return String(user?.id || user?.username || "").trim();
+}
+
+function messageUserLabel(user) {
+  return user?.name || user?.username || "User";
+}
+
 function apiErrorMessage(error) {
   const message = String(error?.message || "");
   try {
@@ -2307,6 +2315,62 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     },
   });
 
+  const customerNotifyTeamMutation = useMutation({
+    mutationFn: async ({ customer, recipientIds = [], subject = "", body = "", relatedRecord = null }) => {
+      if (!customer?.id) throw new Error("Choose a customer before notifying the team.");
+      if (!recipientIds.length) throw new Error("Choose at least one team member.");
+      if (!String(body || "").trim()) throw new Error("Add a team note before sending.");
+      const viewerId = messageUserId(currentUserForView);
+      const participantIds = [...new Set([viewerId, ...recipientIds.map(String)].filter(Boolean))];
+      const participantRows = participantIds.map((id) => (
+        String(id) === String(viewerId)
+          ? currentUserForView
+          : users.find((user) => String(messageUserId(user)) === String(id))
+      )).filter(Boolean);
+      const cleanSubject = String(subject || "").trim() || `${customer.name || "Customer"} follow-up`;
+      const relatedLabel = relatedRecord?.value ? relatedRecord.label : "";
+      const thread = await createRecord("message-threads", {
+        title: cleanSubject,
+        participant_user_ids: participantIds,
+        participant_names: participantRows.map(messageUserLabel),
+        context_type: "customer",
+        context_id: String(customer.id),
+        context_label: customer.name || `Customer ${customer.id}`,
+        created_by_user_id: viewerId,
+        created_by_name: messageUserLabel(currentUserForView),
+      });
+      await createRecord("messages", {
+        thread: thread.id,
+        sender_user_id: viewerId,
+        sender_name: messageUserLabel(currentUserForView),
+        body: [String(body || "").trim(), relatedLabel ? `Related item: ${relatedLabel}` : ""].filter(Boolean).join("\n\n"),
+        read_by_user_ids: [viewerId],
+      });
+      const [relationType, relationId] = String(relatedRecord?.value || "").split(":");
+      await createRecord("customer-interactions", {
+        customer: customer.id,
+        customer_order: relationType === "order" && relationId ? Number(relationId) : null,
+        job_ticket: relationType === "job" && relationId ? Number(relationId) : null,
+        quote: relationType === "quote" && relationId ? Number(relationId) : null,
+        interaction_type: "task",
+        status: "open",
+        subject: cleanSubject,
+        body: `Team notified: ${participantRows.filter((user) => String(messageUserId(user)) !== String(viewerId)).map(messageUserLabel).join(", ")}\n\n${String(body || "").trim()}`,
+        occurred_at: new Date().toISOString(),
+        follow_up_date: null,
+        created_by: messageUserLabel(currentUserForView),
+        updated_by: messageUserLabel(currentUserForView),
+      });
+      return thread;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["message-threads"] });
+      queryClient.invalidateQueries({ queryKey: ["messages"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-interactions"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   const finishedScheduleMutation = useMutation({
     mutationFn: async ({ material, schedule }) => {
       const required = [
@@ -2967,6 +3031,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         {flexDieFolderLabelMutation.error && <div className="error-box">{apiErrorMessage(flexDieFolderLabelMutation.error)}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
         {customerInteractionMutation.error && <div className="error-box">{apiErrorMessage(customerInteractionMutation.error)}</div>}
+        {customerNotifyTeamMutation.error && <div className="error-box">{apiErrorMessage(customerNotifyTeamMutation.error)}</div>}
         {materialTypeSaveMutation.error && <div className="error-box">{materialTypeSaveMutation.error.message}</div>}
         {materialTypeDeleteMutation.error && <div className="error-box">{materialTypeDeleteMutation.error.message}</div>}
         {toolingWorkspaceMutation.error && <div className="error-box">{toolingWorkspaceMutation.error.message}</div>}
@@ -3097,7 +3162,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 loading={listQuery.isFetching && !rows.length}
                 onRequestsChanged={() => refreshFlexDie()}
               />
-            ) : (
+            ) : resource.viewMode === "customers" ? null : (
               <section className="search-line compact-card">
                 <Search size={16} />
                 <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${resource.label.toLowerCase()}...`} />
@@ -3159,29 +3224,35 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
             )}
 
             <section className={`content-grid ${["customers", "job-tickets", "production-schedule", "material-coated-stock", "suppliers", "presses", "flex-dies"].includes(resource.key) || isMaterialTypePage || isToolingConfigPage ? "wide-list" : ""}`}>
-              <div className="list-panel compact-card">
-                <div className="panel-head thin">
+              <div className={`list-panel compact-card ${resource.viewMode === "customers" ? "customer-shell-panel" : ""}`}>
+                {resource.viewMode !== "customers" && <div className="panel-head thin">
                   <div>
                     <p className="eyebrow">Records</p>
                     <h2>{listQuery.isLoading ? "Loading..." : `${visibleRows.length} shown`}</h2>
                   </div>
-                </div>
+                </div>}
 
                 {resource.viewMode === "customers" ? (
                   <CustomerWorkspace
                     rows={visibleRows}
+                    totalCount={rows.length}
+                    search={search}
                     selected={selected}
                     quotes={lookupQuery.data?.["quote-records"] ?? []}
                     orders={lookupQuery.data?.["customer-orders"] ?? []}
                     jobTickets={lookupQuery.data?.["job-tickets"] ?? []}
                     interactions={lookupQuery.data?.["customer-interactions"] ?? []}
+                    users={users}
                     currentUser={currentUserForView}
                     interactionSaving={customerInteractionMutation.isPending}
+                    notifyTeamSaving={customerNotifyTeamMutation.isPending}
                     loading={lookupQuery.isLoading && Boolean(selected)}
+                    onSearchChange={setSearch}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
                     onDelete={confirmDeleteRecord}
                     onAddInteraction={(payload) => customerInteractionMutation.mutateAsync(payload)}
+                    onNotifyTeam={(payload) => customerNotifyTeamMutation.mutateAsync(payload)}
                     onQuote={(customer) => {
                       setQuoteCustomerId(String(customer.id));
                       setQuoteJobTicketId("");

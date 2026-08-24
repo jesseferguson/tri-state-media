@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AtSign,
+  Bell,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
@@ -14,7 +15,10 @@ import {
   MessageSquarePlus,
   Phone,
   ReceiptText,
+  Search,
+  Send,
   UserRound,
+  Users,
 } from "lucide-react";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -56,8 +60,23 @@ const TYPE_ICON = {
   note: MessageCircle,
 };
 
+const CUSTOMER_PAGES = [
+  ["overview", "Overview"],
+  ["activity", "Activity"],
+  ["work", "Work"],
+  ["team", "Team"],
+];
+
 function sameId(a, b) {
   return String(a ?? "") === String(b ?? "");
+}
+
+function userId(user) {
+  return String(user?.id || user?.username || "").trim();
+}
+
+function userLabel(user) {
+  return user?.name || user?.username || "User";
 }
 
 function money(value) {
@@ -197,20 +216,6 @@ function initialInteractionForm() {
   };
 }
 
-function CustomerListRow({ customer, selected, onSelect }) {
-  const stage = customer.crm_stage ? choiceLabel(CRM_STAGES, customer.crm_stage) : customer.is_active === false ? "Inactive" : "Active";
-  return (
-    <button className={`customer-row ${selected ? "active" : ""}`} type="button" onClick={() => onSelect(customer)}>
-      <span className="customer-row-initial">{String(customer.name || "?").slice(0, 1).toUpperCase()}</span>
-      <span>
-        <strong>{customer.name || "Unnamed customer"}</strong>
-        <em>{[customer.customer_code ? `ID ${customer.customer_code}` : "", customer.contact_name, stage].filter(Boolean).join(" / ") || "No customer ID"}</em>
-      </span>
-      <small>{customer.account_owner || customer.email || customer.phone || "Unassigned account"}</small>
-    </button>
-  );
-}
-
 function Metric({ label, value, detail, tone = "" }) {
   return (
     <div className={`customer-metric ${tone}`}>
@@ -218,6 +223,35 @@ function Metric({ label, value, detail, tone = "" }) {
       <strong>{value}</strong>
       {detail && <em>{detail}</em>}
     </div>
+  );
+}
+
+function CustomerSearchInput({ value, onChange, count, total, autoFocus = false }) {
+  return (
+    <label className="customer-search-field">
+      <Search size={17} />
+      <input
+        autoFocus={autoFocus}
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+        placeholder="Search customer, contact, code, email, phone..."
+      />
+      <span>{count} / {total}</span>
+    </label>
+  );
+}
+
+function CustomerCard({ customer, selected, onSelect }) {
+  const stage = choiceLabel(CRM_STAGES, customer.crm_stage || (customer.is_active === false ? "inactive" : "active"));
+  return (
+    <button className={`customer-search-card ${selected ? "active" : ""}`} type="button" onClick={() => onSelect(customer)}>
+      <span className="customer-card-initial">{String(customer.name || "?").slice(0, 1).toUpperCase()}</span>
+      <span>
+        <strong>{customer.name || "Unnamed customer"}</strong>
+        <em>{[customer.customer_code ? `ID ${customer.customer_code}` : "", customer.contact_name || customer.email || customer.phone].filter(Boolean).join(" / ") || "No contact on file"}</em>
+      </span>
+      <b>{stage}</b>
+    </button>
   );
 }
 
@@ -351,7 +385,7 @@ function CustomerInteractionComposer({ selected, relationOptions, currentUser, s
   }
 
   return (
-    <section className="customer-crm-form">
+    <section className="customer-crm-form customer-page-card">
       <header>
         <div>
           <strong>Log Activity</strong>
@@ -468,22 +502,121 @@ function InteractionRow({ interaction }) {
   );
 }
 
+function TeamNotifyPanel({ customer, users = [], currentUser, relationOptions, saving, onNotify }) {
+  const [recipientIds, setRecipientIds] = useState([]);
+  const [relatedValue, setRelatedValue] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [localError, setLocalError] = useState("");
+  const [sent, setSent] = useState("");
+  const viewerId = userId(currentUser);
+  const activeUsers = users.filter((user) => user?.active !== false && userId(user) && userId(user) !== viewerId);
+  const relatedRecord = relationOptions.find((option) => option.value === relatedValue) || relationOptions[0];
+
+  function toggleRecipient(id) {
+    setRecipientIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    setLocalError("");
+    setSent("");
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!recipientIds.length) {
+      setLocalError("Choose at least one team member.");
+      return;
+    }
+    if (!body.trim()) {
+      setLocalError("Add a note for the team.");
+      return;
+    }
+    await onNotify?.({
+      customer,
+      recipientIds,
+      subject: subject.trim() || `${customer.name} follow-up`,
+      body: body.trim(),
+      relatedRecord,
+    });
+    setRecipientIds([]);
+    setRelatedValue("");
+    setSubject("");
+    setBody("");
+    setLocalError("");
+    setSent("Team notification sent and logged on this customer.");
+  }
+
+  return (
+    <section className="customer-team-panel customer-page-card">
+      <header>
+        <div>
+          <strong>Notify Team</strong>
+          <span>Create a message board linked to this customer.</span>
+        </div>
+      </header>
+      <form onSubmit={submit}>
+        <div className="customer-team-picker">
+          {activeUsers.map((user) => {
+            const id = userId(user);
+            return (
+              <button className={recipientIds.includes(id) ? "active" : ""} type="button" key={id} onClick={() => toggleRecipient(id)}>
+                <span>{userLabel(user)}</span>
+                <em>{user.role || "Team"}</em>
+              </button>
+            );
+          })}
+          {!activeUsers.length && <p>No active users are available to notify.</p>}
+        </div>
+        <div className="customer-crm-fields">
+          <label className="wide">
+            <span>Related Item</span>
+            <select value={relatedValue} onChange={(event) => setRelatedValue(event.target.value)}>
+              {relationOptions.map((option) => <option key={option.value || "account"} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className="wide">
+            <span>Subject</span>
+            <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder={`${customer.name} follow-up`} />
+          </label>
+          <label className="wide">
+            <span>Team Note</span>
+            <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={5} placeholder="What should sales, production, art, or management know?" />
+          </label>
+        </div>
+        {localError && <p className="customer-crm-error">{localError}</p>}
+        {sent && <p className="customer-team-success">{sent}</p>}
+        <div className="customer-crm-submit">
+          <button className="primary-btn" type="submit" disabled={saving || !activeUsers.length}>
+            <Send size={15} />
+            {saving ? "Sending..." : "Notify Team"}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 export default function CustomerWorkspace({
   rows,
+  totalCount = 0,
+  search = "",
   selected,
   quotes = [],
   orders = [],
   jobTickets = [],
   interactions = [],
+  users = [],
   currentUser,
   interactionSaving = false,
+  notifyTeamSaving = false,
   loading = false,
+  onSearchChange,
   onSelect,
   onEdit,
   onDelete,
   onQuote,
   onAddInteraction,
+  onNotifyTeam,
 }) {
+  const [activePage, setActivePage] = useState("overview");
   const address = customerAddressLines(selected);
   const quoteTotalValue = quotes.reduce((sum, quote) => sum + quoteTotal(quote), 0);
   const openOrders = orders.filter(orderOpen);
@@ -525,132 +658,207 @@ export default function CustomerWorkspace({
       detail: `${statusLabel(order.status)} / ${order.job_name || "No job name"}`,
       id: order.id || order.order_number,
     })),
-  ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 12);
+  ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 10);
+  const searchResults = rows.slice(0, search.trim() ? 12 : 6);
+
+  if (!selected) {
+    return (
+      <section className="customer-crm-page">
+        <div className="customer-crm-home">
+          <section className="customer-home-hero">
+            <div>
+              <span>Customer CRM</span>
+              <h3>Find the account, then focus on the work.</h3>
+              <p>Search first, open only what matters, and use the customer page to log activity or pull teammates into the conversation.</p>
+            </div>
+            <div className="customer-home-search">
+              <CustomerSearchInput value={search} onChange={onSearchChange} count={rows.length} total={totalCount || rows.length} autoFocus />
+            </div>
+          </section>
+
+          <section className="customer-home-stats">
+            <Metric label="Accounts" value={number(totalCount || rows.length)} detail="available customer records" />
+            <Metric label="Search Results" value={number(rows.length)} detail={search.trim() ? "matching this search" : "ready to search"} />
+            <Metric label="CRM Focus" value="4 Pages" detail="overview, activity, work, team" />
+          </section>
+
+          <section className="customer-results-panel">
+            <header>
+              <strong>{search.trim() ? "Matching Accounts" : "Start Here"}</strong>
+              <span>{search.trim() ? `${rows.length} result${rows.length === 1 ? "" : "s"}` : "Type above or open a recent account"}</span>
+            </header>
+            <div className="customer-search-grid">
+              {searchResults.map((customer) => (
+                <CustomerCard key={customer.id} customer={customer} onSelect={(row) => { setActivePage("overview"); onSelect?.(row); }} />
+              ))}
+              {!searchResults.length && <p>{loading ? "Loading customers..." : "No customers match this search."}</p>}
+            </div>
+          </section>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className="customer-workspace">
-      <aside className="customer-directory">
-        <div className="customer-directory-head">
-          <span>{rows.length.toLocaleString()} accounts</span>
-          <strong>Customer Directory</strong>
-        </div>
-        <div className="customer-row-list">
-          {rows.map((customer) => (
-            <CustomerListRow key={customer.id} customer={customer} selected={sameId(customer.id, selected?.id)} onSelect={onSelect} />
-          ))}
-          {!rows.length && <p>No customers match this search.</p>}
-        </div>
-      </aside>
-
-      <section className="customer-account">
-        {selected ? (
-          <>
-            <header className="customer-record-hero">
-              <div className="customer-account-title">
-                <span>{selected.is_active === false ? "Inactive Customer" : `${choiceLabel(CRM_STAGES, selected.crm_stage || "active")} Customer`}</span>
-                <h3>{selected.name}</h3>
-                <p>{selected.customer_code ? `Customer ID ${selected.customer_code}` : "No Customer ID on file"}</p>
-              </div>
-              <div className="customer-record-actions">
-                <button className="ghost-btn" type="button" onClick={() => onQuote?.(selected)}>Quote</button>
-                <button className="primary-btn" type="button" onClick={() => onEdit(selected)}>Edit Customer</button>
-                <button className="danger-btn" type="button" onClick={() => onDelete(selected)}>Delete</button>
-              </div>
-              <section className="customer-metric-grid customer-highlight-grid">
-                <Metric label="Open Orders" value={openOrders.length.toLocaleString()} detail={`${orders.length} total order${orders.length === 1 ? "" : "s"}`} tone={openOrders.length ? "watch" : ""} />
-                <Metric label="Open Follow-Ups" value={openFollowUps.toLocaleString()} detail={`${sortedInteractions.length} CRM touch${sortedInteractions.length === 1 ? "" : "es"}`} />
-                <Metric label="Quote Value" value={money(quoteTotalValue)} detail={`${quotes.length} saved quote${quotes.length === 1 ? "" : "s"}`} tone="money" />
-                <Metric label="Job Tickets" value={jobTickets.length.toLocaleString()} detail={`${number(shippedUnits)} labels to ship`} />
-              </section>
-            </header>
-
-            <section className="customer-record-layout">
-              <aside className="customer-record-sidebar">
-                <section className="customer-record-card">
-                  <header>
-                    <strong>Account Snapshot</strong>
-                  </header>
-                  <div className="customer-fact-list">
-                    <FactRow icon={AtSign} label="Owner" value={selected.account_owner || "Unassigned"} />
-                    <FactRow icon={CheckCircle2} label="Stage" value={choiceLabel(CRM_STAGES, selected.crm_stage || (selected.is_active === false ? "inactive" : "active"))} />
-                    <FactRow icon={CalendarDays} label="Next Follow-Up" value={dateLabel(selected.next_follow_up)} />
-                    <FactRow icon={Clock3} label="Last Touch" value={dateLabel(lastTouch)} />
-                    <FactRow icon={UserRound} label="Contact" value={selected.contact_name || "No primary contact"} />
-                    <FactRow icon={Mail} label="Email" value={selected.email || "No email"} href={selected.email ? `mailto:${selected.email}` : ""} />
-                    <FactRow icon={Phone} label="Phone" value={selected.phone || "No phone"} href={selected.phone ? `tel:${selected.phone}` : ""} />
-                    <FactRow icon={MapPin} label="Address" value={address.join(" / ") || "No address"} />
-                    {selected.website && <FactRow icon={ExternalLink} label="Website" value={String(selected.website).replace(/^https?:\/\//i, "")} href={externalUrl(selected.website)} />}
-                    {selected.source_sheet_url && <FactRow icon={Link2} label="Source Sheet" value="Open Sheet" href={externalUrl(selected.source_sheet_url)} />}
-                  </div>
-                </section>
-
-                {selected.notes && (
-                  <section className="customer-record-card customer-notes">
-                    <header>
-                      <strong>Account Notes</strong>
-                    </header>
-                    <p>{selected.notes}</p>
-                  </section>
-                )}
-              </aside>
-
-              <main className="customer-record-main">
-                <CustomerInteractionComposer
-                  key={selected.id}
-                  selected={selected}
-                  relationOptions={relationOptions}
-                  currentUser={currentUser}
-                  saving={interactionSaving}
-                  onSubmit={onAddInteraction}
-                />
-                <section className="customer-crm-feed customer-primary-feed">
-                  <header>
-                    <div>
-                      <strong>Activity Timeline</strong>
-                      <span>{sortedInteractions.length} activit{sortedInteractions.length === 1 ? "y" : "ies"}</span>
-                    </div>
-                  </header>
-                  <div className="customer-interaction-list">
-                    {sortedInteractions.slice(0, 14).map((interaction) => <InteractionRow key={interaction.id} interaction={interaction} />)}
-                    {!sortedInteractions.length && <p>{loading ? "Loading activity..." : "No CRM activity has been logged for this customer."}</p>}
-                  </div>
-                </section>
-              </main>
-
-              <aside className="customer-related-rail">
-                <RelatedCard icon={ReceiptText} title="Orders" count={orders.length}>
-                  <div className="customer-activity-list">
-                    {orders.slice(0, 5).map((order) => <OrderRow key={order.id || order.order_number} order={order} />)}
-                    {!orders.length && <p>{loading ? "Loading orders..." : "No orders found for this customer."}</p>}
-                  </div>
-                </RelatedCard>
-                <RelatedCard icon={FileText} title="Quotes" count={quotes.length}>
-                  <div className="customer-activity-list">
-                    {quotes.slice(0, 5).map((quote) => <QuoteRow key={quote.id || quoteNumber(quote)} quote={quote} />)}
-                    {!quotes.length && <p>{loading ? "Loading quotes..." : "No quotes found for this customer."}</p>}
-                  </div>
-                </RelatedCard>
-                <RelatedCard icon={BriefcaseBusiness} title="Job Tickets" count={jobTickets.length}>
-                  <div className="customer-ticket-list">
-                    {jobTickets.slice(0, 6).map((ticket) => <TicketRow key={ticket.id} ticket={ticket} />)}
-                    {!jobTickets.length && <p>{loading ? "Loading job tickets..." : "No job tickets linked yet."}</p>}
-                  </div>
-                </RelatedCard>
-                <RelatedCard icon={CalendarDays} title="Recent Movement" count={timeline.length}>
-                  <div className="customer-timeline">
-                    {timeline.map((item) => <TimelineRow key={`${item.type}-${item.id}-${item.date}`} item={item} />)}
-                    {!timeline.length && <p>Quotes, orders, and CRM activity will appear here as this account grows.</p>}
-                  </div>
-                </RelatedCard>
-              </aside>
-            </section>
-          </>
-        ) : (
-          <div className="customer-empty">
-            <UserRound size={28} />
-            <strong>Select a customer</strong>
-            <p>Choose an account to review its contact record, quote history, orders ran, and linked job tickets.</p>
+    <section className="customer-crm-page">
+      <header className="customer-record-searchbar">
+        <CustomerSearchInput value={search} onChange={onSearchChange} count={rows.length} total={totalCount || rows.length} />
+        {search.trim() && (
+          <div className="customer-inline-results">
+            {rows.slice(0, 6).map((customer) => (
+              <CustomerCard key={customer.id} customer={customer} selected={sameId(customer.id, selected.id)} onSelect={(row) => { setActivePage("overview"); onSelect?.(row); }} />
+            ))}
+            {!rows.length && <p>No customers match this search.</p>}
           </div>
+        )}
+      </header>
+
+      <section className="customer-account-shell">
+        <header className="customer-record-hero">
+          <div className="customer-account-title">
+            <span>{selected.is_active === false ? "Inactive Customer" : `${choiceLabel(CRM_STAGES, selected.crm_stage || "active")} Customer`}</span>
+            <h3>{selected.name}</h3>
+            <p>{selected.customer_code ? `Customer ID ${selected.customer_code}` : "No Customer ID on file"}</p>
+          </div>
+          <div className="customer-record-actions">
+            <button className="ghost-btn" type="button" onClick={() => onQuote?.(selected)}>Quote</button>
+            <button className="primary-btn" type="button" onClick={() => onEdit(selected)}>Edit Customer</button>
+            <button className="danger-btn" type="button" onClick={() => onDelete(selected)}>Delete</button>
+          </div>
+        </header>
+
+        <nav className="customer-page-tabs" aria-label="Customer pages">
+          {CUSTOMER_PAGES.map(([key, label]) => (
+            <button className={activePage === key ? "active" : ""} type="button" key={key} onClick={() => setActivePage(key)}>
+              {label}
+              {key === "activity" && sortedInteractions.length > 0 && <span>{sortedInteractions.length}</span>}
+              {key === "team" && openFollowUps > 0 && <span>{openFollowUps}</span>}
+            </button>
+          ))}
+        </nav>
+
+        {activePage === "overview" && (
+          <section className="customer-page-content customer-overview-page">
+            <section className="customer-home-stats customer-overview-stats">
+              <Metric label="Open Orders" value={openOrders.length.toLocaleString()} detail={`${orders.length} total order${orders.length === 1 ? "" : "s"}`} tone={openOrders.length ? "watch" : ""} />
+              <Metric label="Open Follow-Ups" value={openFollowUps.toLocaleString()} detail={`${sortedInteractions.length} CRM touch${sortedInteractions.length === 1 ? "" : "es"}`} />
+              <Metric label="Quote Value" value={money(quoteTotalValue)} detail={`${quotes.length} saved quote${quotes.length === 1 ? "" : "s"}`} tone="money" />
+              <Metric label="Job Tickets" value={jobTickets.length.toLocaleString()} detail={`${number(shippedUnits)} labels to ship`} />
+            </section>
+
+            <div className="customer-overview-grid">
+              <section className="customer-page-card">
+                <header><strong>Account Snapshot</strong></header>
+                <div className="customer-fact-list">
+                  <FactRow icon={AtSign} label="Owner" value={selected.account_owner || "Unassigned"} />
+                  <FactRow icon={CheckCircle2} label="Stage" value={choiceLabel(CRM_STAGES, selected.crm_stage || (selected.is_active === false ? "inactive" : "active"))} />
+                  <FactRow icon={CalendarDays} label="Next Follow-Up" value={dateLabel(selected.next_follow_up)} />
+                  <FactRow icon={Clock3} label="Last Touch" value={dateLabel(lastTouch)} />
+                  <FactRow icon={UserRound} label="Contact" value={selected.contact_name || "No primary contact"} />
+                  <FactRow icon={Mail} label="Email" value={selected.email || "No email"} href={selected.email ? `mailto:${selected.email}` : ""} />
+                  <FactRow icon={Phone} label="Phone" value={selected.phone || "No phone"} href={selected.phone ? `tel:${selected.phone}` : ""} />
+                  <FactRow icon={MapPin} label="Address" value={address.join(" / ") || "No address"} />
+                  {selected.website && <FactRow icon={ExternalLink} label="Website" value={String(selected.website).replace(/^https?:\/\//i, "")} href={externalUrl(selected.website)} />}
+                  {selected.source_sheet_url && <FactRow icon={Link2} label="Source Sheet" value="Open Sheet" href={externalUrl(selected.source_sheet_url)} />}
+                </div>
+              </section>
+
+              <section className="customer-page-card customer-focus-card">
+                <header><strong>Current Focus</strong></header>
+                <div>
+                  <CalendarDays size={18} />
+                  <span>Next Follow-Up</span>
+                  <strong>{dateLabel(selected.next_follow_up)}</strong>
+                  <p>{openFollowUps ? `${openFollowUps} open follow-up${openFollowUps === 1 ? "" : "s"} need attention.` : "No open follow-up is currently logged."}</p>
+                  <button className="ghost-btn" type="button" onClick={() => setActivePage("activity")}>Log Activity</button>
+                </div>
+              </section>
+
+              <section className="customer-page-card customer-notes">
+                <header><strong>Account Notes</strong></header>
+                <p>{selected.notes || "No account notes have been added yet."}</p>
+              </section>
+            </div>
+          </section>
+        )}
+
+        {activePage === "activity" && (
+          <section className="customer-page-content customer-activity-page">
+            <CustomerInteractionComposer
+              key={selected.id}
+              selected={selected}
+              relationOptions={relationOptions}
+              currentUser={currentUser}
+              saving={interactionSaving}
+              onSubmit={onAddInteraction}
+            />
+            <section className="customer-crm-feed customer-page-card">
+              <header>
+                <div>
+                  <strong>Activity Timeline</strong>
+                  <span>{sortedInteractions.length} activit{sortedInteractions.length === 1 ? "y" : "ies"}</span>
+                </div>
+              </header>
+              <div className="customer-interaction-list">
+                {sortedInteractions.map((interaction) => <InteractionRow key={interaction.id} interaction={interaction} />)}
+                {!sortedInteractions.length && <p>{loading ? "Loading activity..." : "No CRM activity has been logged for this customer."}</p>}
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activePage === "work" && (
+          <section className="customer-page-content customer-work-page">
+            <RelatedCard icon={ReceiptText} title="Orders" count={orders.length}>
+              <div className="customer-activity-list">
+                {orders.slice(0, 10).map((order) => <OrderRow key={order.id || order.order_number} order={order} />)}
+                {!orders.length && <p>{loading ? "Loading orders..." : "No orders found for this customer."}</p>}
+              </div>
+            </RelatedCard>
+            <RelatedCard icon={FileText} title="Quotes" count={quotes.length}>
+              <div className="customer-activity-list">
+                {quotes.slice(0, 10).map((quote) => <QuoteRow key={quote.id || quoteNumber(quote)} quote={quote} />)}
+                {!quotes.length && <p>{loading ? "Loading quotes..." : "No quotes found for this customer."}</p>}
+              </div>
+            </RelatedCard>
+            <RelatedCard icon={BriefcaseBusiness} title="Job Tickets" count={jobTickets.length}>
+              <div className="customer-ticket-list">
+                {jobTickets.slice(0, 12).map((ticket) => <TicketRow key={ticket.id} ticket={ticket} />)}
+                {!jobTickets.length && <p>{loading ? "Loading job tickets..." : "No job tickets linked yet."}</p>}
+              </div>
+            </RelatedCard>
+            <RelatedCard icon={Clock3} title="Recent Movement" count={timeline.length}>
+              <div className="customer-timeline">
+                {timeline.map((item) => <TimelineRow key={`${item.type}-${item.id}-${item.date}`} item={item} />)}
+                {!timeline.length && <p>Quotes, orders, and CRM activity will appear here as this account grows.</p>}
+              </div>
+            </RelatedCard>
+          </section>
+        )}
+
+        {activePage === "team" && (
+          <section className="customer-page-content customer-team-page">
+            <TeamNotifyPanel
+              customer={selected}
+              users={users}
+              currentUser={currentUser}
+              relationOptions={relationOptions}
+              saving={notifyTeamSaving}
+              onNotify={onNotifyTeam}
+            />
+            <section className="customer-page-card customer-team-info">
+              <header>
+                <Bell size={15} />
+                <strong>How Team Messages Work</strong>
+              </header>
+              <p>Choose a sales, production, art, or management teammate, add the note, and this creates a message board linked to this customer. The note is also logged in the Activity page so the account history stays together.</p>
+              <div>
+                <Users size={18} />
+                <strong>{users.filter((user) => user?.active !== false).length}</strong>
+                <span>active team members</span>
+              </div>
+            </section>
+          </section>
         )}
       </section>
     </section>
