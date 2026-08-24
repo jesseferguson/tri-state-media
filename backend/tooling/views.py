@@ -50,7 +50,7 @@ from .serializers import (
     ToolingRecipeSerializer,
     ToolingRecipeToolSerializer,
 )
-from production.auth import request_user_has_resource_access, resource_access_denied_response
+from users.auth import request_user_has_resource_access, resource_access_denied_response
 from production.file_responses import private_file_response
 from production.upload_security import validate_upload
 from .zpl import flex_die_folder_label_zpl

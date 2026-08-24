@@ -11,8 +11,6 @@ from materials.models import CoaterRollTag, MaterialMasterType, MaterialSpec, Ma
 from tooling.models import FlexDie, Press, Supplier, ToolingLocation
 
 from .models import (
-    CompanyRole,
-    CompanyUser,
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
@@ -25,15 +23,16 @@ from .models import (
     ProductionMaterialAssignment,
     ProductionSchedule,
 )
-from .auth import CompanyUserTokenAuthentication, create_company_user_token
+from users.auth import CompanyUserTokenAuthentication, create_company_user_token
+from users.models import CompanyRole, CompanyUser
 
 
 SECURE_REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "production.auth.CompanyUserTokenAuthentication",
+        "users.auth.CompanyUserTokenAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "production.auth.HasCompanyResourceAccess",
+        "users.auth.HasCompanyResourceAccess",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -580,7 +579,7 @@ class LiveFootageArchiveTests(TestCase):
         return {
             "shift_date": "2026-05-27",
             "shift_start": "2026-05-27T05:00:00-04:00",
-            "shift_end": "2026-05-28T02:59:00-04:00",
+            "shift_end": "2026-05-28T02:20:00-04:00",
             "total_footage": total,
             "goal_footage": "400000",
             "press_totals": [
@@ -989,8 +988,8 @@ class ScheduledMaterialWorkflowTests(TestCase):
                 "production_schedule": self.schedule.id,
                 "operator": "Levi",
                 "report_date": "2026-07-01",
-                "shift_start": "2026-07-01T03:00:00-04:00",
-                "shift_end": "2026-07-02T03:00:00-04:00",
+                "shift_start": "2026-07-01T05:00:00-04:00",
+                "shift_end": "2026-07-02T02:20:00-04:00",
                 "total_footage": "8500",
                 "good_footage": "8000",
                 "material_footage": "8755",

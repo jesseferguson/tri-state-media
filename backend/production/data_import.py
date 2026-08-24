@@ -36,7 +36,7 @@ from .models import (
     ProductionSchedule,
     QuoteRecord,
 )
-from .auth import request_user_is_admin
+from users.auth import request_user_is_admin
 
 MAX_IMPORT_MESSAGES = 250
 

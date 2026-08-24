@@ -1,10 +1,10 @@
 import os
 
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
-from django.contrib.auth.password_validation import validate_password
 
-from production.models import CompanyUser
+from users.models import CompanyUser
 
 
 class Command(BaseCommand):

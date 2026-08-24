@@ -45,8 +45,8 @@ function localDateValue(date = new Date()) {
 }
 
 function shiftDateTimes(reportDate, setting) {
-  const startTime = String(setting?.shift_start_time || "03:00").slice(0, 5);
-  const endTime = String(setting?.shift_end_time || "03:00").slice(0, 5);
+  const startTime = String(setting?.shift_start_time || "05:00").slice(0, 5);
+  const endTime = String(setting?.shift_end_time || "02:20").slice(0, 5);
   const start = new Date(`${reportDate}T${startTime}:00`);
   const end = new Date(`${reportDate}T${endTime}:00`);
   if (setting?.end_on_next_day !== false || end <= start) end.setDate(end.getDate() + 1);

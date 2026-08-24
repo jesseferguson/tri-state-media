@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "corsheaders",
 
     # primary apps
+    "users",
     "tooling",
     "materials",
     "production",
@@ -203,10 +204,10 @@ STATIC_URL = 'static/'
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "production.auth.CompanyUserTokenAuthentication",
+        "users.auth.CompanyUserTokenAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "production.auth.HasCompanyResourceAccess" if API_AUTH_REQUIRED else "rest_framework.permissions.AllowAny",
+        "users.auth.HasCompanyResourceAccess" if API_AUTH_REQUIRED else "rest_framework.permissions.AllowAny",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",

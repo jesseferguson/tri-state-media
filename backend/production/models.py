@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.auth.hashers import check_password, make_password
 from django.core.validators import RegexValidator
 from django.utils import timezone
 from django.utils.text import get_valid_filename
@@ -10,12 +9,7 @@ from uuid import uuid4
 
 from materials.models import MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
 from tooling.models import Press, ToolingLocation, ToolingRecipe, ToolingRecipeOption
-
-
-QUOTE_COMPANY_CHOICES = [
-    ("tri_state_media", "Tri-State Media"),
-    ("barcode_labels", "Barcode Labels"),
-]
+from users.constants import QUOTE_COMPANY_CHOICES
 
 QUOTE_APPROVAL_STATUS_CHOICES = [
     ("pending", "Pending Approval"),
@@ -56,54 +50,6 @@ class Customer(models.Model):
 
     def __str__(self):
         return self.name
-
-
-class CompanyRole(models.Model):
-    name = models.CharField(max_length=80, unique=True)
-    description = models.CharField(max_length=255, blank=True)
-    allowed_resource_keys = models.JSONField(default=list, blank=True)
-    locked = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["name"]
-
-    def __str__(self):
-        return self.name
-
-
-class CompanyUser(models.Model):
-    username = models.CharField(max_length=80, unique=True)
-    name = models.CharField(max_length=150)
-    password_hash = models.CharField(max_length=255)
-    role = models.ForeignKey(CompanyRole, on_delete=models.PROTECT, related_name="users")
-    quote_company = models.CharField(max_length=40, choices=QUOTE_COMPANY_CHOICES, default="tri_state_media")
-    active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["name", "username"]
-
-    def __str__(self):
-        return f"{self.name} / {self.username}"
-
-    @property
-    def is_authenticated(self):
-        return True
-
-    def get_username(self):
-        return self.username
-
-    def get_full_name(self):
-        return self.name or self.username
-
-    def set_password(self, raw_password):
-        self.password_hash = make_password(raw_password)
-
-    def check_password(self, raw_password):
-        return check_password(raw_password, self.password_hash)
 
 
 class MessageThread(models.Model):
@@ -822,8 +768,8 @@ class ProductionMaterialAssignment(models.Model):
 
 class ProductionShiftSetting(models.Model):
     name = models.CharField(max_length=80, unique=True, default="Plant Reporting Day")
-    shift_start_time = models.TimeField(default=time(3, 0))
-    shift_end_time = models.TimeField(default=time(3, 0))
+    shift_start_time = models.TimeField(default=time(5, 0))
+    shift_end_time = models.TimeField(default=time(2, 20))
     end_on_next_day = models.BooleanField(default=True)
     updated_by = models.CharField(max_length=120, blank=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -28,8 +28,6 @@ from tooling.models import Press, ToolingLocation
 from .models import (
     BoxInventory,
     BoxSpec,
-    CompanyRole,
-    CompanyUser,
     CoreInventory,
     CoreSpec,
     Customer,
@@ -55,8 +53,6 @@ from .models import (
 from .serializers import (
     BoxInventorySerializer,
     BoxSpecSerializer,
-    CompanyRoleSerializer,
-    CompanyUserSerializer,
     CoreInventorySerializer,
     CoreSpecSerializer,
     CustomerSerializer,
@@ -79,7 +75,7 @@ from .serializers import (
     QuoteRawMaterialSerializer,
     QuoteRecordSerializer,
 )
-from .auth import company_user_from_request, create_company_user_token, request_user_has_resource_access, request_user_is_admin, resource_access_denied_response
+from users.auth import company_user_from_request, request_user_has_resource_access, request_user_is_admin, resource_access_denied_response
 from .file_responses import private_file_response
 from .upload_security import validate_upload
 
@@ -126,6 +122,10 @@ PRESS_DASHBOARD_LABEL_PRESSES = {
 PLANT_TIME_ZONE = ZoneInfo("America/New_York")
 LOCAL_LIVE_FOOTAGE_GOAL = Decimal("400000")
 LOCAL_LIVE_FOOTAGE_BUCKET_MINUTES = 10
+LOCAL_LIVE_SHIFT_START_HOUR = 5
+LOCAL_LIVE_SHIFT_START_MINUTE = 0
+LOCAL_LIVE_SHIFT_END_HOUR = 2
+LOCAL_LIVE_SHIFT_END_MINUTE = 20
 
 
 JOB_TICKET_CHANGE_FIELDS = [
@@ -366,9 +366,9 @@ def _press_dashboard_label_zpl(press_key, press_name, scan_url, *, darkness="20"
         "^FO30,170^A0N,26,26^FDOPERATOR FOOTAGE^FS",
         "^FO30,206^GB340,3,3^FS",
         "^FO30,238^A0N,24,24^FB350,3,8,L^FDScan for live FPM, downtime, runtime, and shift footage.^FS",
-        "^FO30,355^A0N,24,24^FDFirst: 6:00 AM - 4:30 PM^FS",
-        "^FO30,390^A0N,24,24^FDSecond: 12:00 PM - 10:30 PM^FS",
-        "^FO30,425^A0N,23,23^FDOverlap: 12:00 PM - 4:30 PM^FS",
+        "^FO30,355^A0N,24,24^FDDay: 5:00 AM - 4:30 PM^FS",
+        "^FO30,390^A0N,24,24^FDNight: 4:30 PM - 2:20 AM^FS",
+        "^FO30,425^A0N,23,23^FDHandoff: 4:30 PM^FS",
         f"^FO30,532^A0N,25,25^FD{zpl_text(press_key)}^FS",
         f"^FO425,76^BQN,2,9^FDLA,{zpl_text(scan_url)}^FS",
         "^FO420,520^A0N,25,25^FB360,1,0,C^FDSCAN WITH PHONE^FS",
@@ -468,10 +468,10 @@ def _local_press_info(press):
 
 def _local_live_shift_window(now=None):
     current = timezone.localtime(now or timezone.now(), PLANT_TIME_ZONE)
-    start = current.replace(hour=5, minute=0, second=0, microsecond=0)
+    start = current.replace(hour=LOCAL_LIVE_SHIFT_START_HOUR, minute=LOCAL_LIVE_SHIFT_START_MINUTE, second=0, microsecond=0)
     if current < start:
         start -= timedelta(days=1)
-    end = (start + timedelta(days=1)).replace(hour=2, minute=59, second=0, microsecond=0)
+    end = (start + timedelta(days=1)).replace(hour=LOCAL_LIVE_SHIFT_END_HOUR, minute=LOCAL_LIVE_SHIFT_END_MINUTE, second=0, microsecond=0)
     return start, end
 
 
@@ -1122,40 +1122,6 @@ class BaseProductionViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
 
-class AdminWriteMixin:
-    def _admin_write_allowed(self, request):
-        return not settings.API_AUTH_REQUIRED or request_user_is_admin(request)
-
-    def create(self, request, *args, **kwargs):
-        if not self._admin_write_allowed(request):
-            return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
-        return super().create(request, *args, **kwargs)
-
-    def update(self, request, *args, **kwargs):
-        if not self._admin_write_allowed(request):
-            return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
-        return super().update(request, *args, **kwargs)
-
-    def partial_update(self, request, *args, **kwargs):
-        if not self._admin_write_allowed(request):
-            user = company_user_from_request(request)
-            target_id = str(kwargs.get(getattr(self, "lookup_url_kwarg", None) or self.lookup_field))
-            allowed_self_update = (
-                self.__class__.__name__ == "CompanyUserViewSet"
-                and user
-                and str(user.pk) == target_id
-                and set(request.data.keys()).issubset({"quoteCompany", "quote_company"})
-            )
-            if not allowed_self_update:
-                return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
-        return super().partial_update(request, *args, **kwargs)
-
-    def destroy(self, request, *args, **kwargs):
-        if not self._admin_write_allowed(request):
-            return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
-        return super().destroy(request, *args, **kwargs)
-
-
 class CustomerViewSet(BaseProductionViewSet):
     queryset = Customer.objects.all().order_by("name")
     serializer_class = CustomerSerializer
@@ -1175,35 +1141,6 @@ class CustomerViewSet(BaseProductionViewSet):
         "notes",
     ]
     ordering_fields = ["name", "customer_code", "is_active"]
-
-
-class CompanyRoleViewSet(AdminWriteMixin, BaseProductionViewSet):
-    queryset = CompanyRole.objects.all().order_by("name")
-    serializer_class = CompanyRoleSerializer
-    search_fields = ["name", "description"]
-    ordering_fields = ["name", "created_at"]
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        if not settings.API_AUTH_REQUIRED or request_user_is_admin(self.request):
-            return queryset
-        user = company_user_from_request(self.request)
-        return queryset.filter(pk=getattr(user, "role_id", None)) if user else queryset.none()
-
-
-class CompanyUserViewSet(AdminWriteMixin, BaseProductionViewSet):
-    queryset = CompanyUser.objects.select_related("role").all().order_by("name", "username")
-    serializer_class = CompanyUserSerializer
-    search_fields = ["name", "username", "role__name", "quote_company"]
-    ordering_fields = ["name", "username", "quote_company", "active", "created_at"]
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        if not settings.API_AUTH_REQUIRED or request_user_is_admin(self.request):
-            return queryset
-        user = company_user_from_request(self.request)
-        return queryset.filter(pk=getattr(user, "pk", None)) if user else queryset.none()
-
 
 class MessageThreadViewSet(BaseProductionViewSet):
     serializer_class = MessageThreadSerializer
@@ -1335,43 +1272,6 @@ class QuoteRecordViewSet(BaseProductionViewSet):
                     customer_filter |= Q(customer__customer_code__iexact=customer_obj.customer_code)
             qs = qs.filter(customer_filter)
         return qs
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def company_sign_in(request):
-    username = str(request.data.get("username", "")).strip().lower()
-    password = str(request.data.get("password", ""))
-    try:
-        user = CompanyUser.objects.select_related("role").get(username__iexact=username)
-    except CompanyUser.DoesNotExist:
-        return Response({"error": "Username or password is not correct."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if not user.check_password(password):
-        return Response({"error": "Username or password is not correct."}, status=status.HTTP_400_BAD_REQUEST)
-    legacy_default_admin_password = "Blue" "labels7&"
-    if settings.BLOCK_LEGACY_DEFAULT_ADMIN_PASSWORD and username == "admin" and password == legacy_default_admin_password:
-        return Response(
-            {"error": "The legacy default admin password is blocked. Reset the admin password before signing in."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    if not user.active:
-        return Response({"error": "This user is inactive. Ask an admin to reactivate the account."}, status=status.HTTP_400_BAD_REQUEST)
-
-    is_admin = str(getattr(user.role, "name", "") or "").lower() == "admin"
-    users = CompanyUser.objects.select_related("role").all()
-    roles = CompanyRole.objects.all()
-    if not is_admin:
-        users = users.filter(pk=user.pk)
-        roles = roles.filter(pk=user.role_id)
-
-    return Response({
-        "user": CompanyUserSerializer(user).data,
-        "users": CompanyUserSerializer(users, many=True).data,
-        "roles": CompanyRoleSerializer(roles, many=True).data,
-        "token": create_company_user_token(user),
-        "expiresIn": settings.API_SESSION_SECONDS,
-    })
 
 
 class BoxSpecViewSet(BaseProductionViewSet):

@@ -5,7 +5,8 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 
-from production.models import CompanyRole, CompanyUser, JobTicket, ProductionMaterialAssignment, ProductionSchedule, ProductionShiftReport
+from production.models import JobTicket, ProductionMaterialAssignment, ProductionSchedule, ProductionShiftReport
+from users.models import CompanyRole, CompanyUser
 from tooling.models import Press, Supplier, ToolingLocation
 
 from .models import (

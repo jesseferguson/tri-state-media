@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from production.models import CompanyRole, CompanyUser
+from users.models import CompanyRole, CompanyUser
 from .models import (
     FlexDie,
     FlexDieRequest,

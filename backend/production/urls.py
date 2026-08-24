@@ -5,8 +5,6 @@ from django.urls import path
 from .views import (
     BoxInventoryViewSet,
     BoxSpecViewSet,
-    CompanyRoleViewSet,
-    CompanyUserViewSet,
     CoreInventoryViewSet,
     CoreSpecViewSet,
     CustomerOrderEventViewSet,
@@ -28,7 +26,6 @@ from .views import (
     QuoteFinishedMaterialViewSet,
     QuoteRawMaterialViewSet,
     QuoteRecordViewSet,
-    company_sign_in,
     eti_device_settings,
     local_live_footage_relay,
     local_live_footage_reset_shift,
@@ -42,8 +39,6 @@ from .data_import import data_flush, data_import_csv, data_import_templates
 
 router = DefaultRouter()
 router.register("customers", CustomerViewSet, basename="customer")
-router.register("company-roles", CompanyRoleViewSet, basename="company-role")
-router.register("company-users", CompanyUserViewSet, basename="company-user")
 router.register("message-threads", MessageThreadViewSet, basename="message-thread")
 router.register("messages", MessageViewSet, basename="message")
 router.register("quote-raw-materials", QuoteRawMaterialViewSet, basename="quote-raw-material")
@@ -68,7 +63,6 @@ router.register("production-shift-settings", ProductionShiftSettingViewSet, base
 router.register("finished-inventory", FinishedInventoryViewSet, basename="finished-inventory")
 
 urlpatterns = [
-    path("auth/sign-in/", company_sign_in, name="company-sign-in"),
     path("data-import/templates/", data_import_templates, name="data-import-templates"),
     path("data-import/flush/", data_flush, name="data-import-flush"),
     path("data-import/<str:import_type>/", data_import_csv, name="data-import-csv"),

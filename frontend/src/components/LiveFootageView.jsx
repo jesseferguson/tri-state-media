@@ -17,7 +17,7 @@ const minDtSeconds = 60;
 const shiftStartHour = 5;
 const shiftStartMinute = 0;
 const shiftEndHour = 2;
-const shiftEndMinute = 59;
+const shiftEndMinute = 20;
 const archiveEndpoint = "live-footage-archives";
 const etiDailyNode = "/ETI_SPEED";
 const etiSettingsEndpoint = "live-footage/eti-settings";
@@ -30,8 +30,8 @@ const defaultEtiSettings = {
   speedSendSeconds: 120,
   footageSendSeconds: 300,
   resetEnabled: false,
-  resetHour: 3,
-  resetMinute: 0,
+  resetHour: 2,
+  resetMinute: 20,
 };
 
 const defaultQrLabelForm = {
@@ -1210,7 +1210,7 @@ export default function LiveFootageView({
               </div>
             ))}
           </div>
-          <p className="live-footage-note">Speeds and daily rows over {maxValidSpeedFpm} FPM are ignored. The browser saves the finished shift locally once it reaches 2:59 AM.</p>
+          <p className="live-footage-note">Speeds and daily rows over {maxValidSpeedFpm} FPM are ignored. The browser saves the finished shift locally once it reaches 2:20 AM.</p>
         </article>
       </div>
 

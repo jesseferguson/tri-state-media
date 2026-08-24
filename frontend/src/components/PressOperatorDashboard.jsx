@@ -10,7 +10,7 @@ const companyGoalFootage = 400000;
 const shiftStartHour = 5;
 const shiftStartMinute = 0;
 const shiftEndHour = 2;
-const shiftEndMinute = 59;
+const shiftEndMinute = 20;
 const runningThresholdFpm = 10;
 const strongRunThresholdFpm = 80;
 const dashboardRefreshMs = 30000;
@@ -99,26 +99,24 @@ function getShiftWindow(now = new Date()) {
 function getShiftSchedule(now = new Date()) {
   const { start: shiftStart } = getShiftWindow(now);
   const firstStart = new Date(shiftStart);
-  firstStart.setHours(6, 0, 0, 0);
+  firstStart.setHours(5, 0, 0, 0);
   const firstEnd = new Date(shiftStart);
   firstEnd.setHours(16, 30, 0, 0);
-  const secondStart = new Date(shiftStart);
-  secondStart.setHours(12, 0, 0, 0);
+  const secondStart = new Date(firstEnd);
   const secondEnd = new Date(shiftStart);
-  secondEnd.setHours(22, 30, 0, 0);
-  const overlapStart = new Date(secondStart);
-  const overlapEnd = new Date(firstEnd);
+  secondEnd.setDate(secondEnd.getDate() + 1);
+  secondEnd.setHours(2, 20, 0, 0);
   const time = now.getTime();
+  const firstActive = time >= firstStart.getTime() && time < firstEnd.getTime();
+  const secondActive = time >= secondStart.getTime() && time < secondEnd.getTime();
   return {
     firstStart,
     firstEnd,
     secondStart,
     secondEnd,
-    overlapStart,
-    overlapEnd,
-    firstActive: time >= firstStart.getTime() && time <= firstEnd.getTime(),
-    secondActive: time >= secondStart.getTime() && time <= secondEnd.getTime(),
-    overlapActive: time >= overlapStart.getTime() && time <= overlapEnd.getTime(),
+    firstActive,
+    secondActive,
+    statusText: firstActive ? "Day shift is active" : secondActive ? "Night shift is active" : "Shift window is closed",
   };
 }
 
@@ -742,19 +740,19 @@ export default function PressOperatorDashboard({ pressKey = "", onClose = () => 
               <Clock3 size={17} />
               <div>
                 <strong>Shift Coverage</strong>
-                <span>{schedule.overlapActive ? "Noon overlap is active" : "Noon overlap: 12:00 PM - 4:30 PM"}</span>
+                <span>{schedule.statusText}</span>
               </div>
             </div>
             <div className="pod-shift-grid">
               <article className={schedule.firstActive ? "active" : ""}>
                 <Sun size={16} />
-                <strong>1st Shift</strong>
-                <span>6:00 AM - 4:30 PM</span>
+                <strong>Day Shift</strong>
+                <span>5:00 AM - 4:30 PM</span>
               </article>
               <article className={schedule.secondActive ? "active" : ""}>
                 <Moon size={16} />
-                <strong>2nd Shift</strong>
-                <span>12:00 PM - 10:30 PM</span>
+                <strong>Night Shift</strong>
+                <span>4:30 PM - 2:20 AM</span>
               </article>
             </div>
           </section>

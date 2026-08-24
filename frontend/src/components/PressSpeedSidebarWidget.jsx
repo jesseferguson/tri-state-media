@@ -14,7 +14,7 @@ const minDtSeconds = 60;
 const shiftStartHour = 5;
 const shiftStartMinute = 0;
 const shiftEndHour = 2;
-const shiftEndMinute = 59;
+const shiftEndMinute = 20;
 
 const presses = [
   { key: "18AZT", name: "18 Aztech", speedNode: "/18Aztech_CURRENT_SPEED", dailyNode: "/18Aztech_SPEED", color: "#c600e0" },

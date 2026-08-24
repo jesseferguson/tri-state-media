@@ -12,9 +12,9 @@ from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from production.auth import company_user_from_request
+from users.auth import company_user_from_request
+from users.models import CompanyUser
 from tooling.models import Press
-from production.models import CompanyUser
 
 from .models import (
     CoaterRollTag,
