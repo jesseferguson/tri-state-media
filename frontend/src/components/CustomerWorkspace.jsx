@@ -597,13 +597,13 @@ function OpenLogRow({ interaction, customer, saving, onUpdate, onOpenCustomer })
   }
 
   function actionSummary(nextStatus) {
-    if (nextStatus === "closed") return "closed this open log";
+    if (nextStatus === "closed") return "closed this ticket";
     const changes = [];
     if (form.interaction_type !== (interaction.interaction_type || "note")) changes.push("changed contact type");
     if (form.status !== (interaction.status || "open")) changes.push(`changed status to ${choiceLabel(INTERACTION_STATUSES, form.status)}`);
     if (form.follow_up_date !== (interaction.follow_up_date || "")) changes.push("changed last follow-up");
     if (form.body !== (interaction.body || "")) changes.push("updated notes");
-    return changes.length ? changes.join(", ") : "saved this open log";
+    return changes.length ? changes.join(", ") : "saved this ticket";
   }
 
   async function save(nextStatus = form.status) {
@@ -686,7 +686,7 @@ function OpenLogsSheet({ interactions = [], customersById = new Map(), ownerScop
     <section className="customer-open-log-sheet customer-page-card">
       <header>
         <div>
-          <strong>Open Logs</strong>
+          <strong>Open Tickets</strong>
           <span>{rows.length} item{rows.length === 1 ? "" : "s"} needing follow-up</span>
         </div>
       </header>
@@ -714,7 +714,7 @@ function OpenLogsSheet({ interactions = [], customersById = new Map(), ownerScop
           ))}
           {!rows.length && (
             <div className="customer-log-empty">
-              {ownerScope === "mine" ? "No open logs for your accounts." : "No open customer logs are waiting right now."}
+              {ownerScope === "mine" ? "No open tickets for your accounts." : "No open customer tickets are waiting right now."}
             </div>
           )}
         </div>
@@ -1238,7 +1238,7 @@ export default function CustomerWorkspace({
                 </div>
                 <button className={`customer-open-log-toggle ${showOpenLogs ? "active" : ""}`} type="button" onClick={() => setShowOpenLogs((value) => !value)}>
                   <Bell size={15} />
-                  {showOpenLogs ? "Hide Open Logs" : "Show Open Logs"}
+                  {showOpenLogs ? "Hide Open Tickets" : "Show Open Tickets"}
                   {visibleOpenLogCount > 0 && <span>{visibleOpenLogCount}</span>}
                 </button>
               </div>
@@ -1248,7 +1248,7 @@ export default function CustomerWorkspace({
           <section className="customer-home-stats">
             <Metric label="Accounts" value={number(totalCount || rows.length)} detail="available customer records" />
             <Metric label={ownerScope === "mine" ? "My Results" : "Search Results"} value={number(sortedCustomerRows.length)} detail={search.trim() ? "matching this search" : ownerScope === "mine" ? "assigned to you" : "visible accounts"} />
-            <Metric label="Open Logs" value={number(visibleOpenLogCount)} detail="not closed yet" tone={visibleOpenLogCount ? "watch" : ""} />
+            <Metric label="Open Tickets" value={number(visibleOpenLogCount)} detail="not closed yet" tone={visibleOpenLogCount ? "watch" : ""} />
           </section>
 
           {showOpenLogs && (
