@@ -225,7 +225,6 @@ class Mag(models.Model):
     def __str__(self):
         return f"{self.name} - {self.tooth_count}T - {self.repeat_inches}\""
 
-
 class FlexDie(models.Model):
     TOOLING_KIND_CHOICES = [
         ("flex_die", "Flex Die"),
@@ -251,7 +250,7 @@ class FlexDie(models.Model):
         ("special", "Special"),
         ("custom", "Custom"),
     ]
-
+    # whould i make these choices somthing i can add to from the front end
     CUTTING_TYPE_CHOICES = [
         ("to_liner", "To Liner"),
         ("metal_to_metal", "Metal to Metal"),
@@ -360,7 +359,6 @@ class FlexDie(models.Model):
     def __str__(self):
         return f"{self.name} - {self.label_width_inches}\" x {self.label_length_inches}\""
 
-
 class FlexDieRequest(models.Model):
     STATUS_CHOICES = [
         ("requested", "Requested"),
@@ -396,7 +394,6 @@ class FlexDieRequest(models.Model):
 
     def __str__(self):
         return f"{self.flex_die.name} / {self.get_status_display()}"
-
 
 class PerfCylinder(models.Model):
     STATUS_CHOICES = [
@@ -444,7 +441,6 @@ class PerfCylinder(models.Model):
     def __str__(self):
         return f"{self.name} - {self.gear_tooth_count}T"
 
-
 class PerfBladeSetup(models.Model):
     perf_cylinder = models.ForeignKey(
         PerfCylinder,
@@ -463,7 +459,6 @@ class PerfBladeSetup(models.Model):
 
     def __str__(self):
         return f"{self.perf_cylinder.name} - {self.name}"
-
 
 class PerfBlade(models.Model):
     BLADE_TYPE_CHOICES = [
@@ -898,7 +893,6 @@ class ToolingRecipeTool(models.Model):
         self.full_clean()
         return super().save(*args, **kwargs)
 
-
 class PrintPlate(models.Model):
     recipe = models.ForeignKey(
         ToolingRecipe,
@@ -922,7 +916,6 @@ class PrintPlate(models.Model):
 
     def __str__(self):
         return f"{self.plate_number} / {self.recipe.name}"
-
 
 class PrintStation(models.Model):
     COLOR_TYPE_CHOICES = [
@@ -956,7 +949,6 @@ class PrintStation(models.Model):
 
     def __str__(self):
         return f"{self.print_plate.plate_number} / Station {self.station_number}"
-
 
 # =========================
 # TOOLING HISTORY
@@ -1166,7 +1158,6 @@ class RawMaterialInventory(models.Model):
     def __str__(self):
         return f"{self.get_material_type_display()} - {self.name}"
 
-
 class FinishedInventory(models.Model):
     STATUS_CHOICES = [
         ("available", "Available"),
@@ -1243,7 +1234,6 @@ class FinishedInventory(models.Model):
 
     def __str__(self):
         return self.name
-
 
 def job_ticket_image_upload_path(instance, filename):
     return f"job_tickets/{instance.id or 'new'}/{filename}"
