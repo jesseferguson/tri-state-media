@@ -13,6 +13,7 @@ from .models import (
     CoreInventory,
     CoreSpec,
     Customer,
+    CustomerInteraction,
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
@@ -744,6 +745,35 @@ class CustomerOrderEventSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomerOrderEvent
+        fields = "__all__"
+
+
+class CustomerInteractionSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(source="customer.name", read_only=True)
+    order_number = serializers.CharField(source="customer_order.order_number", read_only=True)
+    job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
+    job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
+    quote_number = serializers.CharField(source="quote.quote_number", read_only=True)
+    interaction_type_label = serializers.CharField(source="get_interaction_type_display", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
+    def validate(self, attrs):
+        customer = attrs.get("customer", getattr(self.instance, "customer", None))
+        customer_order = attrs.get("customer_order", getattr(self.instance, "customer_order", None))
+        job_ticket = attrs.get("job_ticket", getattr(self.instance, "job_ticket", None))
+        quote = attrs.get("quote", getattr(self.instance, "quote", None))
+        if not customer:
+            customer = getattr(customer_order, "customer", None) or getattr(job_ticket, "customer", None) or getattr(quote, "customer", None)
+        if not customer:
+            raise serializers.ValidationError({"customer": "Choose a customer or link to a customer-owned job, order, or quote."})
+        for field_name, related in [("customer_order", customer_order), ("job_ticket", job_ticket), ("quote", quote)]:
+            related_customer = getattr(related, "customer", None)
+            if related and related_customer and related_customer.pk != customer.pk:
+                raise serializers.ValidationError({field_name: "Linked record belongs to a different customer."})
+        return attrs
+
+    class Meta:
+        model = CustomerInteraction
         fields = "__all__"
 
 

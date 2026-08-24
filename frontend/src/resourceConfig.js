@@ -70,6 +70,14 @@ export const choiceLists = {
     ["each", "Each"],
   ],
 
+  crmStage: [
+    ["active", "Active"],
+    ["prospect", "Prospect"],
+    ["onboarding", "Onboarding"],
+    ["watch", "Watch"],
+    ["inactive", "Inactive"],
+  ],
+
   jobTicketStatus: [
     ["unscheduled", "Unscheduled"],
     ["draft", "Draft"],
@@ -889,6 +897,9 @@ export const resources = [
     columns: [
       "name",
       "customer_code",
+      "crm_stage",
+      "account_owner",
+      "next_follow_up",
       "contact_name",
       "city",
       "state",
@@ -900,6 +911,11 @@ export const resources = [
       { name: "name", label: "Customer", type: "text", required: true, section: "Account" },
       { name: "customer_code", label: "Customer ID", type: "text", section: "Account" },
       { name: "is_active", label: "Active", type: "checkbox", defaultValue: true, section: "Account" },
+      { name: "account_owner", label: "Account Owner", type: "text", section: "CRM" },
+      { name: "crm_stage", label: "CRM Stage", type: "select", choices: choiceLists.crmStage, defaultValue: "active", section: "CRM" },
+      { name: "next_follow_up", label: "Next Follow-Up", type: "date", section: "CRM" },
+      { name: "website", label: "Website", type: "url", section: "CRM" },
+      { name: "source_sheet_url", label: "Source Sheet", type: "url", section: "CRM" },
       { name: "contact_name", label: "Primary Contact", type: "text", section: "Contact" },
       { name: "phone", label: "Phone", type: "text", section: "Contact" },
       { name: "email", label: "Email", type: "email", section: "Contact" },

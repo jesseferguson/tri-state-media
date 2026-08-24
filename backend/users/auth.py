@@ -14,6 +14,7 @@ RESOURCE_KEYS_BY_BASENAME = {
     "core": ("cores", "job-tickets", "production-schedule"),
     "core-inventory": ("core-inventory", "packaging-inventory", "job-tickets", "production-schedule"),
     "customer": ("customers", "quote-calculator", "job-tickets", "production-schedule", "customer-orders"),
+    "customer-interaction": ("customers", "customer-orders", "job-tickets"),
     "customer-order": ("customer-orders", "production-schedule", "job-tickets"),
     "customer-order-event": ("customer-order-events", "customer-orders", "production-schedule"),
     "finished-inventory": ("finished-inventory", "job-tickets", "production-schedule"),

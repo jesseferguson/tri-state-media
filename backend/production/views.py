@@ -31,6 +31,7 @@ from .models import (
     CoreInventory,
     CoreSpec,
     Customer,
+    CustomerInteraction,
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
@@ -56,6 +57,7 @@ from .serializers import (
     CoreInventorySerializer,
     CoreSpecSerializer,
     CustomerSerializer,
+    CustomerInteractionSerializer,
     CustomerOrderEventSerializer,
     CustomerOrderSerializer,
     FinishedInventorySerializer,
@@ -1138,9 +1140,62 @@ class CustomerViewSet(BaseProductionViewSet):
         "state",
         "postal_code",
         "country",
+        "account_owner",
+        "crm_stage",
+        "website",
         "notes",
     ]
-    ordering_fields = ["name", "customer_code", "is_active"]
+    ordering_fields = ["name", "customer_code", "is_active", "crm_stage", "account_owner", "next_follow_up", "last_contacted_at"]
+
+
+class CustomerInteractionViewSet(BaseProductionViewSet):
+    queryset = (
+        CustomerInteraction.objects.select_related("customer", "customer_order", "job_ticket", "quote")
+        .all()
+        .order_by("-pinned", "-occurred_at", "-id")
+    )
+    serializer_class = CustomerInteractionSerializer
+    search_fields = [
+        "customer__name",
+        "customer__customer_code",
+        "subject",
+        "body",
+        "email_subject",
+        "email_from",
+        "email_to",
+        "created_by",
+        "customer_order__order_number",
+        "job_ticket__ticket_number",
+        "job_ticket__job_name",
+        "quote__quote_number",
+    ]
+    ordering_fields = ["occurred_at", "follow_up_date", "created_at", "updated_at", "status", "interaction_type", "pinned"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        customer = self.request.query_params.get("customer")
+        customer_order = self.request.query_params.get("customer_order")
+        job_ticket = self.request.query_params.get("job_ticket")
+        quote = self.request.query_params.get("quote")
+        interaction_type = self.request.query_params.get("interaction_type")
+        status_value = self.request.query_params.get("status")
+        open_only = self.request.query_params.get("open")
+        if customer:
+            qs = qs.filter(customer_id=customer)
+        if customer_order:
+            qs = qs.filter(customer_order_id=customer_order)
+        if job_ticket:
+            qs = qs.filter(job_ticket_id=job_ticket)
+        if quote:
+            qs = qs.filter(quote_id=quote)
+        if interaction_type:
+            qs = qs.filter(interaction_type=interaction_type)
+        if status_value:
+            qs = qs.filter(status=status_value)
+        if str(open_only).lower() in {"1", "true", "yes"}:
+            qs = qs.exclude(status="closed")
+        return qs
+
 
 class MessageThreadViewSet(BaseProductionViewSet):
     serializer_class = MessageThreadSerializer

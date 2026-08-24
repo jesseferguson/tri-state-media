@@ -30,8 +30,22 @@ def job_ticket_image_upload_path(instance, filename):
 
 
 class Customer(models.Model):
+    CRM_STAGE_CHOICES = [
+        ("active", "Active"),
+        ("prospect", "Prospect"),
+        ("onboarding", "Onboarding"),
+        ("watch", "Watch"),
+        ("inactive", "Inactive"),
+    ]
+
     name = models.CharField(max_length=150, unique=True)
     customer_code = models.CharField(max_length=80, blank=True)
+    account_owner = models.CharField(max_length=120, blank=True)
+    crm_stage = models.CharField(max_length=30, choices=CRM_STAGE_CHOICES, default="active", db_index=True)
+    next_follow_up = models.DateField(null=True, blank=True)
+    last_contacted_at = models.DateTimeField(null=True, blank=True)
+    website = models.URLField(max_length=500, blank=True)
+    source_sheet_url = models.URLField(max_length=1000, blank=True)
     contact_name = models.CharField(max_length=120, blank=True)
     phone = models.CharField(max_length=50, blank=True)
     email = models.EmailField(blank=True)
@@ -1010,6 +1024,86 @@ class CustomerOrderEvent(models.Model):
 
     def __str__(self):
         return f"{self.order_id} / {self.event_type}"
+
+
+class CustomerInteraction(models.Model):
+    INTERACTION_TYPE_CHOICES = [
+        ("note", "Note"),
+        ("email", "Email"),
+        ("call", "Call"),
+        ("meeting", "Meeting"),
+        ("task", "Task"),
+        ("status", "Status Update"),
+        ("job_comment", "Job Comment"),
+    ]
+    STATUS_CHOICES = [
+        ("open", "Open"),
+        ("waiting_customer", "Waiting on Customer"),
+        ("waiting_internal", "Waiting Internally"),
+        ("scheduled", "Scheduled"),
+        ("closed", "Closed"),
+    ]
+
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name="interactions",
+    )
+    customer_order = models.ForeignKey(
+        CustomerOrder,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="customer_interactions",
+    )
+    job_ticket = models.ForeignKey(
+        JobTicket,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="customer_interactions",
+    )
+    quote = models.ForeignKey(
+        QuoteRecord,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="customer_interactions",
+    )
+    interaction_type = models.CharField(max_length=30, choices=INTERACTION_TYPE_CHOICES, default="note")
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="open", db_index=True)
+    subject = models.CharField(max_length=180)
+    body = models.TextField(blank=True)
+    email_from = models.EmailField(blank=True)
+    email_to = models.TextField(blank=True)
+    email_subject = models.CharField(max_length=255, blank=True)
+    email_url = models.URLField(max_length=1000, blank=True)
+    email_message_id = models.CharField(max_length=255, blank=True)
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+    follow_up_date = models.DateField(null=True, blank=True, db_index=True)
+    pinned = models.BooleanField(default=False)
+    created_by = models.CharField(max_length=120, blank=True)
+    updated_by = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-pinned", "-occurred_at", "-id"]
+
+    def save(self, *args, **kwargs):
+        if not self.customer_id:
+            if self.customer_order_id:
+                self.customer = self.customer_order.customer
+            elif self.job_ticket_id:
+                self.customer = self.job_ticket.customer
+            elif self.quote_id:
+                self.customer = self.quote.customer
+        super().save(*args, **kwargs)
+        if self.customer_id and self.interaction_type in {"email", "call", "meeting"}:
+            Customer.objects.filter(pk=self.customer_id).update(last_contacted_at=self.occurred_at)
+
+    def __str__(self):
+        return f"{self.customer_id} / {self.get_interaction_type_display()} / {self.subject}"
 
 
 class LiveFootageArchive(models.Model):

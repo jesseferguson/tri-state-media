@@ -209,6 +209,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, { key: "quote-records", endpoint: "quote-records", ordering: "-created_at", filters: { customer: selected.id }, pageSize: 1000, fetchAll: true });
     addLookupSpec(specs, relationLookupSpec("customer-orders", { customer: selected.id }, 1000, true));
     addLookupSpec(specs, relationLookupSpec("job-tickets", { customer: selected.id }, 1000, true));
+    addLookupSpec(specs, { key: "customer-interactions", endpoint: "customer-interactions", ordering: "-pinned,-occurred_at", filters: { customer: selected.id }, pageSize: 1000, fetchAll: true });
   }
 
   if (resource.key === "suppliers") {
@@ -2297,6 +2298,15 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     },
   });
 
+  const customerInteractionMutation = useMutation({
+    mutationFn: (payload) => createRecord("customer-interactions", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "customers"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-interactions"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    },
+  });
+
   const finishedScheduleMutation = useMutation({
     mutationFn: async ({ material, schedule }) => {
       const required = [
@@ -2956,6 +2966,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
         {jobTicketPrintMutation.error && <div className="error-box">{jobTicketPrintMutation.error.message}</div>}
         {flexDieFolderLabelMutation.error && <div className="error-box">{apiErrorMessage(flexDieFolderLabelMutation.error)}</div>}
         {jobTicketScheduleCreateMutation.error && <div className="error-box">{jobTicketScheduleCreateMutation.error.message}</div>}
+        {customerInteractionMutation.error && <div className="error-box">{apiErrorMessage(customerInteractionMutation.error)}</div>}
         {materialTypeSaveMutation.error && <div className="error-box">{materialTypeSaveMutation.error.message}</div>}
         {materialTypeDeleteMutation.error && <div className="error-box">{materialTypeDeleteMutation.error.message}</div>}
         {toolingWorkspaceMutation.error && <div className="error-box">{toolingWorkspaceMutation.error.message}</div>}
@@ -3163,10 +3174,14 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     quotes={lookupQuery.data?.["quote-records"] ?? []}
                     orders={lookupQuery.data?.["customer-orders"] ?? []}
                     jobTickets={lookupQuery.data?.["job-tickets"] ?? []}
+                    interactions={lookupQuery.data?.["customer-interactions"] ?? []}
+                    currentUser={currentUserForView}
+                    interactionSaving={customerInteractionMutation.isPending}
                     loading={lookupQuery.isLoading && Boolean(selected)}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onEdit={(row) => { setSelected(row); setFormMode("edit"); }}
                     onDelete={confirmDeleteRecord}
+                    onAddInteraction={(payload) => customerInteractionMutation.mutateAsync(payload)}
                     onQuote={(customer) => {
                       setQuoteCustomerId(String(customer.id));
                       setQuoteJobTicketId("");

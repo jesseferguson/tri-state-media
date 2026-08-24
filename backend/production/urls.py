@@ -9,6 +9,7 @@ from .views import (
     CoreSpecViewSet,
     CustomerOrderEventViewSet,
     CustomerOrderViewSet,
+    CustomerInteractionViewSet,
     CustomerViewSet,
     FinishedInventoryViewSet,
     JobTicketEventViewSet,
@@ -39,6 +40,7 @@ from .data_import import data_flush, data_import_csv, data_import_templates
 
 router = DefaultRouter()
 router.register("customers", CustomerViewSet, basename="customer")
+router.register("customer-interactions", CustomerInteractionViewSet, basename="customer-interaction")
 router.register("message-threads", MessageThreadViewSet, basename="message-thread")
 router.register("messages", MessageViewSet, basename="message")
 router.register("quote-raw-materials", QuoteRawMaterialViewSet, basename="quote-raw-material")

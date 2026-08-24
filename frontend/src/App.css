@@ -23586,9 +23586,53 @@ textarea {
   white-space: nowrap;
 }
 
+.customer-crm-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 8px;
+}
+
+.customer-crm-strip div,
+.customer-crm-strip a {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 7px;
+  row-gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid #e4e9f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+  text-decoration: none;
+}
+
+.customer-crm-strip svg {
+  grid-row: span 2;
+  color: #0f766e;
+}
+
+.customer-crm-strip span {
+  min-width: 0;
+  color: #667085;
+  font-size: .66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.customer-crm-strip strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #101828;
+  font-size: .78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .customer-metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 10px;
 }
 
@@ -23635,6 +23679,8 @@ textarea {
 }
 
 .customer-notes,
+.customer-crm-form,
+.customer-crm-feed,
 .customer-panels > div,
 .customer-bottom-grid > div {
   min-width: 0;
@@ -23658,6 +23704,245 @@ textarea {
   font-size: .8rem;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.customer-crm-board {
+  display: grid;
+  grid-template-columns: minmax(285px, .42fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.customer-crm-form,
+.customer-crm-feed {
+  overflow: hidden;
+}
+
+.customer-crm-form header,
+.customer-crm-feed header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e4e9f0;
+}
+
+.customer-crm-form header strong,
+.customer-crm-feed header strong {
+  display: block;
+  color: #101828;
+  font-size: .86rem;
+}
+
+.customer-crm-form header span,
+.customer-crm-feed header span {
+  display: block;
+  margin-top: 2px;
+  color: #667085;
+  font-size: .7rem;
+  font-weight: 800;
+}
+
+.customer-crm-form form {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.customer-crm-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.customer-crm-fields label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.customer-crm-fields label.wide {
+  grid-column: 1 / -1;
+}
+
+.customer-crm-fields label > span,
+.customer-crm-check span {
+  color: #667085;
+  font-size: .66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.customer-crm-fields input,
+.customer-crm-fields select,
+.customer-crm-fields textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #101828;
+  font: inherit;
+  font-size: .78rem;
+}
+
+.customer-crm-fields input,
+.customer-crm-fields select {
+  height: 34px;
+  padding: 0 9px;
+}
+
+.customer-crm-fields textarea {
+  min-height: 104px;
+  padding: 8px 9px;
+  resize: vertical;
+}
+
+.customer-crm-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.customer-crm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.customer-crm-error {
+  margin: 0;
+  color: #b42318;
+  font-size: .74rem;
+  font-weight: 800;
+}
+
+.customer-interaction-list {
+  display: grid;
+}
+
+.customer-interaction-list > p {
+  margin: 0;
+  padding: 14px;
+  color: #667085;
+  font-size: .8rem;
+}
+
+.customer-interaction-row {
+  display: grid;
+  gap: 8px;
+  padding: 11px 12px;
+  border-top: 1px solid #eef2f7;
+  background: #ffffff;
+}
+
+.customer-interaction-row:first-child {
+  border-top: 0;
+}
+
+.customer-interaction-row.pinned {
+  background: #f8fafc;
+}
+
+.customer-interaction-top {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.customer-interaction-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #15803d;
+}
+
+.customer-interaction-top strong {
+  display: block;
+  min-width: 0;
+  color: #101828;
+  font-size: .84rem;
+  overflow-wrap: anywhere;
+}
+
+.customer-interaction-top em {
+  display: block;
+  margin-top: 2px;
+  color: #667085;
+  font-size: .7rem;
+  font-style: normal;
+}
+
+.customer-crm-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 23px;
+  max-width: 150px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: .62rem;
+  font-weight: 950;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.customer-crm-status.good {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.customer-crm-status.watch {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.customer-crm-status.info {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.customer-interaction-row p {
+  margin: 0;
+  color: #344054;
+  font-size: .79rem;
+  line-height: 1.42;
+  white-space: pre-wrap;
+}
+
+.customer-interaction-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.customer-interaction-meta span,
+.customer-email-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid #e4e9f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475467;
+  font-size: .68rem;
+  font-weight: 820;
+  text-decoration: none;
+}
+
+.customer-email-link {
+  justify-self: start;
+  color: #0f766e;
 }
 
 .customer-panels,
@@ -23818,6 +24103,7 @@ textarea {
 
 @media (max-width: 1100px) {
   .customer-workspace,
+  .customer-crm-board,
   .customer-panels,
   .customer-bottom-grid {
     grid-template-columns: 1fr;
@@ -23850,9 +24136,29 @@ textarea {
 
   .customer-contact-band,
   .customer-metric-grid,
+  .customer-crm-strip,
+  .customer-crm-fields,
   .customer-activity-row,
   .customer-timeline-row {
     grid-template-columns: 1fr;
+  }
+
+  .customer-interaction-top {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .customer-crm-status {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .customer-crm-submit {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .customer-crm-submit button {
+    justify-content: center;
   }
 
   .customer-activity-row > div:last-child {

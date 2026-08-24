@@ -5,12 +5,15 @@ from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 
 from materials.models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
 from tooling.models import FlexDie, Press, Supplier, ToolingLocation
 
 from .models import (
+    Customer,
+    CustomerInteraction,
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
@@ -22,6 +25,7 @@ from .models import (
     MessageThread,
     ProductionMaterialAssignment,
     ProductionSchedule,
+    QuoteRecord,
 )
 from users.auth import CompanyUserTokenAuthentication, create_company_user_token
 from users.models import CompanyRole, CompanyUser
@@ -277,6 +281,103 @@ class DataImportToolingTests(TestCase):
 
         self.assertTrue(Supplier.objects.filter(name="Wilson Tool").exists())
         self.assertFalse(FlexDie.objects.filter(name="RID-NAMELESS").exists())
+
+
+class CustomerInteractionTests(TestCase):
+    def make_customer_job(self):
+        customer = Customer.objects.create(name="BCL Test", customer_code="BCL", account_owner="Missy")
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-CRM-001",
+            job_name="BCL Label Run",
+            product_code="BCL-001",
+            customer=customer,
+            customer_name=customer.name,
+        )
+        schedule = ProductionSchedule.objects.create(
+            job_ticket=ticket,
+            customer=customer,
+            quantity_to_ship=Decimal("2500"),
+            scheduled_by="CSR",
+        )
+        order = CustomerOrder.objects.get(schedule_entry=schedule)
+        quote = QuoteRecord.objects.create(
+            external_id="crm-quote-001",
+            quote_number="Q-CRM-001",
+            customer=customer,
+            job_ticket=ticket,
+            job_ticket_number=ticket.ticket_number,
+            customer_name=customer.name,
+            job_name=ticket.job_name,
+            product_code=ticket.product_code,
+            form={"quantity": 2500},
+            pricing={"sellPrice": 1250},
+        )
+        return customer, ticket, order, quote
+
+    def test_customer_interaction_links_email_to_customer_order_job_and_quote(self):
+        customer, ticket, order, quote = self.make_customer_job()
+        occurred_at = timezone.now()
+
+        response = self.client.post(
+            reverse("customer-interaction-list"),
+            {
+                "customer": customer.id,
+                "customer_order": order.id,
+                "job_ticket": ticket.id,
+                "quote": quote.id,
+                "interaction_type": "email",
+                "status": "waiting_customer",
+                "subject": "BCL artwork approval",
+                "body": "Customer needs to approve the latest artwork before scheduling.",
+                "email_from": "csr@example.com",
+                "email_to": "buyer@example.com",
+                "email_url": "https://mail.example.com/thread/bcl-artwork",
+                "occurred_at": occurred_at.isoformat(),
+                "follow_up_date": timezone.localdate().isoformat(),
+                "created_by": "Rachel",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        data = response.json()
+        self.assertEqual(data["customer_name"], customer.name)
+        self.assertEqual(data["order_number"], order.order_number)
+        self.assertEqual(data["job_ticket_number"], ticket.ticket_number)
+        self.assertEqual(data["quote_number"], quote.quote_number)
+
+        interaction = CustomerInteraction.objects.get()
+        self.assertEqual(interaction.customer, customer)
+        self.assertEqual(interaction.customer_order, order)
+        self.assertEqual(interaction.job_ticket, ticket)
+        self.assertEqual(interaction.quote, quote)
+
+        customer.refresh_from_db()
+        self.assertIsNotNone(customer.last_contacted_at)
+
+        list_response = self.client.get(reverse("customer-interaction-list"), {"customer": customer.id})
+        self.assertEqual(list_response.status_code, 200, list_response.content)
+        results = list_response.json().get("results", list_response.json())
+        self.assertEqual(len(results), 1)
+
+    def test_customer_interaction_rejects_linked_record_from_another_customer(self):
+        _, ticket, _, _ = self.make_customer_job()
+        other_customer = Customer.objects.create(name="Other Customer")
+
+        response = self.client.post(
+            reverse("customer-interaction-list"),
+            {
+                "customer": other_customer.id,
+                "job_ticket": ticket.id,
+                "interaction_type": "job_comment",
+                "status": "open",
+                "subject": "Wrong customer",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("job_ticket", response.json())
 
 
 class FinishedInventoryOrderWorkflowTests(TestCase):
