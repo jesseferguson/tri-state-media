@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  ArrowLeft,
   AtSign,
   Bell,
   BriefcaseBusiness,
@@ -226,13 +227,14 @@ function Metric({ label, value, detail, tone = "" }) {
   );
 }
 
-function CustomerSearchInput({ value, onChange, count, total, autoFocus = false }) {
+function CustomerSearchInput({ value, onChange, count, total, autoFocus = false, onFocus }) {
   return (
     <label className="customer-search-field">
       <Search size={17} />
       <input
         autoFocus={autoFocus}
         value={value}
+        onFocus={onFocus}
         onChange={(event) => onChange?.(event.target.value)}
         placeholder="Search customer, contact, code, email, phone..."
       />
@@ -617,6 +619,7 @@ export default function CustomerWorkspace({
   onNotifyTeam,
 }) {
   const [activePage, setActivePage] = useState("overview");
+  const [showInlineResults, setShowInlineResults] = useState(false);
   const address = customerAddressLines(selected);
   const quoteTotalValue = quotes.reduce((sum, quote) => sum + quoteTotal(quote), 0);
   const openOrders = orders.filter(orderOpen);
@@ -661,6 +664,25 @@ export default function CustomerWorkspace({
   ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 10);
   const searchResults = rows.slice(0, search.trim() ? 12 : 6);
 
+  function selectCustomer(row) {
+    setActivePage("overview");
+    setShowInlineResults(false);
+    onSearchChange?.("");
+    onSelect?.(row);
+  }
+
+  function backToSearch() {
+    setActivePage("overview");
+    setShowInlineResults(false);
+    onSearchChange?.("");
+    onSelect?.(null);
+  }
+
+  function updateSearch(value) {
+    onSearchChange?.(value);
+    setShowInlineResults(Boolean(String(value || "").trim()));
+  }
+
   if (!selected) {
     return (
       <section className="customer-crm-page">
@@ -668,11 +690,11 @@ export default function CustomerWorkspace({
           <section className="customer-home-hero">
             <div>
               <span>Customer CRM</span>
-              <h3>Find the account, then focus on the work.</h3>
-              <p>Search first, open only what matters, and use the customer page to log activity or pull teammates into the conversation.</p>
+              <h3>Customer Accounts</h3>
+              <p>Search for a customer, open the account, and review notes, activity, jobs, quotes, and team messages in one place.</p>
             </div>
             <div className="customer-home-search">
-              <CustomerSearchInput value={search} onChange={onSearchChange} count={rows.length} total={totalCount || rows.length} autoFocus />
+              <CustomerSearchInput value={search} onChange={updateSearch} count={rows.length} total={totalCount || rows.length} autoFocus />
             </div>
           </section>
 
@@ -689,7 +711,7 @@ export default function CustomerWorkspace({
             </header>
             <div className="customer-search-grid">
               {searchResults.map((customer) => (
-                <CustomerCard key={customer.id} customer={customer} onSelect={(row) => { setActivePage("overview"); onSelect?.(row); }} />
+                <CustomerCard key={customer.id} customer={customer} onSelect={selectCustomer} />
               ))}
               {!searchResults.length && <p>{loading ? "Loading customers..." : "No customers match this search."}</p>}
             </div>
@@ -702,11 +724,21 @@ export default function CustomerWorkspace({
   return (
     <section className="customer-crm-page">
       <header className="customer-record-searchbar">
-        <CustomerSearchInput value={search} onChange={onSearchChange} count={rows.length} total={totalCount || rows.length} />
-        {search.trim() && (
+        <button className="customer-back-btn" type="button" onClick={backToSearch}>
+          <ArrowLeft size={16} />
+          Back
+        </button>
+        <CustomerSearchInput
+          value={search}
+          onChange={updateSearch}
+          onFocus={() => setShowInlineResults(Boolean(search.trim()))}
+          count={rows.length}
+          total={totalCount || rows.length}
+        />
+        {showInlineResults && search.trim() && (
           <div className="customer-inline-results">
             {rows.slice(0, 6).map((customer) => (
-              <CustomerCard key={customer.id} customer={customer} selected={sameId(customer.id, selected.id)} onSelect={(row) => { setActivePage("overview"); onSelect?.(row); }} />
+              <CustomerCard key={customer.id} customer={customer} selected={sameId(customer.id, selected.id)} onSelect={selectCustomer} />
             ))}
             {!rows.length && <p>No customers match this search.</p>}
           </div>

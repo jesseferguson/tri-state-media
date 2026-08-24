@@ -24768,7 +24768,32 @@ textarea {
 .customer-record-searchbar {
   position: relative;
   z-index: 5;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
   margin-bottom: 12px;
+}
+
+.customer-back-btn {
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+  font-size: .8rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.customer-back-btn:hover {
+  border-color: #9dd9b3;
+  color: #166534;
 }
 
 .customer-record-searchbar .customer-search-field {
@@ -24781,9 +24806,10 @@ textarea {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
+  grid-column: 2;
   display: grid;
   gap: 6px;
-  max-height: 360px;
+  max-height: min(320px, calc(100vh - 230px));
   overflow: auto;
   padding: 8px;
   border: 1px solid #dbe6f2;
@@ -25451,6 +25477,16 @@ textarea {
 
   .customer-record-hero {
     grid-template-columns: 1fr;
+  }
+
+  .customer-record-searchbar {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-inline-results {
+    grid-column: 1;
+    position: static;
+    max-height: 280px;
   }
 
   .customer-record-actions {
