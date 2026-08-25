@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { AlertTriangle, Image as ImageIcon } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Image as ImageIcon } from "lucide-react";
 import { AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
+import { buildScheduledRepeatMap, scheduleRecommendationForTicket } from "../utils/scheduleRecommendations";
 
 const RECENT_USAGE_DAYS = 90;
 const LOW_STOCK_MONTHS = 1;
@@ -142,7 +143,8 @@ function ticketUsageStats(ticket, usageRows = [], finishedRows = [], now = new D
   };
 }
 
-export default function JobTicketGallery({ rows, selectedId, usageRows = [], finishedRows = [], onSelect }) {
+export default function JobTicketGallery({ rows, selectedId, usageRows = [], finishedRows = [], scheduleRows = [], onSelect }) {
+  const scheduledRepeatMap = useMemo(() => buildScheduledRepeatMap(scheduleRows), [scheduleRows]);
   const sortedTickets = useMemo(() => {
     const now = new Date();
     return (rows ?? [])
@@ -163,9 +165,10 @@ export default function JobTicketGallery({ rows, selectedId, usageRows = [], fin
       {sortedTickets.map(({ ticket, stats }) => {
         const image = primaryImage(ticket);
         const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
+        const scheduleCue = scheduleRecommendationForTicket(ticket, scheduledRepeatMap, stats);
         return (
           <button
-            className={`job-ticket-card ${String(selectedId) === String(ticket.id) ? "active" : ""} ${stats.lowStockLevel ? `stock-${stats.lowStockLevel}` : ""}`}
+            className={`job-ticket-card ${String(selectedId) === String(ticket.id) ? "active" : ""} ${stats.lowStockLevel ? `stock-${stats.lowStockLevel}` : ""} ${scheduleCue.recommended ? "schedule-recommended" : ""}`}
             type="button"
             key={ticket.id}
             onClick={() => onSelect(ticket)}
@@ -188,15 +191,28 @@ export default function JobTicketGallery({ rows, selectedId, usageRows = [], fin
                   <AlertTriangle size={12} /> {stats.lowStockLevel === "critical" ? "No stock" : "Low stock"}
                 </span>
               )}
+              {scheduleCue.recommended && (
+                <span
+                  className="job-ticket-schedule-cue"
+                  title={`Recommended to schedule: avg/month ${quantityLabel(scheduleCue.monthlyUsage)} is above stock ${quantityLabel(scheduleCue.onHand)}, and repeat ${scheduleCue.repeatLabel} is already on the schedule.`}
+                >
+                  <CalendarPlus size={12} />
+                  <span>Plan</span>
+                </span>
+              )}
             </div>
             <div className="job-ticket-card-body">
               <strong>{ticket.job_name || "Untitled Job"}</strong>
               <span>{customerName(ticket)}</span>
               <div className="job-ticket-usage-row">
-                <span>90d use <strong>{quantityLabel(stats.recentUsage)}</strong></span>
+                <span>3mo avg <strong>{quantityLabel(stats.monthlyUsage)}</strong></span>
                 <span>Stock <strong>{quantityLabel(stats.onHand)}</strong></span>
               </div>
-              <em>{stats.monthsOnHand !== null ? `${Number(stats.monthsOnHand.toFixed(1)).toLocaleString()} months on hand` : image?.name || "Open job packet"}</em>
+              {scheduleCue.recommended ? (
+                <em className="job-ticket-card-recommendation">Avg/month above stock / repeat {scheduleCue.repeatLabel} scheduled</em>
+              ) : (
+                <em>{stats.monthsOnHand !== null ? `${Number(stats.monthsOnHand.toFixed(1)).toLocaleString()} months on hand` : image?.name || "Open job packet"}</em>
+              )}
             </div>
           </button>
         );

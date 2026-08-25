@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarClock, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
 import { AuthenticatedFileLink, AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
 import RecipeOptionsView from "../../tooling/components/RecipeOptionsView";
 import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
+import { buildSameRepeatScheduleRecommendations, ticketCustomerName, ticketDisplayName } from "../utils/scheduleRecommendations";
 
 const tabs = [
   { key: "general", label: "General" },
@@ -1343,6 +1344,66 @@ function OrderHistoryGroupCard({ group }) {
   );
 }
 
+function SameRepeatSchedulePanel({ summary, onOpenTicket }) {
+  if (!summary?.repeatKey || (!summary.scheduledRows.length && !summary.jobs.length)) return null;
+  const scheduledCount = summary.scheduledRows.length;
+  return (
+    <aside className="job-repeat-schedule-panel" aria-label="Same repeat schedule recommendations">
+      <div className="job-repeat-schedule-head">
+        <Sparkles size={16} />
+        <div>
+          <span>Same Repeat</span>
+          <strong>{summary.repeatLabel}</strong>
+        </div>
+      </div>
+
+      {scheduledCount > 0 && (
+        <div className="job-repeat-scheduled-list">
+          <div className="job-repeat-panel-title">
+            <CalendarClock size={14} />
+            <strong>{scheduledCount} in lineup</strong>
+          </div>
+          {summary.scheduledRows.slice(0, 4).map((row) => (
+            <div className="job-repeat-scheduled-chip" key={row.id || `${row.job_ticket_number}-${row.press_name}`}>
+              <span>{row.press_name || "Unassigned"}</span>
+              <strong>{row.job_name || row.job_ticket_number || "Scheduled job"}</strong>
+              <em>{[row.due_date, labelize(row.priority || "low")].filter(Boolean).join(" / ") || "No ship date"}</em>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {summary.jobs.length > 0 && (
+        <div className="job-repeat-suggestion-list">
+          <div className="job-repeat-panel-title">
+            <CalendarPlus size={14} />
+            <strong>May pair well</strong>
+          </div>
+          {summary.jobs.map((item) => (
+            <article className={`job-repeat-suggestion-card ${item.stats.needsStock ? "needs-stock" : ""}`} key={item.ticket.id}>
+              <div>
+                <strong title={ticketDisplayName(item.ticket)}>{ticketDisplayName(item.ticket)}</strong>
+                <span title={ticketCustomerName(item.ticket)}>{ticketCustomerName(item.ticket)}</span>
+              </div>
+              <div className="job-repeat-suggestion-metrics">
+                <span>Avg/mo <strong>{formatNumber(item.stats.monthlyUsage)}</strong></span>
+                <span>Stock <strong>{formatNumber(item.stats.onHand)}</strong></span>
+                {item.stats.needsStock && <em>Gap {formatNumber(item.stats.stockGap)}</em>}
+              </div>
+              <button type="button" onClick={() => onOpenTicket?.(item.ticket)}>
+                <CalendarPlus size={14} />
+                <span>Schedule</span>
+                <ArrowRight size={14} />
+              </button>
+            </article>
+          ))}
+          {summary.hiddenCount > 0 && <p className="job-repeat-extra-count">+{summary.hiddenCount} more same-repeat job{summary.hiddenCount === 1 ? "" : "s"}</p>}
+        </div>
+      )}
+    </aside>
+  );
+}
+
 function usageDate(row) {
   const raw = row?.used_at || row?.date || row?.used_date;
   return parseDateValue(raw);
@@ -1351,6 +1412,7 @@ function usageDate(row) {
 export default function JobTicketPanel({
   ticket,
   lookups,
+  allJobTickets = [],
   chartsLoading = false,
   inventoryReceiving = false,
   inventoryReceiveError = "",
@@ -1366,6 +1428,7 @@ export default function JobTicketPanel({
   onQueuePrintLabel,
   onApproveChange,
   onReceiveFinishedInventory,
+  onOpenScheduleSuggestion,
   renderEditorForm,
   renderScheduleForm,
   editorFields = [],
@@ -1489,6 +1552,18 @@ export default function JobTicketPanel({
       search: orderHistorySearch,
     }),
     [customerOrders, customerOrderEvents, orderHistorySearch, scheduleJobTicketEvents, scheduleRows]
+  );
+  const sameRepeatJobTickets = useMemo(
+    () => (allJobTickets.length ? allJobTickets : (lookups?.["all-job-tickets"] ?? lookups?.["job-tickets"] ?? [])),
+    [allJobTickets, lookups]
+  );
+  const sameRepeatScheduleRecommendations = useMemo(
+    () => buildSameRepeatScheduleRecommendations(ticket, sameRepeatJobTickets, lookups?.["production-schedule"] ?? []),
+    [ticket, sameRepeatJobTickets, lookups]
+  );
+  const showSameRepeatScheduleRecommendations = Boolean(
+    sameRepeatScheduleRecommendations.repeatKey
+    && (sameRepeatScheduleRecommendations.scheduledRows.length || sameRepeatScheduleRecommendations.jobs.length)
   );
   const image = primaryImage(ticket);
   const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
@@ -2406,7 +2481,17 @@ export default function JobTicketPanel({
                 Close
               </button>
             </header>
-            {renderScheduleForm?.({ onCancel: () => setScheduleOpen(false) })}
+            <div className={`job-schedule-dialog-body ${showSameRepeatScheduleRecommendations ? "with-repeat-recommendations" : ""}`}>
+              <div className="job-schedule-form-column">
+                {renderScheduleForm?.({ onCancel: () => setScheduleOpen(false) })}
+              </div>
+              {showSameRepeatScheduleRecommendations && (
+                <SameRepeatSchedulePanel
+                  summary={sameRepeatScheduleRecommendations}
+                  onOpenTicket={onOpenScheduleSuggestion}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

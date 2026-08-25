@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, DatabaseZap, Download, FileSpreadsheet, Re
 import { useEffect, useMemo, useState } from "react";
 import { requestApi } from "../../../api";
 
-const importOrder = ["job_tickets", "job_ticket_usage", "finished_inventory", "print_plates", "print_stations", "flex_dies", "inventory", "inventory_usage"];
+const importOrder = ["job_tickets", "schedule", "job_ticket_usage", "finished_inventory", "print_plates", "print_stations", "flex_dies", "inventory", "inventory_usage"];
 
 const flushScopes = [
   ["setup_data", "Setup data: job tickets, finished inventory, schedule, flex/rotary dies, inventory, usage, quotes"],

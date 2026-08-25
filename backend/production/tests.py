@@ -424,6 +424,149 @@ class DataImportJobTicketTests(TestCase):
         self.assertEqual(usage.used_at.month, 7)
         self.assertEqual(usage.used_at.day, 18)
 
+    def test_carton_export_imports_finished_inventory_by_item_row_id(self):
+        role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        role.allowed_resource_keys = ["*"]
+        role.save(update_fields=["allowed_resource_keys"])
+        admin = CompanyUser.objects.create(username="carton-import-admin", name="Carton Import Admin", role=role, active=True)
+        admin.set_password("StrongPass7&")
+        admin.save()
+        ticket = JobTicket.objects.create(
+            legacy_row_id="RID-JOB",
+            ticket_number="ABE-LKD-10042",
+            product_code="ABE-000-023",
+            job_name="ABE-LKD-1004",
+            customer_name="Abe Tech",
+        )
+        csv_text = "\n".join([
+            "Row ID,Location,Actual Quantity,Temp Date,Part Number,ROW ID,Part Number Meta Search,Note,Shipping Name,Item Row ID,Name,date,Quantity / new Quantity",
+            "CARTON-1,A-1-9,23,2026-07-28T09:43:24.115Z,,RID-JOB,ABE-LKD-10042.,Counted carton stock,Jason,RID-JOB,Shipping,,",
+        ])
+        upload = SimpleUploadedFile("carton.csv", csv_text.encode("utf-8"), content_type="text/csv")
+
+        response = self.client.post(
+            reverse("data-import-csv", args=["finished_inventory"]),
+            {"file": upload},
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(admin)}",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["error_count"], 0)
+        item = FinishedInventory.objects.get()
+        self.assertEqual(item.job_ticket, ticket)
+        self.assertEqual(item.name, "ABE-LKD-1004")
+        self.assertEqual(item.sku, "ABE-LKD-10042")
+        self.assertEqual(item.location.code, "A-1-9")
+        self.assertEqual(item.quantity, Decimal("23"))
+        self.assertEqual(item.unit, "carton")
+        self.assertEqual(item.status, "available")
+        self.assertEqual(item.run_date.month, 7)
+        self.assertEqual(item.run_date.day, 28)
+        self.assertIn("Legacy Row ID: CARTON-1", item.notes)
+        self.assertIn("Imported Job Ticket Reference: RID-JOB", item.notes)
+        self.assertNotEqual(item.name, "Shipping")
+
+    def test_schedule_export_imports_production_schedule_and_order(self):
+        role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        role.allowed_resource_keys = ["*"]
+        role.save(update_fields=["allowed_resource_keys"])
+        admin = CompanyUser.objects.create(username="schedule-import-admin", name="Schedule Import Admin", role=role, active=True)
+        admin.set_password("StrongPass7&")
+        admin.save()
+        press = Press.objects.create(name='13" Nilpeter')
+        ticket = JobTicket.objects.create(
+            legacy_row_id="RID-ITEM",
+            ticket_number="PM-4-6-R",
+            product_code="2-000-059",
+            job_name="PM-4-6-R",
+            customer_name="Tri-State Media",
+        )
+        csv_text = "\n".join([
+            "Row ID,Schedule / ID,Order / Scheduled By,Order / Date Scheduled,Order / Stock,Coating / Cutting,Coating /  Material,Coater / Liner Type,Schedule / Item ID,Schedule / Item Number,Schedule / Status,Order / Ship,Order / Customer,Order / Po,Order / Note to Operator ,Schedule / Priority,Schedule / Status Code,Printer / Printer Location,Printer / Media Type,Operator / Primary,Press,Schedule / Order,FR / Good Footage Raw,FR / Total Footage Raw,Material On Press,Schedule / Starting Number,Schedule / Ending Number,Schedule / TSM ID",
+            "SCH-1,SCHED-1,CSR,\"7/21/2026, 12:02:05 PM\",300,,,,RID-ITEM,PM-4-6-R,\"13\"\" Nilpeter\",14,Tri-State Media,PO-1,Need ribbon,High,,,,Levi,13 NIL,2,1200,1400,PM roll,1,10,",
+        ])
+        upload = SimpleUploadedFile("schedule.csv", csv_text.encode("utf-8"), content_type="text/csv")
+
+        response = self.client.post(
+            reverse("data-import-csv", args=["schedule"]),
+            {"file": upload},
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(admin)}",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["error_count"], 0)
+        schedule = ProductionSchedule.objects.get()
+        self.assertEqual(schedule.job_ticket, ticket)
+        self.assertEqual(schedule.press, press)
+        self.assertEqual(schedule.status, "scheduled")
+        self.assertEqual(schedule.priority, "high")
+        self.assertEqual(schedule.quantity_to_ship, Decimal("14"))
+        self.assertEqual(schedule.quantity_to_stock, Decimal("300"))
+        self.assertEqual(schedule.press_sequence, 2)
+        self.assertEqual(schedule.operator, "Levi")
+        self.assertEqual(schedule.actual_footage, Decimal("1200"))
+        self.assertEqual(schedule.target_footage, Decimal("1400"))
+        self.assertIn("Legacy Row ID: SCH-1", schedule.notes)
+        self.assertIn("Legacy Schedule ID: SCHED-1", schedule.notes)
+        order = CustomerOrder.objects.get(schedule_entry=schedule)
+        self.assertEqual(order.job_ticket, ticket)
+        self.assertEqual(order.customer_name, "Tri-State Media")
+        self.assertEqual(order.customer_po, "PO-1")
+
+    def test_schedule_export_imports_material_schedule_when_components_exist(self):
+        role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        role.allowed_resource_keys = ["*"]
+        role.save(update_fields=["allowed_resource_keys"])
+        admin = CompanyUser.objects.create(username="material-schedule-admin", name="Material Schedule Admin", role=role, active=True)
+        admin.set_password("StrongPass7&")
+        admin.save()
+        master_type = MaterialMasterType.objects.create(code="PM", name="PM")
+        face = MaterialSpec.objects.create(material_type="face", code="PM-FACE", name="PM Face")
+        liner = MaterialSpec.objects.create(material_type="liner", code="40", name="40")
+        adhesive = MaterialSpec.objects.create(material_type="adhesive", code="2417", name="2417")
+        silicone = MaterialSpec.objects.create(material_type="silicone", code="SIL", name="Silicone")
+        coated = MaterialSpec.objects.create(
+            material_type="coated_stock",
+            code="1-001",
+            name="PM",
+            master_type=master_type,
+            face_material=face,
+            liner_material=liner,
+            adhesive_material=adhesive,
+            silicone_material=silicone,
+        )
+        csv_text = "\n".join([
+            "Row ID,Schedule / ID,Order / Scheduled By,Order / Date Scheduled,Order / Stock,Coating / Cutting,Coating /  Material,Coater / Liner Type,Schedule / Item ID,Schedule / Item Number,Schedule / Status,Order / Ship,Order / Customer,Order / Po,Order / Note to Operator ,Schedule / Priority,Press,Schedule / Order",
+            "MAT-SCH-1,SCHED-MAT-1,Emily,\"7/21/2025, 6:24:06 AM\",\"100,000\",9 / 9,PM-2a,40,,,,,,,,,,",
+        ])
+        upload = SimpleUploadedFile("schedule.csv", csv_text.encode("utf-8"), content_type="text/csv")
+
+        response = self.client.post(
+            reverse("data-import-csv", args=["schedule"]),
+            {"file": upload},
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(admin)}",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["error_count"], 0)
+        schedule = CoaterRollTag.objects.get()
+        self.assertEqual(schedule.scheduled_material, coated)
+        self.assertEqual(schedule.produced_material, coated)
+        self.assertEqual(schedule.liner, liner)
+        self.assertEqual(schedule.face, face)
+        self.assertEqual(schedule.adhesive, adhesive)
+        self.assertEqual(schedule.silicone, silicone)
+        self.assertEqual(schedule.name, "PM / 40 liner")
+        self.assertEqual(schedule.length_feet, Decimal("100000"))
+        self.assertFalse(schedule.log_inventory)
+        self.assertIn("Legacy Row ID: MAT-SCH-1", schedule.notes)
+
 
 class CustomerInteractionTests(TestCase):
     def setUp(self):

@@ -2386,6 +2386,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     selectedId={selected?.id}
                     usageRows={lookupQuery.data?.["job-ticket-usages"] ?? []}
                     finishedRows={lookupQuery.data?.["finished-inventory"] ?? []}
+                    scheduleRows={lookupQuery.data?.["production-schedule"] ?? []}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                   />
                 ) : resource.viewMode === "packagingInventory" ? (
@@ -2668,6 +2669,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
               <JobTicketPanel
                 ticket={selected}
                 lookups={lookupQuery.data ?? {}}
+                allJobTickets={lookupQuery.data?.["all-job-tickets"] ?? rows}
                 chartsLoading={lookupQuery.isLoading && !lookupQuery.data}
                 inventoryReceiving={finishedInventoryReceiveMutation.isPending}
                 inventoryReceiveError={finishedInventoryReceiveMutation.error?.message}
@@ -2690,6 +2692,10 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                   setSearch("");
                 }}
                 onReceiveFinishedInventory={(payload) => finishedInventoryReceiveMutation.mutateAsync(payload)}
+                onOpenScheduleSuggestion={(ticket) => {
+                  setSelected(ticket);
+                  setFormMode(null);
+                }}
                 editorFields={resource.fields ?? []}
                 renderEditorForm={({ onCancel, onFormChange }) => (
                   <RecordForm

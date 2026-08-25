@@ -1,0 +1,311 @@
+/* Job ticket schedule recommendations */
+.job-ticket-card.schedule-recommended {
+  border-color: #fb923c;
+  box-shadow: 0 10px 28px rgba(249, 115, 22, .14);
+}
+
+.job-ticket-card.schedule-recommended:hover,
+.job-ticket-card.schedule-recommended.active {
+  border-color: #f97316;
+  box-shadow: 0 18px 42px rgba(249, 115, 22, .2);
+}
+
+.job-ticket-schedule-cue {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  max-width: calc(100% - 20px);
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 1px solid #fdba74;
+  border-radius: 999px;
+  background: rgba(255, 247, 237, .96);
+  color: #9a3412;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .12);
+  font-size: .64rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
+.job-ticket-schedule-cue svg {
+  flex: 0 0 auto;
+}
+
+.job-ticket-card-recommendation {
+  color: #9a3412 !important;
+  font-weight: 900;
+}
+
+.job-schedule-dialog {
+  width: min(1120px, calc(100vw - 18px));
+}
+
+.job-schedule-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.job-schedule-dialog-body.with-repeat-recommendations {
+  grid-template-columns: minmax(0, 1fr) minmax(286px, 340px);
+}
+
+.job-schedule-form-column {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.job-schedule-form-column > .form-panel {
+  flex: 1 1 auto;
+}
+
+.job-repeat-schedule-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  border-left: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+.job-repeat-schedule-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #fff7ed 0%, #ecfeff 100%);
+  color: #9a3412;
+}
+
+.job-repeat-schedule-head svg {
+  flex: 0 0 auto;
+}
+
+.job-repeat-schedule-head div {
+  min-width: 0;
+}
+
+.job-repeat-schedule-head span,
+.job-repeat-schedule-head strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-repeat-schedule-head span {
+  color: #b45309;
+  font-size: .62rem;
+  font-weight: 950;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.job-repeat-schedule-head strong {
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 950;
+}
+
+.job-repeat-scheduled-list,
+.job-repeat-suggestion-list {
+  display: grid;
+  gap: 8px;
+}
+
+.job-repeat-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #344054;
+}
+
+.job-repeat-panel-title strong {
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.job-repeat-scheduled-chip,
+.job-repeat-suggestion-card {
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .05);
+}
+
+.job-repeat-scheduled-chip {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+
+.job-repeat-scheduled-chip span,
+.job-repeat-scheduled-chip strong,
+.job-repeat-scheduled-chip em,
+.job-repeat-suggestion-card strong,
+.job-repeat-suggestion-card span,
+.job-repeat-suggestion-card em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-repeat-scheduled-chip span {
+  color: #0f766e;
+  font-size: .64rem;
+  font-weight: 950;
+}
+
+.job-repeat-scheduled-chip strong {
+  color: #101828;
+  font-size: .74rem;
+  font-weight: 950;
+}
+
+.job-repeat-scheduled-chip em {
+  color: #667085;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.job-repeat-suggestion-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 9px;
+}
+
+.job-repeat-suggestion-card.needs-stock {
+  border-color: #fdba74;
+  background: #fffaf4;
+}
+
+.job-repeat-suggestion-card > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.job-repeat-suggestion-card > div:first-child strong {
+  color: #101828;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.job-repeat-suggestion-card > div:first-child span {
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 820;
+}
+
+.job-repeat-suggestion-metrics {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.job-repeat-suggestion-metrics span,
+.job-repeat-suggestion-metrics em {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid #edf2f7;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #667085;
+  font-size: .64rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.job-repeat-suggestion-metrics strong {
+  display: block;
+  margin-top: 1px;
+  color: #101828;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.job-repeat-suggestion-metrics em {
+  grid-column: 1 / -1;
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.job-repeat-suggestion-card button {
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid #f97316;
+  border-radius: 8px;
+  background: #f97316;
+  color: #ffffff;
+  font-size: .68rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.job-repeat-suggestion-card button:hover {
+  background: #ea580c;
+}
+
+.job-repeat-extra-count {
+  margin: 0;
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+@media (max-width: 920px) {
+  .job-schedule-dialog-body.with-repeat-recommendations {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .job-schedule-dialog-body.with-repeat-recommendations .form-panel {
+    overflow: visible;
+  }
+
+  .job-repeat-schedule-panel {
+    overflow: visible;
+    border-top: 1px solid #e5e7eb;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .job-ticket-schedule-cue span {
+    display: none;
+  }
+
+  .job-repeat-suggestion-card,
+  .job-repeat-suggestion-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .job-repeat-suggestion-card button {
+    width: 100%;
+  }
+}

@@ -98,6 +98,18 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { inventory: selected.material_inventory }, 150));
   }
 
+  if (resource.key === "job-tickets") {
+    addLookupSpec(specs, {
+      key: "all-job-tickets",
+      endpoint: resourceMap["job-tickets"].endpoint,
+      ordering: resourceMap["job-tickets"].defaultOrdering,
+      filters: { ...(resourceMap["job-tickets"].filters ?? {}) },
+      pageSize: 1000,
+      fetchAll: true,
+    });
+    addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 1000, true));
+  }
+
   if (resource.key === "job-tickets" && selected) {
     if (selected.material_spec) addLookupSpec(specs, relationLookupSpec("raw-materials", { material: selected.material_spec }, 250));
     if (selected.material_master_type || selected.material_spec_master_type) {
@@ -117,7 +129,6 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     else addLookupSpec(specs, relationLookupSpec("recipe-options", {}, 150));
     addLookupSpec(specs, relationLookupSpec("box-inventory", {}, 150));
     addLookupSpec(specs, relationLookupSpec("core-inventory", {}, 150));
-    addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-orders", {}, 150));
     addLookupSpec(specs, relationLookupSpec("customer-orders", { job_ticket: selected.id }, 250, true));
     addLookupSpec(specs, relationLookupSpec("customer-order-events", {}, 250));

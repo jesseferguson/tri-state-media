@@ -16,12 +16,13 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from materials.models import (
+    CoaterRollTag,
     MaterialMasterType,
     MaterialSpec,
     MaterialUsage,
     RawMaterialInventory as MaterialInventory,
 )
-from tooling.models import FlexDie, PrintPlate, PrintStation, Supplier, ToolingHistory, ToolingLocation, ToolingRecipe
+from tooling.models import FlexDie, Press, PrintPlate, PrintStation, Supplier, ToolingHistory, ToolingLocation, ToolingRecipe
 
 from .models import (
     BoxSpec,
@@ -164,15 +165,32 @@ JOB_TICKET_USAGE_COLUMNS = [
 ]
 
 FINISHED_INVENTORY_COLUMNS = [
-    "row_id",
-    "tsm_id",
-    "part_number",
-    "location",
-    "quantity",
-    "unit",
-    "status",
-    "run_date",
-    "notes",
+    "Carton Row ID",
+    "Location",
+    "Actual Quantity",
+    "Part Number",
+    "Item Row ID",
+    "Part Number Meta Search",
+    "Note",
+]
+
+SCHEDULE_COLUMNS = [
+    "Row ID",
+    "Schedule / ID",
+    "Order / Scheduled By",
+    "Order / Date Scheduled",
+    "Schedule / Item ID",
+    "Schedule / Item Number",
+    "Schedule / TSM ID",
+    "Schedule / Status",
+    "Press",
+    "Schedule / Order",
+    "Order / Ship",
+    "Order / Stock",
+    "Order / Customer",
+    "Order / Po",
+    "Order / Note to Operator",
+    "Schedule / Priority",
 ]
 
 PRINT_PLATE_COLUMNS = [
@@ -355,6 +373,28 @@ IMPORT_TEMPLATES = {
             "notes": "Imported carton stock",
         },
     },
+    "schedule": {
+        "label": "Schedule",
+        "description": "Imports old-system schedule rows into the production schedule and matching orders.",
+        "columns": SCHEDULE_COLUMNS,
+        "sample": {
+            "Row ID": "JunRBNpREWu5GTAbi32P",
+            "Schedule / ID": "97c0f634-fb9a-4b58-afb3-720c885e6f90",
+            "Order / Scheduled By": "CSR",
+            "Order / Date Scheduled": "5/22/2026, 11:25:16 AM",
+            "Schedule / Item ID": "L9O0y5A5S2m11p4xM4NmIw",
+            "Schedule / Item Number": "MAS-TTUF-45-65-F-AQUA-ZEKT",
+            "Schedule / Status": "unassigned",
+            "Press": "",
+            "Schedule / Order": "",
+            "Order / Ship": "2",
+            "Order / Stock": "",
+            "Order / Customer": "MID AMERICA STEEL",
+            "Order / Po": "261080",
+            "Order / Note to Operator": "MUST BE 10 MIL",
+            "Schedule / Priority": "High",
+        },
+    },
     "print_plates": {
         "label": "Print Plates",
         "description": "Imports print plates linked to a label layout by recipe_name.",
@@ -514,6 +554,14 @@ def date_value(value):
         return None
     parsed = parse_date(str(value).strip())
     return parsed
+
+
+def date_or_datetime_value(value):
+    parsed_date = date_value(value)
+    if parsed_date:
+        return parsed_date
+    parsed_datetime = datetime_value(value)
+    return parsed_datetime.date() if parsed_datetime else None
 
 
 def datetime_value(value):
@@ -865,6 +913,112 @@ def find_material_spec(code="", name="", material_type="", master_type=None):
     if master_type:
         return qs.filter(master_type=master_type).first()
     return None
+
+
+SCHEDULE_PRESS_ALIASES = {
+    "13_nil": '13" Nilpeter',
+    "13_nilpeter": '13" Nilpeter',
+    "13_in_nilpeter": '13" Nilpeter',
+    "17_nil": '17" Nilpeter',
+    "17_nilpeter": '17" Nilpeter',
+    "17_in_nilpeter": '17" Nilpeter',
+    "13_azt": '13" Aztech',
+    "13_aztech": '13" Aztech',
+    "13_in_aztech": '13" Aztech',
+    "18_azt": '18" Aztech',
+    "18_aztech": '18" Aztech',
+    "18_in_aztech": '18" Aztech',
+    "eti": "ETI",
+    "slitter": "Slitter",
+    "rework": "Rework",
+}
+
+
+def normalize_schedule_press_name(*values):
+    status_like = {"", "unassigned", "unscheduled", "scheduled", "ready", "running", "complete", "completed", "cancelled", "canceled", "on_hold", "held"}
+    for value in values:
+        text = str(value or "").strip()
+        key = normalize_key(text)
+        if key in status_like:
+            continue
+        if key in SCHEDULE_PRESS_ALIASES:
+            return SCHEDULE_PRESS_ALIASES[key]
+        if text:
+            return text
+    return ""
+
+
+def find_or_create_press(name):
+    name = normalize_schedule_press_name(name)
+    if not name:
+        return None
+    press = Press.objects.filter(name__iexact=name).first()
+    if press:
+        return press
+    width = decimal_or_none(name)
+    return Press.objects.create(
+        name=name[:100],
+        max_web_width_inches=width if width and width > 0 else None,
+        notes=mark_imported_note("Created from schedule import.", source="Glide Schedule"),
+    )
+
+
+def schedule_status_value(status_value, press=None):
+    key = normalize_key(status_value)
+    if key in {"ready"}:
+        return "ready"
+    if key in {"running", "run", "in_progress"}:
+        return "running"
+    if key in {"complete", "completed", "done"}:
+        return "complete"
+    if key in {"cancelled", "canceled", "void"}:
+        return "cancelled"
+    if key in {"on_hold", "held", "hold"}:
+        return "on_hold"
+    if key in {"scheduled"}:
+        return "scheduled"
+    if key in {"unassigned", "unscheduled", ""}:
+        return "scheduled" if press else "unscheduled"
+    return "scheduled" if press or key else "unscheduled"
+
+
+def schedule_priority_value(value):
+    key = normalize_key(value)
+    if key in {"high", "hot", "rush"}:
+        return "high"
+    if key in {"medium", "med"}:
+        return "medium"
+    return "low"
+
+
+def legacy_import_lookup_map(model, row_ids):
+    keys = {ticket_lookup_key(row_id) for row_id in row_ids if ticket_lookup_key(row_id)}
+    if not keys:
+        return {}
+    lookup = {}
+    for item in model.objects.filter(notes__icontains="Legacy Row ID:").only("id", "notes"):
+        key = ticket_lookup_key(legacy_row_id_from_note(item.notes))
+        if key and key in keys and key not in lookup:
+            lookup[key] = item
+    return lookup
+
+
+def find_schedule_material(value):
+    text = clean_legacy_meta_search_value(value)
+    if not text:
+        return None
+    material = find_material_spec(text, material_type="coated_stock")
+    if material:
+        return material
+    family = text.split("-", 1)[0].strip()
+    if not family:
+        return None
+    return (
+        MaterialSpec.objects
+        .filter(material_type="coated_stock")
+        .filter(Q(code__iexact=family) | Q(name__iexact=family) | Q(material_family__iexact=family) | Q(master_type__code__iexact=family))
+        .first()
+    )
 
 
 def find_recipe(name):
@@ -1390,6 +1544,168 @@ def import_job_ticket_usage(rows):
     return result
 
 
+def schedule_note(row, row_id, source):
+    note_parts = [
+        first(row, "order_note_to_operator", "notes", "note"),
+        f"Legacy Schedule ID: {first(row, 'schedule_id')}" if first(row, "schedule_id") else "",
+        f"Legacy Item ID: {first(row, 'schedule_item_id')}" if first(row, "schedule_item_id") else "",
+        f"Legacy Item Number: {first(row, 'schedule_item_number')}" if first(row, "schedule_item_number") else "",
+        f"Legacy Status: {first(row, 'schedule_status')}" if first(row, "schedule_status") else "",
+        f"Legacy Status Code: {first(row, 'schedule_status_code')}" if first(row, "schedule_status_code") else "",
+        f"Material On Press: {first(row, 'material_on_press')}" if first(row, "material_on_press") else "",
+        f"Order Reschedule: {first(row, 'order_reschedule')}" if first(row, "order_reschedule") else "",
+        f"Starting Number: {first(row, 'schedule_starting_number')}" if first(row, "schedule_starting_number") else "",
+        f"Ending Number: {first(row, 'schedule_ending_number')}" if first(row, "schedule_ending_number") else "",
+        f"Lot Number On CL: {first(row, 'lot_number_on_cl')}" if first(row, "lot_number_on_cl") else "",
+        f"Printer Location: {first(row, 'printer_printer_location')}" if first(row, "printer_printer_location") else "",
+        f"Printer Media Type: {first(row, 'printer_media_type')}" if first(row, "printer_media_type") else "",
+        f"Carton Label Printer IP: {first(row, 'carton_label_printerip')}" if first(row, "carton_label_printerip") else "",
+    ]
+    return mark_imported_note("\n".join([part for part in note_parts if part]), row_id, source)
+
+
+def import_material_schedule_row(row, row_id, schedule_date, existing=None):
+    material_code = first(row, "coating_material")
+    material = find_schedule_material(material_code)
+    if not material:
+        return None, f"Could not match scheduled material {material_code}."
+
+    missing_components = [
+        label
+        for label, component in [
+            ("liner", material.liner_material),
+            ("face", material.face_material),
+            ("adhesive", material.adhesive_material),
+            ("silicone", material.silicone_material),
+        ]
+        if component is None
+    ]
+    if missing_components:
+        return None, f"Scheduled material {material.name} is missing {', '.join(missing_components)} setup."
+
+    press = find_or_create_press(normalize_schedule_press_name(first(row, "press"), first(row, "schedule_status"), first(row, "schedule_status_code")))
+    target_footage = decimal_or_none(first(row, "order_stock", "quantity", "fr_total_footage_raw"))
+    cut_description = first(row, "coating_cutting", default=material.coater_cut_plan)
+    liner_type = first(row, "coater_liner_type")
+    schedule = existing or CoaterRollTag()
+    schedule.name = f"{material.name}{f' / {liner_type} liner' if liner_type else ''}"[:150]
+    schedule.status = "scheduled"
+    schedule.print_status = "not_printed"
+    schedule.scheduled_by = first(row, "order_scheduled_by")[:100]
+    schedule.cut_description = cut_description[:200]
+    schedule.operator_notes = first(row, "order_note_to_operator", "notes", "note")
+    schedule.scheduled_material = material
+    schedule.produced_material = material
+    schedule.liner = material.liner_material
+    schedule.face = material.face_material
+    schedule.adhesive = material.adhesive_material
+    schedule.silicone = material.silicone_material
+    schedule.coating = material.coating_material
+    schedule.result_code = material.code[:80]
+    schedule.width_inches = decimal_or_none(cut_description)
+    schedule.length_feet = target_footage
+    schedule.operator = first(row, "operator_primary", "operator")[:100]
+    schedule.run_date = schedule_date
+    schedule.press = press
+    schedule.press_sequence = int_or_none(first(row, "schedule_order", "press_sequence"))
+    schedule.log_inventory = False
+    schedule.notes = schedule_note(row, row_id, "Glide Schedule")
+    schedule.save()
+    return schedule, ""
+
+
+def import_schedule(rows):
+    result = import_result()
+    parsed_rows = []
+    schedule_row_ids = set()
+    ticket_values = set()
+
+    for line_number, row in rows:
+        row_id = first(row, "schedule_row_id", "row_id", "legacy_row_id")
+        item_id = first(row, "schedule_item_id", "job_ticket_id", "legacy_job_ticket_id", "item_row_id")
+        item_number = clean_legacy_meta_search_value(first(row, "schedule_item_number", "job_number", "ticket_number", "item_number"))
+        tsm_id = first(row, "schedule_tsm_id", "tsm_id", "product_code")
+        material_code = first(row, "coating_material")
+        order_ship = decimal_or_none(first(row, "order_ship", "quantity_to_ship", "ship"))
+        order_stock = decimal_or_none(first(row, "order_stock", "quantity_to_stock", "stock"))
+
+        has_product_schedule = any([item_id, item_number, tsm_id, first(row, "order_customer"), first(row, "order_po")])
+        has_material_schedule = bool(material_code)
+        if not has_product_schedule and not has_material_schedule:
+            result["skipped"] += 1
+            add_warning(result, line_number, "Skipped schedule row with no job ticket or material schedule data.")
+            continue
+
+        parsed_rows.append((line_number, row, row_id, item_id, item_number, tsm_id, order_ship, order_stock, has_material_schedule and not has_product_schedule))
+        if row_id:
+            schedule_row_ids.add(row_id)
+        for value in [item_id, item_number, tsm_id]:
+            if value:
+                ticket_values.add(value)
+
+    ticket_map = job_ticket_lookup_map(ticket_values)
+    schedule_map = legacy_import_lookup_map(ProductionSchedule, schedule_row_ids)
+    coater_schedule_map = legacy_import_lookup_map(CoaterRollTag, schedule_row_ids)
+
+    for line_number, row, row_id, item_id, item_number, tsm_id, order_ship, order_stock, material_only in parsed_rows:
+        scheduled_at = datetime_value(first(row, "order_date_scheduled", "scheduled_at", "created_at"))
+        scheduled_date = scheduled_at.date() if scheduled_at else timezone.localdate()
+
+        if material_only:
+            existing = coater_schedule_map.get(ticket_lookup_key(row_id))
+            material_schedule, warning = import_material_schedule_row(row, row_id, scheduled_date, existing=existing)
+            if warning:
+                result["skipped"] += 1
+                add_warning(result, line_number, warning)
+                continue
+            result["updated" if existing and existing.pk else "created"] += 1
+            continue
+
+        job_ticket = None
+        for lookup_value in [item_id, tsm_id, item_number]:
+            job_ticket = ticket_map.get(ticket_lookup_key(lookup_value))
+            if job_ticket:
+                break
+        if not job_ticket:
+            add_error(result, line_number, f"Could not match schedule row to job ticket: {item_number or item_id or tsm_id or row_id}.")
+            continue
+
+        press = find_or_create_press(normalize_schedule_press_name(first(row, "press"), first(row, "schedule_status"), first(row, "schedule_status_code")))
+        customer_name = first(row, "order_customer", "customer_name", default=job_ticket.customer_name)
+        customer = find_or_create_customer(customer_name) or job_ticket.customer
+        existing = schedule_map.get(ticket_lookup_key(row_id))
+        schedule = existing or ProductionSchedule(job_ticket=job_ticket)
+        schedule.job_ticket = job_ticket
+        schedule.customer = customer
+        schedule.customer_po = first(row, "order_po", "customer_po")[:100]
+        schedule.status = schedule_status_value(first(row, "schedule_status"), press)
+        schedule.priority = schedule_priority_value(first(row, "schedule_priority", "priority"))
+        schedule.scheduled_by = first(row, "order_scheduled_by", "scheduled_by")[:120]
+        schedule.last_updated_by = schedule.scheduled_by
+        schedule.quantity_to_ship = order_ship or Decimal("0")
+        schedule.quantity_to_stock = order_stock or Decimal("0")
+        schedule.order_date = scheduled_date
+        schedule.scheduled_date = scheduled_date
+        schedule.press = press
+        schedule.press_sequence = int_or_none(first(row, "schedule_order", "press_sequence"))
+        schedule.operator = first(row, "operator_primary", "operator")[:100]
+        schedule.actual_footage = decimal_or_none(first(row, "fr_good_footage_raw", "actual_footage"))
+        schedule.target_footage = decimal_or_none(first(row, "fr_total_footage_raw", "target_footage"))
+        schedule.footage_report = "\n".join([
+            part for part in [
+                f"FR Type: {first(row, 'fr_type')}" if first(row, "fr_type") else "",
+                f"FR Finishing Unit: {first(row, 'fr_finishing_unit')}" if first(row, "fr_finishing_unit") else "",
+                f"FR Cartons Ran: {first(row, 'fr_cartons_ran')}" if first(row, "fr_cartons_ran") else "",
+                f"Order Stock Actual Ran: {first(row, 'order_stock_actual_ran')}" if first(row, "order_stock_actual_ran") else "",
+            ]
+        ])
+        schedule.notes = schedule_note(row, row_id, "Glide Schedule")
+        schedule.save()
+        result["updated" if existing and existing.pk else "created"] += 1
+
+    return result
+
+
 def find_finished_inventory_by_legacy_id(row_id):
     row_id = str(row_id or "").strip()
     if not row_id:
@@ -1415,17 +1731,18 @@ def import_finished_inventory(rows):
     unmatched_ticket_count = 0
     parsed_rows = []
     row_ids = set()
-    tsm_ids = set()
+    ticket_values = set()
 
     for line_number, row in rows:
-        row_id = first(row, "row_id", "legacy_row_id")
-        tsm_id = first(row, "tsm_id", "product_code", "job_ticket", "ticket_number", "job_number", "part_id")
+        row_id = first(row, "carton_row_id", "finished_inventory_row_id", "inventory_row_id", "row_id", "legacy_row_id")
+        ticket_ref = first(row, "tsm_id", "product_code", "job_ticket", "ticket_number", "job_number", "part_id", "row_id_2", "item_row_id")
         order_number = first(row, "order_number", "order_id", "schedule_order_number")
         part_number = first(row, "part_number", "sku", "item_number", "item")
-        quantity = decimal_or_none(first(row, "quantity", "actual_quantity", "actual_qty", "qty"))
+        part_number_meta = clean_legacy_meta_search_value(first(row, "part_number_meta_search", "ticket_information_part_number_meta_search"))
+        quantity = decimal_or_none(first(row, "quantity", "actual_quantity", "actual_qty", "qty", "quantity_new_quantity"))
 
-        if not any([row_id, tsm_id, part_number]):
-            add_error(result, line_number, "Finished inventory rows need row_id, tsm_id, or part_number.")
+        if not any([row_id, ticket_ref, part_number, part_number_meta]):
+            add_error(result, line_number, "Finished inventory rows need a carton row id, job ticket row id, or part number.")
             continue
         if quantity is None:
             result["skipped"] += 1
@@ -1436,15 +1753,14 @@ def import_finished_inventory(rows):
             add_warning(result, line_number, "Skipped finished inventory row with zero or negative quantity.")
             continue
 
-        parsed_rows.append((line_number, row, row_id, tsm_id, order_number, part_number, quantity))
+        parsed_rows.append((line_number, row, row_id, ticket_ref, order_number, part_number, part_number_meta, quantity))
         if row_id:
             row_ids.add(row_id)
-        if tsm_id:
-            tsm_ids.add(tsm_id)
-        if part_number:
-            tsm_ids.add(part_number)
+        for value in [ticket_ref, part_number, part_number_meta]:
+            if value:
+                ticket_values.add(value)
 
-    ticket_map = job_ticket_lookup_map(tsm_ids)
+    ticket_map = job_ticket_lookup_map(ticket_values)
     existing_map = finished_inventory_lookup_map(row_ids)
     location_cache = {}
     create_records = []
@@ -1468,10 +1784,15 @@ def import_finished_inventory(rows):
         "updated_at",
     ]
 
-    for _line_number, row, row_id, tsm_id, order_number, part_number, quantity in parsed_rows:
+    for _line_number, row, row_id, ticket_ref, order_number, part_number, part_number_meta, quantity in parsed_rows:
         customer_order = CustomerOrder.objects.select_related("job_ticket", "job_ticket__recipe").filter(order_number__iexact=order_number).first() if order_number else None
-        job_ticket = customer_order.job_ticket if customer_order else ticket_map.get(ticket_lookup_key(tsm_id)) or ticket_map.get(ticket_lookup_key(part_number))
-        if (tsm_id or part_number) and not job_ticket:
+        job_ticket = customer_order.job_ticket if customer_order else None
+        if not job_ticket:
+            for lookup_value in [ticket_ref, part_number, part_number_meta]:
+                job_ticket = ticket_map.get(ticket_lookup_key(lookup_value))
+                if job_ticket:
+                    break
+        if (ticket_ref or part_number or part_number_meta) and not job_ticket:
             unmatched_ticket_count += 1
 
         location_value = first(row, "location", "location_code", "location_name")
@@ -1482,22 +1803,28 @@ def import_finished_inventory(rows):
         existing = existing_map.get(ticket_lookup_key(row_id))
         note_parts = [
             first(row, "notes", "note"),
-            f"Imported TSM ID: {tsm_id}" if tsm_id else "",
+            f"Imported Job Ticket Reference: {ticket_ref}" if ticket_ref else "",
+            f"Imported Part Number: {part_number}" if part_number else "",
+            f"Imported Part Number Meta Search: {part_number_meta}" if part_number_meta and part_number_meta != part_number else "",
             f"Imported Order Number: {order_number}" if order_number else "",
         ]
         notes = mark_imported_note("\n".join([part for part in note_parts if part]), row_id, "Glide Finished Inventory")
-        item_name = first(row, "name", "item_name")
+        item_name = first(row, "inventory_name", "item_name")
+        raw_name = first(row, "name")
+        if not item_name and normalize_key(raw_name) not in {"shipping", "move", "sent", "add_item"}:
+            item_name = raw_name
         if not item_name:
             if job_ticket:
-                item_name = job_ticket.job_name or part_number or tsm_id or row_id
-            elif tsm_id and part_number:
-                item_name = f"{tsm_id} / {part_number}"
+                item_name = job_ticket.job_name or part_number or part_number_meta or ticket_ref or row_id
+            elif ticket_ref and (part_number or part_number_meta):
+                item_name = f"{ticket_ref} / {part_number or part_number_meta}"
             else:
-                item_name = part_number or tsm_id or row_id
+                item_name = part_number or part_number_meta or ticket_ref or row_id
+        sku = part_number or part_number_meta or (job_ticket.product_code if job_ticket else "")
 
         defaults = {
             "name": item_name[:150],
-            "sku": part_number[:80],
+            "sku": sku[:80],
             "job_ticket": job_ticket,
             "customer_order": customer_order,
             "order_number": order_number[:20],
@@ -1506,7 +1833,7 @@ def import_finished_inventory(rows):
             "quantity": quantity,
             "unit": choice_value(first(row, "unit"), FinishedInventory.UNIT_CHOICES, "carton"),
             "status": choice_value(first(row, "status"), FinishedInventory.STATUS_CHOICES, "available"),
-            "run_date": date_value(first(row, "run_date", "date", "last_run_date")),
+            "run_date": date_or_datetime_value(first(row, "run_date", "date", "temp_date", "last_run_date")),
             "face_type": first(row, "face_type", default=(job_ticket.face_type if job_ticket else "")),
             "liner_type": first(row, "liner_type", default=(job_ticket.liner_type if job_ticket else "")),
             "notes": notes,
@@ -1606,6 +1933,7 @@ def import_print_stations(rows):
 
 IMPORTERS = {
     "job_tickets": import_job_tickets,
+    "schedule": import_schedule,
     "flex_dies": import_flex_dies,
     "inventory": import_inventory,
     "inventory_usage": import_inventory_usage,
