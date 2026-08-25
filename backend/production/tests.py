@@ -270,6 +270,12 @@ class ApiAuthSecurityTests(TestCase):
 
 class DataImportToolingTests(TestCase):
     def test_legacy_flex_die_export_imports_flex_and_rotary_records(self):
+        role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        role.allowed_resource_keys = ["*"]
+        role.save(update_fields=["allowed_resource_keys"])
+        admin = CompanyUser.objects.create(username="tooling-import-admin", name="Tooling Import Admin", role=role, active=True)
+        admin.set_password("StrongPass7&")
+        admin.save()
         csv_text = "\n".join([
             "Row ID,Number,SizeAcross,SizeAround,LabelRepeat,ColSpace,CornerRadius,NoAcross,NoAround,LinerCaliper,FaceStock,Gear,Manufacturer,SerialNumber,Shape,Cut Position,Tooling Status,Description,ColSpace,Semi Rotary,Active",
             "RID-FLEX,FD-13-100,3,4,4.125,0.125,0.0625,2,1,40,Paper,99,Wilson Tool,FC123,RCR,Liner,In House (David's Dr),Legacy flex note,,false,true",
@@ -282,6 +288,7 @@ class DataImportToolingTests(TestCase):
         response = self.client.post(
             reverse("data-import-csv", args=["flex_dies"]),
             {"file": upload, "dry_run": "false"},
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(admin)}",
         )
 
         self.assertEqual(response.status_code, 200, response.content)
@@ -313,6 +320,12 @@ class DataImportToolingTests(TestCase):
 
 class DataImportJobTicketTests(TestCase):
     def test_glide_items_export_maps_existing_job_ticket_fields_and_ignores_old_only_columns(self):
+        role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        role.allowed_resource_keys = ["*"]
+        role.save(update_fields=["allowed_resource_keys"])
+        admin = CompanyUser.objects.create(username="import-admin", name="Import Admin", role=role, active=True)
+        admin.set_password("StrongPass7&")
+        admin.save()
         recipe = ToolingRecipe.objects.create(
             name="4-6.625-Poly-40-V1-P-12",
             label_width_inches=Decimal("4"),
@@ -322,12 +335,16 @@ class DataImportJobTicketTests(TestCase):
             liner_type="40",
         )
         csv_text = "\n".join([
-            "row_id,ticket_number,tsm_id,customer_name,Ticket Information / Part Number Meta Search,Ticket Information / Description,Ticket Information / Material ID,image_url,Ticket Information / Ribbon,Label Configuration / Face,Label Configuration / Liner,Label Configuration / Column Space,Label Configuration / key,label_length,label_width,repeat,cutting_type,finishing_type,unit_type,labels_per_unit,Labels per Unit,labels_per_carton,Finishing / Labels per Fold,box_item_number,box_link,core_link,core_size,wind,bagged,laminate,carton_label_part_number,carton_label_description_a,carton_label_finishing_1,job_note,Tooling / fd13A_ID,Ink / PMS1,update / what is changing",
-            "RID-1,PMDT-4-65-R,1-000-001,Tri-State Media,PMDT-4-65-R.,Standard 4 x 6.5 Label,PMDT-1a,https://example.com/art.pdf,No Ribbon,Poly,40,0.125,4-6.625-Poly-40-V1-P-12,6.5,4,6.625,RCR,Fanfod,Labels,750,3000,,250,BOX-15,,CORE-3,3,1,Bagged Together,No Laminate,PMDT-4-65-R,Carton text,750 Labels / Roll,Check press setup,FD-IGNORED,PMS-IGNORED,DO NOT SAVE ME",
+            "row_id,ticket_number,tsm_id,customer_name,Ticket Information / Part Number Meta Search,Ticket Information / Description,Ticket Information / Material ID,image_url,Ticket Information / Ribbon,Label Configuration / Face,Label Configuration / Liner,Label Configuration / Column Space,Label Configuration / key,label_length,label_width,repeat,cutting_type,finishing_type,unit_type,labels_per_unit,Labels per Unit,labels_per_carton,fanfold_gear,Finishing / Labels per Fold,box_item_number,box_link,core_link,core_size,wind,bagged,laminate,carton_label_part_number,carton_label_description_a,carton_label_finishing_1,job_note,Tooling / fd13A_ID,Ink / PMS1,update / what is changing",
+            "RID-1,1003-01-01T04:56:02.000Z,1-000-001,Tri-State Media,PMDT-4-65-R.,Standard 4 x 6.5 Label,PMDT-1a,https://example.com/art.pdf,No Ribbon,Poly,40,0.125,4-6.625-Poly-40-V1-P-12,6.5,4,6.625,RCR,Fanfod,Labels,Labels per Roll: 750,3000,,0106-01-01T04:56:02.000Z,250,BOX-15,,CORE-3,2001-03-01T05:00:00.000Z,2001-01-01T05:00:00.000Z,Bagged Together,No Laminate,PMDT-4-65-R,Carton text,750 Labels / Roll,Check press setup,FD-IGNORED,PMS-IGNORED,DO NOT SAVE ME",
         ])
         upload = SimpleUploadedFile("glide-items.csv", csv_text.encode("utf-8"), content_type="text/csv")
 
-        response = self.client.post(reverse("data-import-csv", args=["job_tickets"]), {"file": upload})
+        response = self.client.post(
+            reverse("data-import-csv", args=["job_tickets"]),
+            {"file": upload},
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(admin)}",
+        )
 
         self.assertEqual(response.status_code, 200, response.content)
         payload = response.json()
@@ -352,6 +369,7 @@ class DataImportJobTicketTests(TestCase):
         self.assertEqual(ticket.labels_per_unit, 750)
         self.assertEqual(ticket.units_per_carton, 3000)
         self.assertEqual(ticket.labels_per_carton, 3000)
+        self.assertEqual(ticket.fanfold_gear, 106)
         self.assertEqual(ticket.labels_per_fold, 250)
         self.assertEqual(ticket.box_item_number, "BOX-15")
         self.assertEqual(ticket.core_size_inches, Decimal("3"))

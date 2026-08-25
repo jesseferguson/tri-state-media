@@ -207,7 +207,7 @@ PRINT_STATION_COLUMNS = [
 IMPORT_TEMPLATES = {
     "job_tickets": {
         "label": "Job Tickets",
-        "description": "Imports production job tickets. The legacy row_id is preserved in notes and can be used as a fallback ticket number.",
+        "description": "Imports production job tickets. Old Glide Items exports are supported for matching fields; old-only columns are ignored. The legacy row_id is preserved in notes and can be used as a fallback ticket number.",
         "columns": JOB_TICKET_COLUMNS,
         "sample": {
             "row_id": "12345",
@@ -448,24 +448,63 @@ def first(row, *keys, default=""):
 def decimal_or_none(value):
     if is_blank_import_value(value):
         return None
+    text = str(value).strip()
+    if is_legacy_date_value(text):
+        return None
+    candidates = [text.replace(",", "")]
+    if ":" in text:
+        match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", text.split(":", 1)[1])
+        if match:
+            candidates.append(match.group(0).replace(",", ""))
+    leading = re.match(r"\s*([-+]?\d[\d,]*(?:\.\d+)?)", text)
+    if leading:
+        candidates.append(leading.group(1).replace(",", ""))
+    for candidate in candidates:
+        candidate = str(candidate or "").strip().strip("\"'")
+        if not candidate:
+            continue
+        try:
+            return Decimal(candidate)
+        except (InvalidOperation, ValueError):
+            continue
+    return None
+
+
+def legacy_date_number(value, mode="year"):
+    match = re.match(r"^(\d{3,4})-(\d{2})-(\d{2})T", str(value or "").strip())
+    if not match:
+        return None
+    year = int(match.group(1))
+    month = int(match.group(2))
+    if mode == "month_when_2001" and year == 2001:
+        return Decimal(month)
+    if mode == "year":
+        return Decimal(year)
+    return None
+
+
+def decimal_or_none_with_legacy_date(value, mode="year"):
+    date_number = legacy_date_number(value, mode)
+    if date_number is not None:
+        return date_number
+    return decimal_or_none(value)
+
+
+def int_or_none(value, mode=""):
+    number = decimal_or_none_with_legacy_date(value, mode) if mode else decimal_or_none(value)
+    if number is None:
+        return None
     try:
-        return Decimal(str(value).replace(",", "").strip())
-    except (InvalidOperation, ValueError):
+        return int(number)
+    except (TypeError, ValueError):
         return None
 
 
 def core_size_or_none(value):
-    number = decimal_or_none(value)
+    number = decimal_or_none_with_legacy_date(value, "month_when_2001")
     if number is None or number <= 0 or abs(number) >= Decimal("1000"):
         return None
     return number
-
-
-def int_or_none(value):
-    number = decimal_or_none(value)
-    if number is None:
-        return None
-    return int(number)
 
 
 def bool_value(value, default=False):
@@ -513,6 +552,15 @@ def clean_code(value):
 
 def clean_legacy_meta_search_value(value):
     return re.sub(r"\.+$", "", str(value or "").strip()).strip()
+
+
+def is_legacy_date_value(value):
+    return bool(re.match(r"^\d{3,4}-\d{2}-\d{2}T", str(value or "").strip()))
+
+
+def import_identifier(value):
+    text = str(value or "").strip()
+    return "" if is_legacy_date_value(text) else text
 
 
 def int_lookup_value(value):
@@ -642,13 +690,18 @@ def job_unit_type_value(value):
 
 
 def job_finishing_type_value(value):
+    text = str(value or "").strip()
     normalized = normalize_key(value)
     if not normalized:
         return "rolls"
-    if normalized in {"fanfold", "fan_fold", "fanfod"}:
+    if normalized in {"fanfold", "fan_fold", "fanfod"} or "fanfold" in normalized or "fandold" in normalized:
+        return "fanfold"
+    if re.search(r"(^|[-_\s])f($|[-_\s])", text, flags=re.IGNORECASE):
         return "fanfold"
     if "sheet" in normalized:
         return "sheeted"
+    if re.search(r"(^|[-_\s])r($|[-_\s])", text, flags=re.IGNORECASE):
+        return "rolls"
     if "roll" in normalized:
         return "rolls"
     return choice_value(value, JobTicket.FINISHING_TYPE_CHOICES, "rolls")
@@ -658,6 +711,9 @@ def wind_direction_value(value):
     text = str(value or "").strip()
     if not text:
         return ""
+    date_number = legacy_date_number(text, "month_when_2001")
+    if date_number is not None and 1 <= int(date_number) <= 8:
+        return str(int(date_number))
     normalized = normalize_key(text)
     if normalized in {"none", "not_set", "na", "n_a", "no", "0"}:
         return ""
@@ -956,7 +1012,8 @@ def import_job_tickets(rows):
     result = import_result()
     for line_number, row in rows:
         legacy_part_number = clean_legacy_meta_search_value(first(row, "Ticket Information / Part Number Meta Search"))
-        ticket_number = first(row, "ticket_number") or legacy_part_number or first(row, "tsm_id", "product_code", "row_id")
+        imported_product_code = import_identifier(first(row, "tsm_id", "product_code"))
+        ticket_number = import_identifier(first(row, "ticket_number")) or legacy_part_number or imported_product_code or first(row, "row_id")
         row_id = first(row, "row_id")
         if not ticket_number:
             add_error(result, line_number, "Missing ticket_number, tsm_id, or row_id.")
@@ -994,7 +1051,7 @@ def import_job_tickets(rows):
         gap = decimal_or_none(first(row, "gap", "gap_around", "gap_around_inches", "Label Configuration / Column Space", "column_space", "col_space"))
         if repeat is None and label_length is not None and gap is not None:
             repeat = label_length + gap
-        labels_per_unit = int_or_none(first(row, "labels_per_unit", "labels_per_roll", "tags_per_roll", "tags_per_unit", "lpu"))
+        labels_per_unit = int_or_none(first(row, "labels_per_unit", "labels_per_roll", "tags_per_roll", "tags_per_unit", "lpu"), mode="year")
         units_per_carton = int_or_none(first(
             row,
             "units_per_carton",
@@ -1007,7 +1064,8 @@ def import_job_tickets(rows):
             "numbers_per_carton",
             "labels_in_box",
             "number_of_labels_in_box",
-        ))
+        ), mode="year")
+        finishing_type = job_finishing_type_value(first(row, "finishing_type", "finishing", default=ticket_number))
         wind_raw = first(row, "wind", "wind_direction")
         wind_direction = wind_direction_value(wind_raw)
         if wind_raw and not wind_direction and normalize_key(wind_raw) not in {"none", "not_set", "na", "n_a", "no", "0"}:
@@ -1021,7 +1079,7 @@ def import_job_tickets(rows):
             "legacy_row_id": row_id,
             "customer_name": customer.name if customer else customer_name,
             "job_name": first(row, "job_number", "job_name", "part_number") or legacy_part_number or ticket_number,
-            "product_code": first(row, "tsm_id", "product_code", default=ticket_number),
+            "product_code": imported_product_code or ticket_number,
             "description": first(row, "description", "job_description", "product_description", "Ticket Information / Description", "desc"),
             "box_item_number": box_item_number,
             "label_width_inches": decimal_or_none(first(row, "label_width", "label_width_inches", "width", "Label Configuration / Width")),
@@ -1034,7 +1092,7 @@ def import_job_tickets(rows):
             "material_spec": material_spec,
             "recipe": recipe,
             "requested_quantity": decimal_or_none(first(row, "requested_quantity", "quantity")) or Decimal("0"),
-            "finishing_type": job_finishing_type_value(first(row, "finishing_type", "finishing")),
+            "finishing_type": finishing_type,
             "unit_type": job_unit_type_value(first(row, "unit_type", "unit", "product_unit")),
             "labels_per_unit": labels_per_unit,
             "units_per_carton": units_per_carton,
@@ -1043,8 +1101,8 @@ def import_job_tickets(rows):
             "core": core,
             "core_size_inches": core_size,
             "wind_direction": wind_direction,
-            "fanfold_gear": int_or_none(first(row, "fanfold_gear", "fold_gear")),
-            "labels_per_fold": int_or_none(first(row, "labels_per_fold", "tags_per_fold", "units_per_fold", "Finishing / Labels per Fold")),
+            "fanfold_gear": int_or_none(first(row, "fanfold_gear", "fold_gear"), mode="year"),
+            "labels_per_fold": int_or_none(first(row, "labels_per_fold", "tags_per_fold", "units_per_fold", "Finishing / Labels per Fold"), mode="year"),
             "ribbon": yes_no_choice_value(first(row, "ribbon", "ribbon_type", "Ticket Information / Ribbon"), JobTicket.RIBBON_CHOICES, "ribbon", "no_ribbon"),
             "laminate": yes_no_choice_value(first(row, "laminate", "laminate_type"), JobTicket.LAMINATE_CHOICES, "laminate", "no_laminate"),
             "bagged": yes_no_choice_value(first(row, "bagged", "bag", "bagging", "is_bagged"), JobTicket.BAGGED_CHOICES, "bagged", "not_bagged"),
