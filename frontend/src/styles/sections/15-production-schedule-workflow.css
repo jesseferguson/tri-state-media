@@ -76,11 +76,14 @@
 }
 
 .schedule-thumb {
+  box-sizing: border-box;
+  position: relative;
   width: 100%;
   height: 126px;
   overflow: hidden;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background: #ffffff;
@@ -88,9 +91,13 @@
 }
 
 .schedule-thumb img {
-  width: 100%;
-  height: 100%;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
+  object-position: center center;
   padding: 0;
   background: #ffffff;
 }
@@ -1043,10 +1050,9 @@
 }
 
 .schedule-lineup-position {
-  position: absolute;
-  z-index: 3;
-  top: 58px;
-  left: 18px;
+  position: static;
+  z-index: 1;
+  justify-self: start;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1107,10 +1113,33 @@
 
 .schedule-lineup-main .schedule-thumb {
   width: 100%;
-  min-height: 154px;
-  height: auto;
-  aspect-ratio: 4 / 3;
+  min-height: 0;
+  height: clamp(168px, 17vw, 220px);
+  aspect-ratio: auto;
+  padding: 10px;
   border-radius: 7px;
+}
+
+.schedule-lineup-main .schedule-thumb img,
+.schedule-lineup-main .schedule-thumb-image {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center center;
+}
+
+.schedule-lineup-main .schedule-thumb .pdf-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.schedule-lineup-main .schedule-thumb .pdf-preview iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .schedule-lineup-title,

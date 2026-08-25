@@ -640,7 +640,7 @@ function ScheduleThumb({ row }) {
   return (
     <div className="schedule-thumb">
       {src && !scheduleImageIsDocument(row) ? (
-        <AuthenticatedImage src={src} alt={row.job_general_image_name || row.job_name || "Scheduled job"} />
+        <AuthenticatedImage className="schedule-thumb-image" src={src} alt={row.job_general_image_name || row.job_name || "Scheduled job"} />
       ) : src ? (
         <PdfPreview url={src} title={row.job_general_image_name || row.job_name || "Scheduled PDF"} compact />
       ) : (

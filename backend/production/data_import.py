@@ -511,6 +511,10 @@ def clean_code(value):
     return text
 
 
+def clean_legacy_meta_search_value(value):
+    return re.sub(r"\.+$", "", str(value or "").strip()).strip()
+
+
 def int_lookup_value(value):
     text = str(value or "").strip()
     return int(text) if text.isdigit() else None
@@ -635,6 +639,19 @@ def job_unit_type_value(value):
     if normalized in {"label", "labels"}:
         return "label"
     return choice_value(value, JobTicket.UNIT_TYPE_CHOICES, "label")
+
+
+def job_finishing_type_value(value):
+    normalized = normalize_key(value)
+    if not normalized:
+        return "rolls"
+    if normalized in {"fanfold", "fan_fold", "fanfod"}:
+        return "fanfold"
+    if "sheet" in normalized:
+        return "sheeted"
+    if "roll" in normalized:
+        return "rolls"
+    return choice_value(value, JobTicket.FINISHING_TYPE_CHOICES, "rolls")
 
 
 def wind_direction_value(value):
@@ -938,7 +955,8 @@ def save_model(obj, defaults, result):
 def import_job_tickets(rows):
     result = import_result()
     for line_number, row in rows:
-        ticket_number = first(row, "ticket_number", "tsm_id", "product_code", "row_id")
+        legacy_part_number = clean_legacy_meta_search_value(first(row, "Ticket Information / Part Number Meta Search"))
+        ticket_number = first(row, "ticket_number") or legacy_part_number or first(row, "tsm_id", "product_code", "row_id")
         row_id = first(row, "row_id")
         if not ticket_number:
             add_error(result, line_number, "Missing ticket_number, tsm_id, or row_id.")
@@ -951,12 +969,12 @@ def import_job_tickets(rows):
             first(row, "master_type_name"),
         )
         material_spec = find_material_spec(
-            first(row, "finished_material_code", "material_code", "material_spec_code"),
-            first(row, "finished_material_name", "material_name"),
+            first(row, "finished_material_code", "material_code", "material_spec_code", "Ticket Information / Material ID"),
+            first(row, "finished_material_name", "material_name", "Ticket Information / Material ID"),
             "coated_stock",
             master_type,
         )
-        recipe = find_recipe(first(row, "recipe_name", "recipe"))
+        recipe = find_recipe(first(row, "recipe_name", "recipe", "Label Configuration / key", "Label Configuration / ID"))
         box_item_number = first(row, "box_item_number", "box_code")
         box = find_box(box_item_number, first(row, "box_name"), first(row, "box_link", "box_id"))
         core_size_raw = first(row, "core_size", "core_size_inches")
@@ -971,18 +989,22 @@ def import_job_tickets(rows):
             core_size,
         )
 
-        label_length = decimal_or_none(first(row, "label_length", "label_length_inches", "length"))
+        label_length = decimal_or_none(first(row, "label_length", "label_length_inches", "length", "Label Configuration / Length"))
         repeat = decimal_or_none(first(row, "repeat", "repeat_inches"))
-        gap = decimal_or_none(first(row, "gap", "gap_around", "gap_around_inches"))
+        gap = decimal_or_none(first(row, "gap", "gap_around", "gap_around_inches", "Label Configuration / Column Space", "column_space", "col_space"))
         if repeat is None and label_length is not None and gap is not None:
             repeat = label_length + gap
-        labels_per_unit = int_or_none(first(row, "labels_per_unit", "labels_per_roll", "tags_per_roll", "tags_per_unit"))
+        labels_per_unit = int_or_none(first(row, "labels_per_unit", "labels_per_roll", "tags_per_roll", "tags_per_unit", "lpu"))
         units_per_carton = int_or_none(first(
             row,
             "units_per_carton",
             "units_in_carton",
             "tags_per_carton",
             "labels_per_carton",
+            "labels_per_unit_2",
+            "lpc",
+            "unit_per_carton",
+            "numbers_per_carton",
             "labels_in_box",
             "number_of_labels_in_box",
         ))
@@ -998,21 +1020,21 @@ def import_job_tickets(rows):
             "customer": customer,
             "legacy_row_id": row_id,
             "customer_name": customer.name if customer else customer_name,
-            "job_name": first(row, "job_number", "job_name", "part_number", default=ticket_number),
+            "job_name": first(row, "job_number", "job_name", "part_number") or legacy_part_number or ticket_number,
             "product_code": first(row, "tsm_id", "product_code", default=ticket_number),
-            "description": first(row, "description", "job_description", "product_description", "desc"),
+            "description": first(row, "description", "job_description", "product_description", "Ticket Information / Description", "desc"),
             "box_item_number": box_item_number,
-            "label_width_inches": decimal_or_none(first(row, "label_width", "label_width_inches", "width")),
+            "label_width_inches": decimal_or_none(first(row, "label_width", "label_width_inches", "width", "Label Configuration / Width")),
             "label_length_inches": label_length,
             "repeat_inches": repeat,
             "cutting_type": choice_value(first(row, "cutting_type"), JobTicket.CUTTING_TYPE_CHOICES, "to_liner"),
-            "face_type": first(row, "face_type", "face"),
-            "liner_type": first(row, "liner_type", "liner"),
+            "face_type": first(row, "face_type", "face", "Label Configuration / Face", "Cutting Face Type"),
+            "liner_type": first(row, "liner_type", "liner", "Label Configuration / Liner"),
             "material_master_type": master_type or (material_spec.master_type if material_spec else None),
             "material_spec": material_spec,
             "recipe": recipe,
             "requested_quantity": decimal_or_none(first(row, "requested_quantity", "quantity")) or Decimal("0"),
-            "finishing_type": choice_value(first(row, "finishing_type", "finishing"), JobTicket.FINISHING_TYPE_CHOICES, "rolls"),
+            "finishing_type": job_finishing_type_value(first(row, "finishing_type", "finishing")),
             "unit_type": job_unit_type_value(first(row, "unit_type", "unit", "product_unit")),
             "labels_per_unit": labels_per_unit,
             "units_per_carton": units_per_carton,
@@ -1022,8 +1044,8 @@ def import_job_tickets(rows):
             "core_size_inches": core_size,
             "wind_direction": wind_direction,
             "fanfold_gear": int_or_none(first(row, "fanfold_gear", "fold_gear")),
-            "labels_per_fold": int_or_none(first(row, "labels_per_fold", "tags_per_fold", "units_per_fold")),
-            "ribbon": yes_no_choice_value(first(row, "ribbon", "ribbon_type"), JobTicket.RIBBON_CHOICES, "ribbon", "no_ribbon"),
+            "labels_per_fold": int_or_none(first(row, "labels_per_fold", "tags_per_fold", "units_per_fold", "Finishing / Labels per Fold")),
+            "ribbon": yes_no_choice_value(first(row, "ribbon", "ribbon_type", "Ticket Information / Ribbon"), JobTicket.RIBBON_CHOICES, "ribbon", "no_ribbon"),
             "laminate": yes_no_choice_value(first(row, "laminate", "laminate_type"), JobTicket.LAMINATE_CHOICES, "laminate", "no_laminate"),
             "bagged": yes_no_choice_value(first(row, "bagged", "bag", "bagging", "is_bagged"), JobTicket.BAGGED_CHOICES, "bagged", "not_bagged"),
             "carton_label_part_number": first(row, "carton_label_part_number", "carton_label_partnumber"),

@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 
 from materials.models import CoaterRollTag, MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
-from tooling.models import FlexDie, Press, Supplier, ToolingLocation
+from tooling.models import FlexDie, Press, Supplier, ToolingLocation, ToolingRecipe
 
 from .models import (
     Customer,
@@ -309,6 +309,61 @@ class DataImportToolingTests(TestCase):
 
         self.assertTrue(Supplier.objects.filter(name="Wilson Tool").exists())
         self.assertFalse(FlexDie.objects.filter(name="RID-NAMELESS").exists())
+
+
+class DataImportJobTicketTests(TestCase):
+    def test_glide_items_export_maps_existing_job_ticket_fields_and_ignores_old_only_columns(self):
+        recipe = ToolingRecipe.objects.create(
+            name="4-6.625-Poly-40-V1-P-12",
+            label_width_inches=Decimal("4"),
+            label_length_inches=Decimal("6.5"),
+            repeat_inches=Decimal("6.625"),
+            face_type="Poly",
+            liner_type="40",
+        )
+        csv_text = "\n".join([
+            "row_id,ticket_number,tsm_id,customer_name,Ticket Information / Part Number Meta Search,Ticket Information / Description,Ticket Information / Material ID,image_url,Ticket Information / Ribbon,Label Configuration / Face,Label Configuration / Liner,Label Configuration / Column Space,Label Configuration / key,label_length,label_width,repeat,cutting_type,finishing_type,unit_type,labels_per_unit,Labels per Unit,labels_per_carton,Finishing / Labels per Fold,box_item_number,box_link,core_link,core_size,wind,bagged,laminate,carton_label_part_number,carton_label_description_a,carton_label_finishing_1,job_note,Tooling / fd13A_ID,Ink / PMS1,update / what is changing",
+            "RID-1,PMDT-4-65-R,1-000-001,Tri-State Media,PMDT-4-65-R.,Standard 4 x 6.5 Label,PMDT-1a,https://example.com/art.pdf,No Ribbon,Poly,40,0.125,4-6.625-Poly-40-V1-P-12,6.5,4,6.625,RCR,Fanfod,Labels,750,3000,,250,BOX-15,,CORE-3,3,1,Bagged Together,No Laminate,PMDT-4-65-R,Carton text,750 Labels / Roll,Check press setup,FD-IGNORED,PMS-IGNORED,DO NOT SAVE ME",
+        ])
+        upload = SimpleUploadedFile("glide-items.csv", csv_text.encode("utf-8"), content_type="text/csv")
+
+        response = self.client.post(reverse("data-import-csv", args=["job_tickets"]), {"file": upload})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["error_count"], 0)
+        ticket = JobTicket.objects.get(ticket_number="PMDT-4-65-R")
+        self.assertEqual(ticket.legacy_row_id, "RID-1")
+        self.assertEqual(ticket.customer_name, "Tri-State Media")
+        self.assertEqual(ticket.job_name, "PMDT-4-65-R")
+        self.assertEqual(ticket.product_code, "1-000-001")
+        self.assertEqual(ticket.description, "Standard 4 x 6.5 Label")
+        self.assertEqual(ticket.external_image_url, "https://example.com/art.pdf")
+        self.assertEqual(ticket.external_image_source, "Glide")
+        self.assertEqual(ticket.label_width_inches, Decimal("4"))
+        self.assertEqual(ticket.label_length_inches, Decimal("6.5"))
+        self.assertEqual(ticket.repeat_inches, Decimal("6.625"))
+        self.assertEqual(ticket.face_type, "Poly")
+        self.assertEqual(ticket.liner_type, "40")
+        self.assertEqual(ticket.recipe, recipe)
+        self.assertEqual(ticket.finishing_type, "fanfold")
+        self.assertEqual(ticket.unit_type, "label")
+        self.assertEqual(ticket.labels_per_unit, 750)
+        self.assertEqual(ticket.units_per_carton, 3000)
+        self.assertEqual(ticket.labels_per_carton, 3000)
+        self.assertEqual(ticket.labels_per_fold, 250)
+        self.assertEqual(ticket.box_item_number, "BOX-15")
+        self.assertEqual(ticket.core_size_inches, Decimal("3"))
+        self.assertEqual(ticket.wind_direction, "1")
+        self.assertEqual(ticket.bagged, "bagged")
+        self.assertEqual(ticket.laminate, "no_laminate")
+        self.assertEqual(ticket.ribbon, "no_ribbon")
+        self.assertIn("Check press setup", ticket.job_notes)
+        self.assertNotIn("FD-IGNORED", ticket.job_notes)
+        self.assertNotIn("PMS-IGNORED", ticket.job_notes)
+        self.assertNotIn("DO NOT SAVE ME", ticket.job_notes)
+        self.assertEqual(MaterialMasterType.objects.count(), 0)
 
 
 class CustomerInteractionTests(TestCase):
