@@ -69,6 +69,14 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
 
   if (resource.key === "customers") {
     addLookupSpec(specs, { key: "customer-open-interactions", endpoint: "customer-interactions", ordering: "follow_up_date,-occurred_at", filters: { open: true }, pageSize: 1000, fetchAll: true });
+    addLookupSpec(specs, {
+      key: "all-job-tickets",
+      endpoint: resourceMap["job-tickets"].endpoint,
+      ordering: resourceMap["job-tickets"].defaultOrdering,
+      filters: { ...(resourceMap["job-tickets"].filters ?? {}) },
+      pageSize: 1000,
+      fetchAll: true,
+    });
   }
 
   if (resource.key === "customers" && selected?.id) {

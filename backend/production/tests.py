@@ -396,7 +396,7 @@ class CustomerInteractionTests(TestCase):
         results = list_response.json().get("results", list_response.json())
         self.assertEqual(len(results), 1)
 
-    def test_customer_interaction_rejects_linked_record_from_another_customer(self):
+    def test_customer_interaction_allows_shared_job_from_another_customer(self):
         _, ticket, _, _ = self.make_customer_job()
         other_customer = Customer.objects.create(name="Other Customer")
 
@@ -407,14 +407,38 @@ class CustomerInteractionTests(TestCase):
                 "job_ticket": ticket.id,
                 "interaction_type": "job_comment",
                 "status": "open",
-                "subject": "Wrong customer",
+                "subject": "Shared reorder",
+                "body": "This customer is asking about a job ticket that is ordered by multiple accounts.",
+            },
+            content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        interaction = CustomerInteraction.objects.get(subject="Shared reorder")
+        self.assertEqual(interaction.customer, other_customer)
+        self.assertEqual(interaction.job_ticket, ticket)
+
+    def test_customer_interaction_rejects_quote_from_another_customer(self):
+        _, _, _, quote = self.make_customer_job()
+        other_customer = Customer.objects.create(name="Other Customer")
+
+        response = self.client.post(
+            reverse("customer-interaction-list"),
+            {
+                "customer": other_customer.id,
+                "quote": quote.external_id,
+                "interaction_type": "call",
+                "status": "open",
+                "subject": "Wrong quote customer",
+                "body": "Quote should stay tied to its owning customer.",
             },
             content_type="application/json",
             HTTP_AUTHORIZATION=self.auth_header,
         )
 
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("job_ticket", response.json())
+        self.assertIn("quote", response.json())
 
     def test_customer_follow_up_accepts_multiple_jobs_and_quote_external_ids(self):
         customer, ticket, _, quote = self.make_customer_job()
@@ -734,6 +758,16 @@ class CustomerInteractionTests(TestCase):
 
 
 class FinishedInventoryOrderWorkflowTests(TestCase):
+    def setUp(self):
+        self.role = CompanyRole.objects.create(
+            name="Order Workflow",
+            allowed_resource_keys=["finished-inventory", "customer-orders", "production-schedule", "job-tickets"],
+        )
+        self.user = CompanyUser.objects.create(username="order-workflow", name="Order Workflow", role=self.role, active=True)
+        self.user.set_password("StrongPass7&")
+        self.user.save()
+        self.client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {create_company_user_token(self.user)}"
+
     def make_ticket(self, ticket_number="JT-100", product_code="TSM-100"):
         return JobTicket.objects.create(
             ticket_number=ticket_number,
@@ -763,6 +797,101 @@ class FinishedInventoryOrderWorkflowTests(TestCase):
         self.assertRegex(order.order_number, r"^ORD\d{6}-\d{4}$")
         self.assertEqual(order.job_ticket, ticket)
         self.assertEqual(order.operator_note, ticket.job_notes)
+
+    def test_removed_order_can_be_restored_to_schedule(self):
+        ticket = self.make_ticket()
+        press = Press.objects.create(name="Press 1")
+        schedule = ProductionSchedule.objects.create(
+            job_ticket=ticket,
+            quantity_to_ship=10,
+            quantity_to_stock=5,
+            scheduled_by="Scheduler",
+            last_updated_by="Scheduler",
+            scheduled_date=timezone.localdate(),
+            due_date=timezone.localdate(),
+            press=press,
+            press_sequence=2,
+            operator="Operator",
+            notes="Original schedule note.",
+        )
+        order = CustomerOrder.objects.get(schedule_entry=schedule)
+        order_number = order.order_number
+        schedule._delete_reason = "Duplicate entry."
+        schedule._delete_actor = "Scheduler"
+        schedule.delete()
+
+        order.refresh_from_db()
+        self.assertIsNone(order.schedule_entry)
+        self.assertEqual(order.status, "schedule_removed")
+
+        response = self.client.post(
+            reverse("customer-order-restore-to-schedule", args=[order.id]),
+            {
+                "performed_by": "Scheduler",
+                "reason": "Removal was a mistake.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        order.refresh_from_db()
+        self.assertEqual(order.order_number, order_number)
+        self.assertIsNotNone(order.schedule_entry)
+        self.assertEqual(order.status, "scheduled")
+        self.assertEqual(order.press_name, press.name)
+        self.assertEqual(order.press_sequence, 2)
+        self.assertEqual(ProductionSchedule.objects.count(), 1)
+        self.assertTrue(CustomerOrderEvent.objects.filter(order=order, event_type="schedule_restored").exists())
+        self.assertTrue(JobTicketEvent.objects.filter(job_ticket=ticket, event_type="schedule_restored").exists())
+
+    def test_schedule_hold_requires_reasons_and_clears_on_resume(self):
+        ticket = self.make_ticket()
+        schedule = ProductionSchedule.objects.create(job_ticket=ticket, scheduled_by="Planner")
+
+        missing_reason = self.client.patch(
+            reverse("production-schedule-detail", args=[schedule.id]),
+            data=json.dumps({"status": "on_hold", "last_updated_by": "Planner"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(missing_reason.status_code, 400, missing_reason.content)
+        self.assertIn("hold_reasons", missing_reason.json())
+
+        held = self.client.patch(
+            reverse("production-schedule-detail", args=[schedule.id]),
+            data=json.dumps({
+                "status": "on_hold",
+                "hold_reasons": ["tooling", "material"],
+                "hold_notes": "Waiting on die and paper.",
+                "held_by": "Planner",
+                "last_updated_by": "Planner",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(held.status_code, 200, held.content)
+        schedule.refresh_from_db()
+        order = CustomerOrder.objects.get(schedule_entry=schedule)
+        self.assertEqual(schedule.status, "on_hold")
+        self.assertEqual(schedule.hold_reasons, ["tooling", "material"])
+        self.assertEqual(schedule.hold_notes, "Waiting on die and paper.")
+        self.assertEqual(schedule.held_by, "Planner")
+        self.assertIsNotNone(schedule.held_at)
+        self.assertEqual(order.status, "on_hold")
+
+        resumed = self.client.patch(
+            reverse("production-schedule-detail", args=[schedule.id]),
+            data=json.dumps({"status": "scheduled", "last_updated_by": "Planner"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(resumed.status_code, 200, resumed.content)
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.status, "scheduled")
+        self.assertEqual(schedule.hold_reasons, [])
+        self.assertEqual(schedule.hold_notes, "")
+        self.assertIsNone(schedule.held_at)
+        self.assertEqual(schedule.held_by, "")
 
     def test_receive_order_creates_linked_finished_inventory(self):
         ticket = self.make_ticket()

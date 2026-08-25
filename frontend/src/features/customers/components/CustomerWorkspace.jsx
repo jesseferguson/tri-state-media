@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   AtSign,
   Bell,
@@ -55,6 +56,51 @@ import {
   ticketSortValue,
 } from "../utils/customerUtils.js";
 
+const SOON_FOLLOW_UP_BUSINESS_DAYS = 2;
+
+function localDateStart(value) {
+  if (!value) return null;
+  const dateText = String(value);
+  const dateOnly = dateText.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function todayStart() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addBusinessDays(value, days) {
+  const date = new Date(value);
+  let remaining = Number(days || 0);
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) remaining -= 1;
+  }
+  return date;
+}
+
+function followUpDueTone(interaction) {
+  const dueDate = localDateStart(interaction?.follow_up_date);
+  if (!dueDate) return "";
+  const today = todayStart();
+  if (dueDate < today) return "overdue";
+  return dueDate <= addBusinessDays(today, SOON_FOLLOW_UP_BUSINESS_DAYS) ? "soon" : "";
+}
+
+function followUpAlertTitle(interaction) {
+  return interaction?.subject
+    || interaction?.email_subject
+    || choiceLabel(INTERACTION_TYPES, interaction?.interaction_type);
+}
+
 export default function CustomerWorkspace({
   rows,
   allRows = rows,
@@ -64,6 +110,7 @@ export default function CustomerWorkspace({
   quotes = [],
   orders = [],
   jobTickets = [],
+  allJobTickets = jobTickets,
   interactions = [],
   openInteractions = [],
   users = [],
@@ -81,13 +128,17 @@ export default function CustomerWorkspace({
   onAddInteraction,
   onUpdateOpenLog,
   onNotifyTeam,
+  onViewOrderSchedule,
+  onRestoreOrderSchedule,
+  orderScheduleRestoringId = "",
   onFollowUpSeedHandled,
 }) {
   const [activePage, setActivePage] = useState("overview");
   const [showInlineResults, setShowInlineResults] = useState(false);
-  const [ownerScope, setOwnerScope] = useState("mine");
+  const [ownerScope, setOwnerScope] = useState("all");
   const [showOpenLogs, setShowOpenLogs] = useState(false);
   const [selectedFollowUpId, setSelectedFollowUpId] = useState("");
+  const [pendingFollowUpId, setPendingFollowUpId] = useState("");
   const [followUpSeed, setFollowUpSeed] = useState(null);
   const address = customerAddressLines(selected);
   const quoteTotalValue = quotes.reduce((sum, quote) => sum + quoteTotal(quote), 0);
@@ -121,6 +172,32 @@ export default function CustomerWorkspace({
       const customer = customersById.get(interactionCustomerId(interaction));
       return customerMatchesOwner(customer, currentUser);
     }).length
+  ), [customersById, currentUser, openInteractionRows, ownerScope]);
+  const priorityFollowUps = useMemo(() => (
+    openInteractionRows
+      .map((interaction) => {
+        const customerId = interactionCustomerId(interaction);
+        const customer = customersById.get(customerId) || {
+          id: customerId,
+          name: interaction.customer_name,
+        };
+        return {
+          interaction,
+          customer,
+          dueDate: localDateStart(interaction.follow_up_date),
+          tone: followUpDueTone(interaction),
+        };
+      })
+      .filter((item) => {
+        if (!item.tone) return false;
+        if (ownerScope !== "mine" || !(currentUser?.name || currentUser?.username)) return true;
+        return customerMatchesOwner(item.customer, currentUser);
+      })
+      .sort((a, b) => {
+        if (a.tone !== b.tone) return a.tone === "overdue" ? -1 : 1;
+        return (a.dueDate?.getTime() || 0) - (b.dueDate?.getTime() || 0);
+      })
+      .slice(0, 8)
   ), [customersById, currentUser, openInteractionRows, ownerScope]);
   const sortedInteractions = useMemo(() => (
     [...interactions].sort((a, b) => {
@@ -178,19 +255,25 @@ export default function CustomerWorkspace({
 
   useEffect(() => {
     if (!selected?.id || !sortedInteractions.length) {
-      setSelectedFollowUpId("");
+      if (!pendingFollowUpId) setSelectedFollowUpId("");
+      return;
+    }
+    if (pendingFollowUpId && sortedInteractions.some((followUp) => sameId(followUp.id, pendingFollowUpId))) {
+      setSelectedFollowUpId(String(pendingFollowUpId));
+      setPendingFollowUpId("");
       return;
     }
     if (!sortedInteractions.some((followUp) => sameId(followUp.id, selectedFollowUpId))) {
       setSelectedFollowUpId(String(sortedInteractions[0].id));
     }
-  }, [selected?.id, selectedFollowUpId, sortedInteractions]);
+  }, [pendingFollowUpId, selected?.id, selectedFollowUpId, sortedInteractions]);
 
   useEffect(() => {
     if (!externalFollowUpSeed?.id || !selected?.id) return;
     if (externalFollowUpSeed.customerId && !sameId(externalFollowUpSeed.customerId, selected.id)) return;
     setFollowUpSeed(externalFollowUpSeed);
     setSelectedFollowUpId("");
+    setPendingFollowUpId("");
     setActivePage("tickets");
     onFollowUpSeedHandled?.();
   }, [externalFollowUpSeed, onFollowUpSeedHandled, selected?.id]);
@@ -199,6 +282,7 @@ export default function CustomerWorkspace({
     setActivePage("overview");
     setShowInlineResults(false);
     setSelectedFollowUpId("");
+    setPendingFollowUpId("");
     setFollowUpSeed(null);
     onSearchChange?.("");
     onSelect?.(row);
@@ -207,6 +291,7 @@ export default function CustomerWorkspace({
   function backToSearch() {
     setActivePage("overview");
     setShowInlineResults(false);
+    setPendingFollowUpId("");
     onSearchChange?.("");
     onSelect?.(null);
   }
@@ -218,7 +303,22 @@ export default function CustomerWorkspace({
 
   function openFollowUp(followUp) {
     setSelectedFollowUpId(String(followUp?.id || ""));
+    setPendingFollowUpId("");
     setActivePage("tickets");
+  }
+
+  function openPriorityFollowUp(item) {
+    if (!item?.customer?.id) {
+      setShowOpenLogs(true);
+      return;
+    }
+    setPendingFollowUpId(String(item.interaction?.id || ""));
+    setSelectedFollowUpId("");
+    setFollowUpSeed(null);
+    setActivePage("tickets");
+    setShowInlineResults(false);
+    onSearchChange?.("");
+    onSelect?.(item.customer);
   }
 
   function createFollowUpFromQuote(quote) {
@@ -274,6 +374,43 @@ export default function CustomerWorkspace({
             <Metric label={ownerScope === "mine" ? "My Results" : "Search Results"} value={number(sortedCustomerRows.length)} detail={search.trim() ? "matching this search" : ownerScope === "mine" ? "assigned to you" : "visible accounts"} />
             <Metric label="Open Follow-Ups" value={number(visibleOpenLogCount)} detail="not closed yet" tone={visibleOpenLogCount ? "watch" : ""} />
           </section>
+
+          {priorityFollowUps.length > 0 && (
+            <section className="customer-followup-alert-panel">
+              <header>
+                <div>
+                  <AlertTriangle size={16} />
+                  <span>
+                    <strong>Follow-Ups Needing Attention</strong>
+                    <em>Overdue and due within 2 business days</em>
+                  </span>
+                </div>
+                <button className="ghost-btn xs" type="button" onClick={() => setShowOpenLogs(true)}>
+                  <Bell size={14} />
+                  View All
+                </button>
+              </header>
+              <div className="customer-followup-alert-grid">
+                {priorityFollowUps.map((item) => {
+                  const customerName = item.customer?.name || item.interaction.customer_name || "Customer";
+                  const relation = interactionRelationLabel(item.interaction);
+                  return (
+                    <button
+                      className={`customer-followup-alert-card ${item.tone}`}
+                      type="button"
+                      key={item.interaction.id}
+                      onClick={() => openPriorityFollowUp(item)}
+                    >
+                      <span>{item.tone === "overdue" ? "Overdue" : "Due Soon"}</span>
+                      <strong>{customerName}</strong>
+                      <em>{[followUpAlertTitle(item.interaction), relation].filter(Boolean).join(" / ")}</em>
+                      <b>Due {dateLabel(item.dueDate)}</b>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {showOpenLogs && (
             <OpenLogsSheet
@@ -409,7 +546,7 @@ export default function CustomerWorkspace({
             customer={selected}
             followUps={sortedInteractions}
             selectedFollowUpId={selectedFollowUpId}
-            jobTickets={jobTickets}
+            jobTickets={allJobTickets}
             quotes={quotes}
             currentUser={currentUser}
             draftSeed={followUpSeed}
@@ -425,7 +562,15 @@ export default function CustomerWorkspace({
           <section className="customer-page-content customer-work-page">
             <RelatedCard icon={ReceiptText} title="Orders" count={orders.length}>
               <div className="customer-activity-list">
-                {orders.slice(0, 10).map((order) => <OrderRow key={order.id || order.order_number} order={order} />)}
+                {orders.slice(0, 10).map((order) => (
+                  <OrderRow
+                    key={order.id || order.order_number}
+                    order={order}
+                    restoring={sameId(orderScheduleRestoringId, order.id)}
+                    onViewSchedule={onViewOrderSchedule}
+                    onRestoreSchedule={onRestoreOrderSchedule}
+                  />
+                ))}
                 {!orders.length && <p>{loading ? "Loading orders..." : "No orders found for this customer."}</p>}
               </div>
             </RelatedCard>

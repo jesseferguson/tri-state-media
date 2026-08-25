@@ -14,7 +14,7 @@ import {
   resourceCanOpenFromReturnKey,
   visibleResourcesForRole,
 } from "./navigation/navigationModel";
-import { BadgeCheck, Plus, Search, X } from "lucide-react";
+import { BadgeCheck, CalendarSearch, Plus, RotateCcw, Search, X } from "lucide-react";
 import { AUTH_SESSION_ENDED_EVENT, AUTH_SESSION_ENDED_MESSAGE, createRecord, deleteRecord, deleteRecordAction, fetchCollection, postRecordAction, requestApi, updateRecord, uploadRecordAction } from "../api";
 import { resourceMap } from "../resourceConfig";
 import { CustomerForm, CustomerWorkspace } from "../features/customers";
@@ -387,6 +387,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("inventoryId") || "" : ""
   ));
   const [coaterScheduleStartId, setCoaterScheduleStartId] = useState("");
+  const [scheduleFocusId, setScheduleFocusId] = useState("");
   const [scannedSkidToken, setScannedSkidToken] = useState(() => (
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("skidToken") || "" : ""
   ));
@@ -1563,6 +1564,19 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     },
   });
 
+  const orderRestoreScheduleMutation = useMutation({
+    mutationFn: ({ order, payload }) => postRecordAction("customer-orders", order.id, "restore-to-schedule", payload),
+    onSuccess: (saved) => {
+      queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "customer-order-events"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "job-ticket-events"] });
+      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+      if (saved?.schedule_entry) setScheduleFocusId(String(saved.schedule_entry));
+      switchResource("production-schedule");
+    },
+  });
+
   const jobTicketEditMutation = useMutation({
     mutationFn: async (payload) => {
       if (!selected?.id) throw new Error("No job ticket selected.");
@@ -1652,6 +1666,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       job_ticket: selected.id,
       customer: selected.customer || null,
       status: "unscheduled",
+      priority: payload.priority || "low",
       scheduled_by: currentUserForView.name,
       last_updated_by: currentUserForView.name,
       scheduled_date: payload.order_date || new Date().toISOString().slice(0, 10),
@@ -1752,6 +1767,31 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     setDesktopSidebarOpen(false);
     setMobilePageMenuOpen(false);
     setMobilePageSearch("");
+  }
+
+  function orderIsOnSchedule(order) {
+    return Boolean(order?.schedule_entry) && ["unscheduled", "scheduled", "ready", "running", "on_hold"].includes(String(order?.status || "").toLowerCase());
+  }
+
+  function orderCanRestoreToSchedule(order) {
+    return !order?.schedule_entry && String(order?.status || "").toLowerCase() === "schedule_removed";
+  }
+
+  function viewOrderOnSchedule(order) {
+    if (!order?.schedule_entry) return;
+    setScheduleFocusId(String(order.schedule_entry));
+    switchResource("production-schedule");
+  }
+
+  function restoreOrderToSchedule(order) {
+    if (!order?.id || orderRestoreScheduleMutation.isPending) return;
+    orderRestoreScheduleMutation.mutate({
+      order,
+      payload: {
+        performed_by: currentUserForView?.name || currentUser?.name || "",
+        reason: `Restored from Customer Orders by ${currentUserForView?.name || currentUser?.name || "user"}.`,
+      },
+    });
   }
 
   function closeRecordForm() {
@@ -2261,6 +2301,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     quotes={lookupQuery.data?.["quote-records"] ?? []}
                     orders={lookupQuery.data?.["customer-orders"] ?? []}
                     jobTickets={lookupQuery.data?.["job-tickets"] ?? []}
+                    allJobTickets={lookupQuery.data?.["all-job-tickets"] ?? lookupQuery.data?.["job-tickets"] ?? []}
                     interactions={lookupQuery.data?.["customer-interactions"] ?? []}
                     openInteractions={lookupQuery.data?.["customer-open-interactions"] ?? []}
                     users={users}
@@ -2277,6 +2318,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     onAddInteraction={(payload) => customerInteractionMutation.mutateAsync(payload)}
                     onUpdateOpenLog={(payload) => customerOpenLogUpdateMutation.mutateAsync(payload)}
                     onNotifyTeam={(payload) => customerNotifyTeamMutation.mutateAsync(payload)}
+                    onViewOrderSchedule={viewOrderOnSchedule}
+                    onRestoreOrderSchedule={restoreOrderToSchedule}
+                    orderScheduleRestoringId={orderRestoreScheduleMutation.isPending ? orderRestoreScheduleMutation.variables?.order?.id || "" : ""}
                     onFollowUpSeedHandled={() => setCustomerFollowUpRequest(null)}
                     onQuote={(customer) => {
                       setQuoteCustomerId(String(customer.id));
@@ -2294,6 +2338,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     presses={lookupQuery.data?.presses ?? []}
                     currentUser={currentUserForView}
                     lookups={lookupQuery.data ?? {}}
+                    focusScheduleId={scheduleFocusId}
+                    onFocusHandled={() => setScheduleFocusId("")}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}
                     onClose={() => setSelected(null)}
                     onEdit={(row) => {
@@ -2499,6 +2545,25 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                       ]
                       : resource.key === "material-coated-stock" && viewCanManageUsers
                         ? [{ label: "Remove", className: "danger-btn xs", onClick: (row) => confirmDeleteRecord(row) }]
+                      : resource.key === "customer-orders"
+                        ? [
+                          {
+                            key: "view-on-schedule",
+                            label: "View on Schedule",
+                            icon: CalendarSearch,
+                            show: orderIsOnSchedule,
+                            onClick: viewOrderOnSchedule,
+                          },
+                          {
+                            key: "restore-to-schedule",
+                            label: "Put Back on Schedule",
+                            icon: RotateCcw,
+                            className: "primary-btn xs",
+                            show: orderCanRestoreToSchedule,
+                            disabled: (row) => orderRestoreScheduleMutation.isPending && String(orderRestoreScheduleMutation.variables?.order?.id || "") === String(row.id),
+                            onClick: restoreOrderToSchedule,
+                          },
+                        ]
                       : []}
                   />
                 )}

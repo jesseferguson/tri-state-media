@@ -35,36 +35,44 @@ export default function ResourceTable({ resource, rows, selectedId, onSelect, ro
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.id}
-              className={selectedId === row.id ? "selected" : ""}
-              onClick={() => onSelect(row)}
-            >
-              {columns.map((column) => (
-                <td key={column} className={`col-${column}`} data-label={columnLabel(resource, column)}>{formatCell(row, column) || "--"}</td>
-              ))}
-              {hasActions && (
-                <td className="col-actions" data-label="Actions">
-                  <div className="table-row-actions">
-                    {rowActions.map((action) => (
-                      <button
-                        className={action.className || "ghost-btn xs"}
-                        type="button"
-                        key={action.label}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          action.onClick(row);
-                        }}
-                      >
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
-                </td>
-              )}
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const visibleActions = rowActions.filter((action) => !action.show || action.show(row));
+            return (
+              <tr
+                key={row.id}
+                className={selectedId === row.id ? "selected" : ""}
+                onClick={() => onSelect(row)}
+              >
+                {columns.map((column) => (
+                  <td key={column} className={`col-${column}`} data-label={columnLabel(resource, column)}>{formatCell(row, column) || "--"}</td>
+                ))}
+                {hasActions && (
+                  <td className="col-actions" data-label="Actions">
+                    <div className="table-row-actions">
+                      {visibleActions.map((action) => {
+                        const Icon = action.icon;
+                        return (
+                          <button
+                            className={action.className || "ghost-btn xs"}
+                            type="button"
+                            key={action.key || action.label}
+                            disabled={action.disabled?.(row)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              action.onClick(row);
+                            }}
+                          >
+                            {Icon && <Icon size={13} />}
+                            {action.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       {!rows.length && <p className="empty-row">No records match this view.</p>}

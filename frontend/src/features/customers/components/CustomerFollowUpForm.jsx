@@ -514,7 +514,7 @@ export default function CustomerFollowUpForm({
         {form.referenceMode === "work" && (
           <div className="customer-followup-link-grid">
             <MultiRecordPicker
-              title="Job Tickets"
+              title="All Job Tickets"
               icon={BriefcaseBusiness}
               items={jobTickets}
               selectedIds={form.jobTicketIds}
@@ -522,7 +522,7 @@ export default function CustomerFollowUpForm({
               onSearchChange={(value) => update("jobSearch", value)}
               onToggle={(id) => toggleId("jobTicketIds", id)}
               labelFor={(ticket) => relationOptionLabel("job", ticket)}
-              metaFor={(ticket) => [ticket.customer_po ? `PO ${ticket.customer_po}` : "", ticket.status, ticket.recipe_name].filter(Boolean).join(" / ")}
+              metaFor={(ticket) => [ticket.customer_display || ticket.customer_name || ticket.customerName, ticket.customer_po ? `PO ${ticket.customer_po}` : "", ticket.status, ticket.recipe_name].filter(Boolean).join(" / ")}
               emptyText="No job tickets match that search."
             />
             <MultiRecordPicker

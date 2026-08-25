@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ClipboardList, Factory, Image as ImageIcon, Layers3, PackageCheck, Play, ScanLine, Search, Spool, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ClipboardList, Factory, History, Image as ImageIcon, Layers3, PackageCheck, PauseCircle, Play, RotateCcw, ScanLine, Search, Trash2, X } from "lucide-react";
 import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
 import { AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
 import RecipeOptionsView from "../../tooling/components/RecipeOptionsView";
@@ -7,6 +7,27 @@ import ScheduleMaterialWorkflow from "./ScheduleMaterialWorkflow";
 
 const productLineupStatuses = new Set(["unscheduled", "scheduled", "ready", "running", "on_hold"]);
 const materialLineupStatuses = new Set(["scheduled", "running", "on_hold"]);
+const schedulePriorityOptions = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+const schedulePriorityLabels = Object.fromEntries(schedulePriorityOptions.map((option) => [option.value, option.label]));
+const schedulePriorityAliases = {
+  normal: "low",
+  rush: "medium",
+  hot: "high",
+};
+const scheduleHoldReasonOptions = [
+  { value: "tooling", label: "Tooling" },
+  { value: "material", label: "Material" },
+  { value: "boxes", label: "Boxes" },
+  { value: "cores", label: "Cores" },
+  { value: "adhesive", label: "Adhesive" },
+  { value: "liner", label: "Liner" },
+  { value: "face", label: "Face" },
+];
+const scheduleHoldReasonLabels = Object.fromEntries(scheduleHoldReasonOptions.map((option) => [option.value, option.label]));
 
 function sameId(a, b) {
   if (a === null || a === undefined || b === null || b === undefined) return false;
@@ -24,10 +45,16 @@ function todayStart() {
   return date;
 }
 
-function daysUntil(value) {
+function parseLocalDate(value) {
   if (!value) return null;
-  const date = new Date(`${value}T00:00:00`);
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
   if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function daysUntil(value) {
+  const date = parseLocalDate(value);
+  if (!date) return null;
   return Math.ceil((date - todayStart()) / 86_400_000);
 }
 
@@ -106,12 +133,136 @@ function formatShortDate(value) {
   return date.toLocaleDateString();
 }
 
+function formatShortDateTime(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return formatShortDate(value);
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 function daysOnSchedule(row) {
   const value = row.order_date || row.scheduled_date || row.created_at;
-  if (!value) return "--";
-  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "--";
+  const date = parseLocalDate(value);
+  if (!date) return "--";
   return Math.max(0, Math.floor((todayStart() - date) / 86_400_000));
+}
+
+function isBusinessDay(date) {
+  const day = date.getDay();
+  return day !== 0 && day !== 6;
+}
+
+function businessDaysBetween(start, end = todayStart()) {
+  if (!start || start >= end) return 0;
+  let days = 0;
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+  while (cursor < end) {
+    if (isBusinessDay(cursor)) days += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+function itemScheduleAgeStart(item) {
+  const row = item.row;
+  const value = item.kind === "material"
+    ? row.run_date || row.created_at
+    : row.scheduled_date || row.created_at || row.order_date;
+  return parseLocalDate(value);
+}
+
+function itemBusinessDaysOnSchedule(item) {
+  return businessDaysBetween(itemScheduleAgeStart(item));
+}
+
+function heldAtDate(item) {
+  return parseLocalDate(item?.row?.held_at || item?.row?.updated_at || item?.row?.created_at);
+}
+
+function itemBusinessDaysHeld(item) {
+  return businessDaysBetween(heldAtDate(item));
+}
+
+function normalizeSchedulePriority(value) {
+  const key = String(value || "low").toLowerCase();
+  if (schedulePriorityAliases[key]) return schedulePriorityAliases[key];
+  return schedulePriorityLabels[key] ? key : "low";
+}
+
+function schedulePriorityLabel(value) {
+  return schedulePriorityLabels[normalizeSchedulePriority(value)] || "Low";
+}
+
+function scheduleAgeGlow(days, priorityValue = "low") {
+  const priority = normalizeSchedulePriority(priorityValue);
+  const classNames = [`schedule-priority-${priority}`];
+  if (days < 7 && priority !== "high") {
+    return {
+      className: classNames.join(" "),
+      style: undefined,
+      title: `${schedulePriorityLabel(priority)} priority`,
+    };
+  }
+  const intensity = Math.max(0, Math.min(1, (days - 7) / 13));
+  const hueRange = {
+    low: [48, 34],
+    medium: [36, 8],
+    high: [0, 0],
+  }[priority];
+  const visualIntensity = priority === "high" ? Math.max(0.7, intensity) : intensity;
+  const boost = priority === "high" ? 0.04 : priority === "medium" ? 0.02 : 0;
+  classNames.push("schedule-age-glow", priority === "high" || (priority !== "low" && days >= 20) ? "critical" : "warning");
+  return {
+    className: classNames.join(" "),
+    style: {
+      "--schedule-age-hue": Math.round(hueRange[0] - visualIntensity * (hueRange[0] - hueRange[1])),
+      "--schedule-age-lightness": `${Math.round(57 - visualIntensity * 5)}%`,
+      "--schedule-age-bg-alpha": (0.05 + visualIntensity * 0.07 + boost).toFixed(2),
+      "--schedule-age-ring-alpha": (0.14 + visualIntensity * 0.1 + boost).toFixed(2),
+      "--schedule-age-glow-alpha": (0.16 + visualIntensity * 0.14 + boost).toFixed(2),
+      "--schedule-age-pulse-alpha": (0.2 + visualIntensity * 0.16 + boost).toFixed(2),
+    },
+    title: `${schedulePriorityLabel(priority)} priority / ${days} business days on schedule`,
+  };
+}
+
+function scheduleStatusAgeCue(days) {
+  if (days < 7) return { className: "", style: undefined, title: "" };
+  const intensity = Math.max(0, Math.min(1, (days - 7) / 13));
+  return {
+    className: `schedule-status-age-cue ${days >= 20 ? "critical" : "warning"}`,
+    style: {
+      "--schedule-status-age-hue": Math.round(34 - intensity * 34),
+      "--schedule-status-age-lightness": `${Math.round(55 - intensity * 7)}%`,
+      "--schedule-status-age-bg-alpha": (0.15 + intensity * 0.14).toFixed(2),
+      "--schedule-status-age-ring-alpha": (0.2 + intensity * 0.2).toFixed(2),
+    },
+    title: `${days} business days on schedule`,
+  };
+}
+
+function normalizeHoldReasons(value) {
+  if (Array.isArray(value)) return value.filter((item) => scheduleHoldReasonLabels[item]);
+  if (!value) return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return normalizeHoldReasons(parsed);
+    } catch {
+      return value.split(",").map((item) => item.trim()).filter((item) => scheduleHoldReasonLabels[item]);
+    }
+  }
+  return [];
+}
+
+function holdReasonLabel(value) {
+  return scheduleHoldReasonLabels[value] || labelize(value);
+}
+
+function holdReasonSummary(row) {
+  const reasons = normalizeHoldReasons(row.hold_reasons).map(holdReasonLabel);
+  return reasons.join(", ") || row.hold_notes || "No hold reason recorded";
 }
 
 function inventoryFootage(row) {
@@ -270,7 +421,8 @@ function schedulePressPreferenceKey(user) {
 function readSchedulePressPreference(user) {
   if (typeof window === "undefined") return "all";
   try {
-    return window.localStorage.getItem(schedulePressPreferenceKey(user)) || "all";
+    const stored = window.localStorage.getItem(schedulePressPreferenceKey(user)) || "all";
+    return stored === "held" ? "all" : stored;
   } catch {
     return "all";
   }
@@ -310,20 +462,8 @@ function coaterScheduleTitle(row) {
   return row.scheduled_material_name || row.produced_material_name || row.name || row.tag_number || "Material Run";
 }
 
-function productMaterialLabel(row) {
-  return [
-    [row.job_material_spec_code, row.job_material_spec_name].filter(Boolean).join(" / "),
-    row.material_inventory_serial ? `Roll ${row.material_inventory_serial}` : "",
-  ].filter(Boolean).join(" / ") || "Material not assigned";
-}
-
-function materialComponentSummary(row) {
-  return [
-    row.face_code ? `Face ${row.face_code}` : row.face_name ? `Face ${row.face_name}` : "",
-    row.liner_code ? `Liner ${row.liner_code}` : row.liner_name ? `Liner ${row.liner_name}` : "",
-    row.adhesive_code ? `Adhesive ${row.adhesive_code}` : row.adhesive_name ? `Adhesive ${row.adhesive_name}` : "",
-    row.silicone_code ? `Silicone ${row.silicone_code}` : row.silicone_name ? `Silicone ${row.silicone_name}` : "",
-  ].filter(Boolean).join(" / ") || "Components not configured";
+function productMaterialCode(row) {
+  return row.job_material_spec_name || row.job_material_spec_master_type || row.job_material_spec_code || row.job_material_spec_master_type_code || "";
 }
 
 function coaterProgress(row, rolls = []) {
@@ -365,29 +505,23 @@ function itemTitle(item) {
   return item.kind === "material" ? coaterScheduleTitle(item.row) : schedulePartNumber(item.row);
 }
 
-function itemSubtitle(item) {
-  const row = item.row;
-  if (item.kind === "material") {
-    return [row.tag_number, row.press_name || "Unassigned", row.cut_description].filter(Boolean).join(" / ");
-  }
-  return [row.job_ticket_number, row.customer_name || "No customer", row.customer_po ? `PO ${row.customer_po}` : ""].filter(Boolean).join(" / ");
+function isHeldScheduleItem(item) {
+  return item.kind === "product" && String(item?.row?.status || "") === "on_hold";
+}
+
+function itemSpecLabel(item) {
+  if (isHeldScheduleItem(item)) return "Held For";
+  return item.kind === "material" ? "Footage" : "Material";
 }
 
 function itemSpecLine(item) {
   const row = item.row;
   if (item.kind === "material") {
     const progress = coaterProgress(row);
-    return [
-      progress.target ? `${formatNumber(progress.target, " ft")} target` : "",
-      row.width_inches ? `${formatInches(row.width_inches)} planned width` : "",
-      materialComponentSummary(row),
-    ].filter(Boolean).join(" / ");
+    return progress.target ? formatNumber(progress.target) : "--";
   }
-  return [
-    productMaterialLabel(row),
-    `${formatInches(row.job_label_width_inches)} x ${formatInches(row.job_label_length_inches)}`,
-    row.target_footage ? `${formatNumber(row.target_footage, " ft")} planned` : "",
-  ].filter(Boolean).join(" / ");
+  if (isHeldScheduleItem(item)) return holdReasonSummary(row);
+  return productMaterialCode(row) || "Material not assigned";
 }
 
 function normalizeProductItem(row) {
@@ -422,6 +556,9 @@ function compareLineupItems(a, b) {
 }
 
 function tabMatchesItem(tab, item) {
+  const held = isHeldScheduleItem(item);
+  if (tab.key === "held") return held;
+  if (held) return false;
   if (tab.key === "all") return true;
   if (tab.key === "unassigned") return !itemPressId(item);
   return sameId(itemPressId(item), tab.pressId);
@@ -433,8 +570,17 @@ function itemMatchesSearch(item, query) {
   return [
     item.kind,
     itemTitle(item),
-    itemSubtitle(item),
     itemSpecLine(item),
+    item.kind === "product" ? schedulePriorityLabel(row.priority) : "",
+    row.hold_notes,
+    row.held_by,
+    row.tag_number,
+    row.cut_description,
+    row.job_ticket_number,
+    row.customer_name,
+    row.customer_po,
+    row.job_name,
+    row.job_product_code,
     row.status,
     row.priority,
     row.operator,
@@ -447,14 +593,17 @@ function itemMatchesSearch(item, query) {
 
 function buildPressTabs(productItems, materialItems, presses) {
   const items = [...productItems, ...materialItems];
+  const heldItems = items.filter(isHeldScheduleItem);
   const pressRows = activePressList(presses);
   const knownPressIds = new Set(pressRows.map((press) => String(press.id)));
   const tabs = [
     { key: "all", label: "All Work" },
+    { key: "held", label: "Held" },
     { key: "unassigned", label: "Unassigned" },
     ...pressRows.map((press) => ({ key: `press-${press.id}`, label: press.name, pressId: String(press.id) })),
   ];
   items.forEach((item) => {
+    if (isHeldScheduleItem(item)) return;
     const pressId = itemPressId(item);
     if (!pressId || knownPressIds.has(pressId) || tabs.some((tab) => sameId(tab.pressId, pressId))) return;
     tabs.push({ key: `press-extra-${pressId}`, label: item.row.press_name || "Other Press", pressId });
@@ -464,6 +613,7 @@ function buildPressTabs(productItems, materialItems, presses) {
     return {
       ...tab,
       count: tabItems.length,
+      alertCount: tab.key === "held" ? heldItems.filter((item) => itemBusinessDaysHeld(item) >= 20).length : 0,
       productCount: tabItems.filter((item) => item.kind === "product").length,
       materialCount: tabItems.filter((item) => item.kind === "material").length,
     };
@@ -502,15 +652,16 @@ function ScheduleThumb({ row }) {
 }
 
 function MaterialRunThumb({ row }) {
-  const progress = coaterProgress(row);
   return (
     <div className="schedule-thumb material-roll-thumb" aria-label="Material roll">
-      <div className="material-roll-icon">
-        <Spool size={48} strokeWidth={1.7} />
-        <i aria-hidden="true" />
+      <div className="material-roll-art" aria-hidden="true">
+        <span className="material-roll-sheet" />
+        <span className="material-roll-face">
+          <i />
+          <span className="material-roll-core" />
+        </span>
+        <span className="material-roll-shadow" />
       </div>
-      <b>{progress.target ? formatNumber(progress.target, " ft") : row.tag_number || "Material"}</b>
-      <em>{row.width_inches ? `${formatInches(row.width_inches)} wide` : row.press_name || "Coater run"}</em>
     </div>
   );
 }
@@ -608,6 +759,82 @@ function RemoveScheduleDialog({ row, onClose, onConfirm }) {
           <button className="ghost-btn" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
           <button className="danger-btn" type="submit" disabled={submitting}>
             {submitting ? "Removing..." : "Remove Job"}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function HoldScheduleDialog({ row, currentUser, onClose, onConfirm }) {
+  const [selectedReasons, setSelectedReasons] = useState(() => normalizeHoldReasons(row?.hold_reasons));
+  const [notes, setNotes] = useState(row?.hold_notes || "");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  if (!row) return null;
+
+  function toggleReason(value) {
+    setSelectedReasons((current) => current.includes(value)
+      ? current.filter((item) => item !== value)
+      : [...current, value]);
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!selectedReasons.length) {
+      setError("Select at least one reason before moving this job to Held.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onConfirm(row, {
+        status: "on_hold",
+        hold_reasons: selectedReasons,
+        hold_notes: notes.trim(),
+        held_by: currentUser?.name || currentUser?.username || "",
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message || "Could not move this job to Held.");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="schedule-hold-overlay" role="dialog" aria-modal="true" aria-label="Move scheduled job to Held">
+      <form className="schedule-hold-window" onSubmit={submit}>
+        <div>
+          <p className="eyebrow">Move To Held</p>
+          <h2>{scheduleTitle(row)}</h2>
+          <span>{row.customer_name || "No customer"} / {shipLabel(row)}</span>
+        </div>
+        <fieldset className="schedule-hold-reason-grid">
+          <legend>Hold Reasons</legend>
+          {scheduleHoldReasonOptions.map((option) => (
+            <label className={selectedReasons.includes(option.value) ? "selected" : ""} key={option.value}>
+              <input
+                type="checkbox"
+                checked={selectedReasons.includes(option.value)}
+                onChange={() => toggleReason(option.value)}
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+        </fieldset>
+        <label className="schedule-hold-note-field">
+          <span>Hold Notes</span>
+          <textarea
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            placeholder="Add details the scheduler or operator should know..."
+          />
+        </label>
+        {error && <p className="schedule-remove-error">{error}</p>}
+        <div className="schedule-remove-actions">
+          <button className="ghost-btn" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button className="primary-btn" type="submit" disabled={submitting}>
+            {submitting ? "Moving..." : "Move To Held"}
           </button>
         </div>
       </form>
@@ -726,6 +953,79 @@ function ScheduleDetailOverlay({ row, lookups, currentUser, onClose, onFlexDieRe
   );
 }
 
+function scheduleHistoryRows(item) {
+  const row = item.row;
+  if (item.kind === "product" && Array.isArray(row.customer_order_events) && row.customer_order_events.length) {
+    return row.customer_order_events.map((event) => ({
+      id: event.id || `${event.event_type}-${event.created_at}`,
+      title: labelize(event.event_type || "order event"),
+      detail: event.summary,
+      by: event.performed_by,
+      date: event.created_at,
+    }));
+  }
+  return [
+    row.updated_at ? {
+      id: "updated",
+      title: "Updated",
+      detail: [row.last_updated_by ? `By ${row.last_updated_by}` : "", row.status ? `Status ${labelize(row.status)}` : ""].filter(Boolean).join(" / ") || "Schedule item updated.",
+      by: row.last_updated_by,
+      date: row.updated_at,
+    } : null,
+    row.created_at ? {
+      id: "created",
+      title: "Created",
+      detail: [row.scheduled_by ? `By ${row.scheduled_by}` : "", row.press_name || "Unassigned"].filter(Boolean).join(" / ") || "Schedule item created.",
+      by: row.scheduled_by,
+      date: row.created_at,
+    } : null,
+  ].filter(Boolean);
+}
+
+function ScheduleLineupBack({ item }) {
+  const row = item.row;
+  const isMaterial = item.kind === "material";
+  const isHeld = isHeldScheduleItem(item);
+  const noteRows = isMaterial
+    ? [
+      { label: "Cut Description", value: row.cut_description },
+      { label: "Operator Note", value: row.operator_notes || row.notes },
+    ]
+    : [
+      ...(isHeld ? [
+        { label: "Hold Reasons", value: holdReasonSummary(row) },
+        { label: "Hold Notes", value: row.hold_notes },
+      ] : []),
+      { label: "CSR Schedule Note", value: row.notes },
+      { label: "Operator Run Note", value: row.job_notes },
+      { label: "Footage Report", value: row.footage_report },
+    ];
+  const events = scheduleHistoryRows(item);
+  return (
+    <div className="schedule-lineup-back">
+      <div className="schedule-lineup-note-stack">
+        {noteRows.map((note) => (
+          <article className={note.value ? "has-note" : ""} key={note.label}>
+            <span>{note.label}</span>
+            <p>{note.value || "No note entered."}</p>
+          </article>
+        ))}
+      </div>
+      <div className="schedule-lineup-history">
+        <span><History size={13} /> History</span>
+        {events.slice(0, 4).map((event) => (
+          <article key={event.id}>
+            <strong>{event.title}</strong>
+            <p>{event.detail || "Schedule activity recorded."}</p>
+            <em>{[event.by, formatShortDateTime(event.date)].filter(Boolean).join(" / ")}</em>
+          </article>
+        ))}
+        {!events.length && <p>No history has been recorded yet.</p>}
+      </div>
+    </div>
+  );
+}
+
 function ScheduleLineupRow({
   item,
   index,
@@ -741,12 +1041,15 @@ function ScheduleLineupRow({
   onUpdate,
   onMaterialUpdate,
   onRemove,
+  onHold,
   onUseMaterial,
   onOpenMaterialRun,
   onMove,
 }) {
+  const [cardView, setCardView] = useState("overview");
   const row = item.row;
   const isMaterial = item.kind === "material";
+  const isHeld = isHeldScheduleItem(item);
   const active = isMaterial ? sameId(selectedMaterial?.id, row.id) : sameId(selectedProduct?.id, row.id);
   const canUpdate = isMaterial ? Boolean(onMaterialUpdate) : Boolean(onUpdate);
   const pressChoices = activePressList(presses);
@@ -755,6 +1058,10 @@ function ScheduleLineupRow({
     ? pressChoices
     : [{ id: row.press, name: row.press_name || `Press ${row.press}` }, ...pressChoices];
   const orderValue = row.press_sequence || index + 1;
+  const priority = normalizeSchedulePriority(row.priority);
+  const businessDaysOnSchedule = itemBusinessDaysOnSchedule(item);
+  const ageGlow = scheduleAgeGlow(businessDaysOnSchedule, priority);
+  const statusAgeCue = scheduleStatusAgeCue(businessDaysOnSchedule);
 
   function saveItem(payload) {
     if (isMaterial) return onMaterialUpdate?.(row.id, payload);
@@ -780,7 +1087,24 @@ function ScheduleLineupRow({
   }
 
   return (
-    <article className={`schedule-lineup-row ${isMaterial ? "material" : "product"} ${active ? "active" : ""}`}>
+    <article
+      className={`schedule-lineup-row ${isMaterial ? "material" : "product"} ${active ? "active" : ""} ${ageGlow.className}`}
+      style={ageGlow.style}
+      title={ageGlow.title || undefined}
+    >
+      <div className="schedule-card-view-tabs" role="tablist" aria-label={`${itemTitle(item)} card view`}>
+        <button className={cardView === "overview" ? "active" : ""} type="button" role="tab" aria-selected={cardView === "overview"} onClick={() => setCardView("overview")}>
+          <ClipboardList size={12} />
+          Overview
+        </button>
+        <button className={cardView === "notes" ? "active" : ""} type="button" role="tab" aria-selected={cardView === "notes"} onClick={() => setCardView("notes")}>
+          <History size={12} />
+          Notes
+        </button>
+      </div>
+
+      {cardView === "overview" && (
+        <>
       <div className="schedule-lineup-position">
         <strong>{orderValue}</strong>
         <div className="schedule-move-buttons">
@@ -800,23 +1124,41 @@ function ScheduleLineupRow({
             {isMaterial ? <Layers3 size={14} /> : <ClipboardList size={14} />}
             {isMaterial ? "Material Run" : "Job Ticket"}
           </span>
-          <strong title={itemTitle(item)}>{itemTitle(item)}</strong>
-          <span title={itemSubtitle(item)}>{itemSubtitle(item)}</span>
+          <strong className={isMaterial ? undefined : "schedule-part-number"} title={itemTitle(item)}>{itemTitle(item)}</strong>
         </div>
       </button>
 
       <div className="schedule-lineup-spec" title={itemSpecLine(item)}>
-        <span>{isMaterial ? "Material" : "Material / Size"}</span>
+        <span>{itemSpecLabel(item)}</span>
         <strong>{itemSpecLine(item)}</strong>
       </div>
 
       <div className="schedule-lineup-meta">
-        <span className={`schedule-status-pill ${row.status || "scheduled"}`}>{labelize(row.status || "scheduled")}</span>
+        <span
+          className={`schedule-status-pill ${row.status || "scheduled"} ${statusAgeCue.className}`}
+          style={statusAgeCue.style}
+          title={statusAgeCue.title || undefined}
+        >
+          {labelize(row.status || "scheduled")}
+        </span>
         <strong>{formatShortDate(itemDate(item))}</strong>
         <em>{row.press_name || "Unassigned"}</em>
       </div>
 
-      <div className="schedule-lineup-editors">
+      <div className={`schedule-lineup-editors ${isMaterial ? "material-editors" : "product-editors"}`}>
+        {!isMaterial && (
+          <select
+            className={`schedule-priority-select ${priority}`}
+            aria-label="Priority"
+            value={priority}
+            disabled={!canUpdate}
+            onChange={(event) => saveItem({ priority: event.target.value })}
+          >
+            {schedulePriorityOptions.map((option) => (
+              <option value={option.value} key={option.value}>{option.label}</option>
+            ))}
+          </select>
+        )}
         <select aria-label="Press lineup" value={row.press || ""} disabled={!canUpdate} onChange={(event) => handlePressChange(event.target.value)}>
           <option value="">Unassigned</option>
           {selectChoices.map((press) => <option value={press.id} key={press.id}>{press.name}</option>)}
@@ -830,11 +1172,25 @@ function ScheduleLineupRow({
           onBlur={(event) => updateOnBlur(event, row.press_sequence, (value) => saveItem({ press_sequence: value ? Number(value) : null }))}
         />
       </div>
+        </>
+      )}
+
+      {cardView === "notes" && <ScheduleLineupBack item={item} />}
 
       <div className="schedule-lineup-actions">
         {!isMaterial && (
           <>
+            <button className="ghost-btn xs" type="button" onClick={() => onSelect(item)}>Details</button>
             <button className="ghost-btn xs" type="button" onClick={() => onEdit?.(row)}>Edit</button>
+            {isHeld ? (
+              <button className="primary-btn xs" type="button" onClick={() => saveItem({ status: row.press ? "scheduled" : "unscheduled" })}>
+                <RotateCcw size={13} /> Resume
+              </button>
+            ) : (
+              <button className="ghost-btn xs" type="button" onClick={() => onHold?.(row)}>
+                <PauseCircle size={13} /> Hold
+              </button>
+            )}
             {onUseMaterial && (
               <button className="ghost-btn xs" type="button" onClick={() => onUseMaterial(row)}>
                 <ScanLine size={13} /> Scan Roll
@@ -842,7 +1198,7 @@ function ScheduleLineupRow({
             )}
             {onRemove && (
               <button className="danger-btn xs" type="button" onClick={() => onRemove(row)}>
-                <Trash2 size={12} /> Delete
+                <Trash2 size={12} /> Remove
               </button>
             )}
           </>
@@ -850,6 +1206,16 @@ function ScheduleLineupRow({
         {isMaterial && onOpenMaterialRun && (
           <button className="primary-btn xs" type="button" onClick={() => onOpenMaterialRun(row)}>
             <Play size={13} /> Run
+          </button>
+        )}
+        {isMaterial && (
+          <button className="ghost-btn xs" type="button" onClick={() => onSelect(item)}>
+            Details
+          </button>
+        )}
+        {isMaterial && canUpdate && (
+          <button className="danger-btn xs" type="button" onClick={() => saveItem({ status: "void" })}>
+            <Trash2 size={12} /> Remove
           </button>
         )}
       </div>
@@ -945,8 +1311,9 @@ function MaterialRunDetailOverlay({ row, relatedRolls = [], onClose, onOpenMater
   );
 }
 
-export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, lookups = {}, onSelect, onClose, onEdit, onUpdate, onMaterialUpdate, onOpenMaterialRun, onRemove, onUseMaterial, onFlexDieReorder, onFlexDieCountUpdate }) {
+export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, lookups = {}, focusScheduleId = "", onFocusHandled, onSelect, onClose, onEdit, onUpdate, onMaterialUpdate, onOpenMaterialRun, onRemove, onUseMaterial, onFlexDieReorder, onFlexDieCountUpdate }) {
   const [removeRow, setRemoveRow] = useState(null);
+  const [holdRow, setHoldRow] = useState(null);
   const [selectedMaterialRun, setSelectedMaterialRun] = useState(null);
   const [activeTabKey, setActiveTabKey] = useState(() => readSchedulePressPreference(currentUser));
   const [lineupType, setLineupType] = useState("all");
@@ -973,7 +1340,7 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
   const searchQuery = lineupSearch.trim().toLowerCase();
   const visibleItems = useMemo(() => lineupItems
     .filter((item) => tabMatchesItem(selectedTab, item))
-    .filter((item) => lineupType === "all" || item.kind === lineupType)
+    .filter((item) => selectedTab.key === "held" || lineupType === "all" || item.kind === lineupType)
     .filter((item) => itemMatchesSearch(item, searchQuery))
     .sort(compareLineupItems),
   [lineupItems, lineupType, searchQuery, selectedTab]);
@@ -992,7 +1359,7 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
     const productCount = selectedTabItems.filter((item) => item.kind === "product").length;
     const materialCount = selectedTabItems.filter((item) => item.kind === "material").length;
     const runningCount = selectedTabItems.filter((item) => item.row.status === "running").length;
-    const priorityCount = selectedTabItems.filter((item) => item.kind === "product" && ["rush", "hot"].includes(item.row.priority)).length;
+    const priorityCount = selectedTabItems.filter((item) => item.kind === "product" && ["medium", "high"].includes(normalizeSchedulePriority(item.row.priority))).length;
     const lateCount = selectedTabItems.filter((item) => item.kind === "product" && daysUntil(item.row.due_date) < 0).length;
     const materialFeet = selectedTabItems
       .filter((item) => item.kind === "material")
@@ -1016,9 +1383,25 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
     saveSchedulePressPreference(currentUser, "all");
   }, [activeTabKey, currentUser, tabs]);
 
+  useEffect(() => {
+    if (!focusScheduleId) return;
+    const item = productItems.find((candidate) => sameId(candidate.row.id, focusScheduleId));
+    if (!item) return;
+    const tabKey = isHeldScheduleItem(item) ? "held" : item.pressId ? `press-${item.pressId}` : "unassigned";
+    const nextTabKey = tabs.some((tab) => tab.key === tabKey) ? tabKey : "all";
+    setActiveTabKey(nextTabKey);
+    if (nextTabKey !== "held") saveSchedulePressPreference(currentUser, nextTabKey);
+    setLineupType(tabKey === "held" ? "product" : "all");
+    setLineupSearch("");
+    setSelectedMaterialRun(null);
+    onSelect?.(item.row);
+    onFocusHandled?.();
+  }, [currentUser, focusScheduleId, onFocusHandled, onSelect, productItems, tabs]);
+
   function selectTab(key) {
     setActiveTabKey(key);
-    saveSchedulePressPreference(currentUser, key);
+    if (key !== "held") saveSchedulePressPreference(currentUser, key);
+    setLineupType(key === "held" ? "product" : "all");
     setSelectedMaterialRun(null);
     onClose?.();
   }
@@ -1039,6 +1422,15 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
       press_sequence: sequence,
       last_updated_by: currentUser?.name || currentUser?.username || "",
     });
+  }
+
+  async function moveProductToHeld(row, payload) {
+    await onUpdate?.(row.id, {
+      ...payload,
+      last_updated_by: currentUser?.name || currentUser?.username || "",
+    });
+    setSelectedMaterialRun(null);
+    if (selected?.id && sameId(selected.id, row.id)) onClose?.();
   }
 
   async function moveLineupItem(item, direction) {
@@ -1067,7 +1459,9 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
         <div>
           <p className="eyebrow">Main Scheduling</p>
           <h2>{selectedTab.label}</h2>
-          <span>{selectedTab.count} active scheduled item{selectedTab.count === 1 ? "" : "s"} in this lineup</span>
+          <span>
+            {selectedTab.count} {selectedTab.key === "held" ? "held job" : "active scheduled item"}{selectedTab.count === 1 ? "" : "s"} in this lineup
+          </span>
         </div>
         <div className="schedule-command-actions">
           <label className="schedule-lineup-search">
@@ -1092,12 +1486,13 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
           <button className={tab.key === selectedTab.key ? "active" : ""} type="button" key={tab.key} onClick={() => selectTab(tab.key)}>
             <span>{tab.label}</span>
             <strong>{tab.count}</strong>
+            {tab.alertCount > 0 && <em className="schedule-tab-alert">{tab.alertCount}</em>}
           </button>
         ))}
       </nav>
 
       <section className="schedule-metric-row">
-        <ScheduleMetric label="Job Tickets" value={scheduleSummary.productCount} detail={`${scheduleSummary.priorityCount} rush / hot`} tone="product" />
+        <ScheduleMetric label="Job Tickets" value={scheduleSummary.productCount} detail={`${scheduleSummary.priorityCount} medium / high`} tone="product" />
         <ScheduleMetric label="Material Runs" value={scheduleSummary.materialCount} detail={`${formatNumber(scheduleSummary.materialFeet, " ft")} target`} tone="material" />
         <ScheduleMetric label="Running Now" value={scheduleSummary.runningCount} detail="Active press work" tone="running" />
         <ScheduleMetric label="Late Ship Dates" value={scheduleSummary.lateCount} detail="Needs attention" tone={scheduleSummary.lateCount ? "late" : "ok"} />
@@ -1132,6 +1527,7 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
                 onUpdate={onUpdate}
                 onMaterialUpdate={onMaterialUpdate}
                 onRemove={setRemoveRow}
+                onHold={setHoldRow}
                 onUseMaterial={onUseMaterial}
                 onOpenMaterialRun={onOpenMaterialRun}
                 onMove={moveLineupItem}
@@ -1141,8 +1537,8 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
           {!visibleItems.length && (
             <div className="schedule-lineup-empty">
               <Factory size={28} />
-              <strong>No scheduled work here.</strong>
-              <span>Switch presses or clear the search to see the rest of the lineup.</span>
+              <strong>{selectedTab.key === "held" ? "No held jobs here." : "No scheduled work here."}</strong>
+              <span>{selectedTab.key === "held" ? "Clear the search to see held jobs." : "Switch presses or clear the search to see the rest of the lineup."}</span>
             </div>
           )}
         </div>
@@ -1166,6 +1562,12 @@ export default function ProductionScheduleView({ rows, selected, presses = [], c
         row={removeRow}
         onClose={() => setRemoveRow(null)}
         onConfirm={onRemove}
+      />
+      <HoldScheduleDialog
+        row={holdRow}
+        currentUser={currentUser}
+        onClose={() => setHoldRow(null)}
+        onConfirm={moveProductToHeld}
       />
     </section>
   );

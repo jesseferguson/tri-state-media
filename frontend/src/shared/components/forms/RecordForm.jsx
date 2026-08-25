@@ -18,14 +18,28 @@ function normalizeInitial(fields, record, defaults = {}) {
       out[`${field.name}__changeNote`] = "";
       return;
     }
-    if (field.type === "multiRelation") {
-      out[field.name] = record?.[field.name] ?? defaults?.[field.name] ?? field.defaultValue ?? [];
+    if (field.type === "multiRelation" || field.type === "multiSelect") {
+      out[field.name] = normalizeArrayValue(record?.[field.name] ?? defaults?.[field.name] ?? field.defaultValue ?? []);
       return;
     }
     out[field.name] = record?.[field.name] ?? defaults?.[field.name] ?? field.defaultValue ?? "";
   });
 
   return out;
+}
+
+function normalizeArrayValue(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return value.split(",").map((item) => item.trim()).filter(Boolean);
+    }
+  }
+  return [];
 }
 
 function isImageFile(file) {
@@ -116,7 +130,7 @@ function formatFormError(error) {
 function getEmptyValueForField(field) {
   if (Object.prototype.hasOwnProperty.call(field, "clearWhenHidden")) return field.clearWhenHidden;
   if (field.type === "number" || field.type === "relation" || field.type === "searchRelation" || field.type === "date") return null;
-  if (field.type === "multiRelation") return [];
+  if (field.type === "multiRelation" || field.type === "multiSelect") return [];
   if (field.type === "imageUpload") return null;
   if (field.type === "checkbox") return false;
   return "";
@@ -126,7 +140,7 @@ function formatValueForPayload(field, value) {
   if (field.type === "number") return value === "" || value === null || value === undefined ? null : Number(value);
   if (field.type === "date") return value === "" || value === null || value === undefined ? null : value;
   if (field.type === "relation" || field.type === "searchRelation") return value === "" || value === null || value === undefined ? null : Number(value);
-  if (field.type === "multiRelation") return Array.isArray(value) ? value : [];
+  if (field.type === "multiRelation" || field.type === "multiSelect") return Array.isArray(value) ? value : [];
   if (field.type === "imageUpload") return value ?? null;
   if (field.type === "checkbox") return Boolean(value);
   if (["select", "text", "email", "textarea"].includes(field.type)) return value === null || value === undefined ? "" : value;
@@ -1149,6 +1163,38 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
                     )}
                   </div>
                 </label>
+              </Fragment>
+            );
+          }
+
+          if (field.type === "multiSelect") {
+            const selected = normalizeArrayValue(value);
+            const choices = field.choices ?? [];
+            const toggleChoice = (choiceValue) => update(
+              field.name,
+              selected.includes(choiceValue)
+                ? selected.filter((item) => item !== choiceValue)
+                : [...selected, choiceValue]
+            );
+            return (
+              <Fragment key={field.name}>
+                {sectionHeading}
+                <fieldset className={`${fieldWideClass} record-form-multi-select`}>
+                  <legend>{fieldLabel}</legend>
+                  <div>
+                    {choices.map(([choiceValue, label]) => (
+                      <label className={selected.includes(choiceValue) ? "selected" : ""} key={choiceValue}>
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(choiceValue)}
+                          onChange={() => toggleChoice(choiceValue)}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {field.helpText && <small>{field.helpText}</small>}
+                </fieldset>
               </Fragment>
             );
           }

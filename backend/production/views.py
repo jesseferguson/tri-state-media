@@ -2216,7 +2216,7 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
             "material_inventory",
             "press",
         )
-        .prefetch_related("shift_reports", "material_assignments")
+        .prefetch_related("shift_reports", "material_assignments", "customer_orders__events")
         .all()
         .order_by("scheduled_date", "priority", "job_ticket__ticket_number")
     )
@@ -2242,10 +2242,12 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
         "scheduled_by",
         "last_updated_by",
         "notes",
+        "hold_notes",
         "footage_report",
     ]
     ordering_fields = [
         "scheduled_date",
+        "held_at",
         "due_date",
         "priority",
         "status",
@@ -2672,6 +2674,51 @@ class CustomerOrderViewSet(viewsets.ReadOnlyModelViewSet):
         if not order:
             return Response({"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(self.get_serializer(order).data)
+
+    @action(detail=True, methods=["post"], url_path="restore-to-schedule")
+    def restore_to_schedule(self, request, pk=None):
+        order = self.get_object()
+        if order.schedule_entry_id:
+            return Response(self.get_serializer(order).data)
+
+        actor = str(request.data.get("performed_by", "")).strip() or order.last_updated_by or order.scheduled_by or "system"
+        reason = str(request.data.get("reason", "")).strip() or f"Restored from customer order {order.order_number or order.id}."
+        press = None
+        press_value = request.data.get("press")
+        if press_value not in ("", None):
+            press = Press.objects.filter(pk=press_value).first()
+            if not press:
+                return Response({"press": ["Press not found."]}, status=status.HTTP_400_BAD_REQUEST)
+        elif order.press_name:
+            press = Press.objects.filter(name__iexact=str(order.press_name).strip()).first()
+
+        with transaction.atomic():
+            schedule = ProductionSchedule(
+                job_ticket=order.job_ticket,
+                customer=order.customer,
+                customer_po=order.customer_po,
+                status="scheduled" if press else "unscheduled",
+                priority=order.priority,
+                scheduled_by=order.scheduled_by or actor,
+                last_updated_by=actor,
+                quantity_to_ship=order.quantity_to_ship,
+                quantity_to_stock=order.quantity_to_stock,
+                order_date=order.order_date or timezone.localdate(),
+                scheduled_date=order.scheduled_date or timezone.localdate(),
+                due_date=order.due_date,
+                press=press,
+                press_sequence=order.press_sequence if press else None,
+                operator=order.operator,
+                actual_footage=order.actual_footage,
+                footage_report=order.footage_report,
+                notes=reason,
+            )
+            schedule._restore_order = order
+            schedule._restore_reason = reason
+            schedule.save()
+            order.refresh_from_db()
+
+        return Response(self.get_serializer(order).data, status=status.HTTP_201_CREATED)
 
 
 class CustomerOrderEventViewSet(viewsets.ReadOnlyModelViewSet):

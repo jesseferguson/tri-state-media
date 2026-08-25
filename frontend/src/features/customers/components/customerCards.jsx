@@ -1,4 +1,4 @@
-import { FileText, MessageCircle, MessageSquarePlus, ReceiptText, Search } from "lucide-react";
+import { CalendarSearch, FileText, MessageCircle, MessageSquarePlus, ReceiptText, RotateCcw, Search } from "lucide-react";
 import { CRM_STAGES, TYPE_ICON } from "../utils/customerChoices.js";
 import {
   choiceLabel,
@@ -78,9 +78,19 @@ export function QuoteRow({ quote, onFollowUp }) {
   );
 }
 
-export function OrderRow({ order }) {
+function orderIsOnSchedule(order) {
+  return Boolean(order?.schedule_entry) && ["unscheduled", "scheduled", "ready", "running", "on_hold"].includes(String(order?.status || "").toLowerCase());
+}
+
+function orderCanRestoreToSchedule(order) {
+  return !order?.schedule_entry && String(order?.status || "").toLowerCase() === "schedule_removed";
+}
+
+export function OrderRow({ order, onViewSchedule, onRestoreSchedule, restoring = false }) {
+  const showViewSchedule = Boolean(onViewSchedule && orderIsOnSchedule(order));
+  const showRestoreSchedule = Boolean(onRestoreSchedule && orderCanRestoreToSchedule(order));
   return (
-    <article className="customer-activity-row">
+    <article className={`customer-activity-row ${showViewSchedule || showRestoreSchedule ? "with-action" : ""}`}>
       <div>
         <span>{statusLabel(order.status)}</span>
         <strong>{order.order_number || "Order"}</strong>
@@ -90,6 +100,18 @@ export function OrderRow({ order }) {
         <strong>{number(orderQuantity(order))}</strong>
         <em>Due {dateLabel(order.due_date)} / Scheduled {dateLabel(order.scheduled_date)}</em>
       </div>
+      {showViewSchedule && (
+        <button className="customer-row-action" type="button" onClick={() => onViewSchedule(order)}>
+          <CalendarSearch size={14} />
+          Schedule
+        </button>
+      )}
+      {showRestoreSchedule && (
+        <button className="customer-row-action primary" type="button" onClick={() => onRestoreSchedule(order)} disabled={restoring}>
+          <RotateCcw size={14} />
+          {restoring ? "Restoring..." : "Put Back"}
+        </button>
+      )}
     </article>
   );
 }

@@ -24,7 +24,7 @@ function scheduleDefaultsForTicket(ticket, currentUser) {
     job_ticket: ticket?.id || "",
     customer: ticket?.customer || "",
     customer_po: "",
-    priority: "normal",
+    priority: "low",
     order_date: today,
     due_date: "",
     quantity_to_ship: 0,

@@ -100,9 +100,19 @@ export const choiceLists = {
   ],
 
   jobTicketPriority: [
-    ["normal", "Normal"],
-    ["rush", "Rush"],
-    ["hot", "Hot"],
+    ["low", "Low"],
+    ["medium", "Medium"],
+    ["high", "High"],
+  ],
+
+  scheduleHoldReasons: [
+    ["tooling", "Tooling"],
+    ["material", "Material"],
+    ["boxes", "Boxes"],
+    ["cores", "Cores"],
+    ["adhesive", "Adhesive"],
+    ["liner", "Liner"],
+    ["face", "Face"],
   ],
 
   finishingType: [
@@ -1171,7 +1181,25 @@ export const resources = [
       { name: "scheduled_by", label: "Scheduled By", type: "text" },
       { name: "last_updated_by", label: "Last Updated By", type: "text", hidden: true },
       { name: "status", label: "Status", type: "select", choices: choiceLists.productionScheduleStatus, defaultValue: "unscheduled" },
-      { name: "priority", label: "Priority", type: "select", choices: choiceLists.jobTicketPriority, defaultValue: "normal" },
+      {
+        name: "hold_reasons",
+        label: "Hold Reasons",
+        type: "multiSelect",
+        choices: choiceLists.scheduleHoldReasons,
+        defaultValue: [],
+        showWhen: { status: "on_hold" },
+        clearWhenHidden: [],
+      },
+      {
+        name: "hold_notes",
+        label: "Hold Notes",
+        type: "textarea",
+        showWhen: { status: "on_hold" },
+        clearWhenHidden: "",
+      },
+      { name: "held_by", label: "Held By", type: "text", hidden: true },
+      { name: "held_at", label: "Held At", type: "date", hidden: true },
+      { name: "priority", label: "Priority", type: "select", choices: choiceLists.jobTicketPriority, defaultValue: "low" },
       { name: "quantity_to_ship", label: "Qty to Ship", type: "number", step: "0.001", defaultValue: 0 },
       { name: "quantity_to_stock", label: "Qty to Stock", type: "number", step: "0.001", defaultValue: 0 },
       { name: "order_date", label: "Date Scheduled", type: "date" },

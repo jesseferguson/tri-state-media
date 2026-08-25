@@ -623,9 +623,19 @@ class ProductionSchedule(models.Model):
     ]
 
     PRIORITY_CHOICES = [
-        ("normal", "Normal"),
-        ("rush", "Rush"),
-        ("hot", "Hot"),
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+    ]
+
+    HOLD_REASON_CHOICES = [
+        ("tooling", "Tooling"),
+        ("material", "Material"),
+        ("boxes", "Boxes"),
+        ("cores", "Cores"),
+        ("adhesive", "Adhesive"),
+        ("liner", "Liner"),
+        ("face", "Face"),
     ]
 
     job_ticket = models.ForeignKey(
@@ -644,7 +654,7 @@ class ProductionSchedule(models.Model):
 
     customer_po = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="unscheduled")
-    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="normal")
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="low")
     scheduled_by = models.CharField(max_length=120, blank=True)
     last_updated_by = models.CharField(max_length=120, blank=True)
 
@@ -684,6 +694,10 @@ class ProductionSchedule(models.Model):
     actual_footage = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     footage_report = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    hold_reasons = models.JSONField(default=list, blank=True)
+    hold_notes = models.TextField(blank=True)
+    held_at = models.DateTimeField(null=True, blank=True)
+    held_by = models.CharField(max_length=120, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -699,6 +713,22 @@ class ProductionSchedule(models.Model):
         previous = None
         if not is_create:
             previous = ProductionSchedule.objects.select_related("press").filter(pk=self.pk).first()
+        hold_update_fields = []
+        if self.status == "on_hold":
+            if not self.held_at:
+                self.held_at = timezone.now()
+                hold_update_fields.append("held_at")
+            if not self.held_by:
+                self.held_by = self.last_updated_by or self.scheduled_by or ""
+                hold_update_fields.append("held_by")
+        elif previous and previous.status == "on_hold":
+            self.hold_reasons = []
+            self.hold_notes = ""
+            self.held_at = None
+            self.held_by = ""
+            hold_update_fields.extend(["hold_reasons", "hold_notes", "held_at", "held_by"])
+        if hold_update_fields and kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | set(hold_update_fields)
         super().save(*args, **kwargs)
         CustomerOrder.objects.sync_from_schedule(self, created=is_create)
         self._log_job_ticket_event(previous=previous, created=is_create)
@@ -706,6 +736,27 @@ class ProductionSchedule(models.Model):
     def _log_job_ticket_event(self, previous=None, created=False):
         actor = self.last_updated_by or self.scheduled_by or "system"
         if created:
+            restored_order = getattr(self, "_restore_order", None)
+            restore_reason = str(getattr(self, "_restore_reason", "") or "").strip()
+            if restored_order:
+                summary = f"{actor} restored {restored_order.order_number or 'this order'} to the schedule"
+                if restore_reason:
+                    summary = f"{summary}: {restore_reason}"
+                JobTicketEvent.objects.create(
+                    job_ticket=self.job_ticket,
+                    event_type="schedule_restored",
+                    summary=summary if len(summary) <= 255 else f"{summary[:252]}...",
+                    performed_by=actor,
+                    details={
+                        "schedule_id": self.id,
+                        "order_id": restored_order.id,
+                        "order_number": restored_order.order_number or "",
+                        "reason": restore_reason,
+                        "status": self.status,
+                        "press": self.press.name if self.press else "",
+                    },
+                )
+                return
             JobTicketEvent.objects.create(
                 job_ticket=self.job_ticket,
                 event_type="scheduled",
@@ -731,6 +782,10 @@ class ProductionSchedule(models.Model):
         changes = []
         if previous.status != self.status:
             changes.append(f"status {previous.get_status_display()} to {self.get_status_display()}")
+        if previous.hold_reasons != self.hold_reasons:
+            changes.append(f"hold reasons {', '.join(previous.hold_reasons or []) or '--'} to {', '.join(self.hold_reasons or []) or '--'}")
+        if previous.hold_notes != self.hold_notes:
+            changes.append("hold notes updated")
         if previous.press_id != self.press_id:
             changes.append(f"press {previous.press.name if previous.press else 'Unassigned'} to {self.press.name if self.press else 'Unassigned'}")
         if previous.press_sequence != self.press_sequence:
@@ -941,37 +996,43 @@ class CustomerOrderManager(models.Manager):
 
     def sync_from_schedule(self, schedule, created=False):
         customer = schedule.customer or schedule.job_ticket.customer
-        order, order_created = self.get_or_create(
-            schedule_entry=schedule,
-            defaults={
-                "order_number": self.next_order_number(schedule.order_date),
-                "job_ticket": schedule.job_ticket,
-                "customer": customer,
-                "customer_name": customer.name if customer else schedule.job_ticket.customer_name,
-                "customer_po": schedule.customer_po,
-                "job_name": schedule.job_ticket.job_name,
-                "product_code": schedule.job_ticket.product_code,
-                "quantity_to_ship": schedule.quantity_to_ship,
-                "quantity_to_stock": schedule.quantity_to_stock,
-                "order_date": schedule.order_date,
-                "scheduled_date": schedule.scheduled_date,
-                "due_date": schedule.due_date,
-                "priority": schedule.priority,
-                "status": schedule.status,
-                "scheduled_by": schedule.scheduled_by,
-                "last_updated_by": schedule.last_updated_by,
-                "press_name": schedule.press.name if schedule.press else "",
-                "press_sequence": schedule.press_sequence,
-                "operator": schedule.operator,
-                "actual_footage": schedule.actual_footage,
-                "footage_report": schedule.footage_report,
-                "operator_note": schedule.job_ticket.job_notes,
-            },
-        )
+        restored_order = getattr(schedule, "_restore_order", None)
+        order_created = False
+        if restored_order:
+            order = restored_order
+        else:
+            order, order_created = self.get_or_create(
+                schedule_entry=schedule,
+                defaults={
+                    "order_number": self.next_order_number(schedule.order_date),
+                    "job_ticket": schedule.job_ticket,
+                    "customer": customer,
+                    "customer_name": customer.name if customer else schedule.job_ticket.customer_name,
+                    "customer_po": schedule.customer_po,
+                    "job_name": schedule.job_ticket.job_name,
+                    "product_code": schedule.job_ticket.product_code,
+                    "quantity_to_ship": schedule.quantity_to_ship,
+                    "quantity_to_stock": schedule.quantity_to_stock,
+                    "order_date": schedule.order_date,
+                    "scheduled_date": schedule.scheduled_date,
+                    "due_date": schedule.due_date,
+                    "priority": schedule.priority,
+                    "status": schedule.status,
+                    "scheduled_by": schedule.scheduled_by,
+                    "last_updated_by": schedule.last_updated_by,
+                    "press_name": schedule.press.name if schedule.press else "",
+                    "press_sequence": schedule.press_sequence,
+                    "operator": schedule.operator,
+                    "actual_footage": schedule.actual_footage,
+                    "footage_report": schedule.footage_report,
+                    "operator_note": schedule.job_ticket.job_notes,
+                },
+            )
 
-        if not order_created:
+        if restored_order or not order_created:
             if not order.order_number:
                 order.order_number = self.next_order_number(schedule.order_date)
+            order.schedule_entry = schedule
             order.job_ticket = schedule.job_ticket
             order.customer = customer
             order.customer_name = customer.name if customer else schedule.job_ticket.customer_name
@@ -998,14 +1059,23 @@ class CustomerOrderManager(models.Manager):
         actor = schedule.last_updated_by or schedule.scheduled_by or "system"
         press_label = f" / Press: {schedule.press.name}" if schedule.press else ""
         operator_label = f" / Operator: {schedule.operator}" if schedule.operator else ""
-        CustomerOrderEvent.objects.create(
-            order=order,
-            event_type="scheduled" if created or order_created else "schedule_updated",
-            summary=(
+        if restored_order:
+            reason = str(getattr(schedule, "_restore_reason", "") or "").strip()
+            summary = f"Schedule restored to {schedule.get_status_display()}{press_label}{operator_label}."
+            if reason:
+                summary = f"{summary} Reason: {reason}"
+            event_type = "schedule_restored"
+        else:
+            summary = (
                 f"Job scheduled with status {schedule.get_status_display()}{press_label}{operator_label}."
                 if created or order_created
                 else f"Schedule updated to {schedule.get_status_display()}{press_label}{operator_label}."
-            ),
+            )
+            event_type = "scheduled" if created or order_created else "schedule_updated"
+        CustomerOrderEvent.objects.create(
+            order=order,
+            event_type=event_type,
+            summary=summary if len(summary) <= 255 else f"{summary[:252]}...",
             performed_by=actor,
         )
         return order
@@ -1054,7 +1124,7 @@ class CustomerOrder(models.Model):
     order_date = models.DateField(default=timezone.localdate)
     scheduled_date = models.DateField(null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)
-    priority = models.CharField(max_length=20, choices=ProductionSchedule.PRIORITY_CHOICES, default="normal")
+    priority = models.CharField(max_length=20, choices=ProductionSchedule.PRIORITY_CHOICES, default="low")
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="scheduled")
     scheduled_by = models.CharField(max_length=120, blank=True)
     last_updated_by = models.CharField(max_length=120, blank=True)

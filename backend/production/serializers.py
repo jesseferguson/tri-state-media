@@ -715,6 +715,9 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     footage_remaining = serializers.SerializerMethodField()
     shift_report_count = serializers.SerializerMethodField()
     active_material_count = serializers.SerializerMethodField()
+    customer_order_id = serializers.SerializerMethodField()
+    customer_order_number = serializers.SerializerMethodField()
+    customer_order_events = serializers.SerializerMethodField()
 
     def get_customer_name(self, obj):
         if obj.customer:
@@ -794,9 +797,52 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     def get_active_material_count(self, obj):
         return sum(1 for assignment in obj.material_assignments.all() if assignment.status == "active")
 
+    def _customer_order(self, obj):
+        cached = getattr(obj, "_customer_order_cache", None)
+        if cached is None:
+            cached = next(iter(obj.customer_orders.all()), None)
+            obj._customer_order_cache = cached
+        return cached
+
+    def get_customer_order_id(self, obj):
+        order = self._customer_order(obj)
+        return order.id if order else None
+
+    def get_customer_order_number(self, obj):
+        order = self._customer_order(obj)
+        return order.order_number if order else ""
+
+    def get_customer_order_events(self, obj):
+        order = self._customer_order(obj)
+        if not order:
+            return []
+        return [
+            {
+                "id": event.id,
+                "event_type": event.event_type,
+                "summary": event.summary,
+                "performed_by": event.performed_by,
+                "created_at": event.created_at.isoformat() if event.created_at else "",
+            }
+            for event in list(order.events.all())[:6]
+        ]
+
     class Meta:
         model = ProductionSchedule
         fields = "__all__"
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        status = attrs.get("status", getattr(self.instance, "status", ""))
+        hold_reasons = attrs.get("hold_reasons", getattr(self.instance, "hold_reasons", []))
+        if status == "on_hold":
+            if not isinstance(hold_reasons, list) or not hold_reasons:
+                raise serializers.ValidationError({"hold_reasons": "Select at least one reason before moving this job to Held."})
+            allowed = {value for value, label in ProductionSchedule.HOLD_REASON_CHOICES}
+            invalid = [value for value in hold_reasons if value not in allowed]
+            if invalid:
+                raise serializers.ValidationError({"hold_reasons": f"Unsupported hold reason: {', '.join(invalid)}"})
+        return attrs
 
 
 class ProductionMaterialAssignmentSerializer(serializers.ModelSerializer):
@@ -1066,12 +1112,10 @@ class CustomerInteractionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"customer": "Choose a customer or link to a customer-owned job, order, or quote."})
         relations = [
             ("customer_order", customer_order),
-            ("job_ticket", job_ticket),
             ("quote", quote),
             ("customer_contact", customer_contact),
             ("customer_address", customer_address),
         ]
-        relations += [("related_job_tickets", related) for related in related_job_tickets]
         relations += [("related_quotes", related) for related in related_quotes]
         for field_name, related in relations:
             related_customer = getattr(related, "customer", None)
