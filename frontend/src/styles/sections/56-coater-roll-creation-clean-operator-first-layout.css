@@ -1,0 +1,530 @@
+/* Coater roll creation: clean operator-first layout */
+.coater-material-window .coater-roll-print-step {
+  margin: 12px;
+  overflow: hidden;
+  border: 1px solid #d4e0ea;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, .08);
+}
+
+.coater-material-window .coater-roll-print-step > header {
+  min-height: 72px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, .18);
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, .16), rgba(15, 23, 42, 0) 44%),
+    linear-gradient(135deg, #101827, #172334 62%, #0f3d3a);
+  color: #ffffff;
+}
+
+.coater-material-window .coater-roll-print-step > header span {
+  color: #99f6e4;
+  font-size: .68rem;
+  letter-spacing: .04em;
+}
+
+.coater-material-window .coater-roll-print-step > header strong {
+  color: #ffffff;
+  font-size: 1.04rem;
+  letter-spacing: 0;
+}
+
+.coater-material-window .coater-roll-print-step > header > svg {
+  width: 42px;
+  height: 42px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .1);
+  color: #99f6e4;
+}
+
+.coater-material-window .coater-roll-print-step .coater-roll-details-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, .72fr) minmax(380px, 1.18fr) minmax(360px, 1.1fr);
+  grid-template-areas:
+    "lot width skid"
+    "length operator skid"
+    "secondary secondary skid";
+  gap: 12px;
+  align-items: stretch;
+  padding: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(20, 184, 166, .08), transparent 32%),
+    linear-gradient(180deg, #f8fafc, #eef5f4);
+}
+
+.coater-roll-lot-field {
+  grid-area: lot;
+}
+
+.coater-roll-width-field {
+  grid-area: width;
+}
+
+.coater-material-window .coater-roll-width-batch {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.coater-roll-width-head {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.coater-roll-width-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.coater-roll-width-head span {
+  color: #526176;
+  font-size: .66rem;
+  font-weight: 950;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.coater-roll-width-head strong {
+  color: #0f172a;
+  font-size: .9rem;
+  font-weight: 950;
+}
+
+.coater-roll-width-head small {
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 850;
+  text-align: right;
+}
+
+.coater-roll-width-list {
+  display: grid;
+  gap: 8px;
+}
+
+.coater-roll-width-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(86px, .32fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #dbe5ee;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.coater-roll-width-row > b {
+  min-width: 54px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: .66rem;
+  font-weight: 950;
+  text-align: center;
+}
+
+.coater-roll-width-row input {
+  min-height: 38px !important;
+  text-align: center;
+}
+
+.coater-roll-width-row .coater-width-options {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.coater-roll-width-row .coater-width-options button {
+  min-height: 34px;
+  padding-inline: 5px;
+  font-size: .7rem;
+}
+
+.coater-roll-width-remove {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fff7f7;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.coater-roll-width-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.coater-roll-width-actions button {
+  min-height: 38px;
+  border: 1px solid #99f6e4;
+  border-radius: 10px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: .72rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.coater-roll-width-actions button:hover,
+.coater-roll-width-actions button:focus-visible {
+  outline: 0;
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.coater-roll-length-field {
+  grid-area: length;
+}
+
+.coater-roll-operator-field {
+  grid-area: operator;
+}
+
+.coater-roll-secondary-field {
+  grid-area: secondary;
+}
+
+.coater-material-window .coater-roll-details-grid > label,
+.coater-material-window .coater-roll-width-batch,
+.coater-material-window .coater-skid-picker {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dbe5ee;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .05);
+}
+
+.coater-material-window .coater-roll-details-grid > label {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.coater-material-window .coater-roll-details-grid > label > span,
+.coater-skid-panel-title span {
+  color: #526176;
+  font-size: .66rem;
+  font-weight: 950;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.coater-material-window .coater-roll-details-grid input,
+.coater-material-window .coater-roll-details-grid textarea {
+  min-height: 46px;
+  border-color: #c9d6e3;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: .82rem;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(15, 23, 42, .03);
+}
+
+.coater-material-window .coater-roll-details-grid input:focus,
+.coater-material-window .coater-roll-details-grid textarea:focus {
+  border-color: #0f766e;
+  outline: 3px solid rgba(20, 184, 166, .14);
+}
+
+.coater-material-window .coater-roll-details-grid textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.coater-material-window .coater-width-options {
+  gap: 7px;
+}
+
+.coater-material-window .coater-width-options button {
+  min-height: 38px;
+  border-color: #c9d6e3;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #172033;
+}
+
+.coater-material-window .coater-width-options button:hover,
+.coater-material-window .coater-width-options button:focus-visible,
+.coater-material-window .coater-width-options button.active {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
+  box-shadow: 0 8px 16px rgba(15, 118, 110, .18);
+}
+
+.coater-material-window .coater-roll-form input.coater-operator-locked {
+  border-color: #86efac;
+  background: linear-gradient(180deg, #f0fdf4, #dcfce7);
+  color: #14532d;
+  font-size: .9rem;
+}
+
+.coater-material-window .coater-skid-picker {
+  grid-area: skid;
+  grid-column: auto;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .96), rgba(240, 253, 250, .86)),
+    #ffffff;
+}
+
+.coater-skid-panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.coater-skid-panel-title > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.coater-skid-panel-title small {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.coater-skid-panel-title button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid #99f6e4;
+  border-radius: 999px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: .66rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.coater-skid-panel-title button:hover,
+.coater-skid-panel-title button:focus-visible {
+  outline: 0;
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.coater-material-window .coater-selected-skid {
+  min-height: 68px;
+  align-content: center;
+  gap: 4px;
+  padding: 13px;
+  border: 1px dashed #94a3b8;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.coater-material-window .coater-selected-skid.ready {
+  border-style: solid;
+  border-color: #5eead4;
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, .16), rgba(34, 197, 94, .12)),
+    #f0fdfa;
+}
+
+.coater-material-window .coater-selected-skid.floor {
+  border-style: solid;
+  border-color: #bfdbfe;
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, .1), rgba(20, 184, 166, .08)),
+    #f8fafc;
+}
+
+.coater-material-window .coater-selected-skid strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.coater-material-window .coater-selected-skid small {
+  color: #475569;
+  font-size: .72rem;
+}
+
+.coater-material-window .coater-skid-search-row {
+  grid-template-columns: 18px minmax(0, 1fr) auto 42px;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid #cbd8e3;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.coater-material-window .coater-skid-search-row > svg {
+  justify-self: center;
+  color: #0f766e;
+}
+
+.coater-material-window .coater-skid-search-row input {
+  min-height: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.coater-material-window .coater-skid-search-row input:focus {
+  outline: 0;
+}
+
+.coater-material-window .coater-skid-search-row button {
+  min-height: 38px;
+  border-radius: 10px;
+}
+
+.coater-material-window .coater-skid-search-row button:last-child {
+  width: 38px;
+  padding: 0;
+}
+
+.coater-material-window .coater-skid-results {
+  max-height: 190px;
+  overflow: auto;
+  gap: 6px;
+  padding-right: 3px;
+}
+
+.coater-material-window .coater-skid-results button {
+  grid-template-columns: minmax(128px, .72fr) minmax(0, 1fr);
+  align-items: center;
+  min-height: 46px;
+  gap: 10px;
+  padding: 10px 11px;
+  border-color: #dbe5ee;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .94);
+}
+
+.coater-material-window .coater-skid-results button.active,
+.coater-material-window .coater-skid-results button:hover,
+.coater-material-window .coater-skid-results button:focus-visible {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  box-shadow: inset 4px 0 #0f766e;
+}
+
+.coater-material-window .coater-skid-results strong {
+  font-size: .82rem;
+}
+
+.coater-material-window .coater-skid-results span {
+  color: #526176;
+  font-size: .7rem;
+}
+
+@media (max-width: 1080px) {
+  .coater-material-window .coater-roll-print-step .coater-roll-details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "lot width"
+      "length operator"
+      "skid skid"
+      "secondary secondary";
+  }
+}
+
+@media (max-width: 720px) {
+  .coater-material-window .coater-roll-print-step {
+    margin: 8px;
+    border-radius: 12px;
+  }
+
+  .coater-material-window .coater-roll-print-step > header {
+    min-height: 64px;
+    padding: 13px;
+  }
+
+  .coater-material-window .coater-roll-print-step > header > svg {
+    width: 38px;
+    height: 38px;
+  }
+
+  .coater-material-window .coater-roll-print-step .coater-roll-details-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "lot"
+      "width"
+      "length"
+      "operator"
+      "skid"
+      "secondary";
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .coater-material-window .coater-roll-details-grid > label,
+  .coater-material-window .coater-roll-width-batch,
+  .coater-material-window .coater-skid-picker {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .coater-roll-width-head {
+    display: grid;
+    gap: 4px;
+  }
+
+  .coater-roll-width-head small {
+    text-align: left;
+  }
+
+  .coater-roll-width-row {
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+  }
+
+  .coater-roll-width-row > b {
+    justify-self: start;
+  }
+
+  .coater-roll-width-row .coater-width-options,
+  .coater-roll-width-row input {
+    grid-column: 1 / -1;
+  }
+
+  .coater-roll-width-remove {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .coater-roll-width-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-material-window .coater-skid-search-row {
+    grid-template-columns: 18px minmax(0, 1fr) 42px;
+  }
+
+  .coater-material-window .coater-skid-search-row button:first-of-type {
+    display: none;
+  }
+
+  .coater-material-window .coater-skid-results button {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}

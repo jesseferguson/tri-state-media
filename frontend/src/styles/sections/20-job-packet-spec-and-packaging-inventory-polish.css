@@ -1,0 +1,204 @@
+/* Job packet spec and packaging inventory polish */
+.job-info-list.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.job-info-list.compact .job-info-row,
+.job-info-row {
+  min-width: 0;
+  grid-template-columns: minmax(76px, .42fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.job-info-row.wide {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(58px, .16fr) minmax(0, 1fr);
+}
+
+.job-info-row span,
+.job-info-row strong {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.job-info-row span {
+  font-size: .66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.job-info-row strong {
+  font-size: .82rem;
+  line-height: 1.2;
+  word-break: keep-all;
+}
+
+.job-spec-card .job-info-row.wide strong {
+  font-size: .78rem;
+}
+
+.job-recipe-press-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.job-recipe-press-strip div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: inset 3px 0 0 #94a3b8;
+}
+
+.job-recipe-press-strip div.ready {
+  box-shadow: inset 3px 0 0 #16a34a;
+}
+
+.job-recipe-press-strip div.review {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.job-recipe-press-strip span,
+.job-recipe-press-strip strong,
+.job-recipe-press-strip em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-recipe-press-strip span {
+  color: #64748b;
+  font-size: .62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.job-recipe-press-strip strong {
+  color: #0f172a;
+  font-size: .84rem;
+  font-weight: 900;
+}
+
+.job-recipe-press-strip em {
+  color: #667085;
+  font-size: .66rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.job-packaging-inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.job-packaging-inventory-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dfe7f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.job-packaging-inventory-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf2f7;
+  background: #f8fafc;
+}
+
+.job-packaging-inventory-head strong,
+.job-packaging-inventory-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-packaging-inventory-head strong {
+  color: #101828;
+  font-size: .82rem;
+  font-weight: 900;
+}
+
+.job-packaging-inventory-head span {
+  color: #667085;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.job-packaging-inventory-card .muted {
+  margin: 0;
+  padding: 12px;
+  font-size: .76rem;
+}
+
+.job-packaging-table-wrap {
+  overflow-x: auto;
+}
+
+.job-packaging-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.job-packaging-table th,
+.job-packaging-table td {
+  max-width: 180px;
+  padding: 7px 9px;
+  border-bottom: 1px solid #f0f3f7;
+  color: #344054;
+  font-size: .7rem;
+  line-height: 1.15;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-packaging-table th {
+  color: #667085;
+  font-size: .62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.job-packaging-table .qty-cell {
+  text-align: right;
+}
+
+.job-packaging-table tr:last-child td {
+  border-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .job-packaging-inventory-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .job-info-list.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .job-recipe-press-strip {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,78 @@
+/* Keep scan dialogs centered after the later full-screen scan overrides. */
+.scan-roll-overlay .storage-workflow-modal.scan-roll-workflow {
+  width: min(470px, 100%);
+  height: min(520px, calc(100dvh - 40px));
+}
+
+@media (max-width: 680px) {
+  .storage-modal-overlay.scan-roll-overlay,
+  .storage-modal-overlay.storage-history-overlay {
+    align-items: center;
+    padding: 12px;
+  }
+
+  .scan-roll-overlay .storage-workflow-modal.scan-roll-workflow {
+    width: min(470px, 100%);
+    height: min(500px, calc(100dvh - 24px));
+    min-height: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+  }
+
+  .scanned-storage-view .skid-detail-panel .storage-detail-header {
+    padding: 12px 14px;
+  }
+
+  .scanned-storage-view .skid-detail-panel .storage-contents > header {
+    padding: 9px 12px;
+  }
+
+  .scanned-storage-view .skid-detail-panel .storage-contents > div > article {
+    padding: 11px 12px;
+  }
+}
+
+@media print {
+  body:has(.offline-form-overlay) * {
+    visibility: hidden !important;
+  }
+
+  body:has(.offline-form-overlay) .offline-form-overlay,
+  body:has(.offline-form-overlay) .offline-form-overlay * {
+    visibility: visible !important;
+  }
+
+  body:has(.offline-form-overlay) .offline-form-overlay {
+    position: static !important;
+    display: block !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body:has(.offline-form-overlay) .offline-form-window {
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  body:has(.offline-form-overlay) .offline-form-window > header,
+  body:has(.offline-form-overlay) .offline-form-actions {
+    display: none !important;
+  }
+
+  body:has(.offline-form-overlay) .offline-print-pack {
+    display: block !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  body:has(.offline-form-overlay) .offline-form-sheet {
+    min-height: 31vh;
+    margin: 0 0 12px;
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+}

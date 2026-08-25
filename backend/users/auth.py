@@ -13,6 +13,7 @@ RESOURCE_KEYS_BY_BASENAME = {
     "box-inventory": ("box-inventory", "packaging-inventory", "job-tickets", "production-schedule"),
     "core": ("cores", "job-tickets", "production-schedule"),
     "core-inventory": ("core-inventory", "packaging-inventory", "job-tickets", "production-schedule"),
+    "coater-roll-tag": ("coater-operator", "production-schedule", "material-handling", "material-coated-stock"),
     "customer": ("customers", "quote-calculator", "job-tickets", "production-schedule", "customer-orders"),
     "customer-interaction": ("customers", "customer-orders", "job-tickets"),
     "customer-order": ("customer-orders", "production-schedule", "job-tickets"),

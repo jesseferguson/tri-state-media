@@ -31,7 +31,10 @@ from .models import (
     CoreInventory,
     CoreSpec,
     Customer,
+    CustomerAddress,
+    CustomerContact,
     CustomerInteraction,
+    CustomerInteractionHistory,
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
@@ -1125,7 +1128,7 @@ class BaseProductionViewSet(viewsets.ModelViewSet):
 
 
 class CustomerViewSet(BaseProductionViewSet):
-    queryset = Customer.objects.all().order_by("name")
+    queryset = Customer.objects.prefetch_related("contacts", "addresses").all().order_by("name")
     serializer_class = CustomerSerializer
     search_fields = [
         "name",
@@ -1150,7 +1153,8 @@ class CustomerViewSet(BaseProductionViewSet):
 
 class CustomerInteractionViewSet(BaseProductionViewSet):
     queryset = (
-        CustomerInteraction.objects.select_related("customer", "customer_order", "job_ticket", "quote")
+        CustomerInteraction.objects.select_related("customer", "customer_order", "job_ticket", "quote", "customer_contact", "customer_address")
+        .prefetch_related("related_job_tickets", "related_quotes", "history_entries")
         .all()
         .order_by("-pinned", "-occurred_at", "-id")
     )
@@ -1167,7 +1171,20 @@ class CustomerInteractionViewSet(BaseProductionViewSet):
         "customer_order__order_number",
         "job_ticket__ticket_number",
         "job_ticket__job_name",
+        "related_job_tickets__ticket_number",
+        "related_job_tickets__job_name",
         "quote__quote_number",
+        "related_quotes__quote_number",
+        "contact_first_name",
+        "contact_last_name",
+        "contact_role",
+        "contact_email",
+        "contact_phone",
+        "contact_company",
+        "address_line_1",
+        "city",
+        "state",
+        "postal_code",
     ]
     ordering_fields = ["occurred_at", "follow_up_date", "created_at", "updated_at", "status", "interaction_type", "pinned"]
 
@@ -1185,16 +1202,337 @@ class CustomerInteractionViewSet(BaseProductionViewSet):
         if customer_order:
             qs = qs.filter(customer_order_id=customer_order)
         if job_ticket:
-            qs = qs.filter(job_ticket_id=job_ticket)
+            qs = qs.filter(Q(job_ticket_id=job_ticket) | Q(related_job_tickets__id=job_ticket))
         if quote:
-            qs = qs.filter(quote_id=quote)
+            quote_value = str(quote).strip()
+            quote_filter = Q(quote__external_id=quote_value) | Q(related_quotes__external_id=quote_value)
+            if quote_value.isdigit():
+                quote_filter |= Q(quote_id=quote_value) | Q(related_quotes__id=quote_value)
+            qs = qs.filter(quote_filter)
         if interaction_type:
             qs = qs.filter(interaction_type=interaction_type)
         if status_value:
             qs = qs.filter(status=status_value)
         if str(open_only).lower() in {"1", "true", "yes"}:
             qs = qs.exclude(status="closed")
-        return qs
+        return qs.distinct()
+
+    def history_actor(self, serializer):
+        request_data = getattr(self.request, "data", {}) or {}
+        request_user = company_user_from_request(self.request)
+        return (
+            request_data.get("updated_by")
+            or request_data.get("created_by")
+            or getattr(request_user, "name", "")
+            or getattr(request_user, "username", "")
+            or "system"
+        )
+
+    def history_summary(self, default):
+        request_data = getattr(self.request, "data", {}) or {}
+        return str(request_data.get("action_summary") or request_data.get("actionSummary") or default).strip()
+
+    def clean_text(self, value):
+        return str(value or "").strip()
+
+    def split_name(self, value):
+        parts = self.clean_text(value).split()
+        return {
+            "first_name": parts[0] if parts else "",
+            "last_name": " ".join(parts[1:]) if len(parts) > 1 else "",
+        }
+
+    def customer_primary_contact_payload(self, customer):
+        name = self.split_name(customer.contact_name)
+        return {
+            **name,
+            "role": "",
+            "email": self.clean_text(customer.email),
+            "phone": self.clean_text(customer.phone),
+            "company": self.clean_text(customer.name),
+        }
+
+    def has_contact_identity(self, payload):
+        return any(payload.get(field) for field in ["first_name", "last_name", "email", "phone"])
+
+    def interaction_contact_payload(self, interaction):
+        selected = interaction.customer_contact
+        payload = {
+            "first_name": self.clean_text(interaction.contact_first_name),
+            "last_name": self.clean_text(interaction.contact_last_name),
+            "role": self.clean_text(interaction.contact_role),
+            "email": self.clean_text(interaction.contact_email or interaction.email_to),
+            "phone": self.clean_text(interaction.contact_phone),
+            "company": self.clean_text(interaction.contact_company or interaction.customer.name),
+        }
+        if any(payload.values()):
+            return payload
+        if selected:
+            return {
+                "first_name": selected.first_name,
+                "last_name": selected.last_name,
+                "role": selected.role,
+                "email": selected.email,
+                "phone": selected.phone,
+                "company": selected.company,
+            }
+        return self.customer_primary_contact_payload(interaction.customer)
+
+    def ensure_primary_contact(self, customer):
+        existing_primary = customer.contacts.filter(is_primary=True).first()
+        if existing_primary:
+            return existing_primary
+        payload = self.customer_primary_contact_payload(customer)
+        if not self.has_contact_identity(payload):
+            return None
+        contact = self.find_matching_contact(customer, payload)
+        if contact:
+            if not contact.is_primary:
+                contact.is_primary = True
+                contact.save(update_fields=["is_primary", "updated_at"])
+            return contact
+        return CustomerContact.objects.create(customer=customer, is_primary=True, **payload)
+
+    def find_matching_contact(self, customer, payload):
+        email = payload.get("email")
+        phone = payload.get("phone")
+        first_name = payload.get("first_name")
+        last_name = payload.get("last_name")
+        if email:
+            match = customer.contacts.filter(email__iexact=email).first()
+            if match:
+                return match
+        if phone:
+            match = customer.contacts.filter(phone__iexact=phone).first()
+            if match:
+                return match
+        if first_name or last_name:
+            match = customer.contacts.filter(first_name__iexact=first_name, last_name__iexact=last_name).first()
+            if match:
+                return match
+        return None
+
+    def fill_contact_blanks(self, contact, payload):
+        changed = []
+        for field in ["first_name", "last_name", "role", "email", "phone", "company"]:
+            if payload.get(field) and not getattr(contact, field):
+                setattr(contact, field, payload[field])
+                changed.append(field)
+        if changed:
+            contact.save(update_fields=[*changed, "updated_at"])
+
+    def fill_customer_primary_contact_blanks(self, customer, contact):
+        updates = {}
+        contact_name = " ".join([contact.first_name, contact.last_name]).strip()
+        if contact_name and not customer.contact_name:
+            updates["contact_name"] = contact_name
+        if contact.email and not customer.email:
+            updates["email"] = contact.email
+        if contact.phone and not customer.phone:
+            updates["phone"] = contact.phone
+        if updates:
+            Customer.objects.filter(pk=customer.pk).update(**updates)
+            for field, value in updates.items():
+                setattr(customer, field, value)
+
+    def customer_primary_address_payload(self, customer):
+        return {
+            "label": "Primary",
+            "address_line_1": self.clean_text(customer.address_line_1),
+            "address_line_2": self.clean_text(customer.address_line_2),
+            "address_line_3": self.clean_text(customer.address_line_3),
+            "city": self.clean_text(customer.city),
+            "state": self.clean_text(customer.state),
+            "postal_code": self.clean_text(customer.postal_code),
+            "country": self.clean_text(customer.country),
+        }
+
+    def interaction_address_payload(self, interaction):
+        selected = interaction.customer_address
+        payload = {
+            "label": self.clean_text(interaction.address_label),
+            "address_line_1": self.clean_text(interaction.address_line_1),
+            "address_line_2": self.clean_text(interaction.address_line_2),
+            "address_line_3": self.clean_text(interaction.address_line_3),
+            "city": self.clean_text(interaction.city),
+            "state": self.clean_text(interaction.state),
+            "postal_code": self.clean_text(interaction.postal_code),
+            "country": self.clean_text(interaction.country),
+        }
+        if any(value for key, value in payload.items() if key != "label"):
+            return payload
+        if selected:
+            return {
+                "label": selected.label,
+                "address_line_1": selected.address_line_1,
+                "address_line_2": selected.address_line_2,
+                "address_line_3": selected.address_line_3,
+                "city": selected.city,
+                "state": selected.state,
+                "postal_code": selected.postal_code,
+                "country": selected.country,
+            }
+        return self.customer_primary_address_payload(interaction.customer)
+
+    def ensure_primary_address(self, customer):
+        existing_primary = customer.addresses.filter(is_primary=True).first()
+        if existing_primary:
+            return existing_primary
+        payload = self.customer_primary_address_payload(customer)
+        if not any(value for key, value in payload.items() if key != "label"):
+            return None
+        address = self.find_matching_address(customer, payload)
+        if address:
+            if not address.is_primary:
+                address.is_primary = True
+                address.save(update_fields=["is_primary", "updated_at"])
+            return address
+        return CustomerAddress.objects.create(customer=customer, is_primary=True, **payload)
+
+    def address_key(self, address_or_payload):
+        getter = address_or_payload.get if isinstance(address_or_payload, dict) else lambda key: getattr(address_or_payload, key)
+        fields = ["address_line_1", "address_line_2", "address_line_3", "city", "state", "postal_code", "country"]
+        return tuple(self.clean_text(getter(field)).lower() for field in fields)
+
+    def find_matching_address(self, customer, payload):
+        payload_key = self.address_key(payload)
+        if not any(payload_key):
+            return None
+        for address in customer.addresses.all():
+            if self.address_key(address) == payload_key:
+                return address
+        return None
+
+    def fill_address_blanks(self, address, payload):
+        changed = []
+        for field in ["label", "address_line_1", "address_line_2", "address_line_3", "city", "state", "postal_code", "country"]:
+            if payload.get(field) and not getattr(address, field):
+                setattr(address, field, payload[field])
+                changed.append(field)
+        if changed:
+            address.save(update_fields=[*changed, "updated_at"])
+
+    def fill_customer_primary_address_blanks(self, customer, address):
+        updates = {}
+        for field in ["address_line_1", "address_line_2", "address_line_3", "city", "state", "postal_code", "country"]:
+            if getattr(address, field) and not getattr(customer, field):
+                updates[field] = getattr(address, field)
+        if updates:
+            Customer.objects.filter(pk=customer.pk).update(**updates)
+            for field, value in updates.items():
+                setattr(customer, field, value)
+
+    def sync_customer_records(self, interaction):
+        customer = interaction.customer
+        if not customer:
+            return interaction
+
+        self.ensure_primary_contact(customer)
+        contact_payload = self.interaction_contact_payload(interaction)
+        contact = interaction.customer_contact
+        if contact and contact.customer_id != customer.pk:
+            contact = None
+        if not contact and self.has_contact_identity(contact_payload):
+            contact = self.find_matching_contact(customer, contact_payload)
+        if not contact and self.has_contact_identity(contact_payload):
+            contact = CustomerContact.objects.create(
+                customer=customer,
+                is_primary=not customer.contacts.filter(is_primary=True).exists(),
+                created_from_interaction=interaction,
+                **contact_payload,
+            )
+        if contact:
+            self.fill_contact_blanks(contact, contact_payload)
+            self.fill_customer_primary_contact_blanks(customer, contact)
+            if interaction.customer_contact_id != contact.pk:
+                CustomerInteraction.objects.filter(pk=interaction.pk).update(customer_contact=contact)
+                interaction.customer_contact = contact
+                interaction.customer_contact_id = contact.pk
+
+        self.ensure_primary_address(customer)
+        address_payload = self.interaction_address_payload(interaction)
+        address = interaction.customer_address
+        if address and address.customer_id != customer.pk:
+            address = None
+        if not address and any(value for key, value in address_payload.items() if key != "label"):
+            address = self.find_matching_address(customer, address_payload)
+        if not address and any(value for key, value in address_payload.items() if key != "label"):
+            address = CustomerAddress.objects.create(
+                customer=customer,
+                is_primary=not customer.addresses.filter(is_primary=True).exists(),
+                created_from_interaction=interaction,
+                **address_payload,
+            )
+        if address:
+            self.fill_address_blanks(address, address_payload)
+            self.fill_customer_primary_address_blanks(customer, address)
+            if interaction.customer_address_id != address.pk:
+                CustomerInteraction.objects.filter(pk=interaction.pk).update(customer_address=address)
+                interaction.customer_address = address
+                interaction.customer_address_id = address.pk
+        return interaction
+
+    def interaction_snapshot(self, interaction):
+        date_value = lambda value: value.isoformat() if value else ""
+        return {
+            "subject": interaction.subject,
+            "status": interaction.status,
+            "interaction_type": interaction.interaction_type,
+            "follow_up_date": date_value(interaction.follow_up_date),
+            "occurred_at": date_value(interaction.occurred_at),
+            "pinned": interaction.pinned,
+            "customer_contact": interaction.customer_contact_id,
+            "customer_address": interaction.customer_address_id,
+            "contact_matches_customer": interaction.contact_matches_customer,
+            "contact_first_name": interaction.contact_first_name,
+            "contact_last_name": interaction.contact_last_name,
+            "contact_role": interaction.contact_role,
+            "contact_email": interaction.contact_email,
+            "contact_phone": interaction.contact_phone,
+            "contact_company": interaction.contact_company,
+            "address_matches_customer": interaction.address_matches_customer,
+            "address_label": interaction.address_label,
+            "address_line_1": interaction.address_line_1,
+            "address_line_2": interaction.address_line_2,
+            "address_line_3": interaction.address_line_3,
+            "city": interaction.city,
+            "state": interaction.state,
+            "postal_code": interaction.postal_code,
+            "country": interaction.country,
+            "body": interaction.body,
+            "job_ticket": interaction.job_ticket_id,
+            "quote": interaction.quote_id,
+            "related_job_tickets": list(interaction.related_job_tickets.values_list("id", flat=True)),
+            "related_quotes": list(interaction.related_quotes.values_list("external_id", flat=True)),
+        }
+
+    def snapshot_changes(self, before, after):
+        return {
+            key: {"from": before.get(key), "to": after.get(key)}
+            for key in after
+            if before.get(key) != after.get(key)
+        }
+
+    def perform_create(self, serializer):
+        interaction = self.sync_customer_records(serializer.save())
+        CustomerInteractionHistory.objects.create(
+            interaction=interaction,
+            action="created",
+            summary=self.history_summary("created follow-up"),
+            performed_by=self.history_actor(serializer),
+        )
+
+    def perform_update(self, serializer):
+        before = self.interaction_snapshot(serializer.instance)
+        interaction = self.sync_customer_records(serializer.save())
+        after = self.interaction_snapshot(interaction)
+        CustomerInteractionHistory.objects.create(
+            interaction=interaction,
+            action="updated",
+            summary=self.history_summary("updated follow-up"),
+            performed_by=self.history_actor(serializer),
+            changes=self.snapshot_changes(before, after),
+        )
 
 
 class MessageThreadViewSet(BaseProductionViewSet):

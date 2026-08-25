@@ -1,0 +1,199 @@
+/* Grouped locations and usage ledger */
+.location-tree-view,
+.usage-ledger-view {
+  display: grid;
+  gap: 10px;
+}
+
+.location-root-group,
+.location-second-group,
+.usage-type-group,
+.usage-year-group,
+.usage-month-group {
+  border: 1px solid #dfe5ec;
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.location-root-head,
+.location-second-head,
+.usage-type-head,
+.usage-year-head,
+.usage-month-head {
+  width: 100%;
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: #f7f9fc;
+  color: #101828;
+  text-align: left;
+}
+
+.location-root-head,
+.usage-type-head {
+  grid-template-columns: auto minmax(180px, 1fr) minmax(90px, auto) minmax(90px, auto);
+  padding: 10px;
+}
+
+.location-second-head,
+.usage-year-head,
+.usage-month-head {
+  grid-template-columns: auto minmax(160px, 1fr) minmax(90px, auto) minmax(90px, auto);
+  padding: 8px 10px;
+}
+
+.location-second-head {
+  grid-template-columns: auto minmax(160px, 1fr) minmax(90px, auto);
+}
+
+.location-root-head:hover,
+.location-second-head:hover,
+.usage-type-head:hover,
+.usage-year-head:hover,
+.usage-month-head:hover {
+  background: #eef4fb;
+}
+
+.location-root-head strong,
+.location-second-head strong,
+.usage-type-head strong,
+.usage-year-head strong,
+.usage-month-head strong {
+  color: #101828;
+}
+
+.location-root-head span,
+.location-root-head em,
+.location-second-head span,
+.usage-type-head span,
+.usage-type-head em,
+.usage-year-head span,
+.usage-year-head em,
+.usage-month-head span,
+.usage-month-head em {
+  color: #667085;
+  font-size: .74rem;
+  font-style: normal;
+  text-align: right;
+}
+
+.location-second-list,
+.usage-year-list,
+.usage-month-list {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.location-row-list,
+.usage-row-list {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+}
+
+.location-row,
+.usage-ledger-row {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e6ecf2;
+  border-radius: 9px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.location-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(90px, auto) minmax(90px, auto) auto;
+}
+
+.usage-ledger-row {
+  grid-template-columns: minmax(220px, 1fr) minmax(100px, auto) minmax(90px, auto) auto;
+}
+
+.location-row:hover,
+.location-row.selected,
+.usage-ledger-row:hover,
+.usage-ledger-row.selected {
+  background: #f1f5f9;
+}
+
+.location-row strong,
+.usage-ledger-row strong {
+  display: block;
+  color: #101828;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-row span,
+.location-row em,
+.usage-ledger-row span,
+.usage-ledger-row em {
+  color: #667085;
+  font-size: .74rem;
+  font-style: normal;
+}
+
+.location-row div:first-child span,
+.usage-ledger-row div:first-child span {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .topbar,
+  .type-window-head {
+    flex-direction: column;
+  }
+
+  .top-actions,
+  .type-window-actions {
+    width: 100%;
+  }
+
+  .type-window-actions .primary-btn,
+  .type-window-actions .ghost-btn {
+    flex: 1 1 auto;
+  }
+
+  .type-summary-grid,
+  .type-option-card summary,
+  .type-option-detail,
+  .inventory-width-group summary,
+  .inventory-location-row,
+  .location-root-head,
+  .location-second-head,
+  .usage-type-head,
+  .usage-year-head,
+  .usage-month-head,
+  .location-row,
+  .usage-ledger-row,
+  .material-form-window .record-form {
+    grid-template-columns: 1fr;
+  }
+
+  .row-actions {
+    justify-content: stretch;
+  }
+
+  .row-actions .ghost-btn,
+  .row-actions .danger-btn {
+    flex: 1 1 auto;
+  }
+}

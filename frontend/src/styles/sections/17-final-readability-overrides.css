@@ -1,0 +1,123 @@
+/* Final readability overrides */
+.sidebar .nav-group-toggle,
+.sidebar .nav-child-toggle {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #d7dee8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  font-size: .74rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.sidebar .nav-group.has-active > .nav-group-toggle,
+.sidebar .nav-child-group.has-active > .nav-child-toggle {
+  border-color: #9fb3cc;
+  background: #eef4fb;
+  color: #102033;
+}
+
+.sidebar .nav-btn {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  font-weight: 800;
+}
+
+.sidebar .nav-btn:hover {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.sidebar .nav-btn.active {
+  border-color: #1f3b57;
+  background: linear-gradient(135deg, #122033, #1f3b57);
+  color: #ffffff;
+  box-shadow: inset 4px 0 0 var(--accent), 0 8px 18px rgba(15, 23, 42, .14);
+}
+
+.sidebar .nav-btn.active svg {
+  color: var(--accent);
+}
+
+.schedule-thumb {
+  height: auto;
+  min-height: 148px;
+  aspect-ratio: 4 / 3;
+  padding: 6px;
+  background: #f8fafc;
+}
+
+.schedule-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: scale-down;
+  object-position: center;
+  border-radius: 7px;
+}
+
+.schedule-thumb .pdf-preview,
+.job-ticket-card-image .pdf-preview {
+  border-radius: 7px;
+}
+
+.schedule-thumb .pdf-preview iframe,
+.job-ticket-card-image .pdf-preview iframe {
+  border-radius: 7px;
+}
+
+.schedule-thumb > em {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .9);
+  color: #475467;
+  font-size: .58rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.schedule-file-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: #667085;
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.schedule-packet-hero .schedule-thumb {
+  min-height: 260px;
+  aspect-ratio: 4 / 3;
+}
+
+.flex-dies-record-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .schedule-thumb,
+  .schedule-packet-hero .schedule-thumb {
+    min-height: 210px;
+    aspect-ratio: 4 / 3;
+  }
+
+  .flex-dies-record-form {
+    grid-template-columns: 1fr;
+  }
+
+  .flex-dies-record-form .field-dieline_image,
+  .flex-dies-record-form .field-serial_numbers {
+    grid-column: auto;
+  }
+}

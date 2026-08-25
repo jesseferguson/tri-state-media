@@ -1,0 +1,293 @@
+/* Professional job-ticket spec sheet */
+.job-overlay {
+  background: rgba(246, 247, 249, .86);
+}
+
+.job-overlay-shell {
+  width: min(1500px, 100%);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .14);
+}
+
+.job-overlay-head {
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.job-overlay-head .eyebrow {
+  color: #64748b;
+  font-size: .74rem;
+  font-weight: 800;
+}
+
+.job-overlay-head h2 {
+  color: #0f172a;
+  font-size: 1.35rem;
+  font-weight: 850;
+}
+
+.job-tabs {
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.job-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #64748b;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.job-tabs button.active {
+  color: #0f172a;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .08);
+}
+
+.job-panel-section {
+  gap: 12px;
+}
+
+.job-info-list {
+  gap: 7px;
+}
+
+.job-info-row,
+.job-stat,
+.job-inventory-row {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.job-info-row {
+  grid-template-columns: 120px minmax(0, 1fr);
+  padding: 10px 12px;
+}
+
+.job-info-row span,
+.job-stat span,
+.job-inventory-row span,
+.job-inventory-row em {
+  color: #64748b;
+  font-size: .72rem;
+}
+
+.job-info-row strong,
+.job-stat strong,
+.job-inventory-row strong {
+  color: #0f172a;
+  font-size: .86rem;
+  font-weight: 800;
+}
+
+.job-subsection-head {
+  color: #334155;
+  font-size: .84rem;
+  font-weight: 850;
+}
+
+.recipe-options-view {
+  gap: 10px;
+}
+
+.recipe-group-card,
+.press-group-card,
+.recipe-option-card {
+  border: 1px solid #dbe7de;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.recipe-group-card.ready,
+.press-group-card.ready,
+.recipe-option-card.ready {
+  border-color: #bbf7d0;
+}
+
+.recipe-group-card.warn,
+.press-group-card.warn,
+.recipe-option-card.warn {
+  border-color: #fde68a;
+}
+
+.recipe-group-card.bad,
+.press-group-card.bad,
+.recipe-option-card.bad {
+  border-color: #fecaca;
+}
+
+.recipe-head,
+.press-head,
+.option-headline {
+  background: #f8fafc;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.recipe-head strong,
+.press-head strong,
+.option-title strong {
+  color: #0f172a;
+  font-size: .98rem;
+  font-weight: 850;
+}
+
+.recipe-head span,
+.press-title-block span,
+.option-title span {
+  color: #64748b;
+  font-size: .75rem;
+}
+
+.run-status {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.run-status.ready {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.run-status.warn {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.run-status.bad {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.option-body {
+  background: #ffffff;
+  border-top-color: #e5e7eb;
+}
+
+.combo-card {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-left-width: 4px;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.combo-card.ready {
+  border-left-color: #22c55e;
+}
+
+.combo-card.warn {
+  border-left-color: #f59e0b;
+}
+
+.combo-card.bad {
+  border-left-color: #ef4444;
+}
+
+.spec-chart {
+  grid-template-columns: repeat(5, minmax(82px, .7fr)) minmax(180px, 1.2fr);
+  gap: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.spec-chart div {
+  padding: 8px 9px;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.spec-chart span {
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 850;
+}
+
+.spec-chart strong {
+  color: #0f172a;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.chain-stack {
+  gap: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.chain-row {
+  grid-template-columns: 82px minmax(180px, 1fr) 20px minmax(180px, 1fr) minmax(120px, .6fr);
+  gap: 10px;
+}
+
+.chain-label {
+  color: #2563eb;
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+
+.arrow {
+  color: #94a3b8;
+}
+
+.tool-chip {
+  min-height: 60px;
+  padding: 10px;
+  border: 1px solid #475569;
+  border-radius: 9px;
+  background: #334155;
+  color: #ffffff;
+}
+
+.tool-chip.ready {
+  border-color: #475569;
+}
+
+.tool-chip.bad {
+  border-color: #ef4444;
+  background: #fff1f2;
+}
+
+.tool-chip.active {
+  border-color: #2563eb;
+  background: #1e293b;
+}
+
+.tool-chip span,
+.tool-chip em {
+  color: #cbd5e1;
+  font-size: .68rem;
+}
+
+.tool-chip strong {
+  color: #ffffff;
+  font-size: .82rem;
+  font-weight: 850;
+}
+
+.tool-chip.bad strong {
+  color: #991b1b;
+}
+
+.tool-chip.bad span,
+.tool-chip.bad em {
+  color: #b91c1c;
+}
+
+.problem-line span {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fecaca;
+}

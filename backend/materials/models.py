@@ -863,6 +863,7 @@ class CoaterRollTag(models.Model):
         blank=True,
         related_name="coater_roll_tags",
     )
+    press_sequence = models.PositiveIntegerField(null=True, blank=True)
     location = models.ForeignKey(
         ToolingLocation,
         on_delete=models.SET_NULL,

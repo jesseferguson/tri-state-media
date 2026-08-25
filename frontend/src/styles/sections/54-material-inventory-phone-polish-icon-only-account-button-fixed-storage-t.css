@@ -1,0 +1,106 @@
+/* Material inventory phone polish: icon-only account button, fixed storage tabs, full loader */
+@media (max-width: 760px) {
+  .app-shell.material-workspace-shell .mobile-user-block .account-menu-trigger {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    flex: 0 0 44px;
+    overflow: hidden;
+  }
+
+  .app-shell.material-workspace-shell .mobile-user-block .account-menu-trigger span,
+  .app-shell.material-workspace-shell .mobile-user-block .account-menu-trigger em,
+  .app-shell.material-workspace-shell .mobile-user-block .account-menu-trigger svg:last-child {
+    display: none !important;
+  }
+
+  .app-shell.material-workspace-shell .work-area {
+    padding: 0;
+    gap: 0;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view,
+  .app-shell.material-workspace-shell .material-storage-view {
+    gap: 0;
+    padding: 0;
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links {
+    position: sticky;
+    top: 64px;
+    z-index: 1150;
+    order: -20;
+    height: 52px;
+    min-height: 52px;
+    max-height: 52px;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 6px 8px;
+    border: 0;
+    border-bottom: 1px solid #dbe4ee;
+    border-radius: 0;
+    background: rgba(255, 255, 255, .98);
+    box-shadow: 0 6px 16px rgba(15, 23, 42, .06);
+    backdrop-filter: blur(12px);
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button {
+    height: 40px;
+    min-height: 40px;
+    border-radius: 9px;
+    font-size: .74rem;
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button > svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions {
+    gap: 6px;
+    order: -10;
+    padding: 8px;
+    border: 0;
+    border-bottom: 1px solid #dbe4ee;
+    border-radius: 0;
+    background: #ffffff;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 42px;
+    justify-content: center;
+    padding-inline: 8px;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions .material-active-job {
+    flex: 1 0 100%;
+    justify-content: center;
+    margin-right: 0;
+  }
+
+  .app-shell.material-workspace-shell .storage-hero,
+  .app-shell.material-workspace-shell .material-handling-hero {
+    order: -10;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-loading-slot,
+  .app-shell.material-workspace-shell .material-storage-view > .material-loading-screen {
+    order: -15;
+  }
+
+  .app-shell.material-workspace-shell .material-loading-screen {
+    min-height: calc(100dvh - 116px);
+    margin: 0;
+    border: 0;
+    border-bottom: 1px solid #dbe4ee;
+    border-radius: 0;
+    background: #f8fafc;
+  }
+
+  .app-shell.material-workspace-shell .material-loading-screen > div {
+    gap: 10px;
+  }
+}

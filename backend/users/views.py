@@ -16,8 +16,28 @@ class BaseUsersViewSet(viewsets.ModelViewSet):
 
 
 class AdminWriteMixin:
+    self_update_fields = {
+        "quoteCompany",
+        "quote_company",
+        "defaultLandingPage",
+        "default_landing_page",
+        "pinnedMenuPages",
+        "pinned_menu_pages",
+    }
+
     def _admin_write_allowed(self, request):
         return not settings.API_AUTH_REQUIRED or request_user_is_admin(request)
+
+    def _self_update_allowed(self, request, kwargs):
+        user = company_user_from_request(request)
+        lookup_kwarg = getattr(self, "lookup_url_kwarg", None) or self.lookup_field
+        target_id = str(kwargs.get(lookup_kwarg) or kwargs.get("pk") or kwargs.get("id") or "")
+        return (
+            self.__class__.__name__ == "CompanyUserViewSet"
+            and user
+            and str(user.pk) == target_id
+            and set(request.data.keys()).issubset(self.self_update_fields)
+        )
 
     def create(self, request, *args, **kwargs):
         if not self._admin_write_allowed(request):
@@ -25,22 +45,13 @@ class AdminWriteMixin:
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
-        if not self._admin_write_allowed(request):
+        if not self._admin_write_allowed(request) and not (kwargs.get("partial") and self._self_update_allowed(request, kwargs)):
             return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
-        if not self._admin_write_allowed(request):
-            user = company_user_from_request(request)
-            target_id = str(kwargs.get(getattr(self, "lookup_url_kwarg", None) or self.lookup_field))
-            allowed_self_update = (
-                self.__class__.__name__ == "CompanyUserViewSet"
-                and user
-                and str(user.pk) == target_id
-                and set(request.data.keys()).issubset({"quoteCompany", "quote_company"})
-            )
-            if not allowed_self_update:
-                return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
+        if not self._admin_write_allowed(request) and not self._self_update_allowed(request, kwargs):
+            return Response({"detail": "Only an active Admin user can change company access."}, status=status.HTTP_403_FORBIDDEN)
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):

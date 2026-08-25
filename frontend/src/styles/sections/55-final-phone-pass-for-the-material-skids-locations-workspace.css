@@ -1,0 +1,304 @@
+/* Final phone pass for the Material / Skids / Locations workspace */
+@media (max-width: 760px) {
+  .app-shell.material-workspace-shell .topbar.compact-card {
+    display: none;
+  }
+
+  .app-shell.material-workspace-shell .work-area {
+    min-height: calc(100dvh - 64px);
+    padding: 0;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view,
+  .app-shell.material-workspace-shell .material-storage-view {
+    width: 100%;
+    min-height: calc(100dvh - 64px);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    overflow-x: hidden;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links {
+    position: sticky;
+    top: 64px;
+    z-index: 1150;
+    order: -30;
+    height: auto;
+    min-height: 46px;
+    max-height: none;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 5px 8px;
+    border: 0;
+    border-bottom: 1px solid #d9e4ec;
+    border-radius: 0;
+    background: rgba(255, 255, 255, .98);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, .05);
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button {
+    height: 36px;
+    min-height: 36px;
+    gap: 5px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #526176;
+    font-size: .7rem;
+    line-height: 1;
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button.active {
+    border-color: #99f6e4;
+    background: #effdf8;
+    color: #0f766e;
+    box-shadow: inset 0 0 0 1px rgba(20, 184, 166, .12);
+  }
+
+  .app-shell.material-workspace-shell .material-storage-links button > svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions {
+    order: -20;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.1fr;
+    gap: 6px;
+    margin: 0;
+    padding: 7px 8px;
+    border: 0;
+    border-bottom: 1px solid #d9e4ec;
+    border-radius: 0;
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, .04);
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 7px;
+    border-radius: 8px;
+    font-size: .7rem;
+    line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions button > svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+  }
+
+  .app-shell.material-workspace-shell .storage-layout {
+    flex: 1;
+    min-height: 0;
+    display: block;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .storage-list-panel {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .storage-search {
+    gap: 7px;
+    padding: 8px;
+    border-bottom: 1px solid #d9e4ec;
+    background: #ffffff;
+  }
+
+  .app-shell.material-workspace-shell .storage-search input {
+    height: 38px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+
+  .app-shell.material-workspace-shell .storage-location-tabs {
+    gap: 6px;
+    padding: 7px 8px 8px;
+    border-bottom: 1px solid #d9e4ec;
+    background: #ffffff;
+  }
+
+  .app-shell.material-workspace-shell .storage-location-tabs button {
+    min-height: 34px;
+    border-radius: 8px;
+    font-size: .68rem;
+    line-height: 1;
+  }
+
+  .app-shell.material-workspace-shell .storage-list {
+    max-height: none;
+    overflow: visible;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .rack-grouped-list {
+    gap: 7px;
+    padding: 8px;
+    background: #f5f8fa;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group,
+  .app-shell.material-workspace-shell .rack-number-group {
+    border: 0;
+    border-radius: 8px;
+    box-shadow: 0 1px 0 rgba(15, 23, 42, .06), 0 8px 18px rgba(15, 23, 42, .04);
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary,
+  .app-shell.material-workspace-shell .rack-number-group > summary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary {
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+
+  .app-shell.material-workspace-shell .rack-number-group {
+    margin: 6px;
+    border: 1px solid #e2e8f0;
+    box-shadow: none;
+  }
+
+  .app-shell.material-workspace-shell .rack-number-group > summary {
+    min-height: 36px;
+    padding: 8px 9px;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary span,
+  .app-shell.material-workspace-shell .rack-number-group > summary span {
+    font-size: .56rem;
+    letter-spacing: 0;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary strong,
+  .app-shell.material-workspace-shell .rack-number-group > summary strong {
+    font-size: .78rem;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary em,
+  .app-shell.material-workspace-shell .rack-number-group > summary em {
+    max-width: 50vw;
+    overflow: hidden;
+    font-size: .6rem;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell.material-workspace-shell .storage-list > button,
+  .app-shell.material-workspace-shell .rack-number-items > button {
+    min-height: 58px;
+    padding: 9px 10px;
+  }
+
+  .app-shell.material-workspace-shell .storage-list > button strong,
+  .app-shell.material-workspace-shell .rack-number-items > button strong {
+    font-size: .78rem;
+  }
+
+  .app-shell.material-workspace-shell .storage-list > button span,
+  .app-shell.material-workspace-shell .rack-number-items > button span {
+    font-size: .66rem;
+  }
+
+  .app-shell.material-workspace-shell .storage-list > button small,
+  .app-shell.material-workspace-shell .rack-number-items > button small {
+    font-size: .6rem;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-hero {
+    margin: 0;
+    padding: 10px 8px;
+    border: 0;
+    border-bottom: 1px solid #d9e4ec;
+    border-radius: 0;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-hero h2 {
+    font-size: 1.08rem;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-tabs,
+  .app-shell.material-workspace-shell .material-handling-toolbar {
+    margin: 0;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-tabs {
+    padding: 6px 8px;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-toolbar {
+    padding: 8px;
+  }
+
+  .app-shell.material-workspace-shell .material-inventory-view {
+    gap: 7px;
+    padding: 8px;
+  }
+}
+
+@media (max-width: 390px) {
+  .app-shell.material-workspace-shell .material-workspace-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-shell.material-workspace-shell .material-workspace-actions button {
+    gap: 4px;
+    padding: 0 4px;
+    font-size: .65rem;
+  }
+
+  .app-shell.material-workspace-shell .rack-aisle-group > summary em,
+  .app-shell.material-workspace-shell .rack-number-group > summary em {
+    max-width: 42vw;
+    font-size: .56rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell.material-workspace-shell .material-handling-view > .material-storage-links,
+  .app-shell.material-workspace-shell .material-storage-view > .material-storage-links {
+    position: relative;
+    top: auto;
+    z-index: 4;
+    order: -40;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view > .material-workspace-actions,
+  .app-shell.material-workspace-shell .material-storage-view > .material-workspace-actions {
+    position: relative;
+    z-index: 3;
+    order: -30;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view > .material-handling-tabs {
+    order: -20;
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view > .material-handling-toolbar {
+    order: -10;
+  }
+}

@@ -13,7 +13,10 @@ from .models import (
     CoreInventory,
     CoreSpec,
     Customer,
+    CustomerAddress,
+    CustomerContact,
     CustomerInteraction,
+    CustomerInteractionHistory,
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
@@ -61,10 +64,209 @@ def job_ticket_image_preview_url(serializer, obj, slot):
     return absolute_api_url(serializer, f"/api/job-tickets/{obj.pk}/images/{slot}/preview/")
 
 
+class CustomerContactSerializer(serializers.ModelSerializer):
+    full_name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = CustomerContact
+        fields = [
+            "id",
+            "first_name",
+            "last_name",
+            "full_name",
+            "role",
+            "email",
+            "phone",
+            "company",
+            "notes",
+            "is_primary",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "full_name", "created_at", "updated_at"]
+
+
+class CustomerAddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomerAddress
+        fields = [
+            "id",
+            "label",
+            "address_line_1",
+            "address_line_2",
+            "address_line_3",
+            "city",
+            "state",
+            "postal_code",
+            "country",
+            "notes",
+            "is_primary",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
 class CustomerSerializer(serializers.ModelSerializer):
+    contacts = CustomerContactSerializer(many=True, read_only=True)
+    addresses = CustomerAddressSerializer(many=True, read_only=True)
+    primary_contact = serializers.JSONField(write_only=True, required=False)
+    primary_address = serializers.JSONField(write_only=True, required=False)
+
     class Meta:
         model = Customer
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "customer_code",
+            "account_owner",
+            "crm_stage",
+            "next_follow_up",
+            "last_contacted_at",
+            "website",
+            "source_sheet_url",
+            "contact_name",
+            "phone",
+            "email",
+            "address_line_1",
+            "address_line_2",
+            "address_line_3",
+            "city",
+            "state",
+            "postal_code",
+            "country",
+            "notes",
+            "is_active",
+            "contacts",
+            "addresses",
+            "primary_contact",
+            "primary_address",
+        ]
+        read_only_fields = ["id", "last_contacted_at", "contacts", "addresses"]
+
+    def create(self, validated_data):
+        primary_contact = validated_data.pop("primary_contact", None)
+        primary_address = validated_data.pop("primary_address", None)
+        customer = super().create(validated_data)
+        self._save_primary_contact(customer, primary_contact)
+        self._save_primary_address(customer, primary_address)
+        return customer
+
+    def update(self, instance, validated_data):
+        primary_contact = validated_data.pop("primary_contact", None)
+        primary_address = validated_data.pop("primary_address", None)
+        customer = super().update(instance, validated_data)
+        self._save_primary_contact(customer, primary_contact)
+        self._save_primary_address(customer, primary_address)
+        return customer
+
+    def _text(self, payload, name, fallback=""):
+        if not isinstance(payload, dict):
+            return fallback
+        return str(payload.get(name, fallback) or "").strip()
+
+    def _has_contact_info(self, payload):
+        return any(self._text(payload, field) for field in ["first_name", "last_name", "role", "email", "phone", "company", "notes"])
+
+    def _has_address_info(self, payload):
+        return any(self._text(payload, field) for field in [
+            "address_line_1",
+            "address_line_2",
+            "address_line_3",
+            "city",
+            "state",
+            "postal_code",
+        ])
+
+    def _save_primary_contact(self, customer, payload):
+        if not self._has_contact_info(payload):
+            return None
+
+        contact_id = self._text(payload, "id")
+        first_name = self._text(payload, "first_name")
+        last_name = self._text(payload, "last_name")
+        email = self._text(payload, "email")
+        phone = self._text(payload, "phone")
+
+        contact = customer.contacts.filter(pk=contact_id).first() if contact_id.isdigit() else None
+        if not contact and email:
+            contact = customer.contacts.filter(email__iexact=email).first()
+        if not contact and phone:
+            contact = customer.contacts.filter(phone__iexact=phone).first()
+        if not contact and (first_name or last_name):
+            contact = customer.contacts.filter(first_name__iexact=first_name, last_name__iexact=last_name).first()
+        if not contact:
+            contact = CustomerContact(customer=customer)
+
+        contact.first_name = first_name
+        contact.last_name = last_name
+        contact.role = self._text(payload, "role")
+        contact.email = email
+        contact.phone = phone
+        contact.company = self._text(payload, "company", customer.name) or customer.name
+        contact.notes = self._text(payload, "notes")
+        contact.is_primary = True
+        contact.save()
+        customer.contacts.exclude(pk=contact.pk).filter(is_primary=True).update(is_primary=False)
+
+        full_name = contact.full_name
+        update_fields = []
+        for field, value in [("contact_name", full_name), ("email", contact.email), ("phone", contact.phone)]:
+            if getattr(customer, field) != value:
+                setattr(customer, field, value)
+                update_fields.append(field)
+        if update_fields:
+            customer.save(update_fields=update_fields)
+        return contact
+
+    def _save_primary_address(self, customer, payload):
+        if not self._has_address_info(payload):
+            return None
+
+        address_id = self._text(payload, "id")
+        address_line_1 = self._text(payload, "address_line_1")
+        city = self._text(payload, "city")
+        state = self._text(payload, "state")
+        postal_code = self._text(payload, "postal_code")
+
+        address = customer.addresses.filter(pk=address_id).first() if address_id.isdigit() else None
+        if not address and address_line_1:
+            for candidate in customer.addresses.filter(address_line_1__iexact=address_line_1):
+                if (
+                    candidate.city.lower() == city.lower()
+                    and candidate.state.lower() == state.lower()
+                    and candidate.postal_code.lower() == postal_code.lower()
+                ):
+                    address = candidate
+                    break
+        if not address:
+            address = CustomerAddress(customer=customer)
+
+        for field in [
+            "label",
+            "address_line_1",
+            "address_line_2",
+            "address_line_3",
+            "city",
+            "state",
+            "postal_code",
+            "country",
+            "notes",
+        ]:
+            setattr(address, field, self._text(payload, field))
+        address.is_primary = True
+        address.save()
+        customer.addresses.exclude(pk=address.pk).filter(is_primary=True).update(is_primary=False)
+
+        update_fields = []
+        for field in ["address_line_1", "address_line_2", "address_line_3", "city", "state", "postal_code", "country"]:
+            value = getattr(address, field)
+            if getattr(customer, field) != value:
+                setattr(customer, field, value)
+                update_fields.append(field)
+        if update_fields:
+            customer.save(update_fields=update_fields)
+        return address
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -748,29 +950,142 @@ class CustomerOrderEventSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class FlexibleQuoteRelatedField(serializers.PrimaryKeyRelatedField):
+    def use_pk_only_optimization(self):
+        return False
+
+    def to_representation(self, value):
+        return value.external_id
+
+    def to_internal_value(self, data):
+        if data in ("", None):
+            if self.allow_null:
+                return None
+            self.fail("does_not_exist", pk_value=data)
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError:
+            value = str(data).strip()
+            try:
+                return self.get_queryset().get(external_id=value)
+            except QuoteRecord.DoesNotExist:
+                self.fail("does_not_exist", pk_value=data)
+
+
+class CustomerInteractionHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomerInteractionHistory
+        fields = ["id", "action", "summary", "performed_by", "changes", "created_at"]
+        read_only_fields = fields
+
+
 class CustomerInteractionSerializer(serializers.ModelSerializer):
+    quote = FlexibleQuoteRelatedField(queryset=QuoteRecord.objects.all(), allow_null=True, required=False)
+    related_quotes = FlexibleQuoteRelatedField(queryset=QuoteRecord.objects.all(), many=True, required=False)
+    related_job_tickets = serializers.PrimaryKeyRelatedField(queryset=JobTicket.objects.all(), many=True, required=False)
+    customer_contact = serializers.PrimaryKeyRelatedField(queryset=CustomerContact.objects.all(), allow_null=True, required=False)
+    customer_address = serializers.PrimaryKeyRelatedField(queryset=CustomerAddress.objects.all(), allow_null=True, required=False)
     customer_name = serializers.CharField(source="customer.name", read_only=True)
     order_number = serializers.CharField(source="customer_order.order_number", read_only=True)
     job_ticket_number = serializers.CharField(source="job_ticket.ticket_number", read_only=True)
     job_name = serializers.CharField(source="job_ticket.job_name", read_only=True)
     quote_number = serializers.CharField(source="quote.quote_number", read_only=True)
+    customer_contact_detail = CustomerContactSerializer(source="customer_contact", read_only=True)
+    customer_address_detail = CustomerAddressSerializer(source="customer_address", read_only=True)
+    related_job_ticket_details = serializers.SerializerMethodField()
+    related_quote_details = serializers.SerializerMethodField()
+    history_entries = CustomerInteractionHistorySerializer(many=True, read_only=True)
     interaction_type_label = serializers.CharField(source="get_interaction_type_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    action_summary = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    def get_related_job_ticket_details(self, obj):
+        tickets = list(obj.related_job_tickets.all())
+        if obj.job_ticket_id and not any(ticket.pk == obj.job_ticket_id for ticket in tickets):
+            tickets.insert(0, obj.job_ticket)
+        return [
+            {
+                "id": ticket.pk,
+                "ticket_number": ticket.ticket_number,
+                "job_name": ticket.job_name,
+                "product_code": ticket.product_code,
+            }
+            for ticket in tickets
+            if ticket
+        ]
+
+    def get_related_quote_details(self, obj):
+        quotes = list(obj.related_quotes.all())
+        if obj.quote_id and not any(quote.pk == obj.quote_id for quote in quotes):
+            quotes.insert(0, obj.quote)
+        return [
+            {
+                "id": quote.external_id,
+                "pk": quote.pk,
+                "quote_number": quote.quote_number,
+                "job_name": quote.job_name,
+                "customer_name": quote.customer_name,
+            }
+            for quote in quotes
+            if quote
+        ]
 
     def validate(self, attrs):
+        attrs.pop("action_summary", None)
         customer = attrs.get("customer", getattr(self.instance, "customer", None))
         customer_order = attrs.get("customer_order", getattr(self.instance, "customer_order", None))
         job_ticket = attrs.get("job_ticket", getattr(self.instance, "job_ticket", None))
         quote = attrs.get("quote", getattr(self.instance, "quote", None))
+        customer_contact = attrs.get("customer_contact", getattr(self.instance, "customer_contact", None))
+        customer_address = attrs.get("customer_address", getattr(self.instance, "customer_address", None))
+        related_job_tickets = attrs.get("related_job_tickets")
+        related_quotes = attrs.get("related_quotes")
+        if related_job_tickets is None and self.instance:
+            related_job_tickets = list(self.instance.related_job_tickets.all())
+        if related_quotes is None and self.instance:
+            related_quotes = list(self.instance.related_quotes.all())
+        related_job_tickets = related_job_tickets or []
+        related_quotes = related_quotes or []
+        if not job_ticket and related_job_tickets:
+            attrs["job_ticket"] = related_job_tickets[0]
+            job_ticket = related_job_tickets[0]
+        if not quote and related_quotes:
+            attrs["quote"] = related_quotes[0]
+            quote = related_quotes[0]
         if not customer:
-            customer = getattr(customer_order, "customer", None) or getattr(job_ticket, "customer", None) or getattr(quote, "customer", None)
+            customer = (
+                getattr(customer_order, "customer", None)
+                or getattr(job_ticket, "customer", None)
+                or getattr(quote, "customer", None)
+                or next((ticket.customer for ticket in related_job_tickets if ticket.customer_id), None)
+                or next((linked_quote.customer for linked_quote in related_quotes if linked_quote.customer_id), None)
+            )
+            if customer:
+                attrs["customer"] = customer
         if not customer:
             raise serializers.ValidationError({"customer": "Choose a customer or link to a customer-owned job, order, or quote."})
-        for field_name, related in [("customer_order", customer_order), ("job_ticket", job_ticket), ("quote", quote)]:
+        relations = [
+            ("customer_order", customer_order),
+            ("job_ticket", job_ticket),
+            ("quote", quote),
+            ("customer_contact", customer_contact),
+            ("customer_address", customer_address),
+        ]
+        relations += [("related_job_tickets", related) for related in related_job_tickets]
+        relations += [("related_quotes", related) for related in related_quotes]
+        for field_name, related in relations:
             related_customer = getattr(related, "customer", None)
             if related and related_customer and related_customer.pk != customer.pk:
                 raise serializers.ValidationError({field_name: "Linked record belongs to a different customer."})
         return attrs
+
+    def create(self, validated_data):
+        validated_data.pop("action_summary", None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop("action_summary", None)
+        return super().update(instance, validated_data)
 
     class Meta:
         model = CustomerInteraction

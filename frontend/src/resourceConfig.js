@@ -146,6 +146,7 @@ export const choiceLists = {
   coaterStatus: [
     ["scheduled", "Scheduled"],
     ["running", "Running"],
+    ["tag_printed", "Tag Printed"],
     ["complete", "Complete"],
     ["on_hold", "On Hold"],
     ["void", "Void"],
@@ -636,13 +637,16 @@ const materialTypeResources = [
 ];
 
 export const resourceGroups = [
-  { key: "production", label: "Production", defaultOpen: true },
-  { key: "schedule", label: "Scheduling", defaultOpen: true },
-  { key: "production-material", label: "Material", defaultOpen: true },
-  { key: "inventory", label: "Inventory", defaultOpen: true },
-  { key: "tooling", label: "Tooling", defaultOpen: false },
-  { key: "plant", label: "Plant", defaultOpen: false },
-  { key: "trace", label: "Trace", defaultOpen: false },
+  { key: "daily-work", label: "Daily Work", defaultOpen: false },
+  { key: "production", label: "Customers & Jobs", parent: "daily-work", defaultOpen: false },
+  { key: "schedule", label: "Schedule & Press", parent: "daily-work", defaultOpen: false },
+  { key: "materials-hub", label: "Materials & Inventory", defaultOpen: false },
+  { key: "production-material", label: "Material Workflow", parent: "materials-hub", defaultOpen: false },
+  { key: "inventory", label: "Inventory Records", parent: "materials-hub", defaultOpen: false },
+  { key: "setup", label: "Setup & Tools", defaultOpen: false },
+  { key: "tooling", label: "Tooling", parent: "setup", defaultOpen: false },
+  { key: "plant", label: "Plant Setup", parent: "setup", defaultOpen: false },
+  { key: "trace", label: "Trace & Imports", defaultOpen: false },
 ];
 
 export const resources = [
@@ -832,6 +836,7 @@ export const resources = [
     accent: "#0f766e",
     staticView: true,
     viewMode: "coaterOperator",
+    hideFromNav: true,
     disableCreate: true,
     tagline: "Press schedule for material runs, roll tags, and finished product jobs.",
     columns: [],
@@ -892,6 +897,8 @@ export const resources = [
     icon: Store,
     accent: "#22c55e",
     defaultOrdering: "name",
+    pageSize: 1000,
+    fetchAll: true,
     viewMode: "customers",
     tagline: "Customer command center for account details, quotes, job tickets, and order history.",
     columns: [
@@ -1119,6 +1126,8 @@ export const resources = [
     disableCreate: true,
     viewMode: "productionSchedule",
     defaultOrdering: "status,press__name,press_sequence,due_date,job_ticket__ticket_number",
+    pageSize: 1000,
+    fetchAll: true,
     tagline: "Manage scheduled jobs by status, press assignment, ship date, and operator progress.",
     columns: [
       "order_number",
@@ -1637,7 +1646,7 @@ export const resources = [
     group: "production",
     icon: Ruler,
     accent: "#fb7185",
-    defaultOrdering: "-run_date,tag_number",
+    defaultOrdering: "press__name,press_sequence,-run_date,tag_number",
     tagline: "Operator coater workflow: select liner, face, adhesive, silicone, coating, print a roll tag, and log the produced roll into inventory.",
     columns: [
       "tag_number",
@@ -1652,6 +1661,7 @@ export const resources = [
       "width_inches",
       "length_feet",
       "press_name",
+      "press_sequence",
       "operator",
       "run_date",
     ],
@@ -1671,6 +1681,7 @@ export const resources = [
         searchable: true,
         searchFields: ["name", "code", "company", "material_type"],
       },
+      { name: "press_sequence", label: "Press Order #", type: "number", step: "1" },
       {
         name: "liner",
         label: "Liner",

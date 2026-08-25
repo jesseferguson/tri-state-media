@@ -1,0 +1,234 @@
+/* Press workspace */
+.press-main-table {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.press-table-head,
+.press-table-row {
+  display: grid;
+  grid-template-columns: minmax(220px, .9fr) minmax(390px, 1.35fr) minmax(220px, .8fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.press-table-head {
+  padding: 0 11px;
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.press-table-row {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #dbe3ec;
+  border-left: 4px solid #0284c7;
+  border-radius: 8px;
+  background: #ffffff;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.press-table-row:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .07);
+  transform: translateY(-1px);
+}
+
+.press-table-row.inactive {
+  border-left-color: #94a3b8;
+  opacity: .68;
+}
+
+.press-identity {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.press-table-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.press-identity > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.press-identity strong {
+  color: #0f172a;
+  font-size: .95rem;
+  font-weight: 950;
+}
+
+.press-identity > div > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #64748b;
+  font-size: .7rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.press-identity > b {
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: .61rem;
+  font-weight: 950;
+}
+
+.press-table-row.inactive .press-identity > b {
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.press-production {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(66px, .45fr)) minmax(150px, 1fr);
+  gap: 6px;
+}
+
+.press-production > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.press-production > div span {
+  color: #64748b;
+  font-size: .59rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.press-production > div strong {
+  color: #0f172a;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.press-production > section {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 4px;
+}
+
+.press-production > section span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 5px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #94a3b8;
+  font-size: .61rem;
+  font-weight: 850;
+}
+
+.press-production > section span.active {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.press-printer {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #fed7aa;
+  border-radius: 7px;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.press-printer.ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.press-printer > div {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.press-printer span,
+.press-printer small {
+  font-size: .62rem;
+  font-weight: 850;
+}
+
+.press-printer strong {
+  min-width: 0;
+  color: #0f172a;
+  font-size: .72rem;
+  overflow-wrap: anywhere;
+}
+
+.press-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.press-form-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2350;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, .5);
+  backdrop-filter: blur(7px);
+}
+
+.press-form-window {
+  width: min(920px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .26);
+}
+
+.press-form-window .form-panel {
+  padding: 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.press-form-window .record-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.press-form-window .field-notes {
+  grid-column: 1 / -1;
+}

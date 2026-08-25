@@ -1,0 +1,335 @@
+/* Customer account create/edit form */
+.customer-form-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5200;
+  display: grid;
+  place-items: center;
+  padding: clamp(10px, 2.4vw, 26px);
+  background: rgba(15, 23, 42, .48);
+  backdrop-filter: blur(10px);
+}
+
+.customer-form-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.customer-form-modal {
+  position: relative;
+  z-index: 1;
+  width: min(1080px, 100%);
+  max-height: min(840px, calc(100dvh - 24px));
+  overflow: auto;
+  border-radius: 8px;
+  box-shadow: 0 30px 90px rgba(15, 23, 42, .32);
+}
+
+.customer-form-shell.customer-page-card {
+  margin-bottom: 14px;
+  overflow: hidden;
+  border-color: #dbe6f2;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, .08);
+}
+
+.customer-form-modal .customer-form-shell.customer-page-card {
+  margin-bottom: 0;
+  box-shadow: none;
+}
+
+.customer-form-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e4eaf2;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.customer-form-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.customer-form-header span {
+  color: #0f766e;
+  font-size: .68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.customer-form-header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #101828;
+  font-size: 1.02rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-form-header > button {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+}
+
+.customer-form-header > button:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.customer-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-height: none;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.customer-form-section {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.customer-form-section-wide {
+  grid-column: 1 / -1;
+}
+
+.customer-form-section > header {
+  min-height: 30px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.customer-form-section > header svg {
+  color: #0f766e;
+}
+
+.customer-form-section > header strong,
+.customer-form-section > header em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-form-section > header strong {
+  color: #101828;
+  font-size: .86rem;
+  font-weight: 950;
+}
+
+.customer-form-section > header em {
+  color: #667085;
+  font-size: .7rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.customer-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.customer-form-section-wide .customer-form-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.customer-form-field {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.customer-form-field.wide {
+  grid-column: 1 / -1;
+}
+
+.customer-form-field > span,
+.customer-form-check span {
+  color: #344054;
+  font-size: .68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.customer-form-field input,
+.customer-form-field select,
+.customer-form-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #101828;
+  font: inherit;
+  font-size: .83rem;
+  font-weight: 800;
+}
+
+.customer-form-field input,
+.customer-form-field select {
+  height: 40px;
+  padding: 0 10px;
+}
+
+.customer-form-field textarea {
+  min-height: 88px;
+  padding: 9px 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.customer-form-field input:focus,
+.customer-form-field select:focus,
+.customer-form-field textarea:focus {
+  border-color: #93c5fd;
+  outline: 3px solid rgba(147, 197, 253, .24);
+}
+
+.customer-form-check {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.customer-form-check input {
+  width: 17px;
+  height: 17px;
+}
+
+.customer-form .customer-crm-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.customer-form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px -14px -14px;
+  padding: 12px 14px;
+  border-top: 1px solid #e4eaf2;
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(10px);
+}
+
+.customer-form-actions > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #0f766e;
+  font-size: .74rem;
+  font-weight: 900;
+}
+
+.customer-form-actions > span svg {
+  color: #16a34a;
+}
+
+.customer-form-actions > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.customer-form-actions .primary-btn,
+.customer-form-actions .ghost-btn {
+  min-height: 40px;
+}
+
+@media (max-width: 1100px) {
+  .customer-form-modal {
+    width: min(760px, 100%);
+  }
+
+  .customer-form,
+  .customer-form-section-wide .customer-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .customer-form-overlay {
+    place-items: stretch;
+    padding: 8px;
+  }
+
+  .customer-form-modal {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+  }
+
+  .customer-form {
+    padding: 10px;
+  }
+
+  .customer-form-section {
+    padding: 10px;
+  }
+
+  .customer-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-form-field.wide {
+    grid-column: auto;
+  }
+
+  .customer-form-actions {
+    align-items: stretch;
+    flex-direction: column;
+    margin: 0 -10px -10px;
+    padding: 10px;
+  }
+
+  .customer-form-actions > div,
+  .customer-form-actions button {
+    width: 100%;
+  }
+}

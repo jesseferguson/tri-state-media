@@ -26,6 +26,8 @@ class CompanyUser(models.Model):
     password_hash = models.CharField(max_length=255)
     role = models.ForeignKey(CompanyRole, on_delete=models.PROTECT, related_name="users")
     quote_company = models.CharField(max_length=40, choices=QUOTE_COMPANY_CHOICES, default="tri_state_media")
+    default_landing_page = models.CharField(max_length=120, blank=True, default="")
+    pinned_menu_pages = models.JSONField(default=list, blank=True)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -66,6 +66,71 @@ class Customer(models.Model):
         return self.name
 
 
+class CustomerContact(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="contacts")
+    first_name = models.CharField(max_length=80, blank=True)
+    last_name = models.CharField(max_length=100, blank=True)
+    role = models.CharField(max_length=120, blank=True)
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=50, blank=True)
+    company = models.CharField(max_length=180, blank=True)
+    notes = models.TextField(blank=True)
+    is_primary = models.BooleanField(default=False)
+    created_from_interaction = models.ForeignKey(
+        "CustomerInteraction",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-is_primary", "last_name", "first_name", "email", "id"]
+
+    @property
+    def full_name(self):
+        return " ".join([self.first_name, self.last_name]).strip()
+
+    def __str__(self):
+        return self.full_name or self.email or self.phone or f"Contact {self.pk}"
+
+
+class CustomerAddress(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="addresses")
+    label = models.CharField(max_length=120, blank=True)
+    address_line_1 = models.CharField(max_length=180, blank=True)
+    address_line_2 = models.CharField(max_length=180, blank=True)
+    address_line_3 = models.CharField(max_length=180, blank=True)
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=80, blank=True)
+    postal_code = models.CharField(max_length=30, blank=True)
+    country = models.CharField(max_length=80, blank=True)
+    notes = models.TextField(blank=True)
+    is_primary = models.BooleanField(default=False)
+    created_from_interaction = models.ForeignKey(
+        "CustomerInteraction",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-is_primary", "label", "city", "state", "id"]
+
+    def __str__(self):
+        parts = [
+            self.label,
+            self.address_line_1,
+            ", ".join([part for part in [self.city, self.state, self.postal_code] if part]),
+        ]
+        return " / ".join([part for part in parts if part]) or f"Address {self.pk}"
+
+
 class MessageThread(models.Model):
     title = models.CharField(max_length=180)
     participant_user_ids = models.JSONField(default=list, blank=True)
@@ -1070,10 +1135,50 @@ class CustomerInteraction(models.Model):
         blank=True,
         related_name="customer_interactions",
     )
+    related_job_tickets = models.ManyToManyField(
+        JobTicket,
+        blank=True,
+        related_name="customer_followups",
+    )
+    related_quotes = models.ManyToManyField(
+        QuoteRecord,
+        blank=True,
+        related_name="customer_followups",
+    )
+    customer_contact = models.ForeignKey(
+        CustomerContact,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="interactions",
+    )
+    customer_address = models.ForeignKey(
+        CustomerAddress,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="interactions",
+    )
     interaction_type = models.CharField(max_length=30, choices=INTERACTION_TYPE_CHOICES, default="note")
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="open", db_index=True)
     subject = models.CharField(max_length=180)
     body = models.TextField(blank=True)
+    contact_matches_customer = models.BooleanField(default=True)
+    contact_first_name = models.CharField(max_length=80, blank=True)
+    contact_last_name = models.CharField(max_length=80, blank=True)
+    contact_role = models.CharField(max_length=120, blank=True)
+    contact_email = models.EmailField(blank=True)
+    contact_phone = models.CharField(max_length=50, blank=True)
+    contact_company = models.CharField(max_length=180, blank=True)
+    address_matches_customer = models.BooleanField(default=True)
+    address_label = models.CharField(max_length=120, blank=True)
+    address_line_1 = models.CharField(max_length=180, blank=True)
+    address_line_2 = models.CharField(max_length=180, blank=True)
+    address_line_3 = models.CharField(max_length=180, blank=True)
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=80, blank=True)
+    postal_code = models.CharField(max_length=30, blank=True)
+    country = models.CharField(max_length=80, blank=True)
     email_from = models.EmailField(blank=True)
     email_to = models.TextField(blank=True)
     email_subject = models.CharField(max_length=255, blank=True)
@@ -1104,6 +1209,25 @@ class CustomerInteraction(models.Model):
 
     def __str__(self):
         return f"{self.customer_id} / {self.get_interaction_type_display()} / {self.subject}"
+
+
+class CustomerInteractionHistory(models.Model):
+    interaction = models.ForeignKey(
+        CustomerInteraction,
+        on_delete=models.CASCADE,
+        related_name="history_entries",
+    )
+    action = models.CharField(max_length=40, default="updated")
+    summary = models.CharField(max_length=255, blank=True)
+    performed_by = models.CharField(max_length=120, blank=True)
+    changes = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.interaction_id} / {self.action} / {self.summary or self.performed_by}"
 
 
 class LiveFootageArchive(models.Model):

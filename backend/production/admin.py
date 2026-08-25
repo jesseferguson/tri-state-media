@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, JobTicketUsage, Message, MessageThread, ProductionSchedule, QuoteRecord
+from .models import BoxInventory, BoxSpec, CoreInventory, CoreSpec, Customer, CustomerAddress, CustomerContact, CustomerInteraction, CustomerInteractionHistory, CustomerOrder, CustomerOrderEvent, FinishedInventory, JobTicket, JobTicketEvent, JobTicketUsage, Message, MessageThread, ProductionSchedule, QuoteRecord
 
 
 @admin.register(Customer)
@@ -8,6 +8,24 @@ class CustomerAdmin(admin.ModelAdmin):
     list_display = ("name", "customer_code", "contact_name", "city", "state", "phone", "email", "is_active")
     list_filter = ("is_active",)
     search_fields = ("name", "customer_code", "contact_name", "phone", "email", "address_line_1", "city", "state", "postal_code", "notes")
+
+
+@admin.register(CustomerContact)
+class CustomerContactAdmin(admin.ModelAdmin):
+    list_display = ("customer", "full_name", "role", "email", "phone", "company", "is_primary", "updated_at")
+    list_filter = ("is_primary", "role", "updated_at")
+    search_fields = ("customer__name", "first_name", "last_name", "role", "email", "phone", "company", "notes")
+    autocomplete_fields = ("customer", "created_from_interaction")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(CustomerAddress)
+class CustomerAddressAdmin(admin.ModelAdmin):
+    list_display = ("customer", "label", "address_line_1", "city", "state", "postal_code", "is_primary", "updated_at")
+    list_filter = ("is_primary", "state", "country", "updated_at")
+    search_fields = ("customer__name", "label", "address_line_1", "address_line_2", "city", "state", "postal_code", "country", "notes")
+    autocomplete_fields = ("customer", "created_from_interaction")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(BoxSpec)
@@ -184,6 +202,25 @@ class CustomerOrderEventAdmin(admin.ModelAdmin):
     list_filter = ("event_type", "performed_by", "created_at")
     search_fields = ("summary", "performed_by", "order__customer_name", "order__job_name", "order__job_ticket__ticket_number")
     autocomplete_fields = ("order",)
+    readonly_fields = ("created_at",)
+
+
+@admin.register(CustomerInteraction)
+class CustomerInteractionAdmin(admin.ModelAdmin):
+    list_display = ("customer", "subject", "interaction_type", "status", "follow_up_date", "updated_by", "updated_at")
+    list_filter = ("interaction_type", "status", "pinned", "follow_up_date", "updated_at")
+    search_fields = ("customer__name", "subject", "body", "email_to", "contact_email", "contact_phone", "contact_role", "address_line_1", "city", "job_ticket__ticket_number", "quote__quote_number")
+    autocomplete_fields = ("customer", "customer_order", "job_ticket", "quote", "related_job_tickets", "related_quotes", "customer_contact", "customer_address")
+    readonly_fields = ("created_at", "updated_at")
+    date_hierarchy = "follow_up_date"
+
+
+@admin.register(CustomerInteractionHistory)
+class CustomerInteractionHistoryAdmin(admin.ModelAdmin):
+    list_display = ("interaction", "action", "summary", "performed_by", "created_at")
+    list_filter = ("action", "performed_by", "created_at")
+    search_fields = ("interaction__subject", "interaction__customer__name", "summary", "performed_by")
+    autocomplete_fields = ("interaction",)
     readonly_fields = ("created_at",)
 
 

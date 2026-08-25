@@ -13,8 +13,8 @@ class CompanyRoleAdmin(admin.ModelAdmin):
 
 @admin.register(CompanyUser)
 class CompanyUserAdmin(admin.ModelAdmin):
-    list_display = ("name", "username", "role", "quote_company", "active", "updated_at")
+    list_display = ("name", "username", "role", "quote_company", "default_landing_page", "active", "updated_at")
     list_filter = ("role", "quote_company", "active")
-    search_fields = ("name", "username", "role__name")
+    search_fields = ("name", "username", "role__name", "pinned_menu_pages")
     autocomplete_fields = ("role",)
     readonly_fields = ("created_at", "updated_at")

@@ -1,0 +1,1424 @@
+/* Coater operator */
+.coater-operator-view {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.coater-hero,
+.coater-panel {
+  min-width: 0;
+  border: 1px solid #dbe6f2;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .04);
+}
+
+.coater-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+}
+
+.coater-hero h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.2rem;
+  font-weight: 950;
+}
+
+.coater-hero span,
+.coater-panel > header span,
+.coater-job-card span,
+.coater-job-card em,
+.coater-job-card footer span,
+.coater-roll-form header span,
+.coater-roll-form header em,
+.coater-roll-form label span,
+.coater-component-card header span,
+.coater-product-card span,
+.coater-product-card em,
+.coater-form-note,
+.coater-empty {
+  color: #667085;
+  font-size: .72rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.coater-press-picker {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(210px, .25fr) minmax(180px, .2fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .04);
+}
+
+.coater-press-memory,
+.coater-press-select {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.coater-press-memory span,
+.coater-press-select span {
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 950;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.coater-press-memory strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coater-press-memory em {
+  overflow: hidden;
+  color: #667085;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coater-press-select select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.coater-press-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.coater-press-tabs button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: .78rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.coater-press-tabs button.active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.coater-schedule-loading {
+  min-height: min(420px, calc(100dvh - 300px));
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, .96), rgba(255, 255, 255, .98)),
+    radial-gradient(circle at 50% 0%, rgba(15, 118, 110, .12), transparent 36%);
+}
+
+.coater-work-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, .42fr) minmax(0, .58fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.coater-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.coater-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.coater-panel > header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+}
+
+.coater-panel > header strong {
+  display: block;
+  margin-top: 2px;
+  color: #0f172a;
+  font-size: .94rem;
+  font-weight: 950;
+}
+
+.coater-job-list,
+.coater-product-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.coater-job-card {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #e5ebf2;
+  border-radius: 9px;
+  background: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coater-job-card.active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+}
+
+.coater-job-card strong,
+.coater-roll-form header strong,
+.coater-component-card header strong,
+.coater-product-card strong {
+  display: block;
+  min-width: 0;
+  color: #0f172a;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.coater-job-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coater-job-card footer strong {
+  font-size: .78rem;
+}
+
+.coater-roll-form {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.coater-roll-form > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.coater-roll-id {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #ffffff !important;
+  font-size: .78rem !important;
+  font-weight: 950 !important;
+}
+
+.coater-component-grid,
+.coater-roll-details-grid {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.coater-component-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+
+.coater-component-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e5ebf2;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.coater-component-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coater-component-card header > span {
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #dff7ef;
+  color: #0f766e;
+  font-size: .66rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coater-component-spec {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  font-size: .69rem;
+  font-weight: 850;
+}
+
+.coater-component-help {
+  margin: 0;
+  color: #667085;
+  font-size: .69rem;
+  font-weight: 800;
+}
+
+.coater-component-help.warning {
+  color: #b45309;
+}
+
+.coater-roll-details-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+}
+
+.coater-roll-form label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.coater-roll-form input,
+.coater-roll-form select,
+.coater-roll-form textarea,
+.coater-product-controls input {
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 9px;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: .84rem;
+}
+
+.coater-roll-form textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.coater-roll-form .field-wide {
+  grid-column: 1 / -1;
+}
+
+.coater-print-setup {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dbe4ee;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.coater-print-setup.active {
+  border-color: rgba(15, 118, 110, .34);
+  background: #f2fbf8;
+}
+
+.coater-print-setup > header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+}
+
+.coater-print-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f766e !important;
+  box-shadow: inset 0 0 0 1px #dbe7e4;
+}
+
+.coater-print-setup > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.coater-print-setup > header strong {
+  color: #0f172a;
+  font-size: .88rem;
+  font-weight: 950;
+}
+
+.coater-print-setup > header > div > span {
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.coater-print-toggle {
+  min-width: 96px !important;
+  min-height: 34px;
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  justify-content: center;
+  gap: 7px !important;
+  padding: 6px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.coater-print-toggle input {
+  width: 17px;
+  height: 17px;
+  min-height: 0;
+  padding: 0;
+  accent-color: #0f766e;
+}
+
+.coater-print-toggle span {
+  color: #334155 !important;
+  font-size: .74rem !important;
+  font-weight: 950 !important;
+}
+
+.coater-print-controls {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(260px, 1fr);
+  gap: 9px;
+  align-items: end;
+  padding: 11px;
+  border-top: 1px solid #dce9e5;
+  background: #ffffff;
+}
+
+.coater-printer-ready {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.coater-printer-ready > svg {
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
+.coater-printer-ready > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.coater-printer-ready strong,
+.coater-printer-ready small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.coater-printer-ready strong {
+  color: #0f172a;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.coater-printer-ready small {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.coater-printer-settings-row {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+  padding-top: 2px;
+}
+
+.coater-printer-settings-row > button {
+  justify-self: start;
+}
+
+.coater-inline-printer-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(90px, .5fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.coater-inline-printer-grid label,
+.roll-tag-printer-settings label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.coater-inline-printer-grid label > span,
+.roll-tag-printer-settings label > span {
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.coater-inline-printer-grid input,
+.roll-tag-printer-settings input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+}
+
+.coater-printer-ready.ready {
+  border-color: rgba(22, 163, 74, .28);
+  background: #f0fdf4;
+}
+
+.coater-printer-ready.ready > svg {
+  color: #16a34a;
+}
+
+.coater-printer-ready.needs-setup {
+  border-color: rgba(217, 119, 6, .28);
+  background: #fffbeb;
+}
+
+.coater-printer-ready.needs-setup > svg {
+  color: #d97706;
+}
+
+.coater-print-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(22, 163, 74, .28);
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.coater-schedule-dashboard {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-left: 4px solid #0f766e;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.coater-schedule-dashboard > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.coater-schedule-dashboard > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.coater-schedule-dashboard > header span,
+.coater-document-roll > header span,
+.coater-document-roll label > span {
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.coater-schedule-dashboard > header strong,
+.coater-document-roll > header strong {
+  color: #0f172a;
+  font-size: .92rem;
+  font-weight: 950;
+}
+
+.coater-schedule-dashboard > header > b {
+  color: #0f766e;
+  font-size: 1.35rem;
+  font-weight: 950;
+}
+
+.coater-progress-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.coater-progress-metrics article {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.coater-progress-metrics span {
+  color: #64748b;
+  font-size: .61rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.coater-progress-metrics strong {
+  color: #0f172a;
+  font-size: .84rem;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.coater-footage-progress {
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #e2e8f0;
+}
+
+.coater-footage-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 6px;
+  background: #0f766e;
+  transition: width .35s ease;
+}
+
+.coater-roll-queues {
+  display: grid;
+  grid-template-columns: 1.15fr .85fr;
+  gap: 8px;
+}
+
+.coater-roll-queues > section {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.coater-roll-queues > section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.coater-roll-queues > section > header strong {
+  color: #334155;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.coater-roll-queues > section > header span {
+  min-width: 23px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: .62rem;
+  font-weight: 950;
+  text-align: center;
+}
+
+.coater-roll-queues > section > div {
+  display: grid;
+  gap: 5px;
+}
+
+.coater-roll-queues article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid #fde68a;
+  border-radius: 7px;
+  background: #fffbeb;
+}
+
+.coater-roll-queues article > button:first-child,
+.coater-documented-roll {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  text-align: left;
+}
+
+.coater-roll-queues article > button:first-child strong,
+.coater-documented-roll strong {
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.coater-roll-queues article > button:first-child span,
+.coater-documented-roll span {
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 800;
+}
+
+.coater-documented-roll {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 7px;
+  border: 1px solid #bbf7d0;
+  border-radius: 7px;
+  background: #f0fdf4;
+}
+
+.coater-roll-queues p {
+  margin: 0;
+  padding: 8px 4px;
+  color: #64748b;
+  font-size: .68rem;
+}
+
+.coater-document-roll {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 2px solid #0f766e;
+  border-radius: 8px;
+  background: #f0fdfa;
+}
+
+.coater-document-roll > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coater-document-roll > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.coater-document-roll > p {
+  margin: 0;
+  color: #475569;
+  font-size: .72rem;
+  font-weight: 750;
+}
+
+.coater-document-roll form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.coater-document-roll label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.coater-document-roll input,
+.coater-document-roll select,
+.coater-document-roll textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 9px;
+  border: 1px solid #94a3b8;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+}
+
+.coater-document-roll textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.coater-document-roll .wide {
+  grid-column: 1 / -1;
+}
+
+.roll-tag-link-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  background: rgba(15, 23, 42, .62);
+  backdrop-filter: blur(3px);
+}
+
+.roll-tag-link-window {
+  width: min(1180px, calc(100vw - 20px));
+  max-height: calc(100dvh - 20px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d8e2ec;
+  border-radius: 10px;
+  background: #f3f6f9;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+}
+
+.roll-tag-link-window > header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border-bottom: 1px solid #dce4ed;
+  background: #ffffff;
+}
+
+.roll-tag-link-window > header h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.25rem;
+  font-weight: 950;
+}
+
+.roll-tag-link-window > header span {
+  color: #64748b;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.roll-tag-link-body {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.roll-tag-link-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.roll-tag-link-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid #dfe7ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.roll-tag-link-summary span,
+.roll-tag-link-components label > span,
+.roll-tag-link-edit label > span,
+.roll-tag-link-printer label > span {
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.roll-tag-link-summary strong {
+  min-width: 0;
+  color: #0f172a;
+  font-size: .86rem;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-link-components {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 8px;
+}
+
+.roll-tag-link-components label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid #dfe7ef;
+  border-top: 3px solid #0f766e;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.roll-tag-link-components label > strong {
+  color: #0f172a;
+  font-size: .8rem;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-link-components select,
+.roll-tag-link-edit input,
+.roll-tag-link-edit select,
+.roll-tag-link-edit textarea,
+.roll-tag-link-printer input,
+.roll-tag-link-printer select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 800;
+}
+
+.roll-tag-link-edit {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dfe7ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.roll-tag-link-edit label,
+.roll-tag-link-printer label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.roll-tag-link-edit label.wide {
+  grid-column: 1 / -1;
+}
+
+.roll-tag-link-edit textarea {
+  resize: vertical;
+}
+
+.coater-produced-rolls,
+.roll-tag-family,
+.roll-tag-inventory {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dfe7ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.coater-produced-rolls > header,
+.roll-tag-family > header,
+.roll-tag-inventory > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coater-produced-rolls > header div,
+.roll-tag-family > header div,
+.roll-tag-inventory > header div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.coater-produced-rolls > header span,
+.roll-tag-family > header span,
+.roll-tag-inventory > header span {
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.coater-produced-rolls > header strong,
+.roll-tag-family > header strong,
+.roll-tag-inventory > header strong {
+  color: #0f172a;
+  font-size: .84rem;
+  font-weight: 950;
+}
+
+.roll-tag-family > header b,
+.roll-tag-inventory > header b {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: .65rem;
+  white-space: nowrap;
+}
+
+.coater-produced-rolls > div,
+.roll-tag-family-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.coater-produced-rolls > div button,
+.roll-tag-family-list button {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid #dfe7ef;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #334155;
+  text-align: left;
+}
+
+.coater-produced-rolls > div button:hover,
+.roll-tag-family-list button:hover,
+.roll-tag-family-list button.active {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
+.coater-produced-rolls button strong,
+.roll-tag-family-list button span {
+  color: #0f172a;
+  font-size: .76rem;
+  font-weight: 950;
+}
+
+.coater-produced-rolls button span,
+.roll-tag-family-list button strong,
+.roll-tag-family-list button small {
+  min-width: 0;
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.coater-produced-rolls button b {
+  color: #0f766e;
+  font-size: .68rem;
+}
+
+.coater-produced-rolls p,
+.roll-tag-family-list p,
+.roll-tag-inventory-list > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px;
+  color: #64748b;
+  font-size: .74rem;
+  text-align: center;
+}
+
+.roll-tag-inventory-list {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.roll-tag-inventory-list article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) 90px 110px minmax(180px, 1fr) 90px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.roll-tag-inventory-list article.current {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
+.roll-tag-inventory-list article > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.roll-tag-inventory-list article strong {
+  color: #0f172a;
+  font-size: .76rem;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-inventory-list article span {
+  min-width: 0;
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-inventory-list article > b {
+  justify-self: end;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: .62rem;
+  font-weight: 950;
+}
+
+.roll-tag-link-printer {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 90px minmax(180px, .7fr);
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #cfe2dd;
+  border-radius: 8px;
+  background: #f0fdfa;
+}
+
+.roll-tag-link-printer > div {
+  min-width: 0;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  border: 1px solid #f2c8a1;
+  border-radius: 7px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: .72rem;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.roll-tag-link-printer > div.ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.roll-tag-printer-settings-toggle {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.roll-tag-printer-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(90px, .5fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.roll-tag-link-body > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.roll-tag-link-window.not-found {
+  width: min(460px, calc(100vw - 20px));
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.roll-tag-link-window.not-found h2,
+.roll-tag-link-window.not-found p {
+  margin: 0;
+}
+
+.coater-roll-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.coater-error {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #991b1b;
+  font-size: .8rem;
+  font-weight: 850;
+}
+
+.coater-form-note,
+.coater-empty {
+  margin: 0;
+}
+
+.coater-product-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, .7fr) minmax(360px, 1.1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e5ebf2;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.coater-product-specs,
+.coater-product-controls {
+  min-width: 0;
+}
+
+.coater-product-specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.coater-product-specs span {
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #334155;
+}
+
+.coater-product-controls {
+  display: grid;
+  grid-template-columns: auto minmax(90px, .45fr) minmax(130px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+@media (max-width: 1180px) {
+  .coater-work-grid,
+  .coater-product-card {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-product-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .coater-print-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .coater-printer-ready {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .coater-hero,
+  .coater-roll-form > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .coater-print-setup > header,
+  .coater-print-controls,
+  .coater-inline-printer-grid,
+  .roll-tag-printer-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-print-icon {
+    display: none;
+  }
+
+  .coater-print-toggle {
+    width: 100%;
+  }
+
+  .coater-printer-ready {
+    grid-column: auto;
+  }
+
+  .roll-tag-link-overlay {
+    padding: 5px;
+  }
+
+  .roll-tag-link-window {
+    width: calc(100vw - 10px);
+    max-height: calc(100dvh - 10px);
+  }
+
+  .roll-tag-link-window > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .roll-tag-link-summary,
+  .roll-tag-link-edit,
+  .roll-tag-link-printer {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-panel > header,
+  .coater-produced-rolls > header,
+  .roll-tag-family > header,
+  .roll-tag-inventory > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .coater-panel > header > button {
+    width: 100%;
+  }
+
+  .coater-produced-rolls > div,
+  .roll-tag-family-list {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .roll-tag-inventory-list article {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .roll-tag-inventory-list article > div {
+    grid-column: 1 / -1;
+  }
+
+  .roll-tag-inventory-list article > b {
+    justify-self: start;
+  }
+
+  .roll-tag-link-edit label.wide {
+    grid-column: auto;
+  }
+
+  .roll-tag-link-body > footer {
+    flex-direction: column;
+  }
+
+  .roll-tag-link-body > footer .primary-btn,
+  .roll-tag-link-body > footer .ghost-btn {
+    width: 100%;
+  }
+
+  .coater-hero .ghost-btn,
+  .coater-roll-actions .primary-btn {
+    width: 100%;
+  }
+
+  .coater-product-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-progress-metrics,
+  .coater-roll-queues,
+  .coater-document-roll form {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-document-roll .wide {
+    grid-column: auto;
+  }
+
+  .coater-roll-queues article {
+    grid-template-columns: 1fr;
+  }
+
+  .coater-roll-queues article .primary-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .coater-produced-rolls > div,
+  .roll-tag-family-list,
+  .roll-tag-inventory-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .roll-tag-inventory-list article > div {
+    grid-column: auto;
+  }
+}

@@ -1,0 +1,6 @@
+/*
+  CSS entrypoint note:
+  frontend/src/App.css imports each stylesheet directly.
+  Keep this file import-free so Vite/PostCSS does not resolve nested
+  section paths from the wrong Windows directory.
+*/

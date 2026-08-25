@@ -13,7 +13,10 @@ from tooling.models import FlexDie, Press, Supplier, ToolingLocation
 
 from .models import (
     Customer,
+    CustomerAddress,
+    CustomerContact,
     CustomerInteraction,
+    CustomerInteractionHistory,
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
@@ -105,7 +108,7 @@ class ApiAuthSecurityTests(TestCase):
     def test_non_admin_company_access_payloads_are_scoped_to_self(self):
         csr_role = CompanyRole.objects.create(name="CSRT", allowed_resource_keys=["job-tickets", "customers"])
         shipping_role = CompanyRole.objects.create(name="Shipping", allowed_resource_keys=["finished-inventory"])
-        rachel = CompanyUser(username="rachel", name="Rachel", role=csr_role, active=True)
+        rachel = CompanyUser(username="rachel", name="Rachel", role=csr_role, active=True, default_landing_page="customers")
         rachel.set_password("StrongPass7&")
         rachel.save()
         other_user = CompanyUser(username="other-user", name="Other User", role=shipping_role, active=True)
@@ -122,10 +125,35 @@ class ApiAuthSecurityTests(TestCase):
         )
         self.assertEqual(rachel_sign_in.status_code, 200, rachel_sign_in.content)
         rachel_payload = rachel_sign_in.json()
+        self.assertEqual(rachel_payload["user"]["defaultLandingPage"], "customers")
         self.assertEqual([user["username"] for user in rachel_payload["users"]], ["rachel"])
         self.assertEqual([role["name"] for role in rachel_payload["roles"]], ["CSRT"])
 
         auth_header = f"Bearer {rachel_payload['token']}"
+        preference_response = self.client.patch(
+            reverse("company-user-detail", args=[rachel.pk]),
+            data=json.dumps({
+                "defaultLandingPage": "job-tickets",
+                "pinnedMenuPages": ["customers", "job-tickets"],
+            }),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=auth_header,
+        )
+        self.assertEqual(preference_response.status_code, 200, preference_response.content)
+        self.assertEqual(preference_response.json()["defaultLandingPage"], "job-tickets")
+        self.assertEqual(preference_response.json()["pinnedMenuPages"], ["customers", "job-tickets"])
+        rachel.refresh_from_db()
+        self.assertEqual(rachel.default_landing_page, "job-tickets")
+        self.assertEqual(rachel.pinned_menu_pages, ["customers", "job-tickets"])
+
+        other_preference_response = self.client.patch(
+            reverse("company-user-detail", args=[other_user.pk]),
+            data=json.dumps({"defaultLandingPage": "finished-inventory"}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=auth_header,
+        )
+        self.assertEqual(other_preference_response.status_code, 403, other_preference_response.content)
+
         users_response = self.client.get(reverse("company-user-list"), HTTP_AUTHORIZATION=auth_header)
         roles_response = self.client.get(reverse("company-role-list"), HTTP_AUTHORIZATION=auth_header)
         self.assertEqual(users_response.status_code, 200, users_response.content)
@@ -284,6 +312,13 @@ class DataImportToolingTests(TestCase):
 
 
 class CustomerInteractionTests(TestCase):
+    def setUp(self):
+        self.role = CompanyRole.objects.create(name="Customer CRM", allowed_resource_keys=["customers", "customer-orders", "job-tickets"])
+        self.user = CompanyUser.objects.create(username="customer-crm", name="Customer CRM", role=self.role, active=True)
+        self.user.set_password("StrongPass7&")
+        self.user.save()
+        self.auth_header = f"Bearer {create_company_user_token(self.user)}"
+
     def make_customer_job(self):
         customer = Customer.objects.create(name="BCL Test", customer_code="BCL", account_owner="Missy")
         ticket = JobTicket.objects.create(
@@ -337,6 +372,7 @@ class CustomerInteractionTests(TestCase):
                 "created_by": "Rachel",
             },
             content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
         )
 
         self.assertEqual(response.status_code, 201, response.content)
@@ -355,7 +391,7 @@ class CustomerInteractionTests(TestCase):
         customer.refresh_from_db()
         self.assertIsNotNone(customer.last_contacted_at)
 
-        list_response = self.client.get(reverse("customer-interaction-list"), {"customer": customer.id})
+        list_response = self.client.get(reverse("customer-interaction-list"), {"customer": customer.id}, HTTP_AUTHORIZATION=self.auth_header)
         self.assertEqual(list_response.status_code, 200, list_response.content)
         results = list_response.json().get("results", list_response.json())
         self.assertEqual(len(results), 1)
@@ -374,10 +410,327 @@ class CustomerInteractionTests(TestCase):
                 "subject": "Wrong customer",
             },
             content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
         )
 
         self.assertEqual(response.status_code, 400, response.content)
         self.assertIn("job_ticket", response.json())
+
+    def test_customer_follow_up_accepts_multiple_jobs_and_quote_external_ids(self):
+        customer, ticket, _, quote = self.make_customer_job()
+        second_ticket = JobTicket.objects.create(
+            ticket_number="JT-CRM-002",
+            job_name="BCL Reorder",
+            product_code="BCL-002",
+            customer=customer,
+            customer_name=customer.name,
+        )
+        second_quote = QuoteRecord.objects.create(
+            external_id="crm-quote-002",
+            quote_number="Q-CRM-002",
+            customer=customer,
+            job_ticket=second_ticket,
+            job_ticket_number=second_ticket.ticket_number,
+            customer_name=customer.name,
+            job_name=second_ticket.job_name,
+            product_code=second_ticket.product_code,
+        )
+
+        response = self.client.post(
+            reverse("customer-interaction-list"),
+            {
+                "customer": customer.id,
+                "related_job_tickets": [ticket.id, second_ticket.id],
+                "quote": quote.external_id,
+                "related_quotes": [quote.external_id, second_quote.external_id],
+                "interaction_type": "call",
+                "status": "open",
+                "subject": "Review linked reorder work",
+                "body": "Customer asked for an update on multiple open items.",
+                "contact_first_name": "Avery",
+                "contact_last_name": "Buyer",
+                "contact_email": "avery@example.com",
+                "contact_company": customer.name,
+                "action_summary": "created follow-up",
+            },
+            content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        data = response.json()
+        self.assertEqual(data["quote"], quote.external_id)
+        self.assertEqual(set(data["related_quotes"]), {quote.external_id, second_quote.external_id})
+        self.assertEqual(set(data["related_job_tickets"]), {ticket.id, second_ticket.id})
+        self.assertEqual(len(data["related_quote_details"]), 2)
+        self.assertEqual(len(data["related_job_ticket_details"]), 2)
+        self.assertEqual(len(data["history_entries"]), 1)
+
+        interaction = CustomerInteraction.objects.get(subject="Review linked reorder work")
+        self.assertEqual(interaction.job_ticket, ticket)
+        self.assertEqual(interaction.quote, quote)
+        self.assertEqual(interaction.related_job_tickets.count(), 2)
+        self.assertEqual(interaction.related_quotes.count(), 2)
+
+        quote_response = self.client.get(
+            reverse("customer-interaction-list"),
+            {"quote": second_quote.external_id},
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+        self.assertEqual(quote_response.status_code, 200, quote_response.content)
+        self.assertEqual(len(quote_response.json().get("results", quote_response.json())), 1)
+
+    def test_customer_follow_up_update_logs_history(self):
+        customer, ticket, _, _ = self.make_customer_job()
+        interaction = CustomerInteraction.objects.create(
+            customer=customer,
+            job_ticket=ticket,
+            interaction_type="call",
+            status="open",
+            subject="Initial follow-up",
+            body="Call the buyer.",
+            created_by="Rachel",
+        )
+
+        response = self.client.patch(
+            reverse("customer-interaction-detail", args=[interaction.id]),
+            {
+                "status": "waiting_customer",
+                "body": "Left voicemail and emailed details.",
+                "contact_first_name": "Avery",
+                "contact_last_name": "Buyer",
+                "action_summary": "updated notes and status",
+                "updated_by": "Rachel",
+            },
+            content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        interaction.refresh_from_db()
+        history = CustomerInteractionHistory.objects.filter(interaction=interaction)
+        self.assertEqual(history.count(), 1)
+        entry = history.first()
+        self.assertEqual(entry.summary, "updated notes and status")
+        self.assertEqual(entry.performed_by, "Rachel")
+        self.assertIn("status", entry.changes)
+        self.assertEqual(response.json()["history_entries"][0]["summary"], "updated notes and status")
+
+    def test_customer_follow_up_promotes_new_contact_and_address_to_customer(self):
+        customer, ticket, _, _ = self.make_customer_job()
+
+        response = self.client.post(
+            reverse("customer-interaction-list"),
+            {
+                "customer": customer.id,
+                "job_ticket": ticket.id,
+                "interaction_type": "call",
+                "status": "open",
+                "subject": "New shipping contact",
+                "body": "Add Morgan for shipping follow-ups.",
+                "contact_matches_customer": False,
+                "contact_first_name": "Morgan",
+                "contact_last_name": "Lee",
+                "contact_role": "Shipping Manager",
+                "contact_email": "morgan@example.com",
+                "contact_phone": "555-0101",
+                "contact_company": "BCL Warehouse",
+                "address_matches_customer": False,
+                "address_label": "Warehouse",
+                "address_line_1": "25 Dock Road",
+                "city": "Dayton",
+                "state": "OH",
+                "postal_code": "45402",
+                "country": "USA",
+                "action_summary": "created shipping follow-up",
+            },
+            content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        interaction = CustomerInteraction.objects.get(subject="New shipping contact")
+        contact = CustomerContact.objects.get(customer=customer, email="morgan@example.com")
+        address = CustomerAddress.objects.get(customer=customer, address_line_1="25 Dock Road")
+        self.assertEqual(contact.role, "Shipping Manager")
+        self.assertEqual(contact.phone, "555-0101")
+        self.assertEqual(address.label, "Warehouse")
+        self.assertEqual(interaction.customer_contact, contact)
+        self.assertEqual(interaction.customer_address, address)
+        data = response.json()
+        self.assertEqual(data["customer_contact"], contact.id)
+        self.assertEqual(data["customer_address"], address.id)
+        self.assertEqual(data["customer_contact_detail"]["role"], "Shipping Manager")
+        self.assertEqual(data["customer_address_detail"]["city"], "Dayton")
+
+    def test_customer_follow_up_reuses_existing_contact_and_address(self):
+        customer, ticket, _, _ = self.make_customer_job()
+        contact = CustomerContact.objects.create(
+            customer=customer,
+            first_name="Morgan",
+            last_name="Lee",
+            email="morgan@example.com",
+            is_primary=True,
+        )
+        address = CustomerAddress.objects.create(
+            customer=customer,
+            label="Warehouse",
+            address_line_1="25 Dock Road",
+            city="Dayton",
+            state="OH",
+            postal_code="45402",
+            country="USA",
+            is_primary=True,
+        )
+
+        response = self.client.post(
+            reverse("customer-interaction-list"),
+            {
+                "customer": customer.id,
+                "job_ticket": ticket.id,
+                "customer_contact": contact.id,
+                "customer_address": address.id,
+                "interaction_type": "email",
+                "status": "waiting_customer",
+                "subject": "Warehouse check",
+                "body": "Sent warehouse confirmation.",
+                "contact_first_name": "Morgan",
+                "contact_last_name": "Lee",
+                "contact_role": "Shipping Manager",
+                "contact_email": "morgan@example.com",
+                "address_label": "Warehouse",
+                "address_line_1": "25 Dock Road",
+                "city": "Dayton",
+                "state": "OH",
+                "postal_code": "45402",
+                "country": "USA",
+            },
+            content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(CustomerContact.objects.filter(customer=customer).count(), 1)
+        self.assertEqual(CustomerAddress.objects.filter(customer=customer).count(), 1)
+        contact.refresh_from_db()
+        self.assertEqual(contact.role, "Shipping Manager")
+        self.assertEqual(response.json()["customer_contact"], contact.id)
+        self.assertEqual(response.json()["customer_address"], address.id)
+
+    def test_customer_list_returns_saved_contacts_and_addresses(self):
+        customer, _, _, _ = self.make_customer_job()
+        CustomerContact.objects.create(
+            customer=customer,
+            first_name="Avery",
+            last_name="Buyer",
+            email="avery@example.com",
+            is_primary=True,
+        )
+        CustomerAddress.objects.create(
+            customer=customer,
+            label="Office",
+            address_line_1="10 Main Street",
+            city="Dayton",
+            state="OH",
+            is_primary=True,
+        )
+
+        response = self.client.get(reverse("customer-list"), HTTP_AUTHORIZATION=self.auth_header)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        rows = response.json().get("results", response.json())
+        data = next(row for row in rows if row["id"] == customer.id)
+        self.assertEqual(data["contacts"][0]["email"], "avery@example.com")
+        self.assertEqual(data["addresses"][0]["address_line_1"], "10 Main Street")
+
+    def test_customer_create_accepts_primary_contact_and_address(self):
+        response = self.client.post(
+            reverse("customer-list"),
+            data=json.dumps({
+                "name": "Nested Customer",
+                "customer_code": "NC-001",
+                "account_owner": "Rachel",
+                "crm_stage": "prospect",
+                "next_follow_up": "2026-09-01",
+                "primary_contact": {
+                    "first_name": "Avery",
+                    "last_name": "Buyer",
+                    "role": "Purchasing",
+                    "email": "avery@example.com",
+                    "phone": "555-0100",
+                    "company": "Nested Customer",
+                    "notes": "Primary buyer",
+                },
+                "primary_address": {
+                    "label": "Office",
+                    "address_line_1": "10 Main Street",
+                    "city": "Dayton",
+                    "state": "OH",
+                    "postal_code": "45402",
+                    "country": "USA",
+                },
+            }),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        data = response.json()
+        customer = Customer.objects.get(name="Nested Customer")
+        contact = CustomerContact.objects.get(customer=customer)
+        address = CustomerAddress.objects.get(customer=customer)
+        self.assertTrue(contact.is_primary)
+        self.assertTrue(address.is_primary)
+        self.assertEqual(customer.contact_name, "Avery Buyer")
+        self.assertEqual(customer.email, "avery@example.com")
+        self.assertEqual(customer.address_line_1, "10 Main Street")
+        self.assertEqual(data["contacts"][0]["role"], "Purchasing")
+        self.assertEqual(data["addresses"][0]["label"], "Office")
+
+    def test_customer_update_edits_existing_primary_contact_and_address(self):
+        customer, _, _, _ = self.make_customer_job()
+        contact = CustomerContact.objects.create(customer=customer, first_name="Avery", last_name="Buyer", email="avery@example.com", is_primary=True)
+        address = CustomerAddress.objects.create(customer=customer, label="Office", address_line_1="10 Main Street", city="Dayton", is_primary=True)
+
+        response = self.client.patch(
+            reverse("customer-detail", args=[customer.id]),
+            data=json.dumps({
+                "account_owner": "Missy",
+                "primary_contact": {
+                    "id": contact.id,
+                    "first_name": "Avery",
+                    "last_name": "Buyer",
+                    "role": "Senior Buyer",
+                    "email": "avery.new@example.com",
+                    "phone": "555-0200",
+                    "company": customer.name,
+                },
+                "primary_address": {
+                    "id": address.id,
+                    "label": "Warehouse",
+                    "address_line_1": "25 Dock Road",
+                    "city": "Dayton",
+                    "state": "OH",
+                    "postal_code": "45404",
+                    "country": "USA",
+                },
+            }),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        customer.refresh_from_db()
+        contact.refresh_from_db()
+        address.refresh_from_db()
+        self.assertEqual(customer.account_owner, "Missy")
+        self.assertEqual(customer.email, "avery.new@example.com")
+        self.assertEqual(customer.phone, "555-0200")
+        self.assertEqual(customer.address_line_1, "25 Dock Road")
+        self.assertEqual(contact.role, "Senior Buyer")
+        self.assertEqual(address.label, "Warehouse")
+        self.assertEqual(CustomerContact.objects.filter(customer=customer).count(), 1)
+        self.assertEqual(CustomerAddress.objects.filter(customer=customer).count(), 1)
 
 
 class FinishedInventoryOrderWorkflowTests(TestCase):

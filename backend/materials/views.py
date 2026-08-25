@@ -1526,6 +1526,7 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
         "status",
         "print_status",
         "run_date",
+        "press_sequence",
         "width_inches",
         "length_feet",
         "weight_lbs",

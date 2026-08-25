@@ -42,7 +42,7 @@ export const defaultRoleDefinitions = [
     id: "role-coater",
     name: "Coater",
     description: "Coater operator lineup and roll tag workflow",
-    allowedResourceKeys: ["coater-operator", "material-handling", "skids", "racks"],
+    allowedResourceKeys: ["production-schedule", "coater-operator", "material-handling", "skids", "racks"],
   },
   {
     id: "role-manager",
@@ -64,6 +64,11 @@ export function makeRoleId() {
   return `role-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+export function normalizePinnedMenuPages(value = []) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean))];
+}
+
 export function normalizeUser(user = {}) {
   return {
     id: user.id || makeUserId(),
@@ -72,6 +77,8 @@ export function normalizeUser(user = {}) {
     name: String(user.name || user.username || "").trim(),
     role: user.role || "CSR",
     quoteCompany: quoteCompanyKey(user.quoteCompany || user.quote_company),
+    defaultLandingPage: String(user.defaultLandingPage || user.default_landing_page || "").trim(),
+    pinnedMenuPages: normalizePinnedMenuPages(user.pinnedMenuPages || user.pinned_menu_pages),
     active: user.active !== false,
     createdAt: user.createdAt || new Date().toISOString(),
   };
@@ -190,6 +197,8 @@ export async function saveUserToApi(user) {
     name: user.name,
     role: user.role,
     quoteCompany: quoteCompanyKey(user.quoteCompany),
+    defaultLandingPage: String(user.defaultLandingPage || "").trim(),
+    pinnedMenuPages: normalizePinnedMenuPages(user.pinnedMenuPages),
     active: user.active !== false,
   };
   if (String(user.id || "").startsWith("user-")) {

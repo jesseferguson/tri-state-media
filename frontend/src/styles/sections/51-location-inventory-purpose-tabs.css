@@ -1,0 +1,40 @@
+/* Location inventory-purpose tabs */
+.location-scope-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 4px;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.location-scope-tabs button {
+  min-width: 0;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.location-scope-tabs button.active {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.location-scope-tabs button span {
+  min-width: 21px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .18);
+  font-size: .62rem;
+}

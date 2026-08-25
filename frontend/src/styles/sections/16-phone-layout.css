@@ -1,0 +1,453 @@
+/* Phone layout */
+@media (max-width: 760px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  body {
+    background: #f6f7f9;
+  }
+
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 100vh;
+    width: 100%;
+    padding: 10px;
+  }
+
+  .mobile-shell-bar {
+    position: sticky;
+    top: 0;
+    z-index: 1200;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .96);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
+  }
+
+  .mobile-shell-bar strong,
+  .mobile-shell-bar span {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-shell-bar strong {
+    color: #111827;
+    font-size: 1.05rem;
+  }
+
+  .mobile-shell-bar span {
+    color: #667085;
+    font-size: .76rem;
+  }
+
+  .mobile-shell-bar label {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 5px;
+  }
+
+  .mobile-shell-bar .account-menu {
+    align-self: start;
+  }
+
+  .mobile-shell-bar .account-menu-trigger {
+    width: 42px;
+    padding: 0;
+  }
+
+  .mobile-shell-bar .account-menu-trigger span,
+  .mobile-shell-bar .account-menu-trigger em,
+  .mobile-shell-bar .account-menu-trigger svg:last-child {
+    display: none;
+  }
+
+  .account-menu-panel {
+    right: 0;
+    width: min(260px, calc(100vw - 24px));
+  }
+
+  .mobile-shell-bar label > span {
+    color: #667085;
+    font-size: .72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .mobile-shell-bar select {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 10px;
+    border: 1px solid #d9e1ea;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #101828;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .work-area {
+    gap: 10px;
+  }
+
+  .topbar {
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #ffffff;
+  }
+
+  .topbar h2 {
+    font-size: 1.28rem;
+    line-height: 1.1;
+  }
+
+  .top-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .top-actions .primary-btn,
+  .top-actions .ghost-btn,
+  .top-actions .danger-btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+  }
+
+  .top-actions .account-menu {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+
+  .user-pill {
+    justify-content: center;
+    grid-column: 1 / -1;
+    background: #f0f6ff;
+    color: #175cd3;
+  }
+
+  .search-line {
+    margin-top: 0;
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+  }
+
+  .content-grid,
+  .content-grid.wide-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .list-panel,
+  .detail-panel,
+  .form-panel {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .detail-panel {
+    position: static;
+    max-height: none;
+  }
+
+  .record-form {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions,
+  .detail-actions,
+  .row-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .tool-die-actions,
+  .flex-die-control-grid,
+  .flex-die-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .primary-btn,
+  .ghost-btn,
+  .danger-btn {
+    min-height: 42px;
+    width: 100%;
+  }
+
+  .table-shell {
+    border-radius: 12px;
+  }
+
+  .data-table {
+    min-width: 640px;
+  }
+
+  .resource-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .job-overlay,
+  .usage-overlay,
+  .roll-overlay,
+  .finished-overlay,
+  .admin-overlay,
+  .material-form-overlay,
+  .tooling-form-overlay,
+  .type-overlay {
+    padding: 8px;
+  }
+
+  .job-overlay-shell,
+  .usage-window,
+  .roll-window,
+  .finished-window,
+  .admin-window,
+  .material-form-window,
+  .tooling-form-window,
+  .type-window {
+    width: 100%;
+    max-height: calc(100vh - 16px);
+    border-radius: 14px;
+  }
+
+  .tooling-form-window .record-form {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-tool {
+    gap: 10px;
+  }
+
+  .quote-tabs {
+    position: sticky;
+    top: 116px;
+    z-index: 900;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(132px, 1fr);
+    gap: 6px;
+    overflow-x: auto;
+    padding: 5px;
+    border-radius: 12px;
+    scroll-snap-type: x proximity;
+  }
+
+  .quote-tabs button {
+    min-width: 132px;
+    justify-content: center;
+    scroll-snap-align: start;
+  }
+
+  .quote-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quote-layout,
+  .quote-record-page,
+  .quote-material-library {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-panel {
+    border-radius: 14px;
+  }
+
+  .quote-simple-grid,
+  .quote-material-targets,
+  .quote-rate-grid,
+  .quote-current-msi-note,
+  .quote-identity-grid,
+  .quote-top-grid,
+  .quote-field-grid,
+  .quote-metric-grid,
+  .quote-internal-kpis,
+  .quote-internal-sections,
+  .quote-internal-items article > div {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-record-actions {
+    align-items: stretch;
+  }
+
+  .quote-record-actions > div:last-child {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .quote-view-switch {
+    width: 100%;
+  }
+
+  .quote-view-switch button {
+    min-width: 0;
+  }
+
+  .quote-document {
+    min-height: auto;
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .quote-doc-sales-head,
+  .quote-internal-head {
+    flex-direction: column;
+  }
+
+  .quote-doc-title-block,
+  .quote-doc-contact-card,
+  .quote-internal-head div:last-child,
+  .quote-internal-row strong {
+    text-align: left;
+  }
+
+  .quote-link-window-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .quote-doc-sales-meta,
+  .quote-doc-signature-grid,
+  .quote-library-form,
+  .quote-library-row,
+  .quote-finished-list .quote-library-row,
+  .quote-inventory-head {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-internal-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .quote-doc-line-item {
+    overflow-x: auto;
+  }
+
+  .quote-doc-sales-table {
+    min-width: 640px;
+  }
+
+  .quote-library-row > span,
+  .quote-library-row > em {
+    text-align: left;
+  }
+
+  .schedule-card-meta,
+  .schedule-card,
+  .schedule-receipt-main,
+  .schedule-receipt-grid,
+  .schedule-card-controls,
+  .schedule-packet-hero,
+  .schedule-detail-grid,
+  .schedule-detail-grid.compact,
+  .schedule-note-grid,
+  .schedule-workflow-panel,
+  .schedule-operator-sections,
+  .schedule-material-chart div,
+  .job-ticket-gallery,
+  .job-tickets-record-form,
+  .production-schedule-record-form {
+    grid-template-columns: 1fr;
+  }
+
+  .job-tickets-record-form .field-wide,
+  .job-tickets-record-form .image-upload-field {
+    grid-column: auto;
+  }
+
+  .image-upload-field > div {
+    grid-template-columns: 1fr;
+  }
+
+  .image-upload-field img,
+  .image-upload-field em {
+    width: 100%;
+    height: 150px;
+  }
+
+  .schedule-card-title,
+  .schedule-window-head {
+    flex-direction: column;
+  }
+
+  .schedule-overlay,
+  .schedule-form-overlay,
+  .schedule-remove-overlay {
+    padding: 8px;
+  }
+
+  .schedule-window,
+  .schedule-form-window,
+  .schedule-remove-window {
+    max-height: calc(100vh - 16px);
+    border-radius: 14px;
+  }
+
+  .schedule-card-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .schedule-packet-hero .schedule-thumb {
+    height: 180px;
+  }
+
+  .schedule-operator-card.wide {
+    grid-column: auto;
+  }
+
+  .schedule-card-controls .danger-btn.xs {
+    grid-column: auto;
+  }
+
+  .job-tickets-record-form .field-wide,
+  .production-schedule-record-form .field-wide {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 430px) {
+  .app-shell {
+    padding: 8px;
+  }
+
+  .mobile-shell-bar,
+  .topbar,
+  .quote-panel,
+  .list-panel,
+  .detail-panel,
+  .form-panel {
+    border-radius: 12px;
+  }
+
+  .top-actions,
+  .quote-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-tabs {
+    top: 112px;
+  }
+}

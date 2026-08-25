@@ -1,0 +1,252 @@
+/* Refined phone skid header and segmented navigation */
+@media (max-width: 680px) {
+  .material-workspace-shell .material-storage-links {
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px 8px;
+  }
+
+  .material-workspace-shell .material-storage-links button {
+    min-width: 0;
+    min-height: 38px;
+    gap: 4px;
+    padding-inline: 4px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: #64748b;
+    font-size: .7rem;
+  }
+
+  .material-workspace-shell .material-storage-links button > svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .material-workspace-shell .material-storage-links button.active {
+    border-color: #99f6e4;
+    background: #f0fdfa;
+    color: #0f766e;
+    box-shadow: none;
+  }
+
+  .material-workspace-shell .storage-detail-panel.has-selection .storage-detail-header {
+    min-height: 94px;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+    align-content: center;
+    gap: 5px;
+    padding: 10px;
+  }
+
+  .material-workspace-shell .storage-detail-panel.has-selection .storage-detail-header > div:first-of-type {
+    width: 100%;
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+  }
+
+  .material-workspace-shell .storage-detail-panel.has-selection .storage-detail-header h3 {
+    width: 100%;
+    margin: 0;
+    overflow: visible;
+    color: #0f172a;
+    font-size: 1.02rem;
+    line-height: 1.08;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .material-workspace-shell .storage-detail-panel.has-selection .storage-detail-header p {
+    width: min(100%, 280px);
+    min-width: 0;
+    justify-content: center;
+    margin: 1px 0 0;
+    overflow: visible;
+    font-size: .65rem;
+    line-height: 1.25;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .material-workspace-shell .storage-state {
+    padding: 2px 6px;
+    font-size: .55rem;
+  }
+
+  .material-workspace-shell .skid-detail-panel .storage-quick-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 42px;
+    gap: 6px;
+    padding: 8px 10px;
+    background: #ffffff;
+  }
+
+  .material-workspace-shell .storage-quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px 10px;
+    background: #ffffff;
+  }
+
+  .material-workspace-shell .skid-detail-panel .storage-quick-actions > button,
+  .material-workspace-shell .skid-detail-panel .storage-menu-trigger {
+    min-width: 0;
+    min-height: 58px;
+    border-radius: 8px;
+  }
+
+  .material-workspace-shell .storage-quick-actions > button {
+    min-width: 0;
+    min-height: 58px;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .material-workspace-shell .storage-quick-actions > button > span {
+    min-width: 0;
+  }
+
+  .material-workspace-shell .storage-quick-actions strong {
+    overflow: hidden;
+    font-size: .7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .material-workspace-shell .storage-quick-actions small {
+    display: none;
+  }
+
+  .material-workspace-shell .skid-detail-panel .storage-quick-actions > button.primary {
+    box-shadow: none;
+  }
+
+  .material-workspace-shell .storage-facts > div {
+    min-height: 64px;
+    padding: 9px 11px;
+  }
+
+  .material-workspace-shell .storage-facts strong {
+    font-size: .86rem;
+  }
+
+  .material-intake-component-pickers {
+    grid-template-columns: 1fr;
+  }
+
+  .material-intake-search-picker input {
+    font-size: 16px;
+  }
+
+  .material-intake-lot-total {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .material-intake-lot-total strong {
+    grid-row: auto;
+    grid-column: auto;
+  }
+
+  .material-loading-screen {
+    min-height: calc(100dvh - 210px);
+    margin: 0;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .material-tree {
+    gap: 7px;
+  }
+
+  .material-tree-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .material-tree-tabs > button {
+    min-height: 62px;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 7px;
+    text-align: center;
+  }
+
+  .material-tree-tabs strong {
+    font-size: .7rem;
+  }
+
+  .material-tree-tabs small {
+    font-size: .58rem;
+  }
+
+  .material-tree-group-head {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    min-height: 42px;
+    gap: 6px;
+    padding: 8px 9px;
+  }
+
+  .material-tree-group-head > span {
+    display: none;
+  }
+
+  .material-tree-group-head strong {
+    font-size: .76rem;
+  }
+
+  .material-tree-group-head b {
+    font-size: .68rem;
+  }
+
+  .material-compact-roll {
+    grid-template-columns: 1fr;
+  }
+
+  .material-roll-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    padding: 10px 11px 6px;
+  }
+
+  .material-roll-summary > em {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 2px;
+  }
+
+  .material-roll-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .material-roll-essentials {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 7px;
+  }
+
+  .material-roll-essentials span:last-child {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+
+  .location-scope-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .location-scope-tabs button {
+    gap: 3px;
+    padding-inline: 4px;
+    font-size: .63rem;
+  }
+
+  .location-scope-tabs button svg {
+    display: none;
+  }
+}
