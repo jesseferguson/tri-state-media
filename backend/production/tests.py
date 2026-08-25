@@ -22,6 +22,7 @@ from .models import (
     FinishedInventory,
     JobTicket,
     JobTicketEvent,
+    JobTicketUsage,
     LiveFootageArchive,
     LocalLiveFootageReading,
     Message,
@@ -382,6 +383,46 @@ class DataImportJobTicketTests(TestCase):
         self.assertNotIn("PMS-IGNORED", ticket.job_notes)
         self.assertNotIn("DO NOT SAVE ME", ticket.job_notes)
         self.assertEqual(MaterialMasterType.objects.count(), 0)
+
+    def test_sent_items_export_imports_job_ticket_usage_by_row_id(self):
+        role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        role.allowed_resource_keys = ["*"]
+        role.save(update_fields=["allowed_resource_keys"])
+        admin = CompanyUser.objects.create(username="sent-import-admin", name="Sent Import Admin", role=role, active=True)
+        admin.set_password("StrongPass7&")
+        admin.save()
+        ticket = JobTicket.objects.create(
+            legacy_row_id="RID-SENT",
+            ticket_number="PM-4-6-R",
+            product_code="2-000-059",
+            customer_name="Tri-State Media",
+        )
+        csv_text = "\n".join([
+            "Date Sent,Row ID ,Quantity",
+            "\"7/18/2024, 9:13:29 AM\",RID-SENT,6",
+            "\"7/18/2024, 10:00:00 AM\",,3",
+            "\"7/18/2024, 10:10:00 AM\",RID-SENT,0",
+        ])
+        upload = SimpleUploadedFile("sent-items.csv", csv_text.encode("utf-8"), content_type="text/csv")
+
+        response = self.client.post(
+            reverse("data-import-csv", args=["job_ticket_usage"]),
+            {"file": upload},
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(admin)}",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["skipped"], 2)
+        self.assertEqual(payload["warning_count"], 2)
+        usage = JobTicketUsage.objects.get()
+        self.assertEqual(usage.job_ticket, ticket)
+        self.assertEqual(usage.legacy_job_ticket_id, "RID-SENT")
+        self.assertEqual(usage.quantity, Decimal("6"))
+        self.assertEqual(usage.source, "Sent Items")
+        self.assertEqual(usage.used_at.month, 7)
+        self.assertEqual(usage.used_at.day, 18)
 
 
 class CustomerInteractionTests(TestCase):

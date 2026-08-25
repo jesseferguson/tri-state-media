@@ -158,11 +158,9 @@ USAGE_COLUMNS = [
 ]
 
 JOB_TICKET_USAGE_COLUMNS = [
-    "date",
-    "job_ticket_id",
-    "quantity",
-    "source",
-    "notes",
+    "Date Sent",
+    "Row ID",
+    "Quantity",
 ]
 
 FINISHED_INVENTORY_COLUMNS = [
@@ -333,14 +331,12 @@ IMPORT_TEMPLATES = {
     },
     "job_ticket_usage": {
         "label": "Job Ticket Usage",
-        "description": "Imports the simple old-system usage chart format: date, job_ticket_id, and quantity.",
+        "description": "Imports old-system Sent Items usage history by Date Sent, Row ID, and Quantity.",
         "columns": JOB_TICKET_USAGE_COLUMNS,
         "sample": {
-            "date": "7/18/2024, 9:13:29 AM",
-            "job_ticket_id": "lhg-ZBBjRoaq0h6T41yWpQ",
-            "quantity": "1",
-            "source": "Glide",
-            "notes": "Imported usage",
+            "Date Sent": "7/18/2024, 9:13:29 AM",
+            "Row ID": "lhg-ZBBjRoaq0h6T41yWpQ",
+            "Quantity": "1",
         },
     },
     "finished_inventory": {
@@ -1328,8 +1324,8 @@ def import_job_ticket_usage(rows):
 
     for line_number, row in rows:
         legacy_job_ticket_id = first(row, "job_ticket_id", "legacy_job_ticket_id", "ticket_id", "row_id")[:120]
-        used_at = datetime_value(first(row, "date", "used_at", "used_date"))
-        quantity = decimal_or_none(first(row, "quantity", "qty")) or Decimal("0")
+        used_at = datetime_value(first(row, "date", "date_sent", "sent_date", "sent_at", "used_at", "used_date"))
+        quantity = decimal_or_none(first(row, "quantity", "qty", "sent_quantity", "amount")) or Decimal("0")
 
         if not legacy_job_ticket_id:
             result["skipped"] += 1
@@ -1366,7 +1362,8 @@ def import_job_ticket_usage(rows):
 
         existing_key = (ticket_lookup_key(legacy_job_ticket_id), used_at, quantity)
         existing = existing_map.get(existing_key)
-        source = (first(row, "source", default="Glide") or "Glide")[:80]
+        default_source = "Sent Items" if first(row, "date_sent", "sent_date", "sent_at") else "Glide"
+        source = (first(row, "source", default=default_source) or default_source)[:80]
         defaults = {
             "job_ticket": ticket,
             "legacy_job_ticket_id": legacy_job_ticket_id,
