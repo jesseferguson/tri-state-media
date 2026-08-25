@@ -38,6 +38,7 @@ from .models import (
     CustomerOrder,
     CustomerOrderEvent,
     FinishedInventory,
+    job_ticket_slot_image_upload_path,
     JobTicketEvent,
     JobTicket,
     JobTicketUsage,
@@ -1089,6 +1090,37 @@ def apply_pending_ticket_payload(ticket, payload):
     ticket.save()
 
 
+def pending_artwork_storage_name(artwork):
+    return str(((artwork or {}).get("next") or {}).get("storage_name") or "").strip()
+
+
+def cleanup_pending_artwork_upload(artwork):
+    storage_name = pending_artwork_storage_name(artwork)
+    if not storage_name or "/pending/" not in storage_name:
+        return
+    if default_storage.exists(storage_name):
+        default_storage.delete(storage_name)
+
+
+def promote_pending_artwork_upload(ticket, slot, storage_name, file_name):
+    if slot not in {"general", "finishing"} or not storage_name or "/pending/" not in storage_name:
+        return storage_name
+
+    target_storage_name = job_ticket_slot_image_upload_path(ticket, slot, file_name or storage_name, pending=False)
+    if target_storage_name == storage_name:
+        return storage_name
+
+    with default_storage.open(storage_name, "rb") as pending_file:
+        if default_storage.exists(target_storage_name):
+            default_storage.delete(target_storage_name)
+        saved_name = default_storage.save(target_storage_name, pending_file)
+
+    if saved_name != storage_name and default_storage.exists(storage_name):
+        default_storage.delete(storage_name)
+
+    return saved_name
+
+
 def apply_pending_artwork(ticket, artwork):
     slot = artwork.get("slot")
     if slot not in {"general", "spec", "finishing"}:
@@ -1109,6 +1141,12 @@ def apply_pending_artwork(ticket, artwork):
     else:
         storage_name = next_artwork.get("storage_name")
         if storage_name:
+            storage_name = promote_pending_artwork_upload(
+                ticket,
+                slot,
+                storage_name,
+                next_artwork.get("file_name") or next_artwork.get("name") or storage_name,
+            )
             setattr(ticket, image_field, storage_name)
         setattr(ticket, name_field, str(next_artwork.get("name") or "").strip())
         setattr(ticket, description_field, str(next_artwork.get("description") or "").strip())
@@ -2048,7 +2086,10 @@ class JobTicketViewSet(BaseProductionViewSet):
             except serializers.ValidationError as error:
                 return Response(error.detail, status=status.HTTP_400_BAD_REQUEST)
             try:
-                pending_storage_name = default_storage.save(job_ticket_image_upload_path(ticket, upload.name), upload)
+                pending_storage_name = default_storage.save(
+                    job_ticket_slot_image_upload_path(ticket, slot, upload.name, pending=True),
+                    upload,
+                )
             except Exception as error:
                 logger.exception("Could not save pending job ticket image to storage.")
                 return Response({"error": f"Could not save pending image: {error}"}, status=status.HTTP_502_BAD_GATEWAY)
@@ -2149,6 +2190,8 @@ class JobTicketEventViewSet(BaseProductionViewSet):
                 details["applied_payload"] = payload
             elif pending_action == "artwork_update":
                 apply_pending_artwork(event.job_ticket, details.get("pending_artwork") or {})
+        elif status_value in {"rejected", "retracted"}:
+            cleanup_pending_artwork_upload(details.get("pending_artwork") or {})
 
         approval.update({
             "status": status_value,

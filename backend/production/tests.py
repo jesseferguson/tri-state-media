@@ -2,6 +2,7 @@ import json
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -33,6 +34,17 @@ from .models import (
 )
 from users.auth import CompanyUserTokenAuthentication, create_company_user_token
 from users.models import CompanyRole, CompanyUser
+
+
+TINY_GIF = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
+    b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01"
+    b"\x00\x00\x02\x02D\x01\x00;"
+)
+
+
+def tiny_gif_upload(name="artwork.gif"):
+    return SimpleUploadedFile(name, TINY_GIF, content_type="image/gif")
 
 
 SECURE_REST_FRAMEWORK = {
@@ -267,6 +279,84 @@ class ApiAuthSecurityTests(TestCase):
         self.assertEqual(allowed["Content-Type"], "image/gif")
         self.assertIn('filename="Private Artwork.gif"', allowed["Content-Disposition"])
         self.assertTrue(b"".join(allowed.streaming_content).startswith(b"GIF89a"))
+
+    def test_general_and_finishing_images_promote_to_tsm_id_storage_keys(self):
+        auth_header = f"Bearer {create_company_user_token(self.user)}"
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-CLOUDFLARE-1",
+            job_name="Stable Image Job",
+            product_code="PM-2-1-R",
+            customer_name="Stable Customer",
+        )
+
+        for slot in ["general", "finishing"]:
+            with self.subTest(slot=slot):
+                response = self.client.post(
+                    reverse("job-ticket-images", args=[ticket.pk, slot]),
+                    {
+                        "image": tiny_gif_upload(f"{slot}-artwork.gif"),
+                        "name": f"{slot.title()} Artwork",
+                        "performed_by": "Alex",
+                    },
+                    HTTP_AUTHORIZATION=auth_header,
+                )
+
+                self.assertEqual(response.status_code, 200, response.content)
+                event = JobTicketEvent.objects.filter(job_ticket=ticket, details__image_slot=slot).latest("id")
+                pending_storage_name = event.details["pending_artwork"]["next"]["storage_name"]
+                self.assertIn(f"production/job-tickets/PM-2-1-R/pending/{slot}-", pending_storage_name)
+                self.assertTrue(default_storage.exists(pending_storage_name))
+
+                approval = self.client.post(
+                    reverse("job-ticket-event-approve", args=[event.id]),
+                    {"performed_by": "Manager"},
+                    content_type="application/json",
+                    HTTP_AUTHORIZATION=auth_header,
+                )
+
+                self.assertEqual(approval.status_code, 200, approval.content)
+                ticket.refresh_from_db()
+                final_storage_name = getattr(ticket, f"{slot}_image").name
+                self.assertEqual(final_storage_name, f"production/job-tickets/PM-2-1-R/{slot}-image.gif")
+                self.assertTrue(default_storage.exists(final_storage_name))
+                self.assertFalse(default_storage.exists(pending_storage_name))
+                default_storage.delete(final_storage_name)
+
+    def test_rejected_stable_image_upload_removes_pending_storage_object(self):
+        auth_header = f"Bearer {create_company_user_token(self.user)}"
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-CLOUDFLARE-2",
+            job_name="Rejected Image Job",
+            product_code="TSM-REJECT",
+            customer_name="Stable Customer",
+        )
+
+        response = self.client.post(
+            reverse("job-ticket-images", args=[ticket.pk, "general"]),
+            {
+                "image": tiny_gif_upload("general-artwork.gif"),
+                "name": "General Artwork",
+                "performed_by": "Alex",
+            },
+            HTTP_AUTHORIZATION=auth_header,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        event = JobTicketEvent.objects.filter(job_ticket=ticket, details__image_slot="general").latest("id")
+        pending_storage_name = event.details["pending_artwork"]["next"]["storage_name"]
+        self.assertTrue(default_storage.exists(pending_storage_name))
+
+        rejection = self.client.post(
+            reverse("job-ticket-event-reject", args=[event.id]),
+            {"performed_by": "Manager"},
+            content_type="application/json",
+            HTTP_AUTHORIZATION=auth_header,
+        )
+
+        self.assertEqual(rejection.status_code, 200, rejection.content)
+        self.assertFalse(default_storage.exists(pending_storage_name))
+        ticket.refresh_from_db()
+        self.assertFalse(ticket.general_image)
 
 
 class DataImportToolingTests(TestCase):
@@ -1294,6 +1384,13 @@ class FinishedInventoryOrderWorkflowTests(TestCase):
 
 
 class JobTicketHistoryTests(TestCase):
+    def setUp(self):
+        self.role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        self.user = CompanyUser(username="history-admin", name="History Admin", role=self.role, active=True)
+        self.user.set_password("StrongPass7&")
+        self.user.save()
+        self.auth_header = f"Bearer {create_company_user_token(self.user)}"
+
     def test_patch_logs_actor_and_changed_fields(self):
         ticket = JobTicket.objects.create(
             ticket_number="JT-HIST-1",
@@ -1311,6 +1408,7 @@ class JobTicketHistoryTests(TestCase):
                 "performed_by": "Alex Operator",
             },
             content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
         )
 
         self.assertEqual(response.status_code, 200, response.content)
@@ -1336,6 +1434,7 @@ class JobTicketHistoryTests(TestCase):
                 "performed_by": "Manager",
             },
             content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
         )
 
         self.assertEqual(approval_response.status_code, 200, approval_response.content)
@@ -1375,6 +1474,7 @@ class JobTicketHistoryTests(TestCase):
                 "scheduled_by": "Scheduler",
             },
             content_type="application/json",
+            HTTP_AUTHORIZATION=self.auth_header,
         )
 
         self.assertEqual(response.status_code, 400, response.content)

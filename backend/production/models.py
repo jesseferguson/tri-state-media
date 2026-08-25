@@ -23,10 +23,42 @@ QUOTE_WORKFLOW_STATUS_CHOICES = [
 ]
 
 
+STABLE_JOB_TICKET_IMAGE_SLOTS = {"general", "finishing"}
+
+
+def safe_storage_segment(value, fallback="item"):
+    text = str(value or "").strip().replace("/", "-").replace("\\", "-")
+    return get_valid_filename(text) or fallback
+
+
+def job_ticket_storage_identity(instance):
+    return safe_storage_segment(
+        getattr(instance, "product_code", "")
+        or getattr(instance, "ticket_number", "")
+        or getattr(instance, "legacy_row_id", "")
+        or getattr(instance, "pk", "")
+        or "job-ticket",
+        "job-ticket",
+    )
+
+
 def job_ticket_image_upload_path(instance, filename):
-    safe_ticket = str(instance.ticket_number or instance.pk or "job-ticket").replace("/", "-").replace("\\", "-")
+    safe_ticket = job_ticket_storage_identity(instance)
     safe_filename = get_valid_filename(Path(str(filename or "upload")).name) or "upload"
     return f"production/job-tickets/{safe_ticket}/{uuid4().hex}-{safe_filename}"
+
+
+def job_ticket_slot_image_upload_path(instance, slot, filename, *, pending=False):
+    if slot not in STABLE_JOB_TICKET_IMAGE_SLOTS:
+        return job_ticket_image_upload_path(instance, filename)
+
+    safe_ticket = job_ticket_storage_identity(instance)
+    safe_filename = get_valid_filename(Path(str(filename or "upload")).name) or "upload"
+    if pending:
+        return f"production/job-tickets/{safe_ticket}/pending/{slot}-{uuid4().hex}-{safe_filename}"
+
+    suffix = Path(safe_filename).suffix.lower()
+    return f"production/job-tickets/{safe_ticket}/{slot}-image{suffix}"
 
 
 class Customer(models.Model):
