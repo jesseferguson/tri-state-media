@@ -62,3 +62,4 @@ import "./sections/60-customer-followups.css";
 import "./sections/61-customer-form.css";
 import "./sections/62-job-ticket-schedule-recommendations.css";
 import "./sections/63-barcode-loading-screen.css";
+import "./sections/64-quote-calculator-compact-workspace.css";

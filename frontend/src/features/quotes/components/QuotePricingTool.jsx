@@ -90,7 +90,7 @@ const initialForm = {
   coreSize: "",
   labelsPerUnit: "",
   labelsPerCarton: "",
-  volumePricingEnabled: false,
+  volumePricingEnabled: true,
   volumeCustomQuantities: "",
   continuousRoll: false,
   acrossMode: "auto",
@@ -2285,6 +2285,12 @@ export default function QuotePricingTool({
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
   const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
   const volumePricingEnabled = quoteVolumePricingEnabled(form);
+  const volumeCustomSummary = form.volumeCustomQuantities
+    .split(/[,\n]/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(", ") || "Standard breaks included";
   const continuousRoll = quoteContinuousRollEnabled(form);
   const wasteMatchesRecommendation = Math.abs(toQuoteNumber(form.wastePercent) - toQuoteNumber(pricing.recommendedWastePercent)) < 0.01;
   const selectedQuoteIsMine = selectedQuote ? quoteBelongsToPerson(selectedQuote, currentUserQuoteKey(currentUser), currentUser) : false;
@@ -3899,7 +3905,7 @@ ${items.map((item) => {
           )}
           <div className="quote-layout">
             <form className="quote-panel quote-input-panel" onSubmit={(event) => event.preventDefault()}>
-              <section className="quote-section quote-primary-section">
+              <section className="quote-section quote-primary-section quote-setup-section">
                 <div className="quote-section-head">
                   <FileText size={16} />
                   <strong>Quote Info</strong>
@@ -3908,7 +3914,7 @@ ${items.map((item) => {
                   <button className={quoteInfo.linkMode === "manual" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "manual")}>Custom Quote</button>
                   <button className={quoteInfo.linkMode === "ticket" ? "active" : ""} type="button" onClick={() => updateQuoteInfo("linkMode", "ticket")}>Job Ticket</button>
                 </div>
-                <details className="quote-link-window quote-customer-contact-panel" defaultOpen={!selectedCustomer || (quoteInfo.linkMode === "ticket" && !selectedJobTicket)}>
+                <details className="quote-link-window quote-customer-contact-panel quote-setup-drawer" defaultOpen={!selectedCustomer || (quoteInfo.linkMode === "ticket" && !selectedJobTicket)}>
                   <summary className="quote-link-window-head">
                     <strong>{quoteInfo.linkMode === "ticket" ? "Customer Account + Job Ticket" : "Customer Account"}</strong>
                     <span>
@@ -4021,7 +4027,7 @@ ${items.map((item) => {
                 </details>
               </section>
 
-              <section className="quote-section quote-primary-section">
+              <section className="quote-section quote-primary-section quote-pricing-section">
                 <div className="quote-section-head">
                   <CircleDollarSign size={16} />
                   <strong>Quote Details</strong>
@@ -4064,21 +4070,23 @@ ${items.map((item) => {
                   <b>Standard breaks: 10k, 25k, 100k, 500k, and 1M+. Add customer-requested quantities below.</b>
                 </label>
                 {volumePricingEnabled && (
-                  <div className="quote-volume-custom-panel">
-                    <div className="quote-volume-custom-head">
-                      <strong>Customer-Specific Volume Quantities</strong>
-                      <span>Use this when a customer asks for extra counts outside the standard breaks.</span>
+                  <details className="quote-advanced-panel quote-volume-custom-drawer">
+                    <summary>
+                      <span>Customer-Specific Quantities</span>
+                      <em>{volumeCustomSummary}</em>
+                    </summary>
+                    <div className="quote-volume-custom-body">
+                      <label className="quote-field quote-field-wide">
+                        <span>Requested Quantities</span>
+                        <textarea
+                          value={form.volumeCustomQuantities}
+                          onChange={(event) => updateField("volumeCustomQuantities", event.target.value)}
+                          placeholder={continuousRoll ? "120,000\n300,000\n750,000" : "12,500\n75,000\n250,000"}
+                        />
+                        <em className="quote-volume-custom-note">Enter one per line or separate with commas. The quote skips duplicates and any tier that is not a lower price.</em>
+                      </label>
                     </div>
-                    <label className="quote-field quote-field-wide">
-                      <span>Requested Quantities</span>
-                      <textarea
-                        value={form.volumeCustomQuantities}
-                        onChange={(event) => updateField("volumeCustomQuantities", event.target.value)}
-                        placeholder={continuousRoll ? "120,000\n300,000\n750,000" : "12,500\n75,000\n250,000"}
-                      />
-                      <em className="quote-volume-custom-note">Enter one per line or separate with commas. The quote skips duplicates and any tier that is not a lower price.</em>
-                    </label>
-                  </div>
+                  </details>
                 )}
                 <div className="quote-top-grid quote-main-input-grid">
                   <Field label="Finished Material">
@@ -4197,33 +4205,35 @@ ${items.map((item) => {
                   </button>
                 </div>
 
-                <div className="quote-auto-repeat">
-                  <Ruler size={15} />
-                  <span>
-                    {continuousRoll
-                      ? "Continuous roll uses the finished inch total directly; no repeat is calculated."
-                      : `Repeat is calculated automatically from ${quoteUnitLabel(form.unitType)} length plus gap.`}
-                  </span>
-                  <strong>{continuousRoll ? quoteContinuousLengthLabel(pricing.quantity) : number(pricing.repeat, '"')}</strong>
-                </div>
-                <div className="quote-waste-recommendation">
-                  <CheckCircle2 size={15} />
-                  <div>
-                    <span>Recommended waste</span>
-                    <strong>{percent(pricing.recommendedWastePercent)}</strong>
-                    <em>
-                      {number(pricing.runFootage, " ft")} run / {percent(pricing.baseWastePercent)} base
-                      {pricing.colorWastePercentPerColor > 0 && (pricing.colorCount > 0
-                        ? ` + ${percent(pricing.colorWastePercentPerColor)} per color (${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} = ${percent(pricing.colorWastePercent)})`
-                        : ` + ${percent(pricing.colorWastePercentPerColor)} per color`)}
-                    </em>
-                    {pricing.coreMarkupSurchargePercent > 0 && (
-                      <em className="quote-core-surcharge-note">Core markup +15%: non-3" cores add 15% to markup.</em>
+                <div className="quote-pricing-insights">
+                  <div className="quote-auto-repeat">
+                    <Ruler size={15} />
+                    <span>
+                      {continuousRoll
+                        ? "Continuous roll uses the finished inch total directly; no repeat is calculated."
+                        : `Repeat is calculated automatically from ${quoteUnitLabel(form.unitType)} length plus gap.`}
+                    </span>
+                    <strong>{continuousRoll ? quoteContinuousLengthLabel(pricing.quantity) : number(pricing.repeat, '"')}</strong>
+                  </div>
+                  <div className="quote-waste-recommendation">
+                    <CheckCircle2 size={15} />
+                    <div>
+                      <span>Recommended waste</span>
+                      <strong>{percent(pricing.recommendedWastePercent)}</strong>
+                      <em>
+                        {number(pricing.runFootage, " ft")} run / {percent(pricing.baseWastePercent)} base
+                        {pricing.colorWastePercentPerColor > 0 && (pricing.colorCount > 0
+                          ? ` + ${percent(pricing.colorWastePercentPerColor)} per color (${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} = ${percent(pricing.colorWastePercent)})`
+                          : ` + ${percent(pricing.colorWastePercentPerColor)} per color`)}
+                      </em>
+                      {pricing.coreMarkupSurchargePercent > 0 && (
+                        <em className="quote-core-surcharge-note">Core markup +15%: non-3" cores add 15% to markup.</em>
+                      )}
+                    </div>
+                    {!wasteMatchesRecommendation && (
+                      <button type="button" onClick={applyRecommendedWaste}>Use</button>
                     )}
                   </div>
-                  {!wasteMatchesRecommendation && (
-                    <button type="button" onClick={applyRecommendedWaste}>Use</button>
-                  )}
                 </div>
               </section>
 

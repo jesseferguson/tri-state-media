@@ -88,8 +88,9 @@ function quantityLabel(value) {
 function ticketUsageStats(ticket, usageRows = [], finishedRows = [], now = new Date()) {
   const hasSummary = ticket.recent_usage_90d !== undefined || ticket.finished_on_hand_quantity !== undefined;
   if (hasSummary) {
-    const recentUsage = numeric(ticket.recent_usage_90d);
-    const monthlyUsage = numeric(ticket.recent_monthly_usage) || recentUsage / 3;
+    const summaryMonthlyUsage = numeric(ticket.recent_monthly_usage);
+    const recentUsage = numeric(ticket.recent_usage_90d) || summaryMonthlyUsage * 3;
+    const monthlyUsage = summaryMonthlyUsage || recentUsage / 3;
     const onHand = numeric(ticket.finished_on_hand_quantity);
     const monthsOnHand = ticket.stock_months_on_hand === null || ticket.stock_months_on_hand === undefined
       ? (monthlyUsage > 0 ? onHand / monthlyUsage : null)
@@ -148,24 +149,44 @@ export default function JobTicketGallery({ rows, selectedId, usageRows = [], fin
   const sortedTickets = useMemo(() => {
     const now = new Date();
     return (rows ?? [])
-      .map((ticket) => ({ ticket, stats: ticketUsageStats(ticket, usageRows, finishedRows, now) }))
+      .map((ticket) => {
+        const stats = ticketUsageStats(ticket, usageRows, finishedRows, now);
+        return {
+          ticket,
+          stats,
+          scheduleCue: scheduleRecommendationForTicket(ticket, scheduledRepeatMap, stats),
+        };
+      })
       .sort((a, b) => {
-        const usageDelta = b.stats.recentUsage - a.stats.recentUsage;
+        if (a.scheduleCue.recommended !== b.scheduleCue.recommended) {
+          return a.scheduleCue.recommended ? -1 : 1;
+        }
+        const aHasUsage = a.stats.monthlyUsage > 0.001;
+        const bHasUsage = b.stats.monthlyUsage > 0.001;
+        if (aHasUsage !== bHasUsage) return aHasUsage ? -1 : 1;
+        if (a.stats.lowStockLevel !== b.stats.lowStockLevel) {
+          if (a.stats.lowStockLevel === "critical") return -1;
+          if (b.stats.lowStockLevel === "critical") return 1;
+          if (a.stats.lowStockLevel === "low") return -1;
+          if (b.stats.lowStockLevel === "low") return 1;
+        }
+        const gapDelta = (b.stats.monthlyUsage - b.stats.onHand) - (a.stats.monthlyUsage - a.stats.onHand);
+        if (Math.abs(gapDelta) > 0.001 && (a.stats.lowStockLevel || b.stats.lowStockLevel)) return gapDelta;
+        const usageDelta = b.stats.monthlyUsage - a.stats.monthlyUsage;
         if (Math.abs(usageDelta) > 0.001) return usageDelta;
         const stockDelta = a.stats.onHand - b.stats.onHand;
         if (Math.abs(stockDelta) > 0.001) return stockDelta;
         return String(a.ticket.job_name || a.ticket.ticket_number || "").localeCompare(String(b.ticket.job_name || b.ticket.ticket_number || ""), undefined, { numeric: true });
       });
-  }, [rows, usageRows, finishedRows]);
+  }, [rows, usageRows, finishedRows, scheduledRepeatMap]);
 
   if (!rows.length) return <p className="empty-row">No job tickets match this view.</p>;
 
   return (
     <div className="job-ticket-gallery">
-      {sortedTickets.map(({ ticket, stats }) => {
+      {sortedTickets.map(({ ticket, stats, scheduleCue }) => {
         const image = primaryImage(ticket);
         const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
-        const scheduleCue = scheduleRecommendationForTicket(ticket, scheduledRepeatMap, stats);
         return (
           <button
             className={`job-ticket-card ${String(selectedId) === String(ticket.id) ? "active" : ""} ${stats.lowStockLevel ? `stock-${stats.lowStockLevel}` : ""} ${scheduleCue.recommended ? "schedule-recommended" : ""}`}

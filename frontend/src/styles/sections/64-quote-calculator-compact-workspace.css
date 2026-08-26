@@ -1,0 +1,439 @@
+/* Compact quote calculator workspace */
+.quote-layout {
+  grid-template-columns: minmax(0, 1.42fr) minmax(330px, .58fr);
+  gap: 10px;
+}
+
+.quote-input-panel {
+  gap: 9px;
+  padding: 10px;
+}
+
+.quote-setup-section,
+.quote-pricing-section {
+  gap: 8px;
+  padding: 10px;
+}
+
+.quote-setup-section {
+  grid-template-columns: minmax(150px, .55fr) minmax(220px, .45fr);
+  align-items: center;
+}
+
+.quote-setup-section .quote-section-head {
+  min-height: 28px;
+}
+
+.quote-setup-section .quote-info-mode-tabs {
+  justify-self: end;
+  width: min(280px, 100%);
+}
+
+.quote-setup-section .quote-setup-drawer {
+  grid-column: 1 / -1;
+}
+
+.quote-link-window,
+.quote-advanced-panel,
+.quote-ticket-picker,
+.quote-customer-create {
+  border-radius: 8px;
+}
+
+.quote-link-window {
+  gap: 8px;
+  padding: 8px;
+}
+
+.quote-link-window-head {
+  min-height: 34px;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.quote-link-window[open] .quote-link-window-head {
+  padding-bottom: 7px;
+  border-bottom: 1px solid #e4eaf2;
+}
+
+.quote-link-window-head::after {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.quote-customer-picker {
+  gap: 8px;
+  margin-top: 0;
+}
+
+.quote-ticket-search input,
+.quote-field input,
+.quote-field select {
+  min-height: 34px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.quote-ticket-search input {
+  padding-left: 32px;
+}
+
+.quote-customer-results {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  max-height: 230px;
+  padding: 6px;
+}
+
+.quote-customer-results .quote-ticket-results-head {
+  grid-column: 1 / -1;
+}
+
+.quote-customer-results > button {
+  gap: 2px;
+  padding: 7px 8px;
+}
+
+.quote-customer-create {
+  padding: 8px;
+}
+
+.quote-customer-create summary {
+  min-height: 30px;
+}
+
+.quote-customer-create > .quote-simple-grid {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 7px;
+  max-height: min(46vh, 430px);
+  overflow: auto;
+  padding-top: 7px;
+}
+
+.quote-customer-create textarea {
+  min-height: 54px;
+}
+
+.quote-pricing-section {
+  border-color: #b8d7d2;
+  background: linear-gradient(180deg, #ffffff, #f8fffd);
+}
+
+.quote-part-number-strip {
+  padding: 7px;
+  border-color: #d9e6e4;
+  border-radius: 8px;
+  background: #fbfefd;
+}
+
+.quote-part-number-strip .quote-field:first-child input {
+  min-height: 38px;
+  font-size: .9rem;
+}
+
+.quote-quote-options {
+  background: #ffffff;
+}
+
+.quote-volume-control {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-color: #b7d4cf;
+  background: #f4fbfa;
+}
+
+.quote-volume-control.active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+}
+
+.quote-volume-control input {
+  width: 16px;
+  height: 16px;
+}
+
+.quote-volume-control span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quote-volume-control strong {
+  font-size: .82rem;
+}
+
+.quote-volume-control em {
+  font-size: .68rem;
+}
+
+.quote-volume-control b {
+  display: none;
+}
+
+.quote-volume-custom-drawer {
+  overflow: hidden;
+  margin: 0;
+  border-color: #dce8e5;
+  background: #ffffff;
+}
+
+.quote-volume-custom-drawer summary {
+  min-height: 34px;
+}
+
+.quote-volume-custom-body {
+  padding: 8px;
+  border-top: 1px solid #e5ecea;
+}
+
+.quote-volume-custom-body textarea {
+  min-height: 58px;
+}
+
+.quote-main-input-grid {
+  grid-template-columns: minmax(230px, 1.55fr) repeat(4, minmax(86px, .7fr));
+  gap: 7px;
+  padding: 8px;
+  border-color: #94cfc6;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f0fdfa, #ffffff);
+}
+
+.quote-main-input-grid .quote-field:first-child {
+  grid-column: auto;
+}
+
+.quote-main-input-grid .quote-field span,
+.quote-main-input-grid .quote-control-block > span {
+  font-size: .64rem;
+}
+
+.quote-main-input-grid .quote-field input,
+.quote-main-input-grid .quote-field select,
+.quote-main-input-grid .quote-input-with-suffix em,
+.quote-mode-compact .quote-segmented {
+  min-height: 38px;
+}
+
+.quote-mode-compact .quote-segmented.compact button {
+  min-height: 30px;
+}
+
+.quote-material-targets {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px;
+  border-color: #b7d4cf;
+  background: #f0fdfa;
+}
+
+.quote-secondary-input-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 96px), 1fr));
+  gap: 6px;
+  padding: 7px;
+  border-radius: 8px;
+}
+
+.quote-secondary-input-grid .quote-continuous-control {
+  grid-column: span 2;
+  min-height: 56px;
+  padding: 7px 8px;
+}
+
+.quote-secondary-input-grid .quote-continuous-control b {
+  display: none;
+}
+
+.quote-chip-row {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.quote-chip-row button {
+  min-height: 28px;
+  padding: 4px 6px;
+  font-size: .7rem;
+}
+
+.quote-pricing-insights {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.2fr);
+  gap: 7px;
+}
+
+.quote-auto-repeat,
+.quote-waste-recommendation {
+  min-height: 56px;
+  padding: 8px 9px;
+}
+
+.quote-auto-repeat span,
+.quote-waste-recommendation em {
+  white-space: normal;
+}
+
+.quote-waste-recommendation strong {
+  font-size: .88rem;
+}
+
+.quote-advanced-panel summary {
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
+.quote-advanced-panel > .quote-field-grid,
+.compact-costs {
+  padding: 8px;
+}
+
+.quote-result-panel {
+  top: 58px;
+  gap: 8px;
+  padding: 10px;
+}
+
+.quote-fit-state {
+  min-height: 52px;
+  padding: 8px;
+}
+
+.quote-total-card {
+  padding: 10px;
+}
+
+.quote-total-card strong {
+  font-size: 1.85rem;
+}
+
+.quote-volume-preview .quote-volume-offer {
+  padding: 8px;
+}
+
+.quote-result-panel .quote-volume-options {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.quote-result-panel .quote-volume-options article {
+  flex: 0 0 112px;
+  padding: 7px;
+}
+
+.quote-metric-grid {
+  gap: 6px;
+}
+
+.quote-metric,
+.quote-profit-health {
+  padding: 7px;
+}
+
+.quote-profit-health {
+  min-height: 94px;
+}
+
+.quote-breakdown {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.quote-breakdown-row {
+  grid-template-columns: 1fr;
+  gap: 2px;
+  padding: 6px 7px;
+}
+
+.quote-breakdown-row strong {
+  text-align: left;
+}
+
+.quote-generate-btn {
+  min-height: 38px;
+}
+
+.quote-candidates {
+  padding: 10px;
+}
+
+.quote-candidate-table {
+  min-width: 0;
+  gap: 5px;
+}
+
+.quote-candidate-head,
+.quote-candidate-table > div:not(.quote-candidate-head) {
+  grid-template-columns: 58px repeat(4, minmax(74px, 1fr)) 54px;
+  gap: 6px;
+}
+
+.quote-candidate-table > div:not(.quote-candidate-head) {
+  padding: 7px;
+}
+
+.quote-candidate-table strong,
+.quote-candidate-table span {
+  font-size: .74rem;
+}
+
+.quote-candidate-table button {
+  min-width: 48px;
+  min-height: 28px;
+  padding: 4px 6px;
+}
+
+@media (max-width: 1180px) {
+  .quote-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-result-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 860px) {
+  .quote-setup-section,
+  .quote-main-input-grid,
+  .quote-pricing-insights {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-setup-section .quote-info-mode-tabs {
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  .quote-secondary-input-grid .quote-continuous-control {
+    grid-column: 1 / -1;
+  }
+
+  .quote-chip-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .quote-candidate-table {
+    min-width: 620px;
+  }
+}
+
+@media (max-width: 640px) {
+  .quote-material-targets,
+  .quote-breakdown,
+  .quote-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-volume-control {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .quote-chip-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

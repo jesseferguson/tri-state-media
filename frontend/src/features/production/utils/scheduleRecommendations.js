@@ -37,8 +37,9 @@ export function repeatLabel(value) {
 }
 
 export function ticketStockStats(ticket, override = {}) {
-  const recentUsage = numeric(override.recentUsage ?? ticket?.recent_usage_90d);
-  const monthlyUsage = numeric(override.monthlyUsage ?? ticket?.recent_monthly_usage) || recentUsage / 3;
+  const summaryMonthlyUsage = numeric(override.monthlyUsage ?? ticket?.recent_monthly_usage);
+  const recentUsage = numeric(override.recentUsage ?? ticket?.recent_usage_90d) || summaryMonthlyUsage * 3;
+  const monthlyUsage = summaryMonthlyUsage || recentUsage / 3;
   const onHand = numeric(override.onHand ?? ticket?.finished_on_hand_quantity);
   const stockGap = monthlyUsage - onHand;
   return {
