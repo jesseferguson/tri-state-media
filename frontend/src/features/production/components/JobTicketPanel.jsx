@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Barcode, CalendarClock, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, LoaderCircle, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, Barcode, CalendarClock, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Clock3, FileText, History, Image as ImageIcon, LoaderCircle, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
 import { AuthenticatedFileLink, AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
 import RecipeOptionsView from "../../tooling/components/RecipeOptionsView";
 import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
@@ -1403,63 +1403,294 @@ function OrderHistoryGroupCard({ group }) {
   );
 }
 
-function SameRepeatSchedulePanel({ summary, onOpenTicket }) {
-  if (!summary?.repeatKey || (!summary.scheduledRows.length && !summary.jobs.length)) return null;
-  const scheduledCount = summary.scheduledRows.length;
+function scheduleLaneLabel(row) {
+  const status = String(row?.status || "").toLowerCase();
+  if (status === "on_hold") return "Held";
+  return row?.press_name || "Unassigned";
+}
+
+function scheduleLaneTone(row) {
+  const status = String(row?.status || "").toLowerCase();
+  if (status === "on_hold") return "held";
+  return row?.press_name ? "press" : "unassigned";
+}
+
+function CarouselControls({ page, pageCount, onPrevious, onNext, label }) {
+  if (pageCount <= 1) return null;
   return (
-    <aside className="job-repeat-schedule-panel" aria-label="Same repeat schedule recommendations">
+    <div className="job-repeat-carousel-controls" aria-label={label}>
+      <button type="button" onClick={onPrevious} disabled={page <= 0} aria-label="Previous">
+        <ChevronLeft size={14} />
+      </button>
+      <span>{page + 1}/{pageCount}</span>
+      <button type="button" onClick={onNext} disabled={page >= pageCount - 1} aria-label="Next">
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  );
+}
+
+function ScheduleLineupMiniChart({ rows = [] }) {
+  const pageSize = 3;
+  const [page, setPage] = useState(0);
+  const [direction, setDirection] = useState("next");
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const start = page * pageSize;
+  const visibleRows = rows.slice(start, start + pageSize);
+
+  useEffect(() => {
+    if (page <= pageCount - 1) return;
+    setPage(Math.max(0, pageCount - 1));
+  }, [page, pageCount]);
+
+  function goToPage(nextPage, nextDirection) {
+    setDirection(nextDirection);
+    setPage(Math.min(Math.max(nextPage, 0), pageCount - 1));
+  }
+
+  return (
+    <section className="job-repeat-lineup-chart" aria-label="Same-repeat jobs currently on schedule">
+      <header>
+        <div>
+          <CalendarClock size={14} />
+          <strong>Current Lineup</strong>
+        </div>
+        <span>{rows.length ? `${start + 1}-${Math.min(start + pageSize, rows.length)} of ${rows.length}` : "None scheduled"}</span>
+        <CarouselControls
+          page={page}
+          pageCount={pageCount}
+          label="Scheduled lineup pages"
+          onPrevious={() => goToPage(page - 1, "prev")}
+          onNext={() => goToPage(page + 1, "next")}
+        />
+      </header>
+      {visibleRows.length ? (
+        <div className={`job-repeat-lineup-track slide-${direction}`} key={`lineup-${page}`}>
+          {visibleRows.map((row) => (
+            <article className={`job-repeat-lineup-slot ${scheduleLaneTone(row)}`} key={row.id || `${row.job_ticket_number}-${row.press_name}`}>
+              <span title={scheduleLaneLabel(row)}>{scheduleLaneLabel(row)}</span>
+              <strong title={row.job_name || row.job_ticket_number || "Scheduled job"}>{row.job_name || row.job_ticket_number || "Scheduled job"}</strong>
+              <em title={[row.due_date, labelize(row.priority || "low")].filter(Boolean).join(" / ") || "No ship date"}>
+                {[row.due_date, labelize(row.priority || "low")].filter(Boolean).join(" / ") || "No ship date"}
+              </em>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p>No same-repeat jobs are currently in the schedule lineup.</p>
+      )}
+    </section>
+  );
+}
+
+function SameRepeatSchedulePanel({ summary, onOpenTicket, mode = "side" }) {
+  if (!summary?.repeatKey || (!summary.scheduledRows.length && !summary.jobs.length)) return null;
+  const pageSize = 3;
+  const [jobPage, setJobPage] = useState(0);
+  const [jobDirection, setJobDirection] = useState("next");
+  const jobPageCount = Math.max(1, Math.ceil(summary.jobs.length / pageSize));
+  const jobStart = jobPage * pageSize;
+  const visibleJobs = summary.jobs.slice(jobStart, jobStart + pageSize);
+  const hiddenJobCount = summary.hiddenCount;
+
+  useEffect(() => {
+    setJobPage(0);
+    setJobDirection("next");
+  }, [summary.repeatKey]);
+
+  useEffect(() => {
+    if (jobPage <= jobPageCount - 1) return;
+    setJobPage(Math.max(0, jobPageCount - 1));
+  }, [jobPage, jobPageCount]);
+
+  function goToJobPage(nextPage, nextDirection) {
+    setJobDirection(nextDirection);
+    setJobPage(Math.min(Math.max(nextPage, 0), jobPageCount - 1));
+  }
+
+  return (
+    <aside className={`job-repeat-schedule-panel ${mode === "start" ? "start-mode" : ""}`} aria-label="Same repeat schedule recommendations">
       <div className="job-repeat-schedule-head">
         <Sparkles size={16} />
         <div>
           <span>Same Repeat</span>
           <strong>{summary.repeatLabel}</strong>
+          <em>Scheduled jobs are hidden from recommendations</em>
         </div>
       </div>
 
-      {scheduledCount > 0 && (
-        <div className="job-repeat-scheduled-list">
-          <div className="job-repeat-panel-title">
-            <CalendarClock size={14} />
-            <strong>{scheduledCount} in lineup</strong>
-          </div>
-          {summary.scheduledRows.slice(0, 4).map((row) => (
-            <div className="job-repeat-scheduled-chip" key={row.id || `${row.job_ticket_number}-${row.press_name}`}>
-              <span>{row.press_name || "Unassigned"}</span>
-              <strong>{row.job_name || row.job_ticket_number || "Scheduled job"}</strong>
-              <em>{[row.due_date, labelize(row.priority || "low")].filter(Boolean).join(" / ") || "No ship date"}</em>
-            </div>
-          ))}
-        </div>
-      )}
+      <ScheduleLineupMiniChart rows={summary.scheduledRows} />
 
-      {summary.jobs.length > 0 && (
+      {visibleJobs.length > 0 && (
         <div className="job-repeat-suggestion-list">
           <div className="job-repeat-panel-title">
             <CalendarPlus size={14} />
-            <strong>May pair well</strong>
+            <strong>Recommended Next</strong>
+            <span>{summary.jobs.length ? `${jobStart + 1}-${Math.min(jobStart + pageSize, summary.jobs.length)} of ${summary.jobs.length}` : "0 most used"}</span>
+            <CarouselControls
+              page={jobPage}
+              pageCount={jobPageCount}
+              label="Recommended job pages"
+              onPrevious={() => goToJobPage(jobPage - 1, "prev")}
+              onNext={() => goToJobPage(jobPage + 1, "next")}
+            />
           </div>
-          {summary.jobs.map((item) => (
-            <article className={`job-repeat-suggestion-card ${item.stats.needsStock ? "needs-stock" : ""}`} key={item.ticket.id}>
-              <div>
-                <strong title={ticketDisplayName(item.ticket)}>{ticketDisplayName(item.ticket)}</strong>
-                <span title={ticketCustomerName(item.ticket)}>{ticketCustomerName(item.ticket)}</span>
-              </div>
-              <div className="job-repeat-suggestion-metrics">
-                <span>Avg/mo <strong>{formatNumber(item.stats.monthlyUsage)}</strong></span>
-                <span>Stock <strong>{formatNumber(item.stats.onHand)}</strong></span>
-                {item.stats.needsStock && <em>Gap {formatNumber(item.stats.stockGap)}</em>}
-              </div>
-              <button type="button" onClick={() => onOpenTicket?.(item.ticket)}>
-                <CalendarPlus size={14} />
-                <span>Schedule</span>
-                <ArrowRight size={14} />
-              </button>
-            </article>
-          ))}
-          {summary.hiddenCount > 0 && <p className="job-repeat-extra-count">+{summary.hiddenCount} more same-repeat job{summary.hiddenCount === 1 ? "" : "s"}</p>}
+          <div className={`job-repeat-suggestion-page slide-${jobDirection}`} key={`recommendations-${jobPage}`}>
+            {visibleJobs.map((item) => {
+              const runway = stockRunway(item.stats.monthlyUsage, item.stats.onHand);
+              const inventoryLow = item.stats.monthlyUsage > 0 && item.stats.onHand < item.stats.monthlyUsage * 0.5;
+              return (
+                <article className={`job-repeat-suggestion-card ${item.stats.needsStock ? "needs-stock" : ""} ${inventoryLow ? "inventory-low" : ""}`} key={item.ticket.id}>
+                  <div>
+                    <strong title={ticketDisplayName(item.ticket)}>{ticketDisplayName(item.ticket)}</strong>
+                    <span title={ticketCustomerName(item.ticket)}>{ticketCustomerName(item.ticket)}</span>
+                  </div>
+                  <div className="job-repeat-suggestion-metrics">
+                    <span>Avg/mo <strong>{formatNumber(item.stats.monthlyUsage)}</strong></span>
+                    <span>Stock <strong>{formatNumber(item.stats.onHand)}</strong></span>
+                    <em className={`job-repeat-card-runway ${runway.tone}`}>Runway <strong>{runway.label}</strong></em>
+                  </div>
+                  <button type="button" onClick={() => onOpenTicket?.(item.ticket)}>
+                    <CalendarPlus size={14} />
+                    <span>Open & Schedule</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+          {hiddenJobCount > 0 && <p className="job-repeat-extra-count">+{hiddenJobCount} more same-repeat job{hiddenJobCount === 1 ? "" : "s"} with recent use</p>}
         </div>
       )}
+
+      {!visibleJobs.length && (
+        <section className="job-repeat-no-recommendations">
+          <CheckCircle2 size={16} />
+          <div>
+            <strong>No open recommendations</strong>
+            <span>Same-repeat jobs with recent use are already scheduled or unavailable.</span>
+          </div>
+        </section>
+      )}
     </aside>
+  );
+}
+
+function stockRunway(monthlyAverage, finishedQuantity) {
+  const monthly = numeric(monthlyAverage);
+  const stock = numeric(finishedQuantity);
+  if (monthly <= 0) {
+    return {
+      tone: "quiet",
+      label: "No recent use",
+      detail: "Last 3 months average is 0.",
+    };
+  }
+  if (stock <= 0) {
+    return {
+      tone: "urgent",
+      label: "0 business days",
+      detail: `${formatNumber(monthly)} avg/mo with no finished stock.`,
+    };
+  }
+  const dailyUse = monthly / 21;
+  const days = Math.max(0, Math.floor(stock / dailyUse));
+  return {
+    tone: days <= 5 ? "urgent" : days <= 15 ? "watch" : "good",
+    label: `${days.toLocaleString()} business day${days === 1 ? "" : "s"}`,
+    detail: `${formatNumber(stock)} stock / ${formatNumber(monthly)} avg per month.`,
+  };
+}
+
+function ScheduleStartStep({
+  ticket,
+  partNumber,
+  customerName,
+  materialTypeDisplay,
+  monthlyAverage,
+  finishedQuantity,
+  scheduleCount,
+  summary,
+  onScheduleCurrent,
+  onOpenTicket,
+}) {
+  const hasCommonItems = Boolean(summary?.repeatKey && (summary.scheduledRows.length || summary.jobs.length));
+  const runway = stockRunway(monthlyAverage, finishedQuantity);
+  return (
+    <section className="job-schedule-start-step">
+      <div className="job-schedule-start-grid compact">
+        <article className="job-schedule-current-card">
+          <div>
+            <span>Current Job</span>
+            <strong title={partNumber}>{partNumber}</strong>
+            <em title={customerName}>{customerName}</em>
+          </div>
+          <div className="job-schedule-current-meta">
+            <span>Material <strong>{materialTypeDisplay}</strong></span>
+            <span>Avg/mo <strong>{formatNumber(monthlyAverage)}</strong></span>
+            <span>Stock <strong>{formatNumber(finishedQuantity)}</strong></span>
+            <span>Lineup <strong>{scheduleCount}</strong></span>
+          </div>
+          <div className={`job-schedule-runway-card ${runway.tone}`}>
+            <CalendarClock size={18} />
+            <span>Estimated Stock Runway</span>
+            <strong>{runway.label}</strong>
+            <em>{runway.detail}</em>
+          </div>
+        </article>
+
+        <article className="job-schedule-common-card">
+          <Sparkles size={17} />
+          <div>
+            <span>Run Group</span>
+            <strong>{summary?.repeatKey ? summary.repeatLabel : "No repeat match"}</strong>
+            <p>{hasCommonItems ? `${summary.scheduledRows.length} scheduled / ${summary.jobs.length} recommendable` : "No same-repeat jobs with recent use are currently available."}</p>
+          </div>
+          <button className="job-schedule-primary-choice" type="button" onClick={onScheduleCurrent}>
+            <CalendarPlus size={16} />
+            <span>Schedule This Job</span>
+            <ArrowRight size={16} />
+          </button>
+        </article>
+      </div>
+
+      {hasCommonItems ? (
+        <SameRepeatSchedulePanel summary={summary} onOpenTicket={onOpenTicket} mode="start" />
+      ) : (
+        <section className="job-schedule-empty-recommendations">
+          <Sparkles size={18} />
+          <div>
+            <strong>No common items found</strong>
+            <span>This job can still be scheduled normally.</span>
+          </div>
+        </section>
+      )}
+    </section>
+  );
+}
+
+function ScheduleSavingOverlay({ partNumber }) {
+  return (
+    <div className="job-schedule-saving-overlay" role="status" aria-live="polite" aria-busy="true">
+      <div>
+        <Barcode size={44} strokeWidth={1.7} />
+        <span />
+      </div>
+      <strong>Scheduling Job</strong>
+      <p>{partNumber}</p>
+      <LoaderCircle size={22} />
+    </div>
+  );
+}
+
+function ScheduleSuccessState({ notice }) {
+  return (
+    <section className="job-schedule-success-state" role="status" aria-live="polite">
+      <CheckCircle2 size={46} />
+      <span>Job Scheduled</span>
+      <strong>{notice?.title || "Schedule entry created"}</strong>
+      <p>{[notice?.quantityLabel, notice?.dueDate ? `Ship ${notice.dueDate}` : "", notice?.scheduledBy ? `By ${notice.scheduledBy}` : ""].filter(Boolean).join(" / ")}</p>
+    </section>
   );
 }
 
@@ -1479,6 +1710,7 @@ export default function JobTicketPanel({
   canSchedule = false,
   canQuote = false,
   canApproveChanges = false,
+  scheduleSubmitting = false,
   currentUserName = "",
   printingLabel = false,
   printLabelError = "",
@@ -1497,6 +1729,8 @@ export default function JobTicketPanel({
   const [historyTab, setHistoryTab] = useState("orders");
   const [chartRange, setChartRange] = useState("3mo");
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleStep, setScheduleStep] = useState("recommendations");
+  const [scheduleNotice, setScheduleNotice] = useState(null);
   const [orderHistorySearch, setOrderHistorySearch] = useState("");
   const [editorDraft, setEditorDraft] = useState(null);
   const [printNotice, setPrintNotice] = useState("");
@@ -1618,7 +1852,7 @@ export default function JobTicketPanel({
     [allJobTickets, lookups]
   );
   const sameRepeatScheduleRecommendations = useMemo(
-    () => buildSameRepeatScheduleRecommendations(ticket, sameRepeatJobTickets, lookups?.["production-schedule"] ?? []),
+    () => buildSameRepeatScheduleRecommendations(ticket, sameRepeatJobTickets, lookups?.["production-schedule"] ?? [], { limit: 8, sortBy: "usage" }),
     [ticket, sameRepeatJobTickets, lookups]
   );
   const showSameRepeatScheduleRecommendations = Boolean(
@@ -1641,6 +1875,18 @@ export default function JobTicketPanel({
     setPrintNotice("");
     setPrintForm(buildDefaultPrintForm(ticket, lookups?.presses ?? [], currentUserName));
   }, [ticket?.id]);
+
+  useEffect(() => {
+    if (!scheduleOpen || scheduleStep !== "success" || !scheduleNotice) return undefined;
+    const timer = window.setTimeout(() => setScheduleOpen(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, [scheduleNotice?.id, scheduleOpen, scheduleStep]);
+
+  useEffect(() => {
+    if (!scheduleNotice || scheduleOpen) return undefined;
+    const timer = window.setTimeout(() => setScheduleNotice(null), 7500);
+    return () => window.clearTimeout(timer);
+  }, [scheduleNotice?.id, scheduleOpen]);
 
   useEffect(() => {
     if (printForm.press || !pressOptions.length) return;
@@ -1719,6 +1965,43 @@ export default function JobTicketPanel({
     setActiveTab("history");
   }
 
+  function openScheduleWorkflow() {
+    setScheduleNotice(null);
+    setScheduleStep("recommendations");
+    setScheduleOpen(true);
+  }
+
+  function closeScheduleWorkflow() {
+    if (scheduleSubmitting) return;
+    setScheduleOpen(false);
+    setScheduleStep("recommendations");
+  }
+
+  function openRecommendedScheduleTicket(nextTicket) {
+    setScheduleNotice(null);
+    setScheduleStep("form");
+    onOpenScheduleSuggestion?.(nextTicket);
+  }
+
+  function buildScheduleNotice(saved = {}, payload = {}) {
+    const quantityParts = [
+      numeric(saved.quantity_to_ship ?? payload.quantity_to_ship) ? `${formatNumber(saved.quantity_to_ship ?? payload.quantity_to_ship)} ship` : "",
+      numeric(saved.quantity_to_stock ?? payload.quantity_to_stock) ? `${formatNumber(saved.quantity_to_stock ?? payload.quantity_to_stock)} stock` : "",
+    ].filter(Boolean);
+    return {
+      id: saved.id || `${ticket?.id || "job"}-${Date.now()}`,
+      title: saved.job_name || saved.job_ticket_number || partNumber,
+      dueDate: saved.due_date || payload.due_date || "",
+      scheduledBy: saved.scheduled_by || currentUserName,
+      quantityLabel: quantityParts.join(" / ") || "Schedule entry created",
+    };
+  }
+
+  function handleScheduleSaved(saved, payload) {
+    setScheduleNotice(buildScheduleNotice(saved, payload));
+    setScheduleStep("success");
+  }
+
   return (
     <div className="job-ticket-panel">
       <div className="job-packet-toolbar">
@@ -1734,6 +2017,19 @@ export default function JobTicketPanel({
           )}
         </div>
       </div>
+
+      {scheduleNotice && !scheduleOpen && (
+        <section className="job-schedule-success-banner" role="status" aria-live="polite">
+          <CheckCircle2 size={18} />
+          <div>
+            <strong>{scheduleNotice.title} is scheduled</strong>
+            <span>{[scheduleNotice.quantityLabel, scheduleNotice.dueDate ? `Ship ${scheduleNotice.dueDate}` : "", scheduleNotice.scheduledBy ? `By ${scheduleNotice.scheduledBy}` : ""].filter(Boolean).join(" / ")}</span>
+          </div>
+          <button type="button" onClick={() => setScheduleNotice(null)} aria-label="Dismiss schedule confirmation">
+            <XCircle size={17} />
+          </button>
+        </section>
+      )}
 
       <div className="job-tab-action-row">
         {visibleTabs.length > 1 && (
@@ -1754,7 +2050,7 @@ export default function JobTicketPanel({
           <button
             className="job-schedule-action"
             type="button"
-            onClick={() => setScheduleOpen(true)}
+            onClick={openScheduleWorkflow}
             disabled={pendingChangeEvents.length > 0}
             title={pendingChangeEvents.length ? "Approve, reject, or take back pending changes before scheduling." : "Schedule job"}
           >
@@ -2554,25 +2850,63 @@ export default function JobTicketPanel({
 
       {scheduleOpen && (
         <div className="job-schedule-dialog-overlay" role="dialog" aria-modal="true" aria-label="Schedule job">
-          <div className="job-schedule-dialog">
+          <div className={`job-schedule-dialog schedule-step-${scheduleStep}`}>
             <header>
               <div>
-                <p className="eyebrow">Schedule Job</p>
+                <p className="eyebrow">Schedule Workflow</p>
                 <h3>{partNumber}</h3>
               </div>
-              <button className="ghost-btn" type="button" onClick={() => setScheduleOpen(false)}>
+              <span className="job-schedule-step-badge">
+                {scheduleStep === "form" ? "Schedule Form" : scheduleStep === "success" ? "Scheduled" : "Recommendations"}
+              </span>
+              <button className="ghost-btn" type="button" onClick={closeScheduleWorkflow} disabled={scheduleSubmitting}>
                 Close
               </button>
             </header>
-            <div className={`job-schedule-dialog-body ${showSameRepeatScheduleRecommendations ? "with-repeat-recommendations" : ""}`}>
-              <div className="job-schedule-form-column">
-                {renderScheduleForm?.({ onCancel: () => setScheduleOpen(false) })}
-              </div>
-              {showSameRepeatScheduleRecommendations && (
-                <SameRepeatSchedulePanel
+
+            <div className="job-schedule-dialog-body">
+              {scheduleStep === "recommendations" && (
+                <ScheduleStartStep
+                  ticket={ticket}
+                  partNumber={partNumber}
+                  customerName={ticketCustomerName(ticket)}
+                  materialTypeDisplay={materialTypeDisplay}
+                  monthlyAverage={ticket.recent_monthly_usage || numeric(ticket.recent_usage_90d) / 3 || shippedMonthlyAverage}
+                  finishedQuantity={finishedQuantity}
+                  scheduleCount={scheduleRows.length}
                   summary={sameRepeatScheduleRecommendations}
-                  onOpenTicket={onOpenScheduleSuggestion}
+                  onScheduleCurrent={() => setScheduleStep("form")}
+                  onOpenTicket={openRecommendedScheduleTicket}
                 />
+              )}
+
+              {scheduleStep === "form" && (
+                <div className="job-schedule-form-column">
+                  <div className="job-schedule-form-shell">
+                    <div className="job-schedule-form-head">
+                      <button className="ghost-btn" type="button" onClick={() => setScheduleStep("recommendations")} disabled={scheduleSubmitting}>
+                        <RotateCcw size={14} />
+                        Recommendations
+                      </button>
+                      <div>
+                        <span>Scheduling</span>
+                        <strong>{partNumber}</strong>
+                      </div>
+                    </div>
+                    {renderScheduleForm?.({
+                      onCancel: closeScheduleWorkflow,
+                      onScheduled: handleScheduleSaved,
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {scheduleStep === "success" && (
+                <ScheduleSuccessState notice={scheduleNotice} />
+              )}
+
+              {scheduleSubmitting && (
+                <ScheduleSavingOverlay partNumber={partNumber} />
               )}
             </div>
           </div>

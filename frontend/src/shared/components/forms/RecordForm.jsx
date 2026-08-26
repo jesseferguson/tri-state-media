@@ -962,7 +962,22 @@ function RelationPicker({ field, rows, value, onChange, id, required }) {
   );
 }
 
-export default function RecordForm({ resource, record, defaults = {}, lookups = {}, onSubmit, onCancel, submitting, error, canUseField = () => true, onFormChange }) {
+export default function RecordForm({
+  resource,
+  record,
+  defaults = {},
+  lookups = {},
+  onSubmit,
+  onCancel,
+  submitting,
+  error,
+  canUseField = () => true,
+  onFormChange,
+  titleOverride = "",
+  headingOverride = "",
+  submitLabel = "Save",
+  submittingLabel = "Saving...",
+}) {
   const fields = resource.fields ?? [];
   const [form, setForm] = useState(() => normalizeInitial(fields, record, defaults));
   const [activeFormTab, setActiveFormTab] = useState("");
@@ -973,7 +988,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
     onFormChange?.(next);
   }, [resource.key, record?.id, JSON.stringify(defaults)]);
 
-  const title = record ? `Edit ${resource.singular}` : `Add ${resource.singular}`;
+  const title = titleOverride || (record ? `Edit ${resource.singular}` : `Add ${resource.singular}`);
   const allVisibleFields = useMemo(
     () => fields.filter((field) => !field.readOnly && !field.hidden && canUseField(field) && shouldShow(field, form)),
     [fields, form, canUseField]
@@ -1037,7 +1052,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
       <div className="panel-head">
         <div>
           <p className="eyebrow">{title}</p>
-          <h2>{record ? getRecordTitle(record) : resource.label}</h2>
+          <h2>{headingOverride || (record ? getRecordTitle(record) : resource.label)}</h2>
         </div>
         <button className="ghost-btn" type="button" onClick={onCancel}>Close</button>
       </div>
@@ -1288,7 +1303,7 @@ export default function RecordForm({ resource, record, defaults = {}, lookups = 
 
         <div className="form-actions">
           <button className="ghost-btn" type="button" onClick={onCancel}>Cancel</button>
-          <button className="primary-btn" type="submit" disabled={submitting}>{submitting ? "Saving..." : "Save"}</button>
+          <button className="primary-btn" type="submit" disabled={submitting}>{submitting ? submittingLabel : submitLabel}</button>
         </div>
       </form>
     </section>

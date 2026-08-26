@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import SignInScreen from "./auth/SignInScreen.jsx";
 import UserAdminPanel from "./auth/UserAdminPanel.jsx";
 import BarcodeLoadingScreen from "./components/BarcodeLoadingScreen.jsx";
@@ -512,7 +512,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const showingToolingConfigFormOverlay = Boolean(formMode && isToolingConfigPage);
   const showingPressFormOverlay = Boolean(formMode && resource.key === "presses");
   const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage && resource.key !== "recipes");
-  const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
+  const serverSearch = resource.searchMode === "flexDie" ? "" : search;
+  const listSearchActive = Boolean(serverSearch.trim());
+  const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, serverSearch];
   const jobTicketLookupMode = resource.key === "job-tickets" && jobTicketEditorLookupsNeeded ? "editor" : "view";
   const mobileMenuGroups = useMemo(
     () => buildMobileMenuGroups(allowedResources, mobilePageSearch),
@@ -625,7 +627,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
           ordering: resource.defaultOrdering,
           pageSize: resource.pageSize ?? (resource.searchMode === "flexDie" ? 500 : 250),
           filters: resource.filters ?? {},
-          search: resource.searchMode === "flexDie" ? "" : search,
+          search: serverSearch,
           fetchAll: resource.fetchAll ?? false,
         });
       } catch (error) {
@@ -636,7 +638,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       }
     },
     enabled: !showingStaticView,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
     refetchInterval: showingStaticView ? false : refreshIntervalForResource(resource.key),
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
@@ -923,10 +925,28 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       "actual_footage",
       "footage_report",
     ]);
+    const scheduleFieldPolish = {
+      customer_po: { section: "Order", label: "Customer PO" },
+      priority: { section: "Order", label: "Priority", sectionHint: "Low is the default. Raise this only when the job needs special attention." },
+      hold_reasons: { section: "Hold", label: "Hold Reasons" },
+      hold_notes: { section: "Hold", label: "Hold Notes" },
+      held_by: { section: "Hold" },
+      held_at: { section: "Hold" },
+      quantity_to_ship: { section: "Quantities", label: "Ship Quantity" },
+      quantity_to_stock: { section: "Quantities", label: "Stock Quantity" },
+      order_date: { section: "Timing", label: "Date Scheduled" },
+      due_date: { section: "Timing", label: "Ship Date" },
+      target_footage: { section: "Run Plan", label: "Target Footage", helpText: "Optional. Used by operators for progress and shift handoff." },
+      notes: { section: "Schedule Notes", label: "CSR Schedule Note", placeholder: "Important timing, customer, material, or handoff notes..." },
+    };
     return {
       ...schedule,
       key: "job-ticket-schedule-form",
-      fields: (schedule.fields ?? []).filter((field) => !hiddenOnTicket.has(field.name)),
+      label: "Schedule This Job",
+      singular: "Job Schedule",
+      fields: (schedule.fields ?? [])
+        .filter((field) => !hiddenOnTicket.has(field.name))
+        .map((field) => ({ ...field, ...(scheduleFieldPolish[field.name] ?? {}) })),
     };
   }, []);
 
@@ -2028,6 +2048,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     barcodeLoadingConfig
     && !selected
     && !formMode
+    && !listSearchActive
     && !listQuery.error
     && listQuery.isLoading
     && !listQuery.data
@@ -2726,6 +2747,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 canSchedule={canScheduleFromJobTicket}
                 canQuote={canQuoteJobTicket}
                 canApproveChanges={canApproveJobTicketChanges}
+                scheduleSubmitting={jobTicketScheduleCreateMutation.isPending}
                 currentUserName={currentUserForView?.name || currentUser?.name || ""}
                 approvingChangeId={jobTicketChangeApprovalMutation.isPending ? jobTicketChangeApprovalMutation.variables?.event?.id || "" : ""}
                 onApproveChange={(event, status, pendingPayload) => jobTicketChangeApprovalMutation.mutate({ event, status, pendingPayload })}
@@ -2761,16 +2783,26 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     onFormChange={onFormChange}
                   />
                 )}
-                renderScheduleForm={({ onCancel }) => (
+                renderScheduleForm={({ onCancel, onScheduled }) => (
                   <RecordForm
                     resource={jobTicketScheduleResource}
                     defaults={scheduleDefaultsForTicket(selected, currentUserForView)}
                     lookups={{ ...(lookupQuery.data ?? {}), "job-tickets": selected ? [selected] : [] }}
                     submitting={jobTicketScheduleCreateMutation.isPending}
                     error={jobTicketScheduleCreateMutation.error}
-                    onSubmit={(payload) => jobTicketScheduleCreateMutation.mutate(payload)}
+                    onSubmit={(payload) => {
+                      jobTicketScheduleCreateMutation.mutateAsync(payload)
+                        .then((saved) => {
+                          onScheduled?.(saved, payload);
+                        })
+                        .catch(() => {});
+                    }}
                     onCancel={onCancel}
                     canUseField={canUseRecordField}
+                    titleOverride="Schedule Job"
+                    headingOverride={selected?.job_name || selected?.product_code || "Schedule This Job"}
+                    submitLabel="Schedule Job"
+                    submittingLabel="Scheduling Job..."
                   />
                 )}
               />

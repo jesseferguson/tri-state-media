@@ -88,10 +88,16 @@ function isClosedTicket(ticket) {
 
 export function buildSameRepeatScheduleRecommendations(ticket, tickets = [], scheduleRows = [], options = {}) {
   const limit = options.limit ?? 6;
+  const sortByUsage = options.sortBy === "usage";
   const key = repeatKey(ticket?.repeat_inches);
   const scheduledRepeatMap = buildScheduledRepeatMap(scheduleRows);
   const scheduledRows = key ? (scheduledRepeatMap.get(key) ?? []) : [];
-  const scheduledTicketIds = new Set(scheduledRows.map((row) => String(row?.job_ticket ?? "")).filter(Boolean));
+  const scheduledTicketIds = new Set(
+    (scheduleRows ?? [])
+      .filter(isCurrentScheduleRow)
+      .map((row) => String(row?.job_ticket ?? row?.job_ticket_id ?? ""))
+      .filter(Boolean)
+  );
 
   if (!key) {
     return {
@@ -118,9 +124,17 @@ export function buildSameRepeatScheduleRecommendations(ticket, tickets = [], sch
     .filter((item) => !item.scheduled)
     .filter((item) => item.stats.recentUsage > 0.001)
     .sort((a, b) => {
+      if (sortByUsage) {
+        const usageDelta = b.stats.monthlyUsage - a.stats.monthlyUsage;
+        if (Math.abs(usageDelta) > 0.001) return usageDelta;
+      }
       if (a.stats.needsStock !== b.stats.needsStock) return a.stats.needsStock ? -1 : 1;
       const gapDelta = b.stats.stockGap - a.stats.stockGap;
       if (Math.abs(gapDelta) > 0.001) return gapDelta;
+      if (!sortByUsage) {
+        const usageDelta = b.stats.monthlyUsage - a.stats.monthlyUsage;
+        if (Math.abs(usageDelta) > 0.001) return usageDelta;
+      }
       return ticketDisplayName(a.ticket).localeCompare(ticketDisplayName(b.ticket), undefined, { numeric: true });
     });
 

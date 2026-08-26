@@ -43,19 +43,33 @@
 }
 
 .job-schedule-dialog {
-  width: min(1120px, calc(100vw - 18px));
+  width: min(1180px, calc(100vw - 18px));
 }
 
 .job-schedule-dialog-body {
   flex: 1 1 auto;
   min-height: 0;
+  position: relative;
   overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
 }
 
-.job-schedule-dialog-body.with-repeat-recommendations {
-  grid-template-columns: minmax(0, 1fr) minmax(286px, 340px);
+.job-schedule-dialog.schedule-step-recommendations .job-schedule-dialog-body,
+.job-schedule-dialog.schedule-step-success .job-schedule-dialog-body {
+  overflow: auto;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.job-schedule-dialog.schedule-step-form {
+  width: min(900px, calc(100vw - 18px));
+}
+
+.job-schedule-dialog.schedule-step-form .job-schedule-dialog-body {
+  overflow: auto;
+  padding: 16px;
+  background: #eef2f7;
 }
 
 .job-schedule-form-column {
@@ -66,6 +80,627 @@
 
 .job-schedule-form-column > .form-panel {
   flex: 1 1 auto;
+}
+
+.job-schedule-step-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .68rem;
+  font-weight: 950;
+}
+
+.job-schedule-success-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  box-shadow: 0 8px 20px rgba(22, 101, 52, .09);
+}
+
+.job-schedule-success-banner > svg {
+  color: #16a34a;
+}
+
+.job-schedule-success-banner div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.job-schedule-success-banner strong,
+.job-schedule-success-banner span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-schedule-success-banner strong {
+  color: #14532d;
+  font-size: .82rem;
+  font-weight: 950;
+}
+
+.job-schedule-success-banner span {
+  color: #15803d;
+  font-size: .7rem;
+  font-weight: 850;
+}
+
+.job-schedule-success-banner button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #15803d;
+  cursor: pointer;
+}
+
+.job-schedule-start-step {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.job-schedule-start-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, .65fr);
+  gap: 12px;
+}
+
+.job-schedule-start-grid.compact {
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 360px);
+}
+
+.job-schedule-current-card,
+.job-schedule-common-card,
+.job-schedule-empty-recommendations {
+  min-width: 0;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .07);
+}
+
+.job-schedule-current-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.job-schedule-current-card > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.job-schedule-current-card span,
+.job-schedule-common-card span {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 950;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.job-schedule-current-card strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: clamp(1.15rem, 2vw, 1.65rem);
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-schedule-current-card em {
+  min-width: 0;
+  overflow: hidden;
+  color: #475569;
+  font-size: .82rem;
+  font-style: normal;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-schedule-current-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.job-schedule-current-meta span {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 900;
+}
+
+.job-schedule-current-meta strong {
+  display: block;
+  margin-top: 2px;
+  color: #0f172a;
+  font-size: .82rem;
+}
+
+.job-schedule-runway-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 9px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.job-schedule-runway-card svg {
+  grid-row: span 3;
+  color: currentColor;
+}
+
+.job-schedule-runway-card span,
+.job-schedule-runway-card strong,
+.job-schedule-runway-card em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-schedule-runway-card span {
+  color: currentColor;
+  font-size: .62rem;
+  font-weight: 950;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.job-schedule-runway-card strong {
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.job-schedule-runway-card em {
+  color: #475569;
+  font-size: .7rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.job-schedule-runway-card.good {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.job-schedule-runway-card.watch {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.job-schedule-runway-card.urgent {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.job-schedule-runway-card.quiet {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.job-schedule-primary-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+  width: 100%;
+  padding: 0 18px;
+  border: 1px solid #0f172a;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: .9rem;
+  font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, .22);
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.job-schedule-primary-choice svg {
+  flex: 0 0 auto;
+}
+
+.job-schedule-primary-choice svg:first-child {
+  box-sizing: content-box;
+  padding: 7px;
+  border-radius: 999px;
+  background: #38bdf8;
+  color: #082f49;
+}
+
+.job-schedule-primary-choice span {
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.job-schedule-primary-choice:hover {
+  transform: translateY(-1px);
+  background: #111827;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, .27);
+}
+
+.job-schedule-common-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+}
+
+.job-schedule-common-card > svg {
+  flex: 0 0 auto;
+  color: #f97316;
+}
+
+.job-schedule-common-card div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.job-schedule-common-card .job-schedule-primary-choice {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+.job-schedule-common-card strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-schedule-common-card p {
+  margin: 0;
+  color: #64748b;
+  font-size: .76rem;
+  font-weight: 820;
+  line-height: 1.35;
+}
+
+.job-repeat-schedule-panel.start-mode {
+  max-height: none;
+  overflow: visible;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.job-repeat-schedule-panel.start-mode .job-repeat-suggestion-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.job-repeat-schedule-panel.start-mode .job-repeat-panel-title,
+.job-repeat-schedule-panel.start-mode .job-repeat-extra-count,
+.job-repeat-schedule-panel.start-mode .job-repeat-no-recommendations {
+  grid-column: 1 / -1;
+}
+
+.job-schedule-empty-recommendations {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  color: #475569;
+}
+
+.job-schedule-empty-recommendations svg {
+  color: #94a3b8;
+}
+
+.job-schedule-empty-recommendations div {
+  display: grid;
+  gap: 2px;
+}
+
+.job-schedule-empty-recommendations strong {
+  color: #0f172a;
+  font-size: .85rem;
+  font-weight: 950;
+}
+
+.job-schedule-empty-recommendations span {
+  color: #64748b;
+  font-size: .74rem;
+  font-weight: 850;
+}
+
+.job-schedule-form-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(760px, 100%);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 46px rgba(15, 23, 42, .13);
+}
+
+.job-schedule-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.job-schedule-form-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.job-schedule-form-head span {
+  color: #64748b;
+  font-size: .62rem;
+  font-weight: 950;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.job-schedule-form-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: .84rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-schedule-form-shell .form-panel {
+  min-height: 0;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.job-schedule-form-shell .form-panel > .panel-head {
+  display: none;
+}
+
+.job-ticket-schedule-form-record-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.job-ticket-schedule-form-record-form .form-section-heading {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding: 9px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.job-ticket-schedule-form-record-form .form-section-heading strong {
+  color: #0f172a;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.job-ticket-schedule-form-record-form .form-section-heading span {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.job-ticket-schedule-form-record-form .field {
+  min-width: 0;
+}
+
+.job-ticket-schedule-form-record-form label.field > span,
+.job-ticket-schedule-form-record-form .record-form-multi-select legend {
+  color: #334155;
+  font-size: .68rem;
+  font-weight: 950;
+}
+
+.job-ticket-schedule-form-record-form input,
+.job-ticket-schedule-form-record-form select,
+.job-ticket-schedule-form-record-form textarea {
+  border-color: #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.job-ticket-schedule-form-record-form input:focus,
+.job-ticket-schedule-form-record-form select:focus,
+.job-ticket-schedule-form-record-form textarea:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, .18);
+  outline: none;
+}
+
+.job-ticket-schedule-form-record-form .field-notes,
+.job-ticket-schedule-form-record-form .form-actions {
+  grid-column: 1 / -1;
+}
+
+.job-ticket-schedule-form-record-form .field-notes textarea {
+  min-height: 118px;
+}
+
+.job-ticket-schedule-form-record-form .form-actions {
+  position: sticky;
+  bottom: -14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 0 -14px -14px;
+  padding: 12px 14px;
+  border-top: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, .96);
+  backdrop-filter: blur(8px);
+}
+
+.job-ticket-schedule-form-record-form .form-actions .primary-btn {
+  min-width: 170px;
+  min-height: 40px;
+  border-color: #0f172a;
+  background: #0f172a;
+  font-weight: 950;
+}
+
+.job-schedule-saving-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  padding: 18px;
+  background: rgba(248, 250, 252, .9);
+  color: #0f172a;
+  text-align: center;
+  backdrop-filter: blur(5px);
+}
+
+.job-schedule-saving-overlay > div {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 82px;
+  height: 58px;
+  color: #1d4ed8;
+}
+
+.job-schedule-saving-overlay > div span {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: #f97316;
+  box-shadow: 0 0 16px rgba(249, 115, 22, .5);
+  animation: jobScheduleScan 1.05s ease-in-out infinite alternate;
+}
+
+.job-schedule-saving-overlay strong {
+  font-size: 1.05rem;
+  font-weight: 950;
+}
+
+.job-schedule-saving-overlay p {
+  max-width: 420px;
+  margin: 0;
+  overflow: hidden;
+  color: #475569;
+  font-size: .82rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-schedule-saving-overlay > svg {
+  color: #2563eb;
+  animation: jobScheduleSpin .8s linear infinite;
+}
+
+.job-schedule-success-state {
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 28px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #166534;
+  text-align: center;
+}
+
+.job-schedule-success-state > svg {
+  color: #16a34a;
+}
+
+.job-schedule-success-state span {
+  color: #16a34a;
+  font-size: .7rem;
+  font-weight: 950;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.job-schedule-success-state strong {
+  max-width: min(520px, 90vw);
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 1.35rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-schedule-success-state p {
+  margin: 0;
+  color: #15803d;
+  font-size: .82rem;
+  font-weight: 850;
+}
+
+@keyframes jobScheduleScan {
+  from { transform: translateX(-28px); }
+  to { transform: translateX(28px); }
+}
+
+@keyframes jobScheduleSpin {
+  to { transform: rotate(360deg); }
 }
 
 .job-repeat-schedule-panel {
@@ -101,7 +736,8 @@
 }
 
 .job-repeat-schedule-head span,
-.job-repeat-schedule-head strong {
+.job-repeat-schedule-head strong,
+.job-repeat-schedule-head em {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -122,10 +758,201 @@
   font-weight: 950;
 }
 
-.job-repeat-scheduled-list,
+.job-repeat-schedule-head em {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: .66rem;
+  font-style: normal;
+  font-weight: 850;
+  text-transform: none;
+}
+
+.job-repeat-lineup-chart {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.job-repeat-lineup-chart header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.job-repeat-lineup-chart header div {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+}
+
+.job-repeat-lineup-chart header strong,
+.job-repeat-lineup-chart header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-repeat-lineup-chart header strong {
+  color: #0f172a;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.job-repeat-lineup-chart header span {
+  color: #64748b;
+  font-size: .66rem;
+  font-weight: 900;
+}
+
+.job-repeat-carousel-controls {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+}
+
+.job-repeat-carousel-controls button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .08);
+}
+
+.job-repeat-carousel-controls button:disabled {
+  cursor: default;
+  opacity: .35;
+}
+
+.job-repeat-carousel-controls button:not(:disabled):hover {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.job-repeat-carousel-controls span {
+  min-width: 30px;
+  color: #64748b;
+  font-size: .6rem;
+  font-weight: 950;
+  text-align: center;
+}
+
+.job-repeat-lineup-track {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.job-repeat-lineup-track.slide-next,
+.job-repeat-suggestion-page.slide-next {
+  animation: scheduleSlideNext .34s cubic-bezier(.2, .85, .25, 1);
+}
+
+.job-repeat-lineup-track.slide-prev,
+.job-repeat-suggestion-page.slide-prev {
+  animation: scheduleSlidePrev .34s cubic-bezier(.2, .85, .25, 1);
+}
+
+.job-repeat-lineup-slot {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  box-shadow: inset 3px 0 0 #64748b;
+}
+
+.job-repeat-lineup-slot.press {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.job-repeat-lineup-slot.held {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  box-shadow: inset 3px 0 0 #f97316;
+}
+
+.job-repeat-lineup-slot.unassigned {
+  border-color: #d8b4fe;
+  background: #faf5ff;
+  box-shadow: inset 3px 0 0 #9333ea;
+}
+
+.job-repeat-lineup-slot span,
+.job-repeat-lineup-slot strong,
+.job-repeat-lineup-slot em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-repeat-lineup-slot span {
+  color: #334155;
+  font-size: .62rem;
+  font-weight: 950;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.job-repeat-lineup-slot strong {
+  color: #0f172a;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.job-repeat-lineup-slot em {
+  color: #64748b;
+  font-size: .64rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.job-repeat-lineup-chart > p {
+  margin: 0;
+  padding: 8px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  color: #64748b;
+  font-size: .7rem;
+  font-weight: 850;
+  text-align: center;
+}
+
 .job-repeat-suggestion-list {
   display: grid;
   gap: 8px;
+}
+
+.job-repeat-suggestion-page {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  transform-origin: center;
 }
 
 .job-repeat-panel-title {
@@ -140,7 +967,14 @@
   font-weight: 950;
 }
 
-.job-repeat-scheduled-chip,
+.job-repeat-panel-title span {
+  margin-left: auto;
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
 .job-repeat-suggestion-card {
   min-width: 0;
   border: 1px solid #e5e7eb;
@@ -149,15 +983,6 @@
   box-shadow: 0 6px 16px rgba(15, 23, 42, .05);
 }
 
-.job-repeat-scheduled-chip {
-  display: grid;
-  gap: 2px;
-  padding: 8px;
-}
-
-.job-repeat-scheduled-chip span,
-.job-repeat-scheduled-chip strong,
-.job-repeat-scheduled-chip em,
 .job-repeat-suggestion-card strong,
 .job-repeat-suggestion-card span,
 .job-repeat-suggestion-card em {
@@ -166,35 +991,23 @@
   white-space: nowrap;
 }
 
-.job-repeat-scheduled-chip span {
-  color: #0f766e;
-  font-size: .64rem;
-  font-weight: 950;
-}
-
-.job-repeat-scheduled-chip strong {
-  color: #101828;
-  font-size: .74rem;
-  font-weight: 950;
-}
-
-.job-repeat-scheduled-chip em {
-  color: #667085;
-  font-size: .68rem;
-  font-style: normal;
-  font-weight: 800;
-}
-
 .job-repeat-suggestion-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  padding: 9px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  padding: 8px;
 }
 
 .job-repeat-suggestion-card.needs-stock {
   border-color: #fdba74;
   background: #fffaf4;
+}
+
+.job-repeat-suggestion-card.inventory-low {
+  border-color: #fca5a5;
+  background: #fff7f7;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, .16), 0 0 24px rgba(239, 68, 68, .22);
+  animation: lowInventoryGlow 1.9s ease-in-out infinite alternate;
 }
 
 .job-repeat-suggestion-card > div:first-child {
@@ -205,13 +1018,13 @@
 
 .job-repeat-suggestion-card > div:first-child strong {
   color: #101828;
-  font-size: .78rem;
+  font-size: .74rem;
   font-weight: 950;
 }
 
 .job-repeat-suggestion-card > div:first-child span {
   color: #667085;
-  font-size: .68rem;
+  font-size: .65rem;
   font-weight: 820;
 }
 
@@ -219,13 +1032,13 @@
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
 }
 
 .job-repeat-suggestion-metrics span,
 .job-repeat-suggestion-metrics em {
   min-width: 0;
-  padding: 5px 6px;
+  padding: 4px 6px;
   border: 1px solid #edf2f7;
   border-radius: 7px;
   background: #f8fafc;
@@ -250,6 +1063,45 @@
   color: #9a3412;
 }
 
+.job-repeat-suggestion-metrics .job-repeat-card-runway {
+  display: block;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.job-repeat-suggestion-metrics .job-repeat-card-runway.good {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.job-repeat-suggestion-metrics .job-repeat-card-runway.watch {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.job-repeat-suggestion-metrics .job-repeat-card-runway.urgent {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.job-repeat-suggestion-metrics .job-repeat-card-runway.quiet {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.job-repeat-suggestion-metrics .job-repeat-card-runway strong {
+  display: block;
+  margin-top: 1px;
+  color: currentColor;
+  font-size: .7rem;
+  font-weight: 950;
+}
+
 .job-repeat-suggestion-card button {
   align-self: start;
   display: inline-flex;
@@ -257,6 +1109,7 @@
   justify-content: center;
   gap: 5px;
   min-height: 30px;
+  width: 100%;
   padding: 0 8px;
   border: 1px solid #f97316;
   border-radius: 8px;
@@ -278,14 +1131,92 @@
   font-weight: 850;
 }
 
+.job-repeat-no-recommendations {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.job-repeat-no-recommendations svg {
+  flex: 0 0 auto;
+}
+
+.job-repeat-no-recommendations div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.job-repeat-no-recommendations strong,
+.job-repeat-no-recommendations span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-repeat-no-recommendations strong {
+  color: #14532d;
+  font-size: .74rem;
+  font-weight: 950;
+}
+
+.job-repeat-no-recommendations span {
+  color: #15803d;
+  font-size: .66rem;
+  font-weight: 850;
+}
+
+@keyframes scheduleSlideNext {
+  from {
+    opacity: 0;
+    transform: translateX(18px) scale(.985);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes scheduleSlidePrev {
+  from {
+    opacity: 0;
+    transform: translateX(-18px) scale(.985);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes lowInventoryGlow {
+  from {
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, .12), 0 0 16px rgba(239, 68, 68, .16);
+  }
+  to {
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, .32), 0 0 30px rgba(239, 68, 68, .34);
+  }
+}
+
 @media (max-width: 920px) {
-  .job-schedule-dialog-body.with-repeat-recommendations {
+  .job-schedule-start-grid,
+  .job-repeat-schedule-panel.start-mode .job-repeat-suggestion-list,
+  .job-repeat-suggestion-page {
     grid-template-columns: 1fr;
-    overflow: auto;
   }
 
-  .job-schedule-dialog-body.with-repeat-recommendations .form-panel {
-    overflow: visible;
+  .job-repeat-lineup-track {
+    grid-template-columns: repeat(3, minmax(110px, 1fr));
+    overflow-x: auto;
   }
 
   .job-repeat-schedule-panel {
@@ -296,6 +1227,55 @@
 }
 
 @media (max-width: 640px) {
+  .job-schedule-dialog > header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .job-schedule-step-badge {
+    order: 3;
+  }
+
+  .job-schedule-current-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .job-schedule-primary-choice {
+    width: 100%;
+  }
+
+  .job-schedule-form-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .job-schedule-form-head > div {
+    text-align: left;
+  }
+
+  .job-ticket-schedule-form-record-form {
+    grid-template-columns: 1fr;
+  }
+
+  .job-ticket-schedule-form-record-form .form-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .job-ticket-schedule-form-record-form .form-actions .primary-btn,
+  .job-ticket-schedule-form-record-form .form-actions .ghost-btn {
+    width: 100%;
+  }
+
+  .job-schedule-success-banner {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .job-schedule-success-banner button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .job-ticket-schedule-cue span {
     display: none;
   }
