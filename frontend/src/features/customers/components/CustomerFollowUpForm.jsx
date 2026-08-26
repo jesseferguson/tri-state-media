@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 
+import { fetchCollection } from "../../../api";
 import { INTERACTION_STATUSES, INTERACTION_TYPES } from "../utils/customerChoices.js";
 import {
   choiceLabel,
@@ -236,7 +237,17 @@ function filterByQuery(items, query, labelFor) {
   return items.filter((item) => labelFor(item).toLowerCase().includes(cleanQuery));
 }
 
-function MultiRecordPicker({ title, icon: Icon, items, selectedIds, search, onSearchChange, onToggle, labelFor, metaFor, emptyText }) {
+function mergeRecordsById(...groups) {
+  const byId = new Map();
+  groups.flat().forEach((item) => {
+    const id = String(item?.id ?? item?.pk ?? "");
+    if (!id) return;
+    byId.set(id, { ...(byId.get(id) ?? {}), ...item });
+  });
+  return Array.from(byId.values());
+}
+
+function MultiRecordPicker({ title, icon: Icon, items, selectedIds, search, onSearchChange, onToggle, labelFor, metaFor, emptyText, loading = false }) {
   const visibleItems = filterByQuery(items, search, (item) => `${labelFor(item)} ${metaFor(item)}`);
   return (
     <section className="customer-followup-picker">
@@ -265,7 +276,8 @@ function MultiRecordPicker({ title, icon: Icon, items, selectedIds, search, onSe
             </button>
           );
         })}
-        {!visibleItems.length && <p>{emptyText}</p>}
+        {loading && <p>Searching...</p>}
+        {!loading && !visibleItems.length && <p>{emptyText}</p>}
       </div>
     </section>
   );
@@ -307,6 +319,8 @@ export default function CustomerFollowUpForm({
   const editing = Boolean(followUp?.id);
   const [form, setForm] = useState(() => buildInitialForm(customer, followUp, seed));
   const [localError, setLocalError] = useState("");
+  const [remoteJobTickets, setRemoteJobTickets] = useState([]);
+  const [jobSearchLoading, setJobSearchLoading] = useState(false);
   const userName = currentUser?.name || currentUser?.username || "";
   const isEmail = form.interaction_type === "email";
   const contacts = savedContacts(customer);
@@ -320,9 +334,43 @@ export default function CustomerFollowUpForm({
     setLocalError("");
   }, [customer?.id, followUp?.id, followUp?.updated_at, seed?.id]);
 
+  useEffect(() => {
+    const query = form.jobSearch.trim();
+    if (query.length < 2) {
+      setRemoteJobTickets([]);
+      setJobSearchLoading(false);
+      return undefined;
+    }
+
+    let alive = true;
+    setJobSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      fetchCollection("job-tickets", {
+        search: query,
+        ordering: "-recent_usage_90d,ticket_number",
+        pageSize: 30,
+      })
+        .then((payload) => {
+          if (alive) setRemoteJobTickets(payload.results ?? []);
+        })
+        .catch(() => {
+          if (alive) setRemoteJobTickets([]);
+        })
+        .finally(() => {
+          if (alive) setJobSearchLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [form.jobSearch]);
+
+  const searchableJobTickets = useMemo(() => mergeRecordsById(jobTickets, remoteJobTickets), [jobTickets, remoteJobTickets]);
   const selectedJobs = useMemo(() => (
-    jobTickets.filter((ticket) => form.jobTicketIds.some((id) => sameId(id, ticket.id)))
-  ), [form.jobTicketIds, jobTickets]);
+    searchableJobTickets.filter((ticket) => form.jobTicketIds.some((id) => sameId(id, ticket.id)))
+  ), [form.jobTicketIds, searchableJobTickets]);
   const selectedQuotes = useMemo(() => (
     quotes.filter((quote) => form.quoteIds.some((id) => sameId(id, quoteRecordId(quote))))
   ), [form.quoteIds, quotes]);
@@ -516,14 +564,15 @@ export default function CustomerFollowUpForm({
             <MultiRecordPicker
               title="All Job Tickets"
               icon={BriefcaseBusiness}
-              items={jobTickets}
+              items={searchableJobTickets}
               selectedIds={form.jobTicketIds}
               search={form.jobSearch}
               onSearchChange={(value) => update("jobSearch", value)}
               onToggle={(id) => toggleId("jobTicketIds", id)}
               labelFor={(ticket) => relationOptionLabel("job", ticket)}
               metaFor={(ticket) => [ticket.customer_display || ticket.customer_name || ticket.customerName, ticket.customer_po ? `PO ${ticket.customer_po}` : "", ticket.status, ticket.recipe_name].filter(Boolean).join(" / ")}
-              emptyText="No job tickets match that search."
+              emptyText={form.jobSearch.trim().length < 2 ? "Type at least 2 characters to search all jobs." : "No job tickets match that search."}
+              loading={jobSearchLoading}
             />
             <MultiRecordPicker
               title="Quotes"

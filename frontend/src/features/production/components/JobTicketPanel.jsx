@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CalendarClock, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, Barcode, CalendarClock, CalendarPlus, CheckCircle2, Clock3, FileText, History, Image as ImageIcon, LoaderCircle, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
 import { AuthenticatedFileLink, AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
 import RecipeOptionsView from "../../tooling/components/RecipeOptionsView";
 import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
@@ -171,12 +171,47 @@ function inventoryLocation(row) {
   return row?.location_full_path || row?.location_name || "No location";
 }
 
+function BarcodePanelLoadingState({
+  label = "Loading data",
+  detail = "Scanning linked records.",
+  compact = false,
+  className = "",
+}) {
+  return (
+    <div
+      className={`job-barcode-inline-loading${compact ? " compact" : ""}${className ? ` ${className}` : ""}`}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="job-barcode-inline-main">
+        <div className="job-barcode-inline-mark" aria-hidden="true">
+          <Barcode size={compact ? 28 : 36} strokeWidth={1.8} />
+          <span className="job-barcode-inline-scan" />
+        </div>
+        <div className="job-barcode-inline-copy">
+          <strong>{label}</strong>
+          <span>{detail}</span>
+        </div>
+        {!compact && <LoaderCircle className="job-barcode-inline-spinner" size={18} aria-hidden="true" />}
+      </div>
+      <div className="job-barcode-inline-lines" aria-hidden="true">
+        {[0, 1, 2].map((index) => (
+          <i key={index} style={{ "--barcode-delay": `${index * 120}ms` }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChartLoadingState({ label = "Loading chart data" }) {
   return (
-    <div className="job-chart-loading" role="status" aria-live="polite">
-      <span aria-hidden="true" />
-      <strong>{label}</strong>
-    </div>
+    <BarcodePanelLoadingState
+      className="job-chart-barcode-loading"
+      label={label}
+      detail="Building charts from inventory and order data."
+      compact
+    />
   );
 }
 
@@ -424,16 +459,22 @@ function RecipePressOverview({ rows }) {
   );
 }
 
-function PackagingInventoryTable({ title, type, rows }) {
+function PackagingInventoryTable({ title, type, rows, loading = false }) {
   const visibleRows = activePackagingRows(rows);
   const isCore = type === "core";
   return (
     <div className="job-packaging-inventory-card">
       <div className="job-packaging-inventory-head">
         <strong>{title}</strong>
-        <span>{visibleRows.length ? `${visibleRows.length} active location${visibleRows.length === 1 ? "" : "s"}` : "No active inventory"}</span>
+        <span>{loading ? "Loading inventory" : visibleRows.length ? `${visibleRows.length} active location${visibleRows.length === 1 ? "" : "s"}` : "No active inventory"}</span>
       </div>
-      {visibleRows.length ? (
+      {loading ? (
+        <BarcodePanelLoadingState
+          label={`Loading ${isCore ? "core" : "box"} inventory`}
+          detail="Checking linked packaging stock."
+          compact
+        />
+      ) : visibleRows.length ? (
         <div className="job-packaging-table-wrap">
           <table className="job-packaging-table">
             <thead>
@@ -763,7 +804,16 @@ function StatBreakdown({ total, groups, suffix = "", emptyLabel = "No locations"
   );
 }
 
-function FinishedStockSnapshotTable({ groups }) {
+function FinishedStockSnapshotTable({ groups, loading = false }) {
+  if (loading) {
+    return (
+      <BarcodePanelLoadingState
+        label="Loading finished stock"
+        detail="Scanning cartons, locations, and received inventory."
+        compact
+      />
+    );
+  }
   if (!groups?.length) return <p className="muted">No finished stock is linked to this job yet.</p>;
   return (
     <div className="job-ticket-table-wrap">
@@ -792,7 +842,16 @@ function FinishedStockSnapshotTable({ groups }) {
   );
 }
 
-function RawMaterialInventoryTable({ rows }) {
+function RawMaterialInventoryTable({ rows, loading = false }) {
+  if (loading) {
+    return (
+      <BarcodePanelLoadingState
+        label="Loading raw material"
+        detail="Scanning rolls, footage, and locations."
+        compact
+      />
+    );
+  }
   const visibleRows = [...(rows ?? [])].sort((a, b) => {
     const locationCompare = inventoryLocation(a).localeCompare(inventoryLocation(b));
     if (locationCompare) return locationCompare;
@@ -1429,6 +1488,7 @@ export default function JobTicketPanel({
   onApproveChange,
   onReceiveFinishedInventory,
   onOpenScheduleSuggestion,
+  onEditorOpen,
   renderEditorForm,
   renderScheduleForm,
   editorFields = [],
@@ -1598,6 +1658,7 @@ export default function JobTicketPanel({
   }, [pressOptions, printForm.press]);
 
   function selectTab(key) {
+    if (key === "editor") onEditorOpen?.();
     setActiveTab(key);
   }
 
@@ -1778,7 +1839,7 @@ export default function JobTicketPanel({
               </div>
               <div className="job-ticket-average-summary">
                 <span>{selectedRangeLabel}</span>
-                <strong>{chartsLoading ? "Loading..." : shippedMonthlyAverage ? `${formatNumber(shippedMonthlyAverage)} / month` : "--"}</strong>
+                <strong>{chartsLoading ? "Loading" : shippedMonthlyAverage ? `${formatNumber(shippedMonthlyAverage)} / month` : "--"}</strong>
               </div>
               {chartsLoading ? <ChartLoadingState /> : <MiniBarChart bars={shippedBars} rangeLabel={selectedRangeLabel} />}
             </section>
@@ -1786,18 +1847,18 @@ export default function JobTicketPanel({
             <section className="job-ticket-sheet-card">
               <div className="job-ticket-card-head">
                 <strong>Finished Stock</strong>
-                <span>Inventory: {formatNumber(finishedCartons)}</span>
+                <span>{chartsLoading ? "Loading inventory" : `Inventory: ${formatNumber(finishedCartons)}`}</span>
               </div>
-              <FinishedStockSnapshotTable groups={finishedCartonByLocation} />
+              <FinishedStockSnapshotTable groups={finishedCartonByLocation} loading={chartsLoading} />
             </section>
           </div>
 
           <section className="job-ticket-sheet-card job-ticket-raw-material-card">
             <div className="job-ticket-card-head">
               <strong>Raw Material Inventory</strong>
-              <span>{formatNumber(materialFeet, " ft")} available</span>
+              <span>{chartsLoading ? "Loading raw material" : `${formatNumber(materialFeet, " ft")} available`}</span>
             </div>
-            <RawMaterialInventoryTable rows={availableInventoryWithFeet} />
+            <RawMaterialInventoryTable rows={availableInventoryWithFeet} loading={chartsLoading} />
           </section>
         </div>
       )}
@@ -1910,13 +1971,13 @@ export default function JobTicketPanel({
               <PackageCheck size={16} />
               <div>
                 <strong>Material & Packaging Availability</strong>
-                <span>{formatNumber(materialFeet, " ft")} raw material available</span>
+                <span>{chartsLoading ? "Loading linked inventory" : `${formatNumber(materialFeet, " ft")} raw material available`}</span>
               </div>
             </div>
             <WidthFootageChart rows={availableInventoryWithFeet} loading={chartsLoading} />
             <div className="job-packaging-inventory-grid">
-              <PackagingInventoryTable title="Box Inventory" type="box" rows={boxInventory} />
-              <PackagingInventoryTable title="Core Inventory" type="core" rows={coreInventory} />
+              <PackagingInventoryTable title="Box Inventory" type="box" rows={boxInventory} loading={chartsLoading} />
+              <PackagingInventoryTable title="Core Inventory" type="core" rows={coreInventory} loading={chartsLoading} />
             </div>
           </section>
 
@@ -2268,7 +2329,12 @@ export default function JobTicketPanel({
                     />
                   </label>
                 </div>
-                {orderHistoryGroups.length ? (
+                {chartsLoading ? (
+                  <BarcodePanelLoadingState
+                    label="Loading jobs ran"
+                    detail="Scanning orders, schedules, and run history."
+                  />
+                ) : orderHistoryGroups.length ? (
                   <div className="job-order-history-list">
                     {orderHistoryGroups.map((group) => (
                       <OrderHistoryGroupCard key={group.key} group={group} />
@@ -2288,14 +2354,21 @@ export default function JobTicketPanel({
                 <strong>Job Ticket Changes</strong>
                 <span>{pendingChangeEvents.length} pending approval</span>
               </div>
-              <JobTicketEventList
-                events={ticketChangeEvents}
-                emptyText="No job ticket changes have been recorded yet."
-                canApproveChanges={canApproveChanges}
-                currentUserName={currentUserName}
-                approvingChangeId={approvingChangeId}
-                onApproveChange={onApproveChange}
-              />
+              {chartsLoading ? (
+                <BarcodePanelLoadingState
+                  label="Loading ticket changes"
+                  detail="Scanning job ticket approvals and edits."
+                />
+              ) : (
+                <JobTicketEventList
+                  events={ticketChangeEvents}
+                  emptyText="No job ticket changes have been recorded yet."
+                  canApproveChanges={canApproveChanges}
+                  currentUserName={currentUserName}
+                  approvingChangeId={approvingChangeId}
+                  onApproveChange={onApproveChange}
+                />
+              )}
             </section>
           )}
 
@@ -2352,9 +2425,14 @@ export default function JobTicketPanel({
                 <div className="job-subsection-head">
                   <PackageCheck size={15} />
                   <strong>Finished Inventory By Location</strong>
-                  <span>{formatNumber(finishedQuantity)} on hand</span>
+                  <span>{chartsLoading ? "Loading locations" : `${formatNumber(finishedQuantity)} on hand`}</span>
                 </div>
-                {finishedByLocation.length ? (
+                {chartsLoading ? (
+                  <BarcodePanelLoadingState
+                    label="Loading finished locations"
+                    detail="Scanning stock by location."
+                  />
+                ) : finishedByLocation.length ? (
                   <div className="job-finished-location-list">
                     {finishedByLocation.map((group) => (
                       <div key={group.location} className="job-finished-location-group">
@@ -2374,9 +2452,14 @@ export default function JobTicketPanel({
                 <div className="job-subsection-head">
                   <PackageCheck size={15} />
                   <strong>Inventory History</strong>
-                  <span>{finishedUsageRows.length} event{finishedUsageRows.length === 1 ? "" : "s"}</span>
+                  <span>{chartsLoading ? "Loading history" : `${finishedUsageRows.length} event${finishedUsageRows.length === 1 ? "" : "s"}`}</span>
                 </div>
-                {finishedUsageRows.length ? (
+                {chartsLoading ? (
+                  <BarcodePanelLoadingState
+                    label="Loading inventory history"
+                    detail="Scanning received and used inventory events."
+                  />
+                ) : finishedUsageRows.length ? (
                   <div className="job-inventory-list">
                     {finishedUsageRows.map((row) => (
                       <div key={row.id} className="job-inventory-row">

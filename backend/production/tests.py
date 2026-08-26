@@ -41,10 +41,15 @@ TINY_GIF = (
     b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01"
     b"\x00\x00\x02\x02D\x01\x00;"
 )
+TINY_PDF = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"
 
 
 def tiny_gif_upload(name="artwork.gif"):
     return SimpleUploadedFile(name, TINY_GIF, content_type="image/gif")
+
+
+def tiny_pdf_upload(name="artwork.pdf"):
+    return SimpleUploadedFile(name, TINY_PDF, content_type="application/pdf")
 
 
 SECURE_REST_FRAMEWORK = {
@@ -321,6 +326,56 @@ class ApiAuthSecurityTests(TestCase):
                 self.assertTrue(default_storage.exists(final_storage_name))
                 self.assertFalse(default_storage.exists(pending_storage_name))
                 default_storage.delete(final_storage_name)
+
+    def test_job_ticket_image_slots_allow_pdf_uploads(self):
+        auth_header = f"Bearer {create_company_user_token(self.user)}"
+        ticket = JobTicket.objects.create(
+            ticket_number="JT-PDF-1",
+            job_name="PDF Image Job",
+            product_code="TSM-PDF",
+            customer_name="PDF Customer",
+        )
+
+        for slot in ["general", "spec", "finishing"]:
+            with self.subTest(slot=slot):
+                response = self.client.post(
+                    reverse("job-ticket-images", args=[ticket.pk, slot]),
+                    {
+                        "image": tiny_pdf_upload(f"{slot}-artwork.pdf"),
+                        "name": f"{slot.title()} PDF",
+                        "performed_by": "Alex",
+                    },
+                    HTTP_AUTHORIZATION=auth_header,
+                )
+
+                self.assertEqual(response.status_code, 200, response.content)
+                event = JobTicketEvent.objects.filter(job_ticket=ticket, details__image_slot=slot).latest("id")
+                approval = self.client.post(
+                    reverse("job-ticket-event-approve", args=[event.id]),
+                    {"performed_by": "Manager"},
+                    content_type="application/json",
+                    HTTP_AUTHORIZATION=auth_header,
+                )
+                self.assertEqual(approval.status_code, 200, approval.content)
+
+                ticket.refresh_from_db()
+                storage_name = getattr(ticket, f"{slot}_image").name
+                self.assertTrue(storage_name.endswith(".pdf"))
+                if slot in {"general", "finishing"}:
+                    self.assertEqual(storage_name, f"production/job-tickets/TSM-PDF/{slot}-image.pdf")
+                else:
+                    self.assertIn("production/job-tickets/TSM-PDF/", storage_name)
+
+                preview = self.client.get(
+                    reverse("job-ticket-image-preview", args=[ticket.pk, slot]),
+                    HTTP_AUTHORIZATION=auth_header,
+                )
+                self.assertEqual(preview.status_code, 200)
+                self.assertEqual(preview["Content-Type"], "application/pdf")
+                self.assertIn(f'filename="{slot.title()} PDF.pdf"', preview["Content-Disposition"])
+                self.assertTrue(b"".join(preview.streaming_content).startswith(b"%PDF-"))
+                preview.close()
+                default_storage.delete(storage_name)
 
     def test_rejected_stable_image_upload_removes_pending_storage_object(self):
         auth_header = f"Bearer {create_company_user_token(self.user)}"

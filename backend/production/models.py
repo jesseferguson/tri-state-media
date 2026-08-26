@@ -587,6 +587,11 @@ class JobTicket(models.Model):
 
     class Meta:
         ordering = ["ticket_number"]
+        indexes = [
+            models.Index(fields=["product_code"]),
+            models.Index(fields=["repeat_inches"]),
+            models.Index(fields=["material_master_type", "repeat_inches"]),
+        ]
 
     def __str__(self):
         return f"{self.ticket_number} / {self.job_name}"
@@ -616,6 +621,9 @@ class JobTicketEvent(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["job_ticket", "-created_at"]),
+        ]
 
     def __str__(self):
         return f"{self.job_ticket_id} / {self.event_type}"
@@ -638,6 +646,10 @@ class JobTicketUsage(models.Model):
 
     class Meta:
         ordering = ["-used_at", "-id"]
+        indexes = [
+            models.Index(fields=["job_ticket", "-used_at"]),
+            models.Index(fields=["legacy_job_ticket_id", "-used_at"]),
+        ]
 
     def __str__(self):
         return f"{self.job_ticket or self.legacy_job_ticket_id or 'Usage'} / {self.quantity}"
@@ -736,6 +748,10 @@ class ProductionSchedule(models.Model):
 
     class Meta:
         ordering = ["scheduled_date", "priority", "job_ticket__ticket_number"]
+        indexes = [
+            models.Index(fields=["job_ticket", "status", "scheduled_date"]),
+            models.Index(fields=["status", "scheduled_date"]),
+        ]
 
     def __str__(self):
         return f"{self.job_ticket.ticket_number} / {self.get_status_display()}"
@@ -1170,6 +1186,11 @@ class CustomerOrder(models.Model):
 
     class Meta:
         ordering = ["-order_date", "-scheduled_date", "customer_name", "job_name"]
+        indexes = [
+            models.Index(fields=["job_ticket", "-order_date"]),
+            models.Index(fields=["customer", "-order_date"]),
+            models.Index(fields=["product_code"]),
+        ]
 
     def __str__(self):
         return f"{self.order_number or 'Order'} / {self.customer_name or self.customer or 'Customer'} / {self.job_name}"
@@ -1188,6 +1209,9 @@ class CustomerOrderEvent(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["order", "-created_at"]),
+        ]
 
     def __str__(self):
         return f"{self.order_id} / {self.event_type}"
@@ -1472,6 +1496,11 @@ class FinishedInventory(models.Model):
 
     class Meta:
         ordering = ["-run_date", "name"]
+        indexes = [
+            models.Index(fields=["job_ticket", "status", "-run_date"]),
+            models.Index(fields=["status", "-run_date"]),
+            models.Index(fields=["sku"]),
+        ]
 
     def __str__(self):
         return self.name

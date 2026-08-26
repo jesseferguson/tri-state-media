@@ -1,0 +1,416 @@
+/* Barcode loading screen */
+.barcode-loading-screen {
+  min-height: min(680px, calc(100dvh - 132px));
+  display: grid;
+  place-items: center;
+  padding: clamp(14px, 3vw, 28px);
+  color: #101828;
+}
+
+.barcode-loading-panel {
+  width: min(760px, 100%);
+  overflow: hidden;
+  display: grid;
+  gap: 14px;
+  padding: clamp(16px, 3vw, 24px);
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .96), rgba(248, 250, 252, .98)),
+    repeating-linear-gradient(90deg, rgba(15, 23, 42, .04) 0 1px, transparent 1px 14px);
+  box-shadow: 0 22px 70px rgba(15, 23, 42, .14);
+}
+
+.barcode-loading-hero {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 16px;
+}
+
+.barcode-loading-mark {
+  position: relative;
+  height: 86px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(90deg, #0f172a 0 2px, transparent 2px 6px, #0f172a 6px 9px, transparent 9px 15px),
+    #ffffff;
+  color: rgba(255, 255, 255, .88);
+}
+
+.barcode-loading-mark svg {
+  position: relative;
+  z-index: 1;
+  box-sizing: content-box;
+  padding: 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .9);
+  color: #0f172a;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, .24));
+}
+
+.barcode-loading-scan {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -20%;
+  width: 32%;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, .24), rgba(249, 115, 22, .38), transparent);
+  animation: barcode-scan 1.45s linear infinite;
+}
+
+.barcode-loading-copy {
+  min-width: 0;
+}
+
+.barcode-loading-copy span,
+.barcode-loading-copy h2,
+.barcode-loading-copy p {
+  display: block;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.barcode-loading-copy span {
+  color: #0f766e;
+  font-size: .72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.barcode-loading-copy h2 {
+  margin-top: 3px;
+  color: #0f172a;
+  font-size: 1.45rem;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.barcode-loading-copy p {
+  max-width: 560px;
+  margin-top: 6px;
+  color: #475467;
+  font-size: .86rem;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.barcode-loading-spinner {
+  color: #f97316;
+  animation: barcode-spin .9s linear infinite;
+}
+
+.barcode-loading-progress {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid #d8e0ea;
+  border-radius: 999px;
+  background: #edf2f7;
+}
+
+.barcode-loading-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #22d3ee, #f97316);
+  animation: barcode-progress 1.2s ease-in-out infinite;
+}
+
+.barcode-loading-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.barcode-loading-row {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .88);
+}
+
+.barcode-loading-row span {
+  overflow: hidden;
+  color: #344054;
+  font-size: .72rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barcode-loading-row i {
+  height: 36px;
+  overflow: hidden;
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(90deg, #111827 0 1px, transparent 1px 5px, #111827 5px 8px, transparent 8px 13px),
+    #ffffff;
+  opacity: .18;
+  animation: barcode-row-pulse 1.15s ease-in-out infinite;
+  animation-delay: var(--barcode-delay);
+}
+
+.barcode-loading-screen.customers .barcode-loading-copy span,
+.barcode-loading-screen.customers .barcode-loading-panel {
+  border-color: #bbf7d0;
+}
+
+.barcode-loading-screen.schedule .barcode-loading-copy span {
+  color: #2563eb;
+}
+
+.barcode-loading-screen.items .barcode-loading-copy span {
+  color: #c2410c;
+}
+
+.job-barcode-inline-loading {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+  margin-top: 8px;
+  padding: 11px;
+  overflow: hidden;
+  border: 1px dashed #b8c7d9;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .94), rgba(248, 250, 252, .96)),
+    repeating-linear-gradient(90deg, rgba(15, 23, 42, .045) 0 1px, transparent 1px 13px);
+  color: #344054;
+}
+
+.job-barcode-inline-loading.compact {
+  gap: 7px;
+  padding: 9px;
+}
+
+.job-barcode-inline-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 10px;
+}
+
+.job-barcode-inline-loading.compact .job-barcode-inline-main {
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.job-barcode-inline-mark {
+  position: relative;
+  height: 42px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(90deg, #111827 0 1px, transparent 1px 5px, #111827 5px 8px, transparent 8px 13px),
+    #ffffff;
+}
+
+.job-barcode-inline-loading.compact .job-barcode-inline-mark {
+  height: 34px;
+}
+
+.job-barcode-inline-mark svg {
+  position: relative;
+  z-index: 1;
+  box-sizing: content-box;
+  padding: 4px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .92);
+  color: #0f172a;
+}
+
+.job-barcode-inline-scan {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -24%;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, .24), rgba(249, 115, 22, .36), transparent);
+  animation: barcode-scan 1.35s linear infinite;
+}
+
+.job-barcode-inline-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.job-barcode-inline-copy strong,
+.job-barcode-inline-copy span {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-barcode-inline-copy strong {
+  color: #0f172a;
+  font-size: .79rem;
+  font-weight: 950;
+}
+
+.job-barcode-inline-copy span {
+  color: #667085;
+  font-size: .7rem;
+  font-weight: 750;
+}
+
+.job-barcode-inline-spinner {
+  color: #f97316;
+  animation: barcode-spin .9s linear infinite;
+}
+
+.job-barcode-inline-lines {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.job-barcode-inline-lines i {
+  min-width: 0;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(90deg, #111827 0 1px, transparent 1px 5px, #111827 5px 8px, transparent 8px 14px),
+    #ffffff;
+  opacity: .16;
+  animation: barcode-row-pulse 1.15s ease-in-out infinite;
+  animation-delay: var(--barcode-delay);
+}
+
+.job-chart-barcode-loading {
+  min-height: 96px;
+  align-content: center;
+}
+
+.job-ticket-average-card .job-chart-barcode-loading {
+  min-height: 190px;
+  align-content: stretch;
+}
+
+.job-ticket-average-card .job-chart-barcode-loading .job-barcode-inline-main {
+  align-self: start;
+}
+
+.job-ticket-average-card .job-chart-barcode-loading .job-barcode-inline-lines {
+  min-height: 96px;
+  align-items: stretch;
+}
+
+.job-ticket-average-card .job-chart-barcode-loading .job-barcode-inline-lines i {
+  height: auto;
+}
+
+@keyframes barcode-scan {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(380%);
+  }
+}
+
+@keyframes barcode-progress {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  50% {
+    transform: translateX(70%);
+  }
+
+  100% {
+    transform: translateX(245%);
+  }
+}
+
+@keyframes barcode-row-pulse {
+  0%,
+  100% {
+    opacity: .15;
+  }
+
+  50% {
+    opacity: .34;
+  }
+}
+
+@keyframes barcode-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barcode-loading-scan,
+  .barcode-loading-progress span,
+  .barcode-loading-row i,
+  .barcode-loading-spinner,
+  .job-barcode-inline-scan,
+  .job-barcode-inline-lines i,
+  .job-barcode-inline-spinner {
+    animation: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .barcode-loading-screen {
+    min-height: calc(100dvh - 96px);
+    padding: 10px;
+  }
+
+  .barcode-loading-hero {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .barcode-loading-mark {
+    height: 72px;
+  }
+
+  .barcode-loading-spinner {
+    display: none;
+  }
+
+  .barcode-loading-copy h2 {
+    font-size: 1.16rem;
+  }
+
+  .barcode-loading-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .job-barcode-inline-main {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .job-barcode-inline-spinner {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .barcode-loading-hero,
+  .barcode-loading-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .job-barcode-inline-lines {
+    grid-template-columns: 1fr;
+  }
+}

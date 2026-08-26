@@ -21,9 +21,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from materials.models import MaterialUsage, RawMaterialInventory
-from materials.serializers import RawMaterialInventorySerializer
+from materials.serializers import MaterialUsageSerializer, RawMaterialInventorySerializer
 from materials.zpl import zpl_copies, zpl_text
-from tooling.models import Press, ToolingLocation
+from tooling.models import Press, ToolingLocation, ToolingRecipeOption
+from tooling.serializers import PressSerializer, ToolingRecipeOptionSerializer
 
 from .models import (
     BoxInventory,
@@ -1832,6 +1833,240 @@ class JobTicketViewSet(BaseProductionViewSet):
             details=details,
         )
 
+    def lookup_allowed(self, *resource_keys):
+        if not getattr(settings, "API_AUTH_REQUIRED", True):
+            return True
+        return any(request_user_has_resource_access(self.request, key) for key in resource_keys)
+
+    def ticket_reference_values(self, ticket):
+        values = []
+        seen = set()
+        for value in [ticket.product_code, ticket.ticket_number]:
+            text = str(value or "").strip()
+            key = text.lower()
+            if text and key not in seen:
+                values.append(text)
+                seen.add(key)
+        return values
+
+    def filtered_raw_material_inventory(self, ticket):
+        query = Q()
+        has_filter = False
+
+        def add(condition):
+            nonlocal query, has_filter
+            query |= condition
+            has_filter = True
+
+        if ticket.material_spec_id:
+            add(Q(material_id=ticket.material_spec_id))
+
+        master_types = []
+        if ticket.material_master_type_id and ticket.material_master_type:
+            master_types.append(ticket.material_master_type)
+        if ticket.material_spec_id and ticket.material_spec and ticket.material_spec.master_type:
+            master_types.append(ticket.material_spec.master_type)
+
+        for master_type in master_types:
+            add(Q(material__master_type_id=master_type.pk))
+            if master_type.code:
+                add(Q(material__master_type__code__iexact=str(master_type.code).strip()))
+            if master_type.name:
+                add(Q(material__master_type__name__iexact=str(master_type.name).strip()))
+
+        if ticket.material_spec_id and ticket.material_spec and ticket.material_spec.code:
+            material_code = str(ticket.material_spec.code).strip()
+            add(Q(material__code__iexact=material_code) | Q(code__iexact=material_code))
+
+        base = (
+            RawMaterialInventory.objects.select_related(
+                "material",
+                "material__master_type",
+                "supplier",
+                "location",
+                "source_roll_tag",
+                "current_skid",
+                "current_skid__current_rack",
+                "current_skid__current_rack__location",
+                "direct_rack",
+                "direct_rack__location",
+            )
+            .filter(material_type="coated_stock")
+            .order_by("material_type", "name", "serial_number")
+        )
+        return base.filter(query).distinct() if has_filter else base.none()
+
+    def filtered_finished_inventory(self, ticket, reference_values):
+        query = Q(job_ticket_id=ticket.pk)
+        for reference in reference_values:
+            query |= (
+                Q(job_ticket__ticket_number__iexact=reference)
+                | Q(job_ticket__product_code__iexact=reference)
+                | Q(notes__icontains=f"Imported TSM ID: {reference}")
+                | Q(notes__icontains=f"Legacy TSM ID: {reference}")
+                | Q(sku__iexact=reference)
+                | Q(name__icontains=reference)
+            )
+        return (
+            FinishedInventory.objects.select_related(
+                "job_ticket",
+                "customer_order",
+                "material_inventory",
+                "recipe",
+                "recipe_option",
+                "location",
+            )
+            .filter(query)
+            .distinct()
+            .order_by("-run_date", "name")
+        )
+
+    def filtered_finished_usage(self, ticket, reference_values):
+        query = Q(finished_inventory__job_ticket_id=ticket.pk)
+        for reference in reference_values:
+            query |= (
+                Q(finished_inventory__job_ticket__ticket_number__iexact=reference)
+                | Q(finished_inventory__job_ticket__product_code__iexact=reference)
+                | Q(finished_inventory__notes__icontains=f"Imported TSM ID: {reference}")
+                | Q(finished_inventory__sku__iexact=reference)
+            )
+        return (
+            MaterialUsage.objects.select_related(
+                "inventory",
+                "material",
+                "coater_roll_tag",
+                "job_ticket",
+                "production_schedule",
+                "finished_inventory",
+                "finished_inventory__job_ticket",
+                "finished_inventory__location",
+            )
+            .filter(query)
+            .distinct()
+            .order_by("-used_date", "-created_at")
+        )
+
+    def filtered_job_ticket_usage(self, ticket, reference_values):
+        query = Q(job_ticket_id=ticket.pk)
+        for reference in reference_values:
+            query |= Q(legacy_job_ticket_id__iexact=reference)
+        return (
+            JobTicketUsage.objects.select_related("job_ticket")
+            .filter(query)
+            .distinct()
+            .order_by("-used_at", "-id")
+        )
+
+    def filtered_schedule_rows(self, ticket):
+        query = Q(job_ticket_id=ticket.pk)
+        if ticket.repeat_inches is not None:
+            query |= Q(job_ticket__repeat_inches=ticket.repeat_inches)
+        return (
+            ProductionSchedule.objects.select_related(
+                "job_ticket",
+                "customer",
+                "job_ticket__customer",
+                "job_ticket__material_spec",
+                "job_ticket__material_spec__master_type",
+                "job_ticket__material_master_type",
+                "job_ticket__recipe",
+                "job_ticket__box",
+                "job_ticket__core",
+                "material_inventory",
+                "press",
+            )
+            .prefetch_related("shift_reports", "material_assignments", "customer_orders__events")
+            .filter(query)
+            .distinct()
+            .order_by("scheduled_date", "priority", "job_ticket__ticket_number")
+        )
+
+    def filtered_box_inventory(self, ticket):
+        query = Q()
+        has_filter = False
+
+        def add(condition):
+            nonlocal query, has_filter
+            query |= condition
+            has_filter = True
+
+        if ticket.box_id:
+            add(Q(box_id=ticket.box_id))
+        for value in [ticket.box_item_number, ticket.box.item_number if ticket.box_id and ticket.box else ""]:
+            text = str(value or "").strip()
+            if text:
+                add(Q(box__item_number__iexact=text))
+        if ticket.box_id and ticket.box and ticket.box.name:
+            add(Q(box__name__iexact=str(ticket.box.name).strip()))
+
+        base = BoxInventory.objects.select_related("box", "location").order_by("box__name", "lot_number")
+        return base.filter(query).distinct() if has_filter else base.none()
+
+    def filtered_core_inventory(self, ticket):
+        query = Q()
+        has_filter = False
+
+        def add(condition):
+            nonlocal query, has_filter
+            query |= condition
+            has_filter = True
+
+        if ticket.core_id:
+            add(Q(core_id=ticket.core_id))
+        if ticket.core_id and ticket.core:
+            if ticket.core.item_number:
+                add(Q(core__item_number__iexact=str(ticket.core.item_number).strip()))
+            if ticket.core.name:
+                add(Q(core__name__iexact=str(ticket.core.name).strip()))
+        if ticket.core_size_inches is not None:
+            add(Q(core__core_size_inches=ticket.core_size_inches))
+
+        base = CoreInventory.objects.select_related("core", "location").order_by("core__core_size_inches", "core__name", "lot_number")
+        return base.filter(query).distinct() if has_filter else base.none()
+
+    def filtered_customer_orders(self, ticket, reference_values):
+        query = Q(job_ticket_id=ticket.pk)
+        for reference in reference_values:
+            query |= Q(product_code__iexact=reference) | Q(job_ticket__ticket_number__iexact=reference)
+        return (
+            CustomerOrder.objects.select_related("schedule_entry", "job_ticket", "customer")
+            .filter(query)
+            .distinct()
+            .order_by("-order_date", "-scheduled_date", "customer_name", "job_name")
+        )
+
+    def filtered_customer_order_events(self, ticket, reference_values):
+        query = Q(order__job_ticket_id=ticket.pk)
+        for reference in reference_values:
+            query |= Q(order__product_code__iexact=reference) | Q(order__job_ticket__ticket_number__iexact=reference)
+        return (
+            CustomerOrderEvent.objects.select_related("order", "order__job_ticket", "order__customer")
+            .filter(query)
+            .distinct()
+            .order_by("-created_at")
+        )
+
+    def filtered_recipe_options(self, ticket):
+        queryset = (
+            ToolingRecipeOption.objects.select_related("recipe", "press", "press__location")
+            .prefetch_related(
+                "tools__mag",
+                "tools__mag__current_location",
+                "tools__flex_die",
+                "tools__flex_die__current_location",
+                "tools__perf_cylinder",
+                "tools__perf_cylinder__current_location",
+                "tools__perf_blade_setup",
+                "tools__perf_blade_setup__blades",
+                "tools__perf_blade_setup__perf_cylinder",
+                "tools__perf_blade_setup__perf_cylinder__current_location",
+            )
+            .order_by("recipe__name", "press__name", "-is_preferred", "name")
+        )
+        if ticket.recipe_id:
+            return queryset.filter(recipe_id=ticket.recipe_id)
+        return queryset[:150]
+
     def perform_create(self, serializer):
         actor = self.history_actor()
         ticket = serializer.save()
@@ -1940,6 +2175,54 @@ class JobTicketViewSet(BaseProductionViewSet):
         if customer:
             qs = qs.filter(customer_id=customer)
         return qs
+
+    @action(detail=True, methods=["get"], url_path="detail-lookups")
+    def detail_lookups(self, request, pk=None):
+        ticket = self.get_object()
+        reference_values = self.ticket_reference_values(ticket)
+        context = self.get_serializer_context()
+
+        same_repeat_tickets = self.get_queryset().none()
+        if ticket.repeat_inches is not None:
+            same_repeat_tickets = self.get_queryset().filter(repeat_inches=ticket.repeat_inches)
+
+        payload = {
+            "all-job-tickets": JobTicketSerializer(same_repeat_tickets, many=True, context=context).data,
+            "production-schedule": ProductionScheduleSerializer(self.filtered_schedule_rows(ticket), many=True, context=context).data,
+            "raw-materials": RawMaterialInventorySerializer(self.filtered_raw_material_inventory(ticket), many=True, context=context).data,
+            "finished-inventory": FinishedInventorySerializer(self.filtered_finished_inventory(ticket, reference_values), many=True, context=context).data,
+            "material-usages": MaterialUsageSerializer(self.filtered_finished_usage(ticket, reference_values), many=True, context=context).data,
+            "job-ticket-usages": JobTicketUsageSerializer(self.filtered_job_ticket_usage(ticket, reference_values), many=True, context=context).data,
+            "recipe-options": ToolingRecipeOptionSerializer(self.filtered_recipe_options(ticket), many=True, context=context).data,
+            "box-inventory": BoxInventorySerializer(self.filtered_box_inventory(ticket), many=True, context=context).data,
+            "core-inventory": CoreInventorySerializer(self.filtered_core_inventory(ticket), many=True, context=context).data,
+            "customer-orders": CustomerOrderSerializer(self.filtered_customer_orders(ticket, reference_values), many=True, context=context).data,
+            "job-ticket-events": JobTicketEventSerializer(
+                JobTicketEvent.objects.select_related("job_ticket").filter(job_ticket=ticket).order_by("-created_at", "-id")[:250],
+                many=True,
+                context=context,
+            ).data,
+        }
+
+        if self.lookup_allowed("customer-order-events", "customer-orders", "production-schedule"):
+            payload["customer-order-events"] = CustomerOrderEventSerializer(
+                self.filtered_customer_order_events(ticket, reference_values),
+                many=True,
+                context=context,
+            ).data
+        else:
+            payload["customer-order-events"] = []
+
+        if self.lookup_allowed("presses", "production-schedule", "recipes", "recipe-options"):
+            payload["presses"] = PressSerializer(
+                Press.objects.select_related("location").all().order_by("name")[:150],
+                many=True,
+                context=context,
+            ).data
+        else:
+            payload["presses"] = []
+
+        return Response(payload)
 
     @action(detail=True, methods=["post"], url_path="queue-print-label")
     def queue_print_label(self, request, pk=None):
@@ -2082,7 +2365,7 @@ class JobTicketViewSet(BaseProductionViewSet):
         pending_storage_name = ""
         if upload:
             try:
-                upload = validate_upload(upload, allow_images=True, field="image")
+                upload = validate_upload(upload, allow_images=True, allow_pdf=True, field="image")
             except serializers.ValidationError as error:
                 return Response(error.detail, status=status.HTTP_400_BAD_REQUEST)
             try:

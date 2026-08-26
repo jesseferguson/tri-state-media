@@ -432,6 +432,12 @@ class RawMaterialInventory(models.Model):
 
     class Meta:
         ordering = ["material_type", "name", "serial_number"]
+        indexes = [
+            models.Index(fields=["material_type", "material", "status"]),
+            models.Index(fields=["material_type", "status"]),
+            models.Index(fields=["material", "status"]),
+            models.Index(fields=["code"]),
+        ]
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -633,6 +639,12 @@ class MaterialUsage(models.Model):
 
     class Meta:
         ordering = ["-used_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["finished_inventory", "usage_type", "-used_date"]),
+            models.Index(fields=["job_ticket", "-used_date"]),
+            models.Index(fields=["material", "-used_date"]),
+            models.Index(fields=["inventory", "-used_date"]),
+        ]
 
     def save(self, *args, **kwargs):
         with transaction.atomic():

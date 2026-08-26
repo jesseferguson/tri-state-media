@@ -1,4 +1,4 @@
-import { fetchCollection } from "../../api";
+import { fetchCollection, requestApi } from "../../api";
 import { resourceMap } from "../../resourceConfig";
 
 function mergeRows(existing = [], next = []) {
@@ -37,9 +37,14 @@ function addFieldLookups(specs, fields = []) {
   });
 }
 
-async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
+async function loadScopedLookups({ resource, selected, isMaterialTypePage, formMode, includeFieldLookups = false }) {
   const specs = [];
-  addFieldLookups(specs, resource.fields ?? []);
+  const useJobTicketDetailBundle = resource.key === "job-tickets" && selected?.id;
+  const shouldLoadFieldLookups = resource.key !== "job-tickets" || Boolean(formMode || includeFieldLookups || isMaterialTypePage);
+  if (shouldLoadFieldLookups) addFieldLookups(specs, resource.fields ?? []);
+  const bundledLookupPromise = useJobTicketDetailBundle
+    ? requestApi(`job-tickets/${selected.id}/detail-lookups`).catch(() => ({}))
+    : Promise.resolve({});
 
   if (resource.key === "raw-materials" && selected?.id) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { inventory: selected.id }, 100));
@@ -69,14 +74,6 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
 
   if (resource.key === "customers") {
     addLookupSpec(specs, { key: "customer-open-interactions", endpoint: "customer-interactions", ordering: "follow_up_date,-occurred_at", filters: { open: true }, pageSize: 1000, fetchAll: true });
-    addLookupSpec(specs, {
-      key: "all-job-tickets",
-      endpoint: resourceMap["job-tickets"].endpoint,
-      ordering: resourceMap["job-tickets"].defaultOrdering,
-      filters: { ...(resourceMap["job-tickets"].filters ?? {}) },
-      pageSize: 1000,
-      fetchAll: true,
-    });
   }
 
   if (resource.key === "customers" && selected?.id) {
@@ -98,19 +95,11 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addLookupSpec(specs, relationLookupSpec("material-usages", { inventory: selected.material_inventory }, 150));
   }
 
-  if (resource.key === "job-tickets") {
-    addLookupSpec(specs, {
-      key: "all-job-tickets",
-      endpoint: resourceMap["job-tickets"].endpoint,
-      ordering: resourceMap["job-tickets"].defaultOrdering,
-      filters: { ...(resourceMap["job-tickets"].filters ?? {}) },
-      pageSize: 1000,
-      fetchAll: true,
-    });
+  if (resource.key === "job-tickets" && !selected) {
     addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 1000, true));
   }
 
-  if (resource.key === "job-tickets" && selected) {
+  if (resource.key === "job-tickets" && selected && !useJobTicketDetailBundle) {
     if (selected.material_spec) addLookupSpec(specs, relationLookupSpec("raw-materials", { material: selected.material_spec }, 250));
     if (selected.material_master_type || selected.material_spec_master_type) {
       addLookupSpec(specs, relationLookupSpec("raw-materials", { material_type: "coated_stock", master_type: selected.material_master_type || selected.material_spec_master_type }, 250));
@@ -169,23 +158,28 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage }) {
     addFieldLookups(specs, resourceMap["print-stations"]?.fields ?? []);
   }
 
-  const entries = await Promise.all(
-    specs.map((spec) =>
-      fetchCollection(spec.endpoint, {
-        ordering: spec.ordering,
-        pageSize: spec.pageSize,
-        filters: spec.filters,
-        fetchAll: spec.fetchAll,
-      })
-        .then((payload) => [spec.key, payload.results])
-        .catch(() => [spec.key, []])
-    )
-  );
+  const [bundledLookups, entries] = await Promise.all([
+    bundledLookupPromise,
+    Promise.all(
+      specs.map((spec) =>
+        fetchCollection(spec.endpoint, {
+          ordering: spec.ordering,
+          pageSize: spec.pageSize,
+          filters: spec.filters,
+          fetchAll: spec.fetchAll,
+        })
+          .then((payload) => [spec.key, payload.results])
+          .catch(() => [spec.key, []])
+      )
+    ),
+  ]);
 
   return entries.reduce((acc, [key, results]) => {
     acc[key] = mergeRows(acc[key], results);
     return acc;
-  }, {});
+  }, Object.fromEntries(
+    Object.entries(bundledLookups ?? {}).map(([key, value]) => [key, Array.isArray(value) ? value : []])
+  ));
 }
 
 export { loadScopedLookups, mergeRows };

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import SignInScreen from "./auth/SignInScreen.jsx";
 import UserAdminPanel from "./auth/UserAdminPanel.jsx";
+import BarcodeLoadingScreen from "./components/BarcodeLoadingScreen.jsx";
 import FlexDieLoadingScreen from "./components/FlexDieLoadingScreen.jsx";
 import AppShell from "./layout/AppShell.jsx";
 import {
@@ -100,6 +101,29 @@ import { currentInventoryQuantity, findScannedLocation, firstMaterialComponentId
 
 
 
+const barcodeLoadingPages = {
+  customers: {
+    eyebrow: "Customer records",
+    title: "Loading Customers",
+    detail: "Pulling accounts and open follow-ups.",
+    tone: "customers",
+    lines: ["Accounts", "Follow-ups", "Contacts", "Activity"],
+  },
+  "job-tickets": {
+    eyebrow: "Item library",
+    title: "Loading Items",
+    detail: "Pulling job tickets, artwork, stock counts, and schedule cues.",
+    tone: "items",
+    lines: ["Tickets", "Artwork", "Stock", "Schedule"],
+  },
+  "production-schedule": {
+    eyebrow: "Press lineup",
+    title: "Loading Schedule",
+    detail: "Pulling press tabs, scheduled jobs, material runs, hold status, and priorities.",
+    tone: "schedule",
+    lines: ["Presses", "Jobs", "Materials", "Holds"],
+  },
+};
 
 export default function App() {
   const queryClient = useQueryClient();
@@ -404,6 +428,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [formMode, setFormMode] = useState(null); // null | create | edit
+  const [jobTicketEditorLookupsNeeded, setJobTicketEditorLookupsNeeded] = useState(false);
   const [createDefaults, setCreateDefaults] = useState({});
   const [flexFilters, setFlexFilters] = useState(emptyFlexDieFilters);
   const [flexDieDetailOpen, setFlexDieDetailOpen] = useState(false);
@@ -488,6 +513,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const showingPressFormOverlay = Boolean(formMode && resource.key === "presses");
   const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage && resource.key !== "recipes");
   const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, resource.searchMode === "flexDie" ? "" : search];
+  const jobTicketLookupMode = resource.key === "job-tickets" && jobTicketEditorLookupsNeeded ? "editor" : "view";
   const mobileMenuGroups = useMemo(
     () => buildMobileMenuGroups(allowedResources, mobilePageSearch),
     [allowedResources, mobilePageSearch]
@@ -533,6 +559,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [mobilePageMenuOpen]);
+
+  useEffect(() => {
+    if (resource.key === "job-tickets") {
+      setJobTicketEditorLookupsNeeded(false);
+    }
+  }, [resource.key, selected?.id]);
 
   useEffect(() => {
     if (!finishedInventoryNotice) return undefined;
@@ -612,8 +644,14 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   });
 
   const lookupQuery = useQuery({
-    queryKey: ["lookups", resource.key, selected?.id ?? null, formMode ?? "view"],
-    queryFn: () => loadScopedLookups({ resource, selected, isMaterialTypePage }),
+    queryKey: ["lookups", resource.key, selected?.id ?? null, formMode ?? "view", jobTicketLookupMode],
+    queryFn: () => loadScopedLookups({
+      resource,
+      selected,
+      isMaterialTypePage,
+      formMode,
+      includeFieldLookups: jobTicketEditorLookupsNeeded,
+    }),
     enabled: !showingStaticView,
     staleTime: 30_000,
     refetchInterval: showingStaticView ? false : 120_000,
@@ -1985,6 +2023,15 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
 
   const liveFootageFullView = resource.viewMode === "liveFootage" && liveFootageTvMode;
   const materialWorkspaceView = ["material-handling", "skids", "racks"].includes(resource.key);
+  const barcodeLoadingConfig = barcodeLoadingPages[resource.key];
+  const showBarcodeLoading = Boolean(
+    barcodeLoadingConfig
+    && !selected
+    && !formMode
+    && !listQuery.error
+    && listQuery.isLoading
+    && !listQuery.data
+  );
 
   function closeMobilePageMenu() {
     setMobilePageMenuOpen(false);
@@ -2088,6 +2135,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
 
         {resource.key === "flex-dies" && listQuery.isLoading ? (
           <FlexDieLoadingScreen scanned={Boolean(linkedFlexDieId)} />
+        ) : showBarcodeLoading ? (
+          <BarcodeLoadingScreen {...barcodeLoadingConfig} />
         ) : resource.viewMode === "quoteCalculator" ? (
           <QuotePricingTool
             currentUser={currentUserForView}
@@ -2301,7 +2350,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     quotes={lookupQuery.data?.["quote-records"] ?? []}
                     orders={lookupQuery.data?.["customer-orders"] ?? []}
                     jobTickets={lookupQuery.data?.["job-tickets"] ?? []}
-                    allJobTickets={lookupQuery.data?.["all-job-tickets"] ?? lookupQuery.data?.["job-tickets"] ?? []}
+                    allJobTickets={lookupQuery.data?.["job-tickets"] ?? []}
                     interactions={lookupQuery.data?.["customer-interactions"] ?? []}
                     openInteractions={lookupQuery.data?.["customer-open-interactions"] ?? []}
                     users={users}
@@ -2387,7 +2436,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     usageRows={lookupQuery.data?.["job-ticket-usages"] ?? []}
                     finishedRows={lookupQuery.data?.["finished-inventory"] ?? []}
                     scheduleRows={lookupQuery.data?.["production-schedule"] ?? []}
-                    onSelect={(row) => { setSelected(row); setFormMode(null); }}
+                    onSelect={(row) => { setJobTicketEditorLookupsNeeded(false); setSelected(row); setFormMode(null); }}
                   />
                 ) : resource.viewMode === "packagingInventory" ? (
                   <PackagingInventoryView
@@ -2693,9 +2742,11 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                 }}
                 onReceiveFinishedInventory={(payload) => finishedInventoryReceiveMutation.mutateAsync(payload)}
                 onOpenScheduleSuggestion={(ticket) => {
+                  setJobTicketEditorLookupsNeeded(false);
                   setSelected(ticket);
                   setFormMode(null);
                 }}
+                onEditorOpen={() => setJobTicketEditorLookupsNeeded(true)}
                 editorFields={resource.fields ?? []}
                 renderEditorForm={({ onCancel, onFormChange }) => (
                   <RecordForm
