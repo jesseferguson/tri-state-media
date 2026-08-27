@@ -1,5 +1,12 @@
 const CURRENT_SCHEDULE_STATUSES = new Set(["unscheduled", "scheduled", "ready", "running", "on_hold"]);
 const CLOSED_TICKET_STATUSES = new Set(["complete", "cancelled", "inactive"]);
+const CURRENT_SCHEDULE_STATUS_RANK = {
+  running: 0,
+  ready: 1,
+  scheduled: 2,
+  unscheduled: 3,
+  on_hold: 4,
+};
 
 function numeric(value) {
   const number = Number(value ?? 0);
@@ -9,6 +16,13 @@ function numeric(value) {
 function sameId(a, b) {
   if (a === null || a === undefined || b === null || b === undefined) return false;
   return String(a) === String(b);
+}
+
+function sameText(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  const left = String(a).trim().toLowerCase();
+  const right = String(b).trim().toLowerCase();
+  return Boolean(left && right && left === right);
 }
 
 function titleText(value) {
@@ -51,9 +65,57 @@ export function ticketStockStats(ticket, override = {}) {
   };
 }
 
+function stockoutBusinessDays(stats = {}) {
+  const monthlyUsage = numeric(stats.monthlyUsage);
+  const onHand = numeric(stats.onHand);
+  if (monthlyUsage <= 0) return Number.POSITIVE_INFINITY;
+  if (onHand <= 0) return 0;
+  return Math.floor(onHand / (monthlyUsage / 21));
+}
+
 export function isCurrentScheduleRow(row) {
   const status = String(row?.status || "").trim().toLowerCase();
   return !status || CURRENT_SCHEDULE_STATUSES.has(status);
+}
+
+export function scheduleMatchesTicket(row, ticket) {
+  return (
+    sameId(row?.job_ticket, ticket?.id) ||
+    sameId(row?.job_ticket_id, ticket?.id) ||
+    sameText(row?.job_ticket_number, ticket?.ticket_number) ||
+    sameText(row?.job_product_code, ticket?.product_code)
+  );
+}
+
+export function scheduleDateValue(row) {
+  return row?.scheduled_date || row?.order_date || row?.due_date || row?.run_date || "";
+}
+
+export function scheduleQuantity(row) {
+  return numeric(row?.quantity_to_ship) + numeric(row?.quantity_to_stock);
+}
+
+export function scheduleLocationLabel(row) {
+  const status = String(row?.status || "").trim().toLowerCase();
+  const press = titleText(row?.press_name) || (status === "on_hold" ? "Held" : "Unassigned");
+  const position = row?.press_sequence ? `#${row.press_sequence}` : "";
+  return [press, position].filter(Boolean).join(" ");
+}
+
+function currentScheduleSort(a, b) {
+  const statusDelta = (CURRENT_SCHEDULE_STATUS_RANK[String(a?.status || "").toLowerCase()] ?? 5) - (CURRENT_SCHEDULE_STATUS_RANK[String(b?.status || "").toLowerCase()] ?? 5);
+  if (statusDelta) return statusDelta;
+  const pressDelta = String(a?.press_name || "").localeCompare(String(b?.press_name || ""), undefined, { numeric: true });
+  if (pressDelta) return pressDelta;
+  const sequenceDelta = numeric(a?.press_sequence) - numeric(b?.press_sequence);
+  if (sequenceDelta) return sequenceDelta;
+  return String(scheduleDateValue(a)).localeCompare(String(scheduleDateValue(b)));
+}
+
+export function currentScheduleRowsForTicket(ticket, scheduleRows = []) {
+  return (scheduleRows ?? [])
+    .filter((row) => isCurrentScheduleRow(row) && scheduleMatchesTicket(row, ticket))
+    .sort(currentScheduleSort);
 }
 
 export function buildScheduledRepeatMap(scheduleRows = []) {
@@ -90,6 +152,7 @@ function isClosedTicket(ticket) {
 export function buildSameRepeatScheduleRecommendations(ticket, tickets = [], scheduleRows = [], options = {}) {
   const limit = options.limit ?? 6;
   const sortByUsage = options.sortBy === "usage";
+  const sortByRunout = options.sortBy === "runout";
   const key = repeatKey(ticket?.repeat_inches);
   const scheduledRepeatMap = buildScheduledRepeatMap(scheduleRows);
   const scheduledRows = key ? (scheduledRepeatMap.get(key) ?? []) : [];
@@ -119,12 +182,17 @@ export function buildSameRepeatScheduleRecommendations(ticket, tickets = [], sch
       return {
         ticket: candidate,
         stats,
+        stockoutBusinessDays: stockoutBusinessDays(stats),
         scheduled: scheduledTicketIds.has(String(candidate.id)),
       };
     })
     .filter((item) => !item.scheduled)
     .filter((item) => item.stats.recentUsage > 0.001)
     .sort((a, b) => {
+      if (sortByRunout) {
+        const runoutDelta = a.stockoutBusinessDays - b.stockoutBusinessDays;
+        if (Math.abs(runoutDelta) > 0.001) return runoutDelta;
+      }
       if (sortByUsage) {
         const usageDelta = b.stats.monthlyUsage - a.stats.monthlyUsage;
         if (Math.abs(usageDelta) > 0.001) return usageDelta;

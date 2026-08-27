@@ -426,6 +426,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   ));
   const [previewRoleName, setPreviewRoleName] = useState("");
   const [search, setSearch] = useState("");
+  const [jobTicketCustomerFilter, setJobTicketCustomerFilter] = useState("");
+  const [jobTicketOwnerFilter, setJobTicketOwnerFilter] = useState("");
+  const [jobTicketSortMode, setJobTicketSortMode] = useState("usage");
   const [selected, setSelected] = useState(null);
   const [formMode, setFormMode] = useState(null); // null | create | edit
   const [jobTicketEditorLookupsNeeded, setJobTicketEditorLookupsNeeded] = useState(false);
@@ -514,7 +517,20 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage && resource.key !== "recipes");
   const serverSearch = resource.searchMode === "flexDie" ? "" : search;
   const listSearchActive = Boolean(serverSearch.trim());
-  const collectionQueryKey = ["collection", resource.key, resource.filters ?? {}, serverSearch];
+  const listFilters = useMemo(() => {
+    const filters = { ...(resource.filters ?? {}) };
+    if (resource.key === "job-tickets") {
+      if (jobTicketCustomerFilter) filters.customer = jobTicketCustomerFilter;
+      if (jobTicketOwnerFilter) filters.account_owner = jobTicketOwnerFilter;
+    }
+    return filters;
+  }, [jobTicketCustomerFilter, jobTicketOwnerFilter, resource.filters, resource.key]);
+  const listOrdering = useMemo(() => {
+    if (resource.key !== "job-tickets") return resource.defaultOrdering;
+    if (jobTicketSortMode === "runout") return "recent_usage_sort_bucket,schedule_sort_bucket,stockout_sort_bucket,stockout_business_days,-recent_usage_90d,ticket_number";
+    return "recent_usage_sort_bucket,schedule_sort_bucket,-recent_usage_90d,ticket_number";
+  }, [jobTicketSortMode, resource.defaultOrdering, resource.key]);
+  const collectionQueryKey = ["collection", resource.key, listFilters, serverSearch, listOrdering];
   const jobTicketLookupMode = resource.key === "job-tickets" && jobTicketEditorLookupsNeeded ? "editor" : "view";
   const mobileMenuGroups = useMemo(
     () => buildMobileMenuGroups(allowedResources, mobilePageSearch),
@@ -624,9 +640,9 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     queryFn: async () => {
       try {
         return await fetchCollection(resource.endpoint, {
-          ordering: resource.defaultOrdering,
+          ordering: listOrdering,
           pageSize: resource.pageSize ?? (resource.searchMode === "flexDie" ? 500 : 250),
-          filters: resource.filters ?? {},
+          filters: listFilters,
           search: serverSearch,
           fetchAll: resource.fetchAll ?? false,
         });
@@ -2457,6 +2473,32 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     usageRows={lookupQuery.data?.["job-ticket-usages"] ?? []}
                     finishedRows={lookupQuery.data?.["finished-inventory"] ?? []}
                     scheduleRows={lookupQuery.data?.["production-schedule"] ?? []}
+                    customers={lookupQuery.data?.customers ?? []}
+                    customerFilter={jobTicketCustomerFilter}
+                    ownerFilter={jobTicketOwnerFilter}
+                    sortMode={jobTicketSortMode}
+                    totalCount={listQuery.data?.count ?? rows.length}
+                    loading={listQuery.isFetching}
+                    onCustomerFilterChange={(value) => {
+                      setJobTicketCustomerFilter(value);
+                      setJobTicketSortMode(value || jobTicketOwnerFilter ? "runout" : "usage");
+                      setSelected(null);
+                      setFormMode(null);
+                    }}
+                    onOwnerFilterChange={(value) => {
+                      setJobTicketOwnerFilter(value);
+                      setJobTicketSortMode(value || jobTicketCustomerFilter ? "runout" : "usage");
+                      setSelected(null);
+                      setFormMode(null);
+                    }}
+                    onSortModeChange={setJobTicketSortMode}
+                    onClearFilters={() => {
+                      setJobTicketCustomerFilter("");
+                      setJobTicketOwnerFilter("");
+                      setJobTicketSortMode("usage");
+                      setSelected(null);
+                      setFormMode(null);
+                    }}
                     onSelect={(row) => { setJobTicketEditorLookupsNeeded(false); setSelected(row); setFormMode(null); }}
                   />
                 ) : resource.viewMode === "packagingInventory" ? (
@@ -2767,6 +2809,10 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                   setJobTicketEditorLookupsNeeded(false);
                   setSelected(ticket);
                   setFormMode(null);
+                }}
+                onViewSchedule={(schedule) => {
+                  if (schedule?.id) setScheduleFocusId(String(schedule.id));
+                  switchResource("production-schedule");
                 }}
                 onEditorOpen={() => setJobTicketEditorLookupsNeeded(true)}
                 editorFields={resource.fields ?? []}

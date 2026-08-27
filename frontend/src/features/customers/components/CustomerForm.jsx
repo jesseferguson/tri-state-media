@@ -258,8 +258,8 @@ export default function CustomerForm({
             <CustomerField label="Customer ID">
               <input value={form.customer_code} onChange={(event) => update("customer_code", event.target.value)} />
             </CustomerField>
-            <CustomerField label="Account Owner">
-              <input value={form.account_owner} onChange={(event) => update("account_owner", event.target.value)} />
+            <CustomerField label="Sales Person / Account Owner">
+              <input value={form.account_owner} onChange={(event) => update("account_owner", event.target.value)} placeholder="Sales person responsible for this account" />
             </CustomerField>
             <CustomerField label="CRM Stage">
               <select value={form.crm_stage} onChange={(event) => update("crm_stage", event.target.value)}>

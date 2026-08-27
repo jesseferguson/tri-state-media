@@ -513,7 +513,7 @@ export default function CustomerWorkspace({
               <section className="customer-page-card">
                 <header><strong>Account Snapshot</strong></header>
                 <div className="customer-fact-list">
-                  <FactRow icon={AtSign} label="Owner" value={selected.account_owner || "Unassigned"} />
+                  <FactRow icon={AtSign} label="Sales Person" value={selected.account_owner || "Unassigned"} />
                   <FactRow icon={CheckCircle2} label="Stage" value={choiceLabel(CRM_STAGES, selected.crm_stage || (selected.is_active === false ? "inactive" : "active"))} />
                   <FactRow icon={CalendarDays} label="Next Follow-Up" value={dateLabel(selected.next_follow_up)} />
                   <FactRow icon={Clock3} label="Last Touch" value={dateLabel(lastTouch)} />

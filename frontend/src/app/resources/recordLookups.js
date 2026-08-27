@@ -96,6 +96,7 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage, formM
   }
 
   if (resource.key === "job-tickets" && !selected) {
+    addLookupSpec(specs, relationLookupSpec("customers", {}, 1000, true));
     addLookupSpec(specs, relationLookupSpec("production-schedule", {}, 1000, true));
   }
 

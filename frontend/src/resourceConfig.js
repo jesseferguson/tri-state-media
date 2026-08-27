@@ -928,7 +928,7 @@ export const resources = [
       { name: "name", label: "Customer", type: "text", required: true, section: "Account" },
       { name: "customer_code", label: "Customer ID", type: "text", section: "Account" },
       { name: "is_active", label: "Active", type: "checkbox", defaultValue: true, section: "Account" },
-      { name: "account_owner", label: "Account Owner", type: "text", section: "CRM" },
+      { name: "account_owner", label: "Sales Person / Account Owner", type: "text", section: "CRM" },
       { name: "crm_stage", label: "CRM Stage", type: "select", choices: choiceLists.crmStage, defaultValue: "active", section: "CRM" },
       { name: "next_follow_up", label: "Next Follow-Up", type: "date", section: "CRM" },
       { name: "website", label: "Website", type: "url", section: "CRM" },

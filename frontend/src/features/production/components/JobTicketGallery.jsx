@@ -1,9 +1,10 @@
 import { useMemo } from "react";
-import { AlertTriangle, CalendarPlus, Image as ImageIcon } from "lucide-react";
+import { AlertTriangle, CalendarCheck2, CalendarPlus, Image as ImageIcon, SlidersHorizontal, X } from "lucide-react";
 import { AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
-import { buildScheduledRepeatMap, scheduleRecommendationForTicket } from "../utils/scheduleRecommendations";
+import { buildScheduledRepeatMap, currentScheduleRowsForTicket, scheduleDateValue, scheduleLocationLabel, scheduleQuantity, scheduleRecommendationForTicket } from "../utils/scheduleRecommendations";
 
 const RECENT_USAGE_DAYS = 90;
+const RECENT_ORDER_DAYS = 30;
 const LOW_STOCK_MONTHS = 1;
 const ON_HAND_STATUSES = new Set(["available", "allocated", "on_hold"]);
 
@@ -26,6 +27,14 @@ function customerName(ticket) {
 
 function ticketMeta(ticket) {
   return ticket.product_code ? `TSM ${ticket.product_code}` : "No TSM ID";
+}
+
+function customerOwner(ticket) {
+  return String(ticket.customer_account_owner || ticket.account_owner || "").trim();
+}
+
+function customerOptionLabel(customer) {
+  return [customer.name, customer.customer_code ? `ID ${customer.customer_code}` : ""].filter(Boolean).join(" / ");
 }
 
 function sameId(a, b) {
@@ -83,6 +92,57 @@ function quantityLabel(value) {
   if (!Number.isFinite(number) || number <= 0) return "0";
   if (number >= 1000) return Math.round(number).toLocaleString();
   return Number(number.toFixed(1)).toLocaleString();
+}
+
+function scheduleDateLabel(value) {
+  const date = parseDateValue(value);
+  if (!date) return "";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function stockoutInfo(monthlyUsage, onHand, backendBusinessDays = null) {
+  const monthly = numeric(monthlyUsage);
+  const stock = numeric(onHand);
+  const serverDays = Number(backendBusinessDays);
+  if (monthly <= 0) {
+    return { days: Number.POSITIVE_INFINITY, label: "No recent usage", tone: "quiet" };
+  }
+  if (stock <= 0) {
+    return { days: 0, label: "0 business days", tone: "urgent" };
+  }
+  const days = Number.isFinite(serverDays) && serverDays < 9999999
+    ? Math.max(0, Math.floor(serverDays))
+    : Math.max(0, Math.floor(stock / (monthly / 21)));
+  return {
+    days,
+    label: `${days.toLocaleString()} business day${days === 1 ? "" : "s"}`,
+    tone: days <= 5 ? "urgent" : days <= 15 ? "watch" : "good",
+  };
+}
+
+function recentOrderCountForTicket(ticket, usageRows = [], finishedRows = [], now = new Date()) {
+  const summary = Number(ticket.recent_order_count_30d);
+  if (Number.isFinite(summary)) return Math.max(0, summary);
+
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - RECENT_ORDER_DAYS);
+
+  const importedOrderCount = usageRows.reduce((count, row) => {
+    if (!usageMatchesTicket(row, ticket)) return count;
+    const date = usageDate(row);
+    if (!date || date < cutoff || date > now) return count;
+    return count + 1;
+  }, 0);
+
+  const shippedOrderCount = finishedRows.reduce((count, row) => {
+    if (!finishedMatchesTicket(row, ticket)) return count;
+    if (String(row.status || "").toLowerCase() !== "shipped") return count;
+    const date = shipmentDate(row);
+    if (!date || date < cutoff || date > now) return count;
+    return count + 1;
+  }, 0);
+
+  return importedOrderCount + shippedOrderCount;
 }
 
 function ticketUsageStats(ticket, usageRows = [], finishedRows = [], now = new Date()) {
@@ -144,100 +204,246 @@ function ticketUsageStats(ticket, usageRows = [], finishedRows = [], now = new D
   };
 }
 
-export default function JobTicketGallery({ rows, selectedId, usageRows = [], finishedRows = [], scheduleRows = [], onSelect }) {
+export default function JobTicketGallery({
+  rows,
+  selectedId,
+  usageRows = [],
+  finishedRows = [],
+  scheduleRows = [],
+  customers = [],
+  customerFilter = "",
+  ownerFilter = "",
+  sortMode = "usage",
+  totalCount = 0,
+  loading = false,
+  onCustomerFilterChange,
+  onOwnerFilterChange,
+  onSortModeChange,
+  onClearFilters,
+  onSelect,
+}) {
   const scheduledRepeatMap = useMemo(() => buildScheduledRepeatMap(scheduleRows), [scheduleRows]);
+  const customerOptions = useMemo(() => (
+    [...(customers ?? [])]
+      .filter((customer) => customer?.id && customer.is_active !== false)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { numeric: true }))
+  ), [customers]);
+  const ownerOptions = useMemo(() => {
+    const owners = new Set();
+    (customers ?? []).forEach((customer) => {
+      const owner = String(customer?.account_owner || "").trim();
+      if (owner) owners.add(owner);
+    });
+    (rows ?? []).forEach((ticket) => {
+      const owner = customerOwner(ticket);
+      if (owner) owners.add(owner);
+    });
+    return Array.from(owners).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [customers, rows]);
+  const filtersActive = Boolean(customerFilter || ownerFilter);
   const sortedTickets = useMemo(() => {
     const now = new Date();
     return (rows ?? [])
       .map((ticket) => {
         const stats = ticketUsageStats(ticket, usageRows, finishedRows, now);
+        const stockout = stockoutInfo(stats.monthlyUsage, stats.onHand, ticket.stockout_business_days);
+        const recentOrderCount30d = recentOrderCountForTicket(ticket, usageRows, finishedRows, now);
+        const lowPredictability = stats.monthlyUsage > 0.001 && recentOrderCount30d <= 1;
+        const activeScheduleRows = currentScheduleRowsForTicket(ticket, scheduleRows);
+        const currentScheduleCount = Math.max(activeScheduleRows.length, numeric(ticket.current_schedule_count));
+        const scheduled = currentScheduleCount > 0;
         return {
           ticket,
           stats,
+          stockout,
+          recentOrderCount30d,
+          lowPredictability,
+          activeScheduleRows,
+          currentScheduleCount,
+          scheduled,
           scheduleCue: scheduleRecommendationForTicket(ticket, scheduledRepeatMap, stats),
         };
       })
       .sort((a, b) => {
-        if (a.scheduleCue.recommended !== b.scheduleCue.recommended) {
-          return a.scheduleCue.recommended ? -1 : 1;
-        }
         const aHasUsage = a.stats.monthlyUsage > 0.001;
         const bHasUsage = b.stats.monthlyUsage > 0.001;
         if (aHasUsage !== bHasUsage) return aHasUsage ? -1 : 1;
+        if (a.scheduled !== b.scheduled) return a.scheduled ? 1 : -1;
+        if (sortMode === "runout") {
+          if (a.lowPredictability !== b.lowPredictability) return a.lowPredictability ? 1 : -1;
+          const runoutDelta = a.stockout.days - b.stockout.days;
+          if (Math.abs(runoutDelta) > 0.001) return runoutDelta;
+          const usageDelta = b.stats.monthlyUsage - a.stats.monthlyUsage;
+          if (Math.abs(usageDelta) > 0.001) return usageDelta;
+        } else {
+          const usageDelta = b.stats.monthlyUsage - a.stats.monthlyUsage;
+          if (Math.abs(usageDelta) > 0.001) return usageDelta;
+          const runoutDelta = a.stockout.days - b.stockout.days;
+          if (Math.abs(runoutDelta) > 0.001 && (a.stats.lowStockLevel || b.stats.lowStockLevel)) return runoutDelta;
+        }
+        const gapDelta = (b.stats.monthlyUsage - b.stats.onHand) - (a.stats.monthlyUsage - a.stats.onHand);
+        if (Math.abs(gapDelta) > 0.001 && (a.stats.lowStockLevel || b.stats.lowStockLevel)) return gapDelta;
+        if (a.scheduleCue.recommended !== b.scheduleCue.recommended) {
+          return a.scheduleCue.recommended ? -1 : 1;
+        }
         if (a.stats.lowStockLevel !== b.stats.lowStockLevel) {
           if (a.stats.lowStockLevel === "critical") return -1;
           if (b.stats.lowStockLevel === "critical") return 1;
           if (a.stats.lowStockLevel === "low") return -1;
           if (b.stats.lowStockLevel === "low") return 1;
         }
-        const gapDelta = (b.stats.monthlyUsage - b.stats.onHand) - (a.stats.monthlyUsage - a.stats.onHand);
-        if (Math.abs(gapDelta) > 0.001 && (a.stats.lowStockLevel || b.stats.lowStockLevel)) return gapDelta;
-        const usageDelta = b.stats.monthlyUsage - a.stats.monthlyUsage;
-        if (Math.abs(usageDelta) > 0.001) return usageDelta;
         const stockDelta = a.stats.onHand - b.stats.onHand;
         if (Math.abs(stockDelta) > 0.001) return stockDelta;
         return String(a.ticket.job_name || a.ticket.ticket_number || "").localeCompare(String(b.ticket.job_name || b.ticket.ticket_number || ""), undefined, { numeric: true });
       });
-  }, [rows, usageRows, finishedRows, scheduledRepeatMap]);
-
-  if (!rows.length) return <p className="empty-row">No job tickets match this view.</p>;
+  }, [rows, usageRows, finishedRows, scheduleRows, scheduledRepeatMap, sortMode]);
 
   return (
-    <div className="job-ticket-gallery">
-      {sortedTickets.map(({ ticket, stats, scheduleCue }) => {
-        const image = primaryImage(ticket);
-        const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
-        return (
+    <section className="job-ticket-gallery-shell">
+      <div className="job-ticket-filter-bar">
+        <div>
+          <SlidersHorizontal size={16} />
+          <span>Filters</span>
+          <strong>{rows.length.toLocaleString()} shown{totalCount ? ` / ${totalCount.toLocaleString()} total` : ""}</strong>
+          {loading && <em>Updating...</em>}
+        </div>
+        <label>
+          <span>Customer</span>
+          <select value={customerFilter} onChange={(event) => onCustomerFilterChange?.(event.target.value)}>
+            <option value="">All customers</option>
+            {customerOptions.map((customer) => (
+              <option value={customer.id} key={customer.id}>{customerOptionLabel(customer)}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Sales Person</span>
+          <select value={ownerFilter} onChange={(event) => onOwnerFilterChange?.(event.target.value)}>
+            <option value="">All sales people</option>
+            {ownerOptions.map((owner) => (
+              <option value={owner} key={owner}>{owner}</option>
+            ))}
+            <option value="__unassigned__">Unassigned</option>
+          </select>
+        </label>
+        <label>
+          <span>Sort</span>
+          <select value={sortMode} onChange={(event) => onSortModeChange?.(event.target.value)}>
+            <option value="usage">High usage</option>
+            <option value="runout">Business days until out</option>
+          </select>
+        </label>
+        {filtersActive && (
           <button
-            className={`job-ticket-card ${String(selectedId) === String(ticket.id) ? "active" : ""} ${stats.lowStockLevel ? `stock-${stats.lowStockLevel}` : ""} ${scheduleCue.recommended ? "schedule-recommended" : ""}`}
+            className="ghost-btn"
             type="button"
-            key={ticket.id}
-            onClick={() => onSelect(ticket)}
+            onClick={() => {
+              if (onClearFilters) {
+                onClearFilters();
+              } else {
+                onCustomerFilterChange?.("");
+                onOwnerFilterChange?.("");
+              }
+            }}
           >
-            <div className="job-ticket-card-image">
-              {image?.url && !imageIsDocument ? (
-                <AuthenticatedImage src={image.url} alt={image.name || ticket.job_name} />
-              ) : image?.url ? (
-                <PdfPreview url={image.url} title={image.name || ticket.job_name || "Job PDF"} compact />
-              ) : (
-                <div>
-                  <ImageIcon size={28} />
-                  <span>No Image</span>
-                </div>
-              )}
-              <span className="job-ticket-card-badge">{ticketMeta(ticket)}</span>
-              {imageSourceLabel(image) && <span className="job-ticket-source-badge">{imageSourceLabel(image)}</span>}
-              {stats.lowStockLevel && (
-                <span className={`job-ticket-stock-flag ${stats.lowStockLevel}`}>
-                  <AlertTriangle size={12} /> {stats.lowStockLevel === "critical" ? "No stock" : "Low stock"}
-                </span>
-              )}
-              {scheduleCue.recommended && (
-                <span
-                  className="job-ticket-schedule-cue"
-                  title={`Recommended to schedule: avg/month ${quantityLabel(scheduleCue.monthlyUsage)} is above stock ${quantityLabel(scheduleCue.onHand)}, and repeat ${scheduleCue.repeatLabel} is already on the schedule.`}
-                >
-                  <CalendarPlus size={12} />
-                  <span>Plan</span>
-                </span>
-              )}
-            </div>
-            <div className="job-ticket-card-body">
-              <strong>{ticket.job_name || "Untitled Job"}</strong>
-              <span>{customerName(ticket)}</span>
-              <div className="job-ticket-usage-row">
-                <span>3mo avg <strong>{quantityLabel(stats.monthlyUsage)}</strong></span>
-                <span>Stock <strong>{quantityLabel(stats.onHand)}</strong></span>
-              </div>
-              {scheduleCue.recommended ? (
-                <em className="job-ticket-card-recommendation">Avg/month above stock / repeat {scheduleCue.repeatLabel} scheduled</em>
-              ) : (
-                <em>{stats.monthsOnHand !== null ? `${Number(stats.monthsOnHand.toFixed(1)).toLocaleString()} months on hand` : image?.name || "Open job packet"}</em>
-              )}
-            </div>
+            <X size={14} /> Clear
           </button>
-        );
-      })}
-    </div>
+        )}
+      </div>
+
+      {!rows.length ? (
+        <p className="empty-row">No job tickets match this view.</p>
+      ) : (
+        <div className="job-ticket-gallery">
+          {sortedTickets.map(({ ticket, stats, stockout, recentOrderCount30d, lowPredictability, activeScheduleRows, currentScheduleCount, scheduled, scheduleCue }) => {
+            const image = primaryImage(ticket);
+            const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
+            const owner = customerOwner(ticket);
+            const primarySchedule = activeScheduleRows[0] ?? null;
+            const scheduleLabel = primarySchedule ? scheduleLocationLabel(primarySchedule) : `${currentScheduleCount} active schedule${currentScheduleCount === 1 ? "" : "s"}`;
+            const scheduleMeta = primarySchedule
+              ? [
+                scheduleDateLabel(scheduleDateValue(primarySchedule)),
+                scheduleQuantity(primarySchedule) ? `${quantityLabel(scheduleQuantity(primarySchedule))} labels` : "",
+                currentScheduleCount > 1 ? `+${currentScheduleCount - 1} more` : "",
+              ].filter(Boolean).join(" / ")
+              : "";
+            const showRecommendation = !scheduled && scheduleCue.recommended;
+            return (
+              <button
+                className={`job-ticket-card ${String(selectedId) === String(ticket.id) ? "active" : ""} ${stats.lowStockLevel ? `stock-${stats.lowStockLevel}` : ""} ${showRecommendation ? "schedule-recommended" : ""} ${scheduled ? "is-scheduled" : ""}`}
+                type="button"
+                key={ticket.id}
+                onClick={() => onSelect(ticket)}
+              >
+                <div className="job-ticket-card-image">
+                  {image?.url && !imageIsDocument ? (
+                    <AuthenticatedImage src={image.url} alt={image.name || ticket.job_name} />
+                  ) : image?.url ? (
+                    <PdfPreview url={image.url} title={image.name || ticket.job_name || "Job PDF"} compact />
+                  ) : (
+                    <div>
+                      <ImageIcon size={28} />
+                      <span>No Image</span>
+                    </div>
+                  )}
+                  <span className="job-ticket-card-badge">{ticketMeta(ticket)}</span>
+                  {imageSourceLabel(image) && <span className="job-ticket-source-badge">{imageSourceLabel(image)}</span>}
+                  {stats.lowStockLevel && (
+                    <span className={`job-ticket-stock-flag ${stats.lowStockLevel}`}>
+                      <AlertTriangle size={12} /> {stats.lowStockLevel === "critical" ? "No stock" : "Low stock"}
+                    </span>
+                  )}
+                  {scheduled && (
+                    <span className="job-ticket-scheduled-flag">
+                      <CalendarCheck2 size={12} />
+                      <span>Scheduled</span>
+                    </span>
+                  )}
+                  {showRecommendation && (
+                    <span
+                      className="job-ticket-schedule-cue"
+                      title={`Recommended to schedule: avg/month ${quantityLabel(scheduleCue.monthlyUsage)} is above stock ${quantityLabel(scheduleCue.onHand)}, and repeat ${scheduleCue.repeatLabel} is already on the schedule.`}
+                    >
+                      <CalendarPlus size={12} />
+                      <span>Plan</span>
+                    </span>
+                  )}
+                </div>
+                <div className="job-ticket-card-body">
+                  <strong>{ticket.job_name || "Untitled Job"}</strong>
+                  <span>{customerName(ticket)}</span>
+                  {owner && <span className="job-ticket-card-owner">Sales: {owner}</span>}
+                  {scheduled && (
+                    <span className="job-ticket-schedule-status-card">
+                      Scheduled <strong>{scheduleLabel}</strong>
+                      {scheduleMeta && <em>{scheduleMeta}</em>}
+                    </span>
+                  )}
+                  <div className="job-ticket-usage-row">
+                    <span>3mo avg <strong>{quantityLabel(stats.monthlyUsage)}</strong></span>
+                    <span>Stock <strong>{quantityLabel(stats.onHand)}</strong></span>
+                  </div>
+                  <span className={`job-ticket-runout-tag ${stockout.tone}`}>
+                    Stock Runs Out In <strong>{stockout.label}</strong>
+                  </span>
+                  {lowPredictability && (
+                    <span className="job-ticket-demand-confidence">
+                      {recentOrderCount30d === 1 ? "1 order last 30d" : `${recentOrderCount30d} orders last 30d`}
+                      <strong>Low predictability</strong>
+                    </span>
+                  )}
+                  {scheduleCue.recommended ? (
+                    <em className="job-ticket-card-recommendation">Avg/month above stock / repeat {scheduleCue.repeatLabel} scheduled</em>
+                  ) : (
+                    <em>{stats.monthsOnHand !== null ? `${Number(stats.monthsOnHand.toFixed(1)).toLocaleString()} months on hand` : image?.name || "Open job packet"}</em>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

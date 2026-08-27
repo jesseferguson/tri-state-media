@@ -866,46 +866,51 @@ function ScheduleDetailOverlay({ row, lookups, currentUser, onClose, onFlexDieRe
           </div>
         </header>
 
-        <section className="schedule-packet-hero">
+        <section className="schedule-packet-hero schedule-product-packet-hero">
           <ScheduleThumb row={row} />
-          <div className="schedule-detail-grid">
-            <DetailItem label="Customer" value={row.customer_name} />
-            <DetailItem label="TSM ID" value={row.product_code || row.job_product_code} />
-            <DetailItem label="Customer PO" value={row.customer_po} />
-            <DetailItem label="Ship Date" value={row.due_date} />
-            <DetailItem label="Ship / Stock" value={`${formatQty(row.quantity_to_ship)} / ${formatQty(row.quantity_to_stock)}`} />
-            <DetailItem label="Scheduled By" value={row.scheduled_by} />
+          <div className="schedule-info-cluster">
+            <article className="schedule-info-group order">
+              <h3><ClipboardList size={15} /> Order</h3>
+              <div className="schedule-detail-grid compact">
+                <DetailItem label="Customer" value={row.customer_name} />
+                <DetailItem label="TSM ID" value={row.product_code || row.job_product_code} />
+                <DetailItem label="Customer PO" value={row.customer_po} />
+                <DetailItem label="Ship Date" value={row.due_date} />
+                <DetailItem label="Ship / Stock" value={`${formatQty(row.quantity_to_ship)} / ${formatQty(row.quantity_to_stock)}`} />
+                <DetailItem label="Scheduled By" value={row.scheduled_by} />
+              </div>
+              <ScheduleNoteBlock label="CSR Schedule Note" value={row.notes} emptyText="No CSR schedule note entered." />
+            </article>
+
+            <article className="schedule-info-group specs">
+              <h3><PackageCheck size={15} /> Label Specs</h3>
+              <div className="schedule-detail-grid compact">
+                <DetailItem label="Size" value={`${formatInches(ticket?.label_width_inches || row.job_label_width_inches)} x ${formatInches(ticket?.label_length_inches || row.job_label_length_inches)}`} />
+                <DetailItem label="Repeat" value={formatInches(ticket?.repeat_inches || row.job_repeat_inches)} />
+                <DetailItem label="Recipe" value={ticket?.recipe_name || row.recipe_name} />
+                <DetailItem label="Cutting" value={labelize(ticket?.cutting_type)} />
+                <DetailItem label="Description" value={ticket?.description} />
+              </div>
+            </article>
+
+            <article className="schedule-info-group material">
+              <h3><Layers3 size={15} /> Material</h3>
+              <div className="schedule-detail-grid compact">
+                <DetailItem label="Material Type" value={ticket?.material_master_type_code || ticket?.material_spec_master_type_code} />
+                <DetailItem label="Material" value={[row.job_material_spec_code, row.job_material_spec_name].filter(Boolean).join(" / ")} />
+                <DetailItem label="On Hand" value={`${materialInventory.length} rolls / ${formatNumber(materialFeet, " ft")}`} />
+              </div>
+              <ScheduleMaterialChart rows={materialInventory} />
+            </article>
           </div>
         </section>
 
         <section className="schedule-note-grid">
           <ScheduleNoteBlock label="Operator Run Note" value={ticket?.job_notes} emptyText="No operator run note on this ticket." />
-          <ScheduleNoteBlock label="CSR Schedule Note" value={row.notes} emptyText="No CSR schedule note entered." />
           {ticket?.finishing_notes && <ScheduleNoteBlock label="Finishing Note" value={ticket.finishing_notes} />}
         </section>
 
         <section className="schedule-operator-sections">
-          <div className="schedule-operator-card">
-            <h3><PackageCheck size={15} /> Label Specs</h3>
-            <div className="schedule-detail-grid compact">
-              <DetailItem label="Size" value={`${formatInches(ticket?.label_width_inches || row.job_label_width_inches)} x ${formatInches(ticket?.label_length_inches || row.job_label_length_inches)}`} />
-              <DetailItem label="Repeat" value={formatInches(ticket?.repeat_inches || row.job_repeat_inches)} />
-              <DetailItem label="Recipe" value={ticket?.recipe_name || row.recipe_name} />
-              <DetailItem label="Cutting" value={labelize(ticket?.cutting_type)} />
-              <DetailItem label="Description" value={ticket?.description} />
-            </div>
-          </div>
-
-          <div className="schedule-operator-card">
-            <h3><PackageCheck size={15} /> Material</h3>
-            <div className="schedule-detail-grid compact">
-              <DetailItem label="Material Type" value={ticket?.material_master_type_code || ticket?.material_spec_master_type_code} />
-              <DetailItem label="Material" value={[row.job_material_spec_code, row.job_material_spec_name].filter(Boolean).join(" / ")} />
-              <DetailItem label="On Hand" value={`${materialInventory.length} rolls / ${formatNumber(materialFeet, " ft")}`} />
-            </div>
-            <ScheduleMaterialChart rows={materialInventory} />
-          </div>
-
           <div className="schedule-operator-card wide schedule-material-action-card">
             <ScheduleMaterialWorkflow
               schedule={row}

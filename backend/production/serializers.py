@@ -64,6 +64,19 @@ def job_ticket_image_preview_url(serializer, obj, slot):
     return absolute_api_url(serializer, f"/api/job-tickets/{obj.pk}/images/{slot}/preview/")
 
 
+def job_ticket_general_image_url(serializer, obj):
+    protected_url = job_ticket_image_preview_url(serializer, obj, "general")
+    if protected_url:
+        return protected_url
+    return getattr(obj, "external_image_url", "") or ""
+
+
+def file_name_from_url(url):
+    parsed = urlparse(str(url or ""))
+    path = unquote(parsed.path or "")
+    return path.rsplit("/", 1)[-1] if path else ""
+
+
 class CustomerContactSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
 
@@ -494,12 +507,19 @@ class CoreInventorySerializer(serializers.ModelSerializer):
 class JobTicketSerializer(serializers.ModelSerializer):
     performed_by = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_display = serializers.SerializerMethodField()
+    customer_account_owner = serializers.SerializerMethodField()
     general_image = serializers.SerializerMethodField()
     spec_image = serializers.SerializerMethodField()
     finishing_image = serializers.SerializerMethodField()
     job_images = serializers.SerializerMethodField()
     recent_usage_90d = serializers.SerializerMethodField()
     finished_on_hand_quantity = serializers.SerializerMethodField()
+    stockout_business_days = serializers.SerializerMethodField()
+    current_schedule_count = serializers.SerializerMethodField()
+    schedule_sort_bucket = serializers.SerializerMethodField()
+    recent_usage_sort_bucket = serializers.SerializerMethodField()
+    recent_order_count_30d = serializers.SerializerMethodField()
+    stockout_sort_bucket = serializers.SerializerMethodField()
     recent_monthly_usage = serializers.SerializerMethodField()
     stock_months_on_hand = serializers.SerializerMethodField()
     low_stock_level = serializers.SerializerMethodField()
@@ -523,6 +543,9 @@ class JobTicketSerializer(serializers.ModelSerializer):
 
     def get_customer_display(self, obj):
         return obj.customer.name if obj.customer else obj.customer_name or None
+
+    def get_customer_account_owner(self, obj):
+        return obj.customer.account_owner if obj.customer else ""
 
     def get_material_spec_name(self, obj):
         return obj.material_spec.name if obj.material_spec else None
@@ -560,6 +583,27 @@ class JobTicketSerializer(serializers.ModelSerializer):
     def get_finished_on_hand_quantity(self, obj):
         return getattr(obj, "finished_on_hand_quantity", 0) or 0
 
+    def get_stockout_business_days(self, obj):
+        value = getattr(obj, "stockout_business_days", None)
+        if value is None:
+            return None
+        return round(float(value), 3)
+
+    def get_current_schedule_count(self, obj):
+        return int(getattr(obj, "current_schedule_count", 0) or 0)
+
+    def get_schedule_sort_bucket(self, obj):
+        return int(getattr(obj, "schedule_sort_bucket", 0) or 0)
+
+    def get_recent_usage_sort_bucket(self, obj):
+        return int(getattr(obj, "recent_usage_sort_bucket", 0) or 0)
+
+    def get_recent_order_count_30d(self, obj):
+        return int(getattr(obj, "recent_order_count_30d", 0) or 0)
+
+    def get_stockout_sort_bucket(self, obj):
+        return int(getattr(obj, "stockout_sort_bucket", 0) or 0)
+
     def get_recent_monthly_usage(self, obj):
         usage = float(getattr(obj, "recent_usage_90d", 0) or 0)
         return round(usage / 3, 3) if usage > 0 else 0
@@ -581,12 +625,14 @@ class JobTicketSerializer(serializers.ModelSerializer):
     def image_payload(self, obj, slot):
         image = getattr(obj, f"{slot}_image", None)
         protected_url = job_ticket_image_preview_url(self, obj, slot)
+        external_url = obj.external_image_url if slot == "general" and not image else ""
+        preview_url = protected_url or external_url
         source = ""
         if image:
             source = "New System"
-        elif slot == "general" and obj.external_image_url:
-            source = f"{obj.external_image_source or 'External'} image hidden"
-        file_name = image.name.split("/")[-1] if image else ""
+        elif external_url:
+            source = obj.external_image_source or "Legacy"
+        file_name = image.name.split("/")[-1] if image else file_name_from_url(external_url)
         return {
             "slot": slot,
             "label": {
@@ -594,22 +640,22 @@ class JobTicketSerializer(serializers.ModelSerializer):
                 "spec": "Spec Image",
                 "finishing": "Finishing Image",
             }.get(slot, slot.title()),
-            "url": protected_url,
+            "url": preview_url,
             "fileName": file_name,
             "storageName": image.name if image else "",
-            "name": getattr(obj, f"{slot}_image_name", "") or (f"{source} file" if source and not image else ""),
+            "name": getattr(obj, f"{slot}_image_name", "") or (f"{source} file" if source and not image else file_name),
             "description": getattr(obj, f"{slot}_image_description", ""),
-            "hasImage": bool(protected_url),
+            "hasImage": bool(preview_url),
             "source": source,
-            "isExternal": False,
-            "isDocument": is_document_url(file_name),
+            "isExternal": bool(external_url),
+            "isDocument": is_document_url(file_name or external_url),
         }
 
     def get_job_images(self, obj):
         return [self.image_payload(obj, slot) for slot in ["general", "spec", "finishing"]]
 
     def get_general_image(self, obj):
-        return job_ticket_image_preview_url(self, obj, "general")
+        return job_ticket_general_image_url(self, obj)
 
     def get_spec_image(self, obj):
         return job_ticket_image_preview_url(self, obj, "spec")
@@ -746,7 +792,7 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     def get_job_general_image_url(self, obj):
         if not obj.job_ticket:
             return ""
-        return job_ticket_image_preview_url(self, obj.job_ticket, "general")
+        return job_ticket_general_image_url(self, obj.job_ticket)
 
     def get_job_general_image_source(self, obj):
         if not obj.job_ticket:
@@ -759,7 +805,8 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
 
     def get_job_general_image_is_document(self, obj):
         image = obj.job_ticket.general_image if obj.job_ticket else None
-        return is_document_url(image.name if image else "")
+        external_url = obj.job_ticket.external_image_url if obj.job_ticket and not image else ""
+        return is_document_url(image.name if image else external_url)
 
     def _report_totals(self, obj):
         cached = getattr(obj, "_report_totals_cache", None)

@@ -504,6 +504,17 @@ class DataImportJobTicketTests(TestCase):
         self.assertEqual(ticket.description, "Standard 4 x 6.5 Label")
         self.assertEqual(ticket.external_image_url, "https://example.com/art.pdf")
         self.assertEqual(ticket.external_image_source, "Glide")
+        detail = self.client.get(
+            reverse("job-ticket-detail", args=[ticket.pk]),
+            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(admin)}",
+        )
+        self.assertEqual(detail.status_code, 200, detail.content)
+        general_image = detail.json()["job_images"][0]
+        self.assertEqual(detail.json()["general_image"], "https://example.com/art.pdf")
+        self.assertEqual(general_image["url"], "https://example.com/art.pdf")
+        self.assertEqual(general_image["source"], "Glide")
+        self.assertTrue(general_image["isExternal"])
+        self.assertTrue(general_image["isDocument"])
         self.assertEqual(ticket.label_width_inches, Decimal("4"))
         self.assertEqual(ticket.label_length_inches, Decimal("6.5"))
         self.assertEqual(ticket.repeat_inches, Decimal("6.625"))

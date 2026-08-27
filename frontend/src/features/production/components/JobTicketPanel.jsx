@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Barcode, CalendarClock, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Clock3, FileText, History, Image as ImageIcon, LoaderCircle, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, Barcode, CalendarCheck2, CalendarClock, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Clock3, FileText, History, Image as ImageIcon, LoaderCircle, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
 import { AuthenticatedFileLink, AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
 import RecipeOptionsView from "../../tooling/components/RecipeOptionsView";
 import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
-import { buildSameRepeatScheduleRecommendations, ticketCustomerName, ticketDisplayName } from "../utils/scheduleRecommendations";
+import { buildSameRepeatScheduleRecommendations, currentScheduleRowsForTicket, scheduleLocationLabel, ticketCustomerName, ticketDisplayName } from "../utils/scheduleRecommendations";
 
 const tabs = [
   { key: "general", label: "General" },
@@ -1548,7 +1548,7 @@ function SameRepeatSchedulePanel({ summary, onOpenTicket, mode = "side" }) {
                   <div className="job-repeat-suggestion-metrics">
                     <span>Avg/mo <strong>{formatNumber(item.stats.monthlyUsage)}</strong></span>
                     <span>Stock <strong>{formatNumber(item.stats.onHand)}</strong></span>
-                    <em className={`job-repeat-card-runway ${runway.tone}`}>Runway <strong>{runway.label}</strong></em>
+                    <em className={`job-repeat-card-runway ${runway.tone}`}>Stock Runs Out In <strong>{runway.label}</strong></em>
                   </div>
                   <button type="button" onClick={() => onOpenTicket?.(item.ticket)}>
                     <CalendarPlus size={14} />
@@ -1633,7 +1633,7 @@ function ScheduleStartStep({
           </div>
           <div className={`job-schedule-runway-card ${runway.tone}`}>
             <CalendarClock size={18} />
-            <span>Estimated Stock Runway</span>
+            <span>Stock Runs Out In</span>
             <strong>{runway.label}</strong>
             <em>{runway.detail}</em>
           </div>
@@ -1720,6 +1720,7 @@ export default function JobTicketPanel({
   onApproveChange,
   onReceiveFinishedInventory,
   onOpenScheduleSuggestion,
+  onViewSchedule,
   onEditorOpen,
   renderEditorForm,
   renderScheduleForm,
@@ -1781,6 +1782,10 @@ export default function JobTicketPanel({
     () => matchingSchedule(ticket, lookups["production-schedule"]),
     [ticket, lookups]
   );
+  const currentScheduleRows = useMemo(
+    () => currentScheduleRowsForTicket(ticket, scheduleRows),
+    [ticket, scheduleRows]
+  );
   const usageRows = useMemo(
     () => matchingUsageRows(ticket, lookups["job-ticket-usages"]),
     [ticket, lookups]
@@ -1803,6 +1808,8 @@ export default function JobTicketPanel({
   const finishedQuantity = availableFinished.reduce((sum, row) => sum + numeric(row.quantity), 0);
   const finishedCartons = availableFinished.reduce((sum, row) => sum + getBoxCount(row), 0);
   const scheduleTotal = scheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
+  const currentScheduleTotal = currentScheduleRows.reduce((sum, row) => sum + scheduleQuantity(row), 0);
+  const primaryCurrentSchedule = currentScheduleRows[0] ?? null;
   const selectedRangeLabel = chartRangeOptions.find((option) => option.key === chartRange)?.label || "3 Months";
   const shippedBars = useMemo(
     () => monthlyBars(shippedPoints, (row) => row.date, (row) => row.quantity, chartRange),
@@ -1852,7 +1859,7 @@ export default function JobTicketPanel({
     [allJobTickets, lookups]
   );
   const sameRepeatScheduleRecommendations = useMemo(
-    () => buildSameRepeatScheduleRecommendations(ticket, sameRepeatJobTickets, lookups?.["production-schedule"] ?? [], { limit: 8, sortBy: "usage" }),
+    () => buildSameRepeatScheduleRecommendations(ticket, sameRepeatJobTickets, lookups?.["production-schedule"] ?? [], { limit: 8, sortBy: "runout" }),
     [ticket, sameRepeatJobTickets, lookups]
   );
   const showSameRepeatScheduleRecommendations = Boolean(
@@ -2027,6 +2034,40 @@ export default function JobTicketPanel({
           </div>
           <button type="button" onClick={() => setScheduleNotice(null)} aria-label="Dismiss schedule confirmation">
             <XCircle size={17} />
+          </button>
+        </section>
+      )}
+
+      {primaryCurrentSchedule && (
+        <section className="job-current-schedule-banner" role="status" aria-live="polite">
+          <div className="job-current-schedule-icon">
+            <CalendarCheck2 size={20} />
+          </div>
+          <div className="job-current-schedule-main">
+            <span>Currently Scheduled</span>
+            <strong>{scheduleLocationLabel(primaryCurrentSchedule)}</strong>
+            <em>{[
+              labelize(primaryCurrentSchedule.status || "scheduled"),
+              shortDate(dateValue(primaryCurrentSchedule)),
+              primaryCurrentSchedule.scheduled_by ? `By ${primaryCurrentSchedule.scheduled_by}` : "",
+            ].filter(Boolean).join(" / ")}</em>
+          </div>
+          <div className="job-current-schedule-facts">
+            <div>
+              <span>Quantity</span>
+              <strong>{currentScheduleTotal ? formatNumber(currentScheduleTotal) : "--"}</strong>
+            </div>
+            <div>
+              <span>Priority</span>
+              <strong>{labelize(primaryCurrentSchedule.priority || "low")}</strong>
+            </div>
+            <div>
+              <span>Entries</span>
+              <strong>{currentScheduleRows.length}</strong>
+            </div>
+          </div>
+          <button type="button" onClick={() => onViewSchedule?.(primaryCurrentSchedule)}>
+            View on Schedule <ArrowRight size={15} />
           </button>
         </section>
       )}

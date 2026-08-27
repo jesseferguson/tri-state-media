@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import Case, Count, DecimalField, ExpressionWrapper, F, FloatField, IntegerField, OuterRef, Q, Subquery, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -1799,6 +1799,12 @@ class JobTicketViewSet(BaseProductionViewSet):
         "repeat_inches",
         "requested_quantity",
         "recent_usage_90d",
+        "recent_usage_sort_bucket",
+        "recent_order_count_30d",
+        "current_schedule_count",
+        "schedule_sort_bucket",
+        "stockout_sort_bucket",
+        "stockout_business_days",
         "finished_on_hand_quantity",
     ]
 
@@ -2108,7 +2114,11 @@ class JobTicketViewSet(BaseProductionViewSet):
     def get_queryset(self):
         recent_usage_start = timezone.now() - timedelta(days=90)
         recent_run_start = timezone.localdate() - timedelta(days=90)
+        recent_order_start = timezone.now() - timedelta(days=30)
+        recent_order_run_start = timezone.localdate() - timedelta(days=30)
+        current_schedule_statuses = ["unscheduled", "scheduled", "ready", "running", "on_hold"]
         decimal_zero = Value(0, output_field=DecimalField(max_digits=14, decimal_places=3))
+        integer_zero = Value(0, output_field=IntegerField())
         usage_total = (
             JobTicketUsage.objects
             .filter(job_ticket=OuterRef("pk"), used_at__gte=recent_usage_start)
@@ -2116,11 +2126,25 @@ class JobTicketViewSet(BaseProductionViewSet):
             .annotate(total=Sum("quantity"))
             .values("total")
         )
+        usage_order_count_30d = (
+            JobTicketUsage.objects
+            .filter(job_ticket=OuterRef("pk"), used_at__gte=recent_order_start)
+            .values("job_ticket")
+            .annotate(total=Count("id"))
+            .values("total")
+        )
         shipped_total = (
             FinishedInventory.objects
             .filter(job_ticket=OuterRef("pk"), status="shipped", run_date__gte=recent_run_start)
             .values("job_ticket")
             .annotate(total=Sum("quantity"))
+            .values("total")
+        )
+        shipped_order_count_30d = (
+            FinishedInventory.objects
+            .filter(job_ticket=OuterRef("pk"), status="shipped", run_date__gte=recent_order_run_start)
+            .values("job_ticket")
+            .annotate(total=Count("id"))
             .values("total")
         )
         sent_finished_total = (
@@ -2134,11 +2158,29 @@ class JobTicketViewSet(BaseProductionViewSet):
             .annotate(total=Sum("quantity"))
             .values("total")
         )
+        sent_finished_order_count_30d = (
+            MaterialUsage.objects
+            .filter(
+                finished_inventory__job_ticket=OuterRef("pk"),
+                usage_type__in=["shipped", "manual", "checkout"],
+                used_date__gte=recent_order_run_start,
+            )
+            .values("finished_inventory__job_ticket")
+            .annotate(total=Count("id"))
+            .values("total")
+        )
         on_hand_total = (
             FinishedInventory.objects
             .filter(job_ticket=OuterRef("pk"), status__in=["available", "allocated", "on_hold"])
             .values("job_ticket")
             .annotate(total=Sum("quantity"))
+            .values("total")
+        )
+        current_schedule_count = (
+            ProductionSchedule.objects
+            .filter(job_ticket=OuterRef("pk"), status__in=current_schedule_statuses)
+            .values("job_ticket")
+            .annotate(total=Count("id"))
             .values("total")
         )
         qs = (
@@ -2155,7 +2197,11 @@ class JobTicketViewSet(BaseProductionViewSet):
                 imported_usage_90d=Coalesce(Subquery(usage_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
                 shipped_status_usage_90d=Coalesce(Subquery(shipped_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
                 sent_finished_usage_90d=Coalesce(Subquery(sent_finished_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
+                imported_order_count_30d=Coalesce(Subquery(usage_order_count_30d, output_field=IntegerField()), integer_zero),
+                shipped_status_order_count_30d=Coalesce(Subquery(shipped_order_count_30d, output_field=IntegerField()), integer_zero),
+                sent_finished_order_count_30d=Coalesce(Subquery(sent_finished_order_count_30d, output_field=IntegerField()), integer_zero),
                 finished_on_hand_quantity=Coalesce(Subquery(on_hand_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
+                current_schedule_count=Coalesce(Subquery(current_schedule_count, output_field=IntegerField()), integer_zero),
             )
             .annotate(
                 shipped_usage_90d=ExpressionWrapper(
@@ -2169,11 +2215,61 @@ class JobTicketViewSet(BaseProductionViewSet):
                     output_field=DecimalField(max_digits=14, decimal_places=3),
                 )
             )
+            .annotate(
+                recent_order_count_30d=ExpressionWrapper(
+                    F("imported_order_count_30d") + F("shipped_status_order_count_30d") + F("sent_finished_order_count_30d"),
+                    output_field=IntegerField(),
+                )
+            )
+            .annotate(
+                stockout_business_days=Case(
+                    When(recent_usage_90d__lte=0, then=Value(9999999.0)),
+                    default=ExpressionWrapper(
+                        F("finished_on_hand_quantity") * Value(63.0) / F("recent_usage_90d"),
+                        output_field=FloatField(),
+                    ),
+                    output_field=FloatField(),
+                )
+            )
+            .annotate(
+                recent_usage_sort_bucket=Case(
+                    When(recent_usage_90d__lte=0, then=Value(1)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                ),
+                schedule_sort_bucket=Case(
+                    When(current_schedule_count__gt=0, then=Value(1)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                ),
+            )
+            .annotate(
+                stockout_sort_bucket=Case(
+                    When(recent_order_count_30d__lte=1, recent_usage_90d__gt=0, then=Value(1)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            )
             .order_by("-recent_usage_90d", "ticket_number")
         )
-        customer = self.request.query_params.get("customer")
+        customer = str(self.request.query_params.get("customer") or "").strip()
         if customer:
-            qs = qs.filter(customer_id=customer)
+            customer_filter = Q()
+            if customer.isdigit():
+                customer_filter |= Q(customer_id=customer)
+                linked_customer = Customer.objects.filter(pk=customer).only("name").first()
+                if linked_customer:
+                    customer_filter |= Q(customer_name__iexact=linked_customer.name)
+            else:
+                customer_filter |= Q(customer__name__iexact=customer) | Q(customer_name__iexact=customer)
+            qs = qs.filter(customer_filter)
+        account_owner = str(self.request.query_params.get("account_owner") or "").strip()
+        if account_owner:
+            if account_owner == "__unassigned__":
+                qs = qs.filter(Q(customer__isnull=True) | Q(customer__account_owner=""))
+            else:
+                owner_customer_names = Customer.objects.filter(account_owner__iexact=account_owner).values_list("name", flat=True)
+                qs = qs.filter(Q(customer__account_owner__iexact=account_owner) | Q(customer_name__in=owner_customer_names))
         return qs
 
     @action(detail=True, methods=["get"], url_path="detail-lookups")
