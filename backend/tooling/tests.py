@@ -3,8 +3,9 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from users.models import CompanyRole, CompanyUser
@@ -21,6 +22,8 @@ from .models import (
     ToolingRecipeOption,
     ToolingRecipeTool,
 )
+
+TINY_PDF = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"
 
 
 class ToolingModelValidationTests(TestCase):
@@ -159,6 +162,7 @@ class ToolingModelValidationTests(TestCase):
             )
 
 
+@override_settings(API_AUTH_REQUIRED=False)
 class ToolingLocationApiTests(TestCase):
     def test_location_search_matches_visible_full_path_terms(self):
         root = ToolingLocation.objects.create(name="Test Warehouse", code="TEST-WH", location_type="shop")
@@ -184,6 +188,7 @@ class ToolingLocationApiTests(TestCase):
         self.assertEqual(codes, ["TEST-ANNEX-FLOOR"])
 
 
+@override_settings(API_AUTH_REQUIRED=False)
 class ToolingApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -218,7 +223,31 @@ class ToolingApiTests(TestCase):
         self.assertEqual(response.data["name"], "Standard Setup")
         self.assertTrue(response.data["can_run"])
 
+    def test_flex_die_dieline_upload_accepts_pdf_specs(self):
+        die = FlexDie.objects.create(
+            name="FD-PDF-001",
+            label_width_inches=Decimal("3"),
+            label_length_inches=Decimal("4"),
+            repeat_inches=Decimal("4.125"),
+        )
+        upload = SimpleUploadedFile("fd-layout.pdf", TINY_PDF, content_type="application/pdf")
 
+        response = self.client.post(
+            reverse("flex-die-dieline-image", args=[die.pk]),
+            {"image": upload, "name": "fd-layout.pdf"},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(response.data["dieline_image_is_uploaded"])
+        self.assertTrue(response.data["dieline_image_is_document"])
+        die.refresh_from_db()
+        storage_name = die.dieline_image.name
+        self.assertTrue(storage_name.endswith(".pdf"))
+        die.dieline_image.delete(save=False)
+
+
+@override_settings(API_AUTH_REQUIRED=False)
 class FlexDieRequestWorkflowTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -315,6 +344,7 @@ class FlexDieRequestWorkflowTests(TestCase):
         self.assertTrue(ToolingHistory.objects.filter(flex_die=self.die, event_type="die_request_closed").exists())
 
 
+@override_settings(API_AUTH_REQUIRED=False)
 class ToolingPrintQueueTests(TestCase):
     class FirebaseResponse:
         status = 200

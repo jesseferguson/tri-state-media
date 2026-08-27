@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Box, Edit3, Image as ImageIcon, PackagePlus, Printer, QrCode, Save, Trash2, X } from "lucide-react";
 import { choiceLists } from "../../../resourceConfig";
 import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
-import { AuthenticatedImage } from "../../../shared/components/FilePreview";
+import { FilePreview } from "../../../shared/components/FilePreview";
 import FlexDieRequestQueue from "./FlexDieRequestQueue";
 
 function numberValue(value) {
@@ -249,6 +249,8 @@ export default function FlexDieDetailPanel({
   const serials = serialsForDie(die);
   const tone = countTone(die);
   const imageUrl = die?.dieline_image_url || die?.dieline_image;
+  const compatiblePresses = Array.isArray(die?.compatible_press_names) ? die.compatible_press_names : [];
+  const compatiblePressText = compatiblePresses.length ? compatiblePresses.join(", ") : "No press compatibility set";
   const orderRows = historyRows.filter((row) => ["die_reorder_requested", "die_ordered", "die_received"].includes(row.event_type));
   const orderedRows = historyRows.filter((row) => row.event_type === "die_ordered");
   const fdNumber = getRecordTitle(die);
@@ -331,6 +333,10 @@ export default function FlexDieDetailPanel({
                 <span>Current Supplier</span>
                 <strong title={die.supplier_name || "No supplier assigned"}>{die.supplier_name || "No supplier assigned"}</strong>
               </div>
+              <div className="flex-die-folder-meta-card">
+                <span>Known Presses</span>
+                <strong title={compatiblePressText}>{compatiblePressText}</strong>
+              </div>
             </div>
             <div className="flex-die-actions">
               <button className="ghost-btn" type="button" onClick={() => setPrintDialogOpen(true)} disabled={!onPrintFolderLabel}>
@@ -387,19 +393,32 @@ export default function FlexDieDetailPanel({
             <Detail label="Last Order" value={lastOrder} />
             <Detail label="Original Serial" value={die.original_serial_number} />
             <Detail label="Current Location" value={location} />
+            <Detail label="Known Presses" value={compatiblePressText} />
           </div>
         </div>
 
         <div className="flex-die-section flex-die-dieline-section">
           <div className="type-section-head">
             <strong>Dieline</strong>
-            <span>{die.dieline_image_name || "Folder image"}</span>
+            <span>{die.dieline_image_name || die.external_dieline_source || "Folder file"}</span>
           </div>
-          <section className="flex-die-image-card">
-            {imageUrl ? <AuthenticatedImage src={imageUrl} alt={die.dieline_image_name || die.name} /> : <div><ImageIcon size={22} /><span>No dieline image</span></div>}
-            {imageUrl && onDeleteDieline && (
+          <section className={`flex-die-image-card ${die.dieline_image_is_document ? "document" : ""}`}>
+            {imageUrl ? (
+              <FilePreview
+                url={imageUrl}
+                title={die.dieline_image_name || die.name}
+                isDocument={die.dieline_image_is_document}
+                compact={die.dieline_image_is_document}
+              />
+            ) : (
+              <div><ImageIcon size={22} /><span>No dieline file</span></div>
+            )}
+            {die.external_dieline_source && imageUrl && (
+              <small className="flex-die-dieline-source">{die.external_dieline_source}</small>
+            )}
+            {imageUrl && die.dieline_image_is_uploaded && onDeleteDieline && (
               <button className="ghost-btn xs" type="button" onClick={() => run("image", onDeleteDieline)}>
-                <Trash2 size={12} /> Delete Image
+                <Trash2 size={12} /> Delete File
               </button>
             )}
           </section>

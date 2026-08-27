@@ -1,3 +1,5 @@
+from urllib.parse import unquote
+
 from rest_framework import serializers
 
 from .models import (
@@ -27,11 +29,31 @@ def absolute_api_url(serializer, path):
     return request.build_absolute_uri(path) if request else path
 
 
+def is_pdf_url(value):
+    text = str(value or "").lower()
+    try:
+        text = unquote(text)
+    except ValueError:
+        pass
+    return ".pdf" in text
+
+
 def flex_die_dieline_preview_url(serializer, obj):
-    if not obj.dieline_image:
-        return ""
-    endpoint = "rotary-dies" if obj.tooling_kind == "rotary_die" else "flex-dies"
-    return absolute_api_url(serializer, f"/api/{endpoint}/{obj.pk}/dieline-image-preview/")
+    if obj.dieline_image:
+        endpoint = "rotary-dies" if obj.tooling_kind == "rotary_die" else "flex-dies"
+        return absolute_api_url(serializer, f"/api/{endpoint}/{obj.pk}/dieline-image-preview/")
+    return obj.external_dieline_url or ""
+
+
+def flex_die_compatible_press_names(obj):
+    if not obj.pk:
+        return []
+    direct_presses = list(obj.compatible_presses.all())
+    mag_presses = []
+    for mag in obj.compatible_mags.all():
+        mag_presses.extend(list(mag.compatible_presses.all()))
+    names = {press.name for press in [*direct_presses, *mag_presses] if press}
+    return sorted(names)
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -75,6 +97,9 @@ class FlexDieSerializer(serializers.ModelSerializer):
     serial_number_list = serializers.SerializerMethodField()
     dieline_image = serializers.SerializerMethodField()
     dieline_image_url = serializers.SerializerMethodField()
+    dieline_image_is_document = serializers.SerializerMethodField()
+    dieline_image_is_uploaded = serializers.SerializerMethodField()
+    compatible_press_names = serializers.SerializerMethodField()
 
     class Meta:
         model = FlexDie
@@ -88,6 +113,16 @@ class FlexDieSerializer(serializers.ModelSerializer):
 
     def get_dieline_image(self, obj):
         return self.get_dieline_image_url(obj)
+
+    def get_dieline_image_is_document(self, obj):
+        name = obj.dieline_image_name or getattr(obj.dieline_image, "name", "") or obj.external_dieline_url
+        return is_pdf_url(name)
+
+    def get_dieline_image_is_uploaded(self, obj):
+        return bool(obj.dieline_image)
+
+    def get_compatible_press_names(self, obj):
+        return flex_die_compatible_press_names(obj)
 
 
 class FlexDieRequestSerializer(serializers.ModelSerializer):
@@ -272,6 +307,8 @@ class ToolingRecipeToolNestedSerializer(serializers.ModelSerializer):
                 "target_die_count": die.target_die_count,
                 "die_count_status": die.die_count_status,
                 "dieline_image_url": flex_die_dieline_preview_url(self, die),
+                "dieline_image_is_document": is_pdf_url(die.dieline_image_name or getattr(die.dieline_image, "name", "") or die.external_dieline_url),
+                "compatible_press_names": flex_die_compatible_press_names(die),
                 "web_width": die.web_width_inches,
                 "status": die.status,
                 "location": self.get_location_path(die.current_location),

@@ -150,6 +150,8 @@ class FlexDieViewSet(BaseToolingViewSet):
         "cutting_type",
         "supplier__name",
         "last_quote_supplier__name",
+        "external_dieline_url",
+        "compatible_presses__name",
         "status",
         "procurement_notes",
     ]
@@ -167,7 +169,7 @@ class FlexDieViewSet(BaseToolingViewSet):
     def get_queryset(self):
         qs = (
             FlexDie.objects.select_related("supplier", "current_location")
-            .prefetch_related("compatible_mags")
+            .prefetch_related("compatible_presses", "compatible_mags__compatible_presses")
             .filter(tooling_kind=self.tooling_kind)
             .order_by("name")
         )
@@ -249,7 +251,7 @@ class FlexDieViewSet(BaseToolingViewSet):
         if not upload:
             return Response({"image": ["Choose a dieline image to upload."]}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            upload = validate_upload(upload, allow_images=True, field="image")
+            upload = validate_upload(upload, allow_images=True, allow_pdf=True, field="image")
         except serializers.ValidationError as error:
             return Response(error.detail, status=status.HTTP_400_BAD_REQUEST)
 
@@ -783,6 +785,8 @@ class ToolingRecipeOptionViewSet(BaseToolingViewSet):
         "tools__mag__current_location",
         "tools__flex_die",
         "tools__flex_die__current_location",
+        "tools__flex_die__compatible_presses",
+        "tools__flex_die__compatible_mags__compatible_presses",
         "tools__perf_cylinder",
         "tools__perf_cylinder__current_location",
         "tools__perf_blade_setup",
@@ -806,6 +810,7 @@ class ToolingRecipeOptionViewSet(BaseToolingViewSet):
         "tools__flex_die__name",
         "tools__flex_die__original_serial_number",
         "tools__flex_die__serial_numbers",
+        "tools__flex_die__compatible_presses__name",
         "tools__perf_cylinder__name",
         "tools__perf_blade_setup__name",
     ]
@@ -843,6 +848,7 @@ class ToolingRecipeToolViewSet(BaseToolingViewSet):
         "notes",
         "mag__name",
         "flex_die__name",
+        "flex_die__compatible_presses__name",
         "perf_cylinder__name",
         "perf_blade_setup__name",
     ]
@@ -856,12 +862,17 @@ class ToolingRecipeToolViewSet(BaseToolingViewSet):
                 "recipe_option__press",
                 "mag",
                 "flex_die",
+                "flex_die__current_location",
                 "perf_cylinder",
                 "perf_blade_setup",
                 "perf_blade_setup__perf_cylinder",
                 "perf_blade_setup__perf_cylinder__current_location",
             )
-            .prefetch_related("perf_blade_setup__blades")
+            .prefetch_related(
+                "flex_die__compatible_presses",
+                "flex_die__compatible_mags__compatible_presses",
+                "perf_blade_setup__blades",
+            )
             .all()
             .order_by("recipe_option__recipe__name", "recipe_option__name", "station_number", "tool_type")
         )

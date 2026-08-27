@@ -3,6 +3,7 @@ import io
 import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from urllib.parse import unquote, urlparse
 
 from django.conf import settings
 from django.db import transaction
@@ -100,6 +101,7 @@ FLEX_DIE_COLUMNS = [
     "repeat",
     "gap_across",
     "gap_around",
+    "corner_radius",
     "gear",
     "number_across",
     "number_around",
@@ -116,6 +118,16 @@ FLEX_DIE_COLUMNS = [
     "manual_web_width",
     "web_width",
     "tooling_kind",
+    "label_specs_url",
+    "fd_image_url",
+    "press_type",
+    "compatible_press_names",
+    "13",
+    "18",
+    "22",
+    "13_semi_rotary",
+    "built_in_perf",
+    "built_in_internal_perf",
     "last_order_price",
     "last_quote_price",
     "last_quote_supplier",
@@ -281,6 +293,7 @@ IMPORT_TEMPLATES = {
             "repeat": "3.125",
             "gap_across": "0.125",
             "gap_around": "0.125",
+            "corner_radius": "0.0625",
             "gear": "81",
             "number_across": "2",
             "number_around": "1",
@@ -297,6 +310,16 @@ IMPORT_TEMPLATES = {
             "manual_web_width": "false",
             "web_width": "",
             "tooling_kind": "flex_die",
+            "label_specs_url": "https://example.com/fd-13-1-layout.pdf",
+            "fd_image_url": "",
+            "press_type": "",
+            "compatible_press_names": "",
+            "13": "true",
+            "18": "true",
+            "22": "false",
+            "13_semi_rotary": "false",
+            "built_in_perf": "false",
+            "built_in_internal_perf": "false",
             "last_order_price": "",
             "last_quote_price": "",
             "last_quote_supplier": "",
@@ -722,6 +745,156 @@ def die_tooling_kind_value(row):
     if re.search(r"\bfd[-_\s]?\d+r[-_\s]", combined) or "semi rotary" in combined or "rotary die" in combined:
         return "rotary_die"
     return "flex_die"
+
+
+def first_url(row, *keys):
+    for key in keys:
+        value = first(row, key)
+        if re.match(r"^https?://", str(value or "").strip(), flags=re.IGNORECASE):
+            return str(value).strip()
+    return ""
+
+
+def file_name_from_url(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    path = unquote(urlparse(text).path or "")
+    name = path.rsplit("/", 1)[-1].strip()
+    return name[:180]
+
+
+def split_import_terms(value):
+    return [
+        part.strip()
+        for part in re.split(r"[\n\r;|,]+", str(value or ""))
+        if part.strip()
+    ]
+
+
+def press_width_value(press):
+    value = getattr(press, "max_web_width_inches", None)
+    if value is None:
+        return None
+    try:
+        return Decimal(value)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def press_matches_family(press, family):
+    name = normalize_key(press.name)
+    width = press_width_value(press)
+    ranges = {
+        "13": (Decimal("12.000"), Decimal("14.500")),
+        "18": (Decimal("16.500"), Decimal("18.750")),
+        "22": (Decimal("21.500"), Decimal("22.750")),
+    }
+    if family == "13_semi_rotary":
+        return (
+            ("semi" in name and ("13" in name or (width is not None and ranges["13"][0] <= width <= ranges["13"][1])))
+            or "13_semi_rotary" in name
+        )
+
+    if family == "13" and "semi" in name:
+        return False
+
+    if family in name or f"{family}_inch" in name or f"{family}in" in name:
+        return True
+
+    low, high = ranges[family]
+    return width is not None and low <= width <= high
+
+
+def legacy_press_families(row):
+    families = set()
+    explicit_flag_seen = False
+    flag_aliases = [
+        ("13", ("13", "press_13", "compatible_13", "13_press")),
+        ("18", ("18", "press_18", "compatible_18", "18_press")),
+        ("22", ("22", "press_22", "compatible_22", "22_press")),
+        ("13_semi_rotary", ("13 Semi Rotary", "13_semi_rotary", "press_13_semi_rotary", "compatible_13_semi_rotary")),
+    ]
+    for family, aliases in flag_aliases:
+        raw = first(row, *aliases)
+        if raw:
+            explicit_flag_seen = True
+        if bool_value(raw, default=False):
+            families.add(family)
+
+    direct_terms = []
+    for raw in [
+        first(row, "compatible_press_names", "compatible_presses", "press_names"),
+        first(row, "press_type", "press"),
+    ]:
+        direct_terms.extend(split_import_terms(raw))
+
+    for term in direct_terms:
+        key = normalize_key(term)
+        if "13" in key and "semi" in key:
+            families.add("13_semi_rotary")
+            continue
+        if re.search(r"(^|_)13(_|$|inch|in)", key):
+            families.add("13")
+            continue
+        if re.search(r"(^|_)18(_|$|inch|in)", key) or "17" in key:
+            families.add("18")
+            continue
+        if re.search(r"(^|_)22(_|$|inch|in)", key):
+            families.add("22")
+
+    return families, direct_terms, explicit_flag_seen or bool(direct_terms)
+
+
+def legacy_press_family_for_term(term):
+    key = normalize_key(term)
+    if "13" in key and "semi" in key:
+        return "13_semi_rotary"
+    if re.search(r"(^|_)13(_|$|inch|in)", key):
+        return "13"
+    if re.search(r"(^|_)18(_|$|inch|in)", key) or "17" in key:
+        return "18"
+    if re.search(r"(^|_)22(_|$|inch|in)", key):
+        return "22"
+    return ""
+
+
+def legacy_compatible_presses(row):
+    families, direct_terms, has_signal = legacy_press_families(row)
+    if not has_signal:
+        return [], [], False
+
+    presses = list(Press.objects.filter(is_active=True).order_by("name"))
+    matched_by_id = {}
+    matched_labels = set()
+
+    for family in families:
+        family_matches = [press for press in presses if press_matches_family(press, family)]
+        for press in family_matches:
+            matched_by_id[press.pk] = press
+        if family_matches:
+            matched_labels.add(family)
+
+    for term in direct_terms:
+        key = normalize_key(term)
+        if not key:
+            continue
+        family = legacy_press_family_for_term(term)
+        if family and family in matched_labels:
+            matched_labels.add(term)
+        term_matches = [
+            press
+            for press in presses
+            if key == normalize_key(press.name) or key in normalize_key(press.name) or normalize_key(press.name) in key
+        ]
+        for press in term_matches:
+            matched_by_id[press.pk] = press
+        if term_matches:
+            matched_labels.add(term)
+
+    requested_labels = {*families, *direct_terms}
+    missing_labels = sorted(str(label) for label in requested_labels if label and label not in matched_labels)
+    return list(matched_by_id.values()), missing_labels, has_signal
 
 
 def job_unit_type_value(value):
@@ -1283,6 +1456,18 @@ def import_flex_dies(rows):
             continue
 
         tooling_kind = die_tooling_kind_value(row)
+        legacy_dieline_url = first_url(
+            row,
+            "external_dieline_url",
+            "label_specs_url",
+            "label_specs",
+            "label spec",
+            "fd_image_url",
+            "fd_image",
+            "dieline_url",
+            "dieline_image_url",
+            "image_url",
+        )
         label_width = decimal_or_none(first(row, "label_width", "label_width_inches", "width", "size_across", "sizeacross"))
         label_length = decimal_or_none(first(row, "label_length", "label_length_inches", "length", "size_around", "sizearound"))
         repeat = decimal_or_none(first(row, "repeat", "repeat_inches", "label_repeat", "labelrepeat"))
@@ -1365,8 +1550,22 @@ def import_flex_dies(rows):
             "procurement_notes": first(row, "procurement_notes", "reorder_notes", "quote_notes"),
             "notes": mark_imported_note(notes, first(row, "row_id"), "Glide Tooling"),
         }
+        if legacy_dieline_url:
+            defaults["external_dieline_url"] = legacy_dieline_url
+            defaults["external_dieline_source"] = "Glide Tooling"
+            if not (existing and existing.dieline_image_name):
+                defaults["dieline_image_name"] = file_name_from_url(legacy_dieline_url) or f"{name} dieline"
         die = existing or FlexDie(name=name)
         save_model(die, defaults, result)
+        compatible_presses, missing_press_labels, has_press_signal = legacy_compatible_presses(row)
+        if compatible_presses:
+            die.compatible_presses.set(compatible_presses)
+        elif has_press_signal and missing_press_labels:
+            add_warning(
+                result,
+                line_number,
+                f"{name} imported, but no active press records matched compatibility value(s): {', '.join(missing_press_labels)}.",
+            )
         if tooling_kind == "rotary_die":
             add_warning(result, line_number, f"{name} was imported as a Rotary Die, not a Flex Die.")
     return result

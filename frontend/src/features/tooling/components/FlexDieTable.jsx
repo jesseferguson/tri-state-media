@@ -58,6 +58,9 @@ export default function FlexDieTable({ rows, selectedId, onOpen, onEdit, onDelet
             const tone = countTone(die);
             const belowTarget = tone !== "ready";
             const imageUrl = die.dieline_image_url || die.dieline_image;
+            const compatiblePressText = Array.isArray(die.compatible_press_names) && die.compatible_press_names.length
+              ? die.compatible_press_names.join(", ")
+              : "";
             return (
               <tr
                 key={die.id}
@@ -70,7 +73,7 @@ export default function FlexDieTable({ rows, selectedId, onOpen, onEdit, onDelet
                       <strong>{getRecordTitle(die)}</strong>
                       <span>{die.original_serial_number ? `Serial ${die.original_serial_number}` : "No original serial"}</span>
                     </div>
-                    {imageUrl ? <small><ImageIcon size={12} /> Dieline</small> : <small className="muted-chip">No image</small>}
+                    {imageUrl ? <small><ImageIcon size={12} /> {die.dieline_image_is_document ? "Spec PDF" : "Dieline"}</small> : <small className="muted-chip">No file</small>}
                   </div>
                 </td>
                 <td data-label="Count">
@@ -109,6 +112,7 @@ export default function FlexDieTable({ rows, selectedId, onOpen, onEdit, onDelet
                   <DetailStack>
                     <span className={`flex-die-status-tag ${die.status || "in_stock"}`}>{labelize(die.status)}</span>
                     <span>{die.current_location_full_path || die.current_location_name || "--"}</span>
+                    {compatiblePressText && <span title={compatiblePressText}>{compatiblePressText}</span>}
                   </DetailStack>
                 </td>
                 <td data-label="Actions">

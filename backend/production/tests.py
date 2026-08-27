@@ -431,10 +431,11 @@ class DataImportToolingTests(TestCase):
         ])
         upload = SimpleUploadedFile("legacy-flex-dies.csv", csv_text.encode("utf-8"), content_type="text/csv")
 
+        auth_header = f"Bearer {create_company_user_token(admin)}"
         response = self.client.post(
             reverse("data-import-csv", args=["flex_dies"]),
             {"file": upload, "dry_run": "false"},
-            HTTP_AUTHORIZATION=f"Bearer {create_company_user_token(admin)}",
+            HTTP_AUTHORIZATION=auth_header,
         )
 
         self.assertEqual(response.status_code, 200, response.content)
@@ -462,6 +463,48 @@ class DataImportToolingTests(TestCase):
 
         self.assertTrue(Supplier.objects.filter(name="Wilson Tool").exists())
         self.assertFalse(FlexDie.objects.filter(name="RID-NAMELESS").exists())
+
+    def test_legacy_flex_die_export_preserves_specs_pdf_and_press_compatibility(self):
+        role, _ = CompanyRole.objects.get_or_create(name="Admin", defaults={"allowed_resource_keys": ["*"]})
+        role.allowed_resource_keys = ["*"]
+        role.save(update_fields=["allowed_resource_keys"])
+        admin = CompanyUser.objects.create(username="tooling-import-admin-2", name="Tooling Import Admin", role=role, active=True)
+        admin.set_password("StrongPass7&")
+        admin.save()
+        Press.objects.create(name='13" Nilpeter', max_web_width_inches=Decimal("13.000"))
+        Press.objects.create(name='18" Mark Andy', max_web_width_inches=Decimal("18.000"))
+        Press.objects.create(name='13 Semi Rotary', max_web_width_inches=Decimal("13.000"))
+        Press.objects.create(name='22" Comco', max_web_width_inches=Decimal("22.000"))
+        specs_url = "https://storage.googleapis.com/example-bucket/FD-13-1-layout.pdf"
+        csv_text = "\n".join([
+            "Row ID,Number,SizeAcross,SizeAround,LabelRepeat,ColSpace,CornerRadius,NoAcross,NoAround,LinerCaliper,FaceStock,GearTeeth,Manufacturer,SerialNumber,Label Specs,Shape,Cut Position,Tooling Status,13,18,22,13 Semi Rotary,Active",
+            f"RID-FLEX,FD-13-1,3,3,3.125,0.125,0.0625,3,4,40,Paper,100,Wilson Tool,FC70377,{specs_url},RCR,Liner,In House,true,true,false,true,true",
+        ])
+        upload = SimpleUploadedFile("legacy-tooling-flex-die.csv", csv_text.encode("utf-8"), content_type="text/csv")
+
+        auth_header = f"Bearer {create_company_user_token(admin)}"
+        response = self.client.post(
+            reverse("data-import-csv", args=["flex_dies"]),
+            {"file": upload, "dry_run": "false"},
+            HTTP_AUTHORIZATION=auth_header,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        die = FlexDie.objects.get(name="FD-13-1")
+        self.assertEqual(die.external_dieline_url, specs_url)
+        self.assertEqual(die.external_dieline_source, "Glide Tooling")
+        self.assertEqual(die.dieline_image_name, "FD-13-1-layout.pdf")
+        self.assertEqual(die.corner_radius_inches, Decimal("0.0625"))
+        self.assertEqual(die.gear, 100)
+        self.assertCountEqual(
+            die.compatible_presses.values_list("name", flat=True),
+            ['13" Nilpeter', '13 Semi Rotary', '18" Mark Andy'],
+        )
+
+        detail = self.client.get(reverse("flex-die-detail", args=[die.pk]), HTTP_AUTHORIZATION=auth_header)
+        self.assertEqual(detail.status_code, 200, detail.content)
+        self.assertEqual(detail.json()["dieline_image_url"], specs_url)
+        self.assertTrue(detail.json()["dieline_image_is_document"])
 
 
 class DataImportJobTicketTests(TestCase):

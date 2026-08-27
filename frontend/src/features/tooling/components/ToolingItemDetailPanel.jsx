@@ -60,6 +60,7 @@ function detailRows(resourceKey, item) {
       ["Current Supplier", pick(item, "supplier_name")],
       ["Original Serial", pick(item, "original_serial_number")],
       ["Active / Target", `${pick(item, "active_die_count") || 0} / ${pick(item, "target_die_count") || 0}`],
+      ["Compatible Presses", pick(item, "compatible_press_names", "press_name")],
       ["Last Order Price", pick(item, "last_order_price") ? `$${pick(item, "last_order_price")}` : ""],
       ["Last Quote Price", pick(item, "last_quote_price") ? `$${pick(item, "last_quote_price")}` : ""],
       ["Quoted Supplier", pick(item, "last_quote_supplier_name")],

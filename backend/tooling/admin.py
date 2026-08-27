@@ -109,9 +109,10 @@ class FlexDieAdmin(admin.ModelAdmin):
         "last_order_price",
     )
     list_filter = ("tooling_kind", "status", "shape_type", "cutting_type", "supplier")
-    search_fields = ("name", "original_serial_number", "serial_numbers", "face_type", "liner_type")
+    search_fields = ("name", "original_serial_number", "serial_numbers", "face_type", "liner_type", "external_dieline_url")
     autocomplete_fields = ("supplier", "last_quote_supplier", "current_location")
     exclude = ("tool_number", "drawing_number", "compatible_mags", "notes")
+    filter_horizontal = ("compatible_presses",)
 
 
 @admin.register(FlexDieRequest)

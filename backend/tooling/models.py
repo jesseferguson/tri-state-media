@@ -284,6 +284,13 @@ class FlexDie(models.Model):
         related_name="compatible_flex_dies",
     )
 
+    compatible_presses = models.ManyToManyField(
+        Press,
+        blank=True,
+        related_name="direct_compatible_flex_dies",
+        help_text="Known/imported press compatibility. Exact production setups should still assign the mag and die through recipe tools.",
+    )
+
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="in_stock")
 
     label_width_inches = models.DecimalField(max_digits=7, decimal_places=3)
@@ -301,7 +308,7 @@ class FlexDie(models.Model):
     number_across = models.PositiveIntegerField(default=1)
     number_around = models.PositiveIntegerField(default=1)
 
-    corner_radius_inches = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    corner_radius_inches = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
     gap_across_inches = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
     gap_around_inches = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
     web_width_inches = models.DecimalField(max_digits=7, decimal_places=3, null=True, blank=True)
@@ -318,6 +325,8 @@ class FlexDie(models.Model):
     target_die_count = models.PositiveIntegerField(default=1)
     dieline_image = models.ImageField(upload_to=flex_die_image_upload_path, blank=True, null=True)
     dieline_image_name = models.CharField(max_length=180, blank=True)
+    external_dieline_url = models.URLField(max_length=1000, blank=True)
+    external_dieline_source = models.CharField(max_length=80, blank=True)
     last_order_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     last_quote_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     last_quote_supplier = models.ForeignKey(

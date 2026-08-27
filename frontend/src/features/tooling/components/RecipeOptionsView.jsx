@@ -458,11 +458,14 @@ function ToolDetails({ title, tool, onClose, onFlexDieReorder, onFlexDieCountUpd
         <Detail label="Web" value={d.web_width} />
         <Detail label="Original Serial" value={d.original_serial_number} />
         <Detail label="Active / Target" value={isFlex ? `${d.active_die_count ?? 0} / ${d.target_die_count ?? 0}` : ""} />
+        <Detail label="Known Presses" value={Array.isArray(d.compatible_press_names) ? d.compatible_press_names.join(", ") : ""} />
         <Detail label="Location" value={locationText(tool)} />
         <Detail label="Parent" value={locationParentText(tool)} />
       </div>
       {d.dieline_image_url && (
-        <AuthenticatedFileLink className="tool-dieline-link" href={d.dieline_image_url}>View dieline image</AuthenticatedFileLink>
+        <AuthenticatedFileLink className="tool-dieline-link" href={d.dieline_image_url}>
+          {d.dieline_image_is_document ? "View spec PDF" : "View dieline image"}
+        </AuthenticatedFileLink>
       )}
       {canManageDie && (
         <div className="tool-die-actions">
