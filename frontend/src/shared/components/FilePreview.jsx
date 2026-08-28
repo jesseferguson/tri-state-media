@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText } from "lucide-react";
+import { FileText, LoaderCircle } from "lucide-react";
 import { fetchFile, isApiUrl } from "../../api";
 
 export function isPdfUrl(url) {
@@ -117,9 +117,25 @@ export function AuthenticatedFileLink({ href, children, className = "", title = 
   );
 }
 
+function FilePreviewLoading({ label = "Loading file" }) {
+  return (
+    <div className="file-preview-loading" aria-hidden="true">
+      <LoaderCircle size={18} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export function PdfPreview({ url, title = "PDF preview", compact = false, showOpenLink = !compact }) {
   const resolvedUrl = useProtectedObjectUrl(url);
-  if (!url || !resolvedUrl) return null;
+  if (!url) return null;
+  if (!resolvedUrl) {
+    return (
+      <div className={`pdf-preview ${compact ? "compact" : ""}`}>
+        <FilePreviewLoading label="Loading PDF" />
+      </div>
+    );
+  }
 
   return (
     <div className={`pdf-preview ${compact ? "compact" : ""}`}>

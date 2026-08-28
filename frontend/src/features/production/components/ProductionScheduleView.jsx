@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ClipboardList, Factory, History, Image as ImageIcon, Layers3, PackageCheck, PauseCircle, Play, RotateCcw, ScanLine, Search, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ClipboardList, Factory, FileText, History, Image as ImageIcon, Layers3, PackageCheck, PauseCircle, Play, RotateCcw, ScanLine, Search, Trash2, X } from "lucide-react";
 import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
 import { AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
 import RecipeOptionsView from "../../tooling/components/RecipeOptionsView";
@@ -26,6 +26,7 @@ const scheduleHoldReasonOptions = [
   { value: "adhesive", label: "Adhesive" },
   { value: "liner", label: "Liner" },
   { value: "face", label: "Face" },
+  { value: "art_files", label: "Art / Files" },
 ];
 const scheduleHoldReasonLabels = Object.fromEntries(scheduleHoldReasonOptions.map((option) => [option.value, option.label]));
 
@@ -314,7 +315,52 @@ function scheduleTicketFallback(row) {
     box_name: row.box_name,
     job_notes: row.job_notes,
     finishing_notes: row.job_finishing_notes,
+    has_print: row.job_has_print,
+    print_method: row.job_print_method,
+    print_method_display: row.job_print_method_display,
+    art_file_created: row.job_art_file_created,
+    print_notes: row.job_print_notes,
+    print_plate_summary: row.job_print_plate_summary,
   };
+}
+
+function isDynamicSchedule(row, ticket = null) {
+  return String(row?.job_print_method || ticket?.print_method || "") === "dynamic";
+}
+
+function dynamicRangeLabel(row) {
+  return [row?.dynamic_start_number, row?.dynamic_end_number].filter(Boolean).join(" - ");
+}
+
+function dynamicFileLabel(row) {
+  if (!isDynamicSchedule(row)) return "";
+  if (!row.dynamic_file_created) return "Files not created";
+  return dynamicRangeLabel(row) || "File created";
+}
+
+function scheduleHasPrint(row, ticket = null) {
+  return Boolean(
+    row?.job_has_print ||
+    ticket?.has_print ||
+    (row?.job_print_method && row.job_print_method !== "none") ||
+    (ticket?.print_method && ticket.print_method !== "none")
+  );
+}
+
+function schedulePrintMethodLabel(row, ticket = null) {
+  if (!scheduleHasPrint(row, ticket)) return "No Print";
+  return row?.job_print_method_display || ticket?.print_method_display || labelize(row?.job_print_method || ticket?.print_method || "static");
+}
+
+function schedulePrintPlates(row, ticket = null) {
+  const scheduleSummary = Array.isArray(row?.job_print_plate_summary) ? row.job_print_plate_summary : [];
+  if (scheduleSummary.length) return scheduleSummary;
+  const ticketSummary = Array.isArray(ticket?.print_plate_summary) ? ticket.print_plate_summary : [];
+  if (ticketSummary.length) return ticketSummary;
+  return (ticket?.print_plate_details ?? []).map((plate) => ({
+    ...plate,
+    stations: plate.stations ?? [],
+  }));
 }
 
 function matchingMaterialInventory(ticket, rows) {
@@ -571,9 +617,14 @@ function itemMatchesSearch(item, query) {
     item.kind,
     itemTitle(item),
     itemSpecLine(item),
+    dynamicFileLabel(row),
+    dynamicRangeLabel(row),
     item.kind === "product" ? schedulePriorityLabel(row.priority) : "",
     row.hold_notes,
     row.held_by,
+    row.dynamic_file_notes,
+    row.dynamic_start_number,
+    row.dynamic_end_number,
     row.tag_number,
     row.cut_description,
     row.job_ticket_number,
@@ -846,6 +897,9 @@ function ScheduleDetailOverlay({ row, lookups, currentUser, onClose, onFlexDieRe
   if (!row) return null;
   const tone = shipTone(row);
   const ticket = ticketForSchedule(row, lookups) ?? scheduleTicketFallback(row);
+  const dynamicSchedule = isDynamicSchedule(row, ticket);
+  const hasPrint = scheduleHasPrint(row, ticket);
+  const printPlates = schedulePrintPlates(row, ticket);
   const materialInventory = matchingMaterialInventory(ticket, lookups?.["raw-materials"])
     .filter((item) => item.is_active !== false && !["depleted", "scrapped"].includes(item.status) && inventoryFootage(item) > 0);
   const materialFeet = materialInventory.reduce((sum, item) => sum + inventoryFootage(item), 0);
@@ -878,7 +932,18 @@ function ScheduleDetailOverlay({ row, lookups, currentUser, onClose, onFlexDieRe
                 <DetailItem label="Ship Date" value={row.due_date} />
                 <DetailItem label="Ship / Stock" value={`${formatQty(row.quantity_to_ship)} / ${formatQty(row.quantity_to_stock)}`} />
                 <DetailItem label="Scheduled By" value={row.scheduled_by} />
+                {dynamicSchedule && <DetailItem label="Dynamic File" value={dynamicFileLabel(row)} />}
+                {dynamicSchedule && <DetailItem label="Number Range" value={dynamicRangeLabel(row)} />}
               </div>
+              {dynamicSchedule && (
+                <div className={`schedule-dynamic-file-panel ${row.dynamic_file_created ? "ready" : "hold"}`}>
+                  <FileText size={15} />
+                  <div>
+                    <strong>{dynamicFileLabel(row)}</strong>
+                    <span>{row.dynamic_file_notes || (row.dynamic_file_created ? "Dynamic file is ready for this order." : holdReasonSummary(row))}</span>
+                  </div>
+                </div>
+              )}
               <ScheduleNoteBlock label="CSR Schedule Note" value={row.notes} emptyText="No CSR schedule note entered." />
             </article>
 
@@ -939,6 +1004,45 @@ function ScheduleDetailOverlay({ row, lookups, currentUser, onClose, onFlexDieRe
             </div>
           </div>
 
+          {hasPrint && (
+            <div className="schedule-operator-card wide schedule-print-setup-card">
+              <h3><FileText size={15} /> Print Setup</h3>
+              <div className="schedule-detail-grid compact">
+                <DetailItem label="Method" value={schedulePrintMethodLabel(row, ticket)} />
+                <DetailItem label="Art File" value={ticket?.art_file_created || row.job_art_file_created ? "Created" : dynamicSchedule ? "Order Specific" : "Needed"} />
+                {dynamicSchedule && <DetailItem label="Dynamic File" value={dynamicFileLabel(row)} />}
+                {dynamicSchedule && <DetailItem label="Number Range" value={dynamicRangeLabel(row)} />}
+                <DetailItem label="Plates" value={printPlates.length} />
+                <DetailItem label="Print Notes" value={ticket?.print_notes || row.job_print_notes} />
+              </div>
+              {printPlates.length ? (
+                <div className="schedule-print-plate-list">
+                  {printPlates.map((plate) => (
+                    <article key={plate.id || plate.plate_number}>
+                      <header>
+                        <strong>{plate.plate_number || "Plate"}</strong>
+                        <span>{plate.description || plate.customer_plate_number || "Print plate"}</span>
+                      </header>
+                      {(plate.stations ?? []).length ? (
+                        <div>
+                          {(plate.stations ?? []).map((station) => (
+                            <em key={station.id || `${plate.id}-${station.station_number}`}>
+                              {[`Station ${station.station_number || "--"}`, station.station_plate_number || plate.plate_number, station.pms_color, station.anilox_gear_number ? `Anilox ${station.anilox_gear_number}` : ""].filter(Boolean).join(" / ")}
+                            </em>
+                          ))}
+                        </div>
+                      ) : (
+                        <p>No station rows linked.</p>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">No linked print plates are available for this scheduled job.</p>
+              )}
+            </div>
+          )}
+
           <div className="schedule-operator-card wide">
             <h3><PackageCheck size={15} /> Tooling</h3>
             {recipeOptions.length ? (
@@ -991,6 +1095,7 @@ function ScheduleLineupBack({ item }) {
   const row = item.row;
   const isMaterial = item.kind === "material";
   const isHeld = isHeldScheduleItem(item);
+  const dynamicSchedule = !isMaterial && isDynamicSchedule(row);
   const noteRows = isMaterial
     ? [
       { label: "Cut Description", value: row.cut_description },
@@ -1000,6 +1105,11 @@ function ScheduleLineupBack({ item }) {
       ...(isHeld ? [
         { label: "Hold Reasons", value: holdReasonSummary(row) },
         { label: "Hold Notes", value: row.hold_notes },
+      ] : []),
+      ...(dynamicSchedule ? [
+        { label: "Dynamic File", value: dynamicFileLabel(row) },
+        { label: "Number Range", value: dynamicRangeLabel(row) },
+        { label: "Dynamic File Note", value: row.dynamic_file_notes },
       ] : []),
       { label: "CSR Schedule Note", value: row.notes },
       { label: "Operator Run Note", value: row.job_notes },
@@ -1067,6 +1177,7 @@ function ScheduleLineupRow({
   const businessDaysOnSchedule = itemBusinessDaysOnSchedule(item);
   const ageGlow = scheduleAgeGlow(businessDaysOnSchedule, priority);
   const statusAgeCue = scheduleStatusAgeCue(businessDaysOnSchedule);
+  const dynamicSchedule = !isMaterial && isDynamicSchedule(row);
 
   function saveItem(payload) {
     if (isMaterial) return onMaterialUpdate?.(row.id, payload);
@@ -1130,6 +1241,12 @@ function ScheduleLineupRow({
             {isMaterial ? "Material Run" : "Job Ticket"}
           </span>
           <strong className={isMaterial ? undefined : "schedule-part-number"} title={itemTitle(item)}>{itemTitle(item)}</strong>
+          {dynamicSchedule && (
+            <span className={`schedule-dynamic-pill ${row.dynamic_file_created ? "ready" : "hold"}`} title={dynamicRangeLabel(row) || dynamicFileLabel(row)}>
+              <FileText size={13} />
+              {dynamicFileLabel(row)}
+            </span>
+          )}
         </div>
       </button>
 

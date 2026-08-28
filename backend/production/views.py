@@ -23,8 +23,8 @@ from rest_framework.response import Response
 from materials.models import MaterialUsage, RawMaterialInventory
 from materials.serializers import MaterialUsageSerializer, RawMaterialInventorySerializer
 from materials.zpl import zpl_copies, zpl_text
-from tooling.models import Press, ToolingLocation, ToolingRecipeOption
-from tooling.serializers import PressSerializer, ToolingRecipeOptionSerializer
+from tooling.models import Press, PrintPlate, PrintStation, ToolingLocation, ToolingRecipeOption
+from tooling.serializers import PressSerializer, PrintPlateSerializer, PrintStationSerializer, ToolingRecipeOptionSerializer
 
 from .models import (
     BoxInventory,
@@ -151,6 +151,12 @@ JOB_TICKET_CHANGE_FIELDS = [
     ("face_type", "Face Type"),
     ("liner_type", "Liner Type"),
     ("recipe", "Label Layout"),
+    ("has_print", "Has Print"),
+    ("print_method", "Print Method"),
+    ("print_plates", "Print Plates"),
+    ("art_file_created", "Art File Created"),
+    ("art_file_created_by", "Art File Created By"),
+    ("print_notes", "Print Notes"),
     ("requested_quantity", "Requested Quantity"),
     ("finishing_type", "Finishing"),
     ("unit_type", "Unit Type"),
@@ -978,6 +984,8 @@ def short_summary(value):
 
 def ticket_compare_value(ticket, field_name):
     field = ticket._meta.get_field(field_name)
+    if getattr(field, "many_to_many", False):
+        return sorted(getattr(ticket, field_name).values_list("pk", flat=True))
     if getattr(field, "many_to_one", False):
         return getattr(ticket, f"{field_name}_id")
     return getattr(ticket, field_name)
@@ -988,6 +996,8 @@ def ticket_display_value(ticket, field_name):
     if getattr(field, "many_to_one", False):
         related = getattr(ticket, field_name)
         return str(related) if related else ""
+    if getattr(field, "many_to_many", False):
+        return ", ".join(str(item) for item in getattr(ticket, field_name).all())
 
     value = getattr(ticket, field_name)
     if value in [None, ""]:
@@ -1022,6 +1032,8 @@ def json_safe_value(value):
 
 
 def pending_compare_value(field, value):
+    if getattr(field, "many_to_many", False):
+        return sorted(item.pk if hasattr(item, "pk") else int(item) for item in (value or []))
     if getattr(field, "many_to_one", False):
         return value.pk if value else None
     return value
@@ -1030,6 +1042,8 @@ def pending_compare_value(field, value):
 def pending_display_value(field, value):
     if getattr(field, "many_to_one", False):
         return str(value) if value else ""
+    if getattr(field, "many_to_many", False):
+        return ", ".join(str(item) for item in (value or []))
     if value in [None, ""]:
         return ""
     if field.choices:
@@ -1038,6 +1052,8 @@ def pending_display_value(field, value):
 
 
 def pending_payload_value(field, value):
+    if getattr(field, "many_to_many", False):
+        return [item.pk if hasattr(item, "pk") else item for item in (value or [])]
     if getattr(field, "many_to_one", False):
         return value.pk if value else None
     return json_safe_value(value)
@@ -1075,6 +1091,9 @@ def ticket_has_pending_changes(ticket):
 
 def set_ticket_field_value(ticket, field_name, value):
     field = ticket._meta.get_field(field_name)
+    if getattr(field, "many_to_many", False):
+        getattr(ticket, field_name).set(value or [])
+        return
     if getattr(field, "many_to_one", False):
         setattr(ticket, f"{field_name}_id", value or None)
         return
@@ -1981,7 +2000,13 @@ class JobTicketViewSet(BaseProductionViewSet):
                 "material_inventory",
                 "press",
             )
-            .prefetch_related("shift_reports", "material_assignments", "customer_orders__events")
+            .prefetch_related(
+                "shift_reports",
+                "material_assignments",
+                "customer_orders__events",
+                "job_ticket__print_plates",
+                "job_ticket__print_plates__stations",
+            )
             .filter(query)
             .distinct()
             .order_by("scheduled_date", "priority", "job_ticket__ticket_number")
@@ -2073,6 +2098,25 @@ class JobTicketViewSet(BaseProductionViewSet):
             return queryset.filter(recipe_id=ticket.recipe_id)
         return queryset[:150]
 
+    def filtered_print_plates(self, ticket):
+        queryset = (
+            PrintPlate.objects.select_related("recipe")
+            .prefetch_related("stations")
+            .order_by("recipe__name", "plate_number")
+        )
+        query = Q(job_tickets=ticket)
+        if ticket.recipe_id:
+            query |= Q(recipe_id=ticket.recipe_id)
+        return queryset.filter(query).distinct() if ticket.pk or ticket.recipe_id else queryset.none()
+
+    def filtered_print_stations(self, ticket):
+        plates = self.filtered_print_plates(ticket).values("pk")
+        return (
+            PrintStation.objects.select_related("print_plate", "print_plate__recipe")
+            .filter(print_plate_id__in=Subquery(plates))
+            .order_by("print_plate__plate_number", "station_number")
+        )
+
     def perform_create(self, serializer):
         actor = self.history_actor()
         ticket = serializer.save()
@@ -2092,7 +2136,7 @@ class JobTicketViewSet(BaseProductionViewSet):
             "material_master_type",
             "box",
             "core",
-        ).get(pk=serializer.instance.pk)
+        ).prefetch_related("print_plates", "print_plates__stations").get(pk=serializer.instance.pk)
         actor = self.history_actor()
         changes, pending_payload = pending_ticket_change_details(previous, serializer.validated_data)
         if not changes:
@@ -2193,6 +2237,7 @@ class JobTicketViewSet(BaseProductionViewSet):
                 "box",
                 "core",
             )
+            .prefetch_related("print_plates", "print_plates__stations")
             .annotate(
                 imported_usage_90d=Coalesce(Subquery(usage_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
                 shipped_status_usage_90d=Coalesce(Subquery(shipped_total, output_field=DecimalField(max_digits=14, decimal_places=3)), decimal_zero),
@@ -2290,6 +2335,8 @@ class JobTicketViewSet(BaseProductionViewSet):
             "material-usages": MaterialUsageSerializer(self.filtered_finished_usage(ticket, reference_values), many=True, context=context).data,
             "job-ticket-usages": JobTicketUsageSerializer(self.filtered_job_ticket_usage(ticket, reference_values), many=True, context=context).data,
             "recipe-options": ToolingRecipeOptionSerializer(self.filtered_recipe_options(ticket), many=True, context=context).data,
+            "print-plates": PrintPlateSerializer(self.filtered_print_plates(ticket), many=True, context=context).data,
+            "print-stations": PrintStationSerializer(self.filtered_print_stations(ticket), many=True, context=context).data,
             "box-inventory": BoxInventorySerializer(self.filtered_box_inventory(ticket), many=True, context=context).data,
             "core-inventory": CoreInventorySerializer(self.filtered_core_inventory(ticket), many=True, context=context).data,
             "customer-orders": CustomerOrderSerializer(self.filtered_customer_orders(ticket, reference_values), many=True, context=context).data,
@@ -2638,7 +2685,7 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
             "material_inventory",
             "press",
         )
-        .prefetch_related("shift_reports", "material_assignments", "customer_orders__events")
+        .prefetch_related("shift_reports", "material_assignments", "customer_orders__events", "job_ticket__print_plates", "job_ticket__print_plates__stations")
         .all()
         .order_by("scheduled_date", "priority", "job_ticket__ticket_number")
     )

@@ -540,6 +540,28 @@ class JobTicketSerializer(serializers.ModelSerializer):
     material_spec_master_type = serializers.SerializerMethodField()
     material_spec_master_type_code = serializers.SerializerMethodField()
     material_spec_master_type_name = serializers.SerializerMethodField()
+    print_method_display = serializers.CharField(source="get_print_method_display", read_only=True)
+    print_plate_details = serializers.SerializerMethodField()
+    print_station_count = serializers.SerializerMethodField()
+
+    def get_print_plate_details(self, obj):
+        plates = list(obj.print_plates.all()) if getattr(obj, "pk", None) else []
+        return [
+            {
+                "id": plate.id,
+                "plate_number": plate.plate_number,
+                "customer_plate_number": plate.customer_plate_number,
+                "serial_number": plate.serial_number,
+                "description": plate.description,
+                "recipe": plate.recipe_id,
+                "recipe_name": plate.recipe.name if plate.recipe_id and plate.recipe else "",
+                "station_count": sum(1 for station in plate.stations.all() if station.is_active),
+            }
+            for plate in plates
+        ]
+
+    def get_print_station_count(self, obj):
+        return sum((plate_detail.get("station_count") or 0) for plate_detail in self.get_print_plate_details(obj))
 
     def get_customer_display(self, obj):
         return obj.customer.name if obj.customer else obj.customer_name or None
@@ -715,6 +737,12 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     job_description = serializers.CharField(source="job_ticket.description", read_only=True)
     job_notes = serializers.CharField(source="job_ticket.job_notes", read_only=True)
     job_finishing_notes = serializers.CharField(source="job_ticket.finishing_notes", read_only=True)
+    job_has_print = serializers.BooleanField(source="job_ticket.has_print", read_only=True)
+    job_print_method = serializers.CharField(source="job_ticket.print_method", read_only=True)
+    job_print_method_display = serializers.CharField(source="job_ticket.get_print_method_display", read_only=True)
+    job_art_file_created = serializers.BooleanField(source="job_ticket.art_file_created", read_only=True)
+    job_print_notes = serializers.CharField(source="job_ticket.print_notes", read_only=True)
+    job_print_plate_summary = serializers.SerializerMethodField()
     job_general_image_url = serializers.SerializerMethodField()
     job_general_image_source = serializers.SerializerMethodField()
     job_general_image_is_document = serializers.SerializerMethodField()
@@ -764,6 +792,28 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
     customer_order_id = serializers.SerializerMethodField()
     customer_order_number = serializers.SerializerMethodField()
     customer_order_events = serializers.SerializerMethodField()
+
+    def get_job_print_plate_summary(self, obj):
+        if not obj.job_ticket_id:
+            return []
+        return [
+            {
+                "id": plate.id,
+                "plate_number": plate.plate_number,
+                "description": plate.description,
+                "stations": [
+                    {
+                        "station_number": station.station_number,
+                        "station_plate_number": station.station_plate_number,
+                        "pms_color": station.pms_color,
+                        "anilox_gear_number": station.anilox_gear_number,
+                    }
+                    for station in plate.stations.all()
+                    if station.is_active
+                ],
+            }
+            for plate in obj.job_ticket.print_plates.all()
+        ]
 
     def get_customer_name(self, obj):
         if obj.customer:
@@ -880,6 +930,29 @@ class ProductionScheduleSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        ticket = attrs.get("job_ticket", getattr(self.instance, "job_ticket", None))
+        is_dynamic = bool(ticket and ticket.print_method == "dynamic")
+        dynamic_file_created = attrs.get("dynamic_file_created", getattr(self.instance, "dynamic_file_created", False))
+        dynamic_start_number = str(attrs.get("dynamic_start_number", getattr(self.instance, "dynamic_start_number", "")) or "").strip()
+        dynamic_end_number = str(attrs.get("dynamic_end_number", getattr(self.instance, "dynamic_end_number", "")) or "").strip()
+        if is_dynamic:
+            if dynamic_file_created and (not dynamic_start_number or not dynamic_end_number):
+                raise serializers.ValidationError({
+                    "dynamic_start_number": "Enter the starting number for this dynamic order.",
+                    "dynamic_end_number": "Enter the ending number for this dynamic order.",
+                })
+            if not dynamic_file_created:
+                attrs["status"] = "on_hold"
+                reasons = attrs.get("hold_reasons", getattr(self.instance, "hold_reasons", []))
+                if not isinstance(reasons, list):
+                    reasons = []
+                if "art_files" not in reasons:
+                    reasons = [*reasons, "art_files"]
+                attrs["hold_reasons"] = reasons
+                note = "Files not created for this dynamic print job."
+                current_notes = str(attrs.get("hold_notes", getattr(self.instance, "hold_notes", "")) or "").strip()
+                if note.lower() not in current_notes.lower():
+                    attrs["hold_notes"] = "\n".join([part for part in [current_notes, note] if part])
         status = attrs.get("status", getattr(self.instance, "status", ""))
         hold_reasons = attrs.get("hold_reasons", getattr(self.instance, "hold_reasons", []))
         if status == "on_hold":

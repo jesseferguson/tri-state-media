@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { AlertTriangle, CalendarCheck2, CalendarPlus, Image as ImageIcon, SlidersHorizontal, X } from "lucide-react";
-import { AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
+import { AlertTriangle, Barcode, CalendarCheck2, CalendarPlus, LoaderCircle, SlidersHorizontal, X } from "lucide-react";
 import { buildScheduledRepeatMap, currentScheduleRowsForTicket, scheduleDateValue, scheduleLocationLabel, scheduleQuantity, scheduleRecommendationForTicket } from "../utils/scheduleRecommendations";
+import JobTicketArtworkPreview from "./JobTicketArtworkPreview";
 
 const RECENT_USAGE_DAYS = 90;
 const RECENT_ORDER_DAYS = 30;
@@ -120,6 +120,27 @@ function stockoutInfo(monthlyUsage, onHand, backendBusinessDays = null) {
   };
 }
 
+function JobTicketInlineLoading({ label = "Loading tickets", detail = "Pulling matching job tickets and stock cues." }) {
+  return (
+    <div className="job-ticket-gallery-loading job-barcode-inline-loading" role="status" aria-live="polite" aria-busy="true">
+      <div className="job-barcode-inline-main">
+        <div className="job-barcode-inline-mark" aria-hidden="true">
+          <Barcode size={24} />
+          <span className="job-barcode-inline-scan" />
+        </div>
+        <div className="job-barcode-inline-copy">
+          <strong>{label}</strong>
+          <span>{detail}</span>
+        </div>
+        <LoaderCircle className="job-barcode-inline-spinner" size={18} aria-hidden="true" />
+      </div>
+      <div className="job-barcode-inline-lines" aria-hidden="true">
+        {[0, 1, 2].map((index) => <i key={index} style={{ "--barcode-delay": `${index * 100}ms` }} />)}
+      </div>
+    </div>
+  );
+}
+
 function recentOrderCountForTicket(ticket, usageRows = [], finishedRows = [], now = new Date()) {
   const summary = Number(ticket.recent_order_count_30d);
   if (Number.isFinite(summary)) return Math.max(0, summary);
@@ -216,6 +237,7 @@ export default function JobTicketGallery({
   sortMode = "usage",
   totalCount = 0,
   loading = false,
+  initialLoading = false,
   onCustomerFilterChange,
   onOwnerFilterChange,
   onSortModeChange,
@@ -305,7 +327,12 @@ export default function JobTicketGallery({
           <SlidersHorizontal size={16} />
           <span>Filters</span>
           <strong>{rows.length.toLocaleString()} shown{totalCount ? ` / ${totalCount.toLocaleString()} total` : ""}</strong>
-          {loading && <em>Updating...</em>}
+          {loading && (
+            <em className="job-ticket-filter-loading">
+              <LoaderCircle size={12} />
+              Updating results
+            </em>
+          )}
         </div>
         <label>
           <span>Customer</span>
@@ -351,13 +378,15 @@ export default function JobTicketGallery({
         )}
       </div>
 
-      {!rows.length ? (
+      {initialLoading && !rows.length ? (
+        <JobTicketInlineLoading />
+      ) : !rows.length ? (
         <p className="empty-row">No job tickets match this view.</p>
       ) : (
-        <div className="job-ticket-gallery">
+        <div className={`job-ticket-gallery-wrap ${loading ? "is-refreshing" : ""}`}>
+          <div className="job-ticket-gallery">
           {sortedTickets.map(({ ticket, stats, stockout, recentOrderCount30d, lowPredictability, activeScheduleRows, currentScheduleCount, scheduled, scheduleCue }) => {
             const image = primaryImage(ticket);
-            const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
             const owner = customerOwner(ticket);
             const primarySchedule = activeScheduleRows[0] ?? null;
             const scheduleLabel = primarySchedule ? scheduleLocationLabel(primarySchedule) : `${currentScheduleCount} active schedule${currentScheduleCount === 1 ? "" : "s"}`;
@@ -377,16 +406,7 @@ export default function JobTicketGallery({
                 onClick={() => onSelect(ticket)}
               >
                 <div className="job-ticket-card-image">
-                  {image?.url && !imageIsDocument ? (
-                    <AuthenticatedImage src={image.url} alt={image.name || ticket.job_name} />
-                  ) : image?.url ? (
-                    <PdfPreview url={image.url} title={image.name || ticket.job_name || "Job PDF"} compact />
-                  ) : (
-                    <div>
-                      <ImageIcon size={28} />
-                      <span>No Image</span>
-                    </div>
-                  )}
+                  <JobTicketArtworkPreview image={image} title={ticket.job_name || "Job image"} emptyLabel="No Image" compact />
                   <span className="job-ticket-card-badge">{ticketMeta(ticket)}</span>
                   {imageSourceLabel(image) && <span className="job-ticket-source-badge">{imageSourceLabel(image)}</span>}
                   {stats.lowStockLevel && (
@@ -442,6 +462,7 @@ export default function JobTicketGallery({
               </button>
             );
           })}
+          </div>
         </div>
       )}
     </section>

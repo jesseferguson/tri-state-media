@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Barcode, CalendarCheck2, CalendarClock, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Clock3, FileText, History, Image as ImageIcon, LoaderCircle, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
-import { AuthenticatedFileLink, AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
+import { AlertTriangle, ArrowRight, Barcode, CalendarCheck2, CalendarClock, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Clock3, FileText, History, LoaderCircle, PackageCheck, Printer, RotateCcw, Send, Settings2, ShieldCheck, Sparkles, XCircle } from "lucide-react";
+import { AuthenticatedFileLink } from "../../../shared/components/FilePreview";
 import RecipeOptionsView from "../../tooling/components/RecipeOptionsView";
 import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
 import { buildSameRepeatScheduleRecommendations, currentScheduleRowsForTicket, scheduleLocationLabel, ticketCustomerName, ticketDisplayName } from "../utils/scheduleRecommendations";
+import JobTicketArtworkPreview from "./JobTicketArtworkPreview";
 
 const tabs = [
   { key: "general", label: "General" },
   { key: "specs", label: "Specs" },
+  { key: "print", label: "Print Setup" },
   { key: "labels", label: "Labels" },
   { key: "history", label: "History" },
   { key: "editor", label: "Editor" },
@@ -373,6 +375,43 @@ function matchingRecipeOptions(ticket, rows) {
     if (ticket.recipe_name && row.recipe_name === ticket.recipe_name) return true;
     return false;
   });
+}
+
+function ticketHasPrint(ticket) {
+  return Boolean(ticket?.has_print || (ticket?.print_method && ticket.print_method !== "none"));
+}
+
+function printMethodLabel(ticket) {
+  if (!ticketHasPrint(ticket)) return "No Print";
+  return ticket?.print_method_display || labelize(ticket?.print_method || "static");
+}
+
+function matchingPrintPlates(ticket, rows) {
+  const linkedIds = new Set([
+    ...(Array.isArray(ticket?.print_plates) ? ticket.print_plates : []),
+    ...(Array.isArray(ticket?.print_plate_details) ? ticket.print_plate_details.map((plate) => plate.id) : []),
+  ].filter(Boolean).map(String));
+  const lookupRows = rows?.length ? rows : (ticket?.print_plate_details ?? []);
+  const matched = (lookupRows ?? []).filter((row) => {
+    if (linkedIds.size) return linkedIds.has(String(row.id));
+    return ticket?.print_method === "static" && ticket?.recipe && sameId(row.recipe, ticket.recipe);
+  });
+  return matched.length ? matched : (ticket?.print_plate_details ?? []);
+}
+
+function matchingPrintStations(plates, stationRows) {
+  const plateIds = new Set((plates ?? []).map((plate) => String(plate.id)).filter(Boolean));
+  const directRows = (stationRows ?? []).filter((row) => plateIds.has(String(row.print_plate)));
+  if (directRows.length) return directRows;
+  return (plates ?? []).flatMap((plate) => (plate.stations ?? []).map((station) => ({
+    ...station,
+    print_plate: plate.id,
+    print_plate_number: plate.plate_number,
+  })));
+}
+
+function dynamicScheduleRange(row) {
+  return [row.dynamic_start_number, row.dynamic_end_number].filter(Boolean).join(" - ");
 }
 
 function matchingBoxInventory(ticket, rows) {
@@ -1694,6 +1733,160 @@ function ScheduleSuccessState({ notice }) {
   );
 }
 
+function PrintSetupPanel({ ticket, plates = [], stations = [], schedules = [], canEdit = false, onEdit }) {
+  const hasPrint = ticketHasPrint(ticket);
+  const isStatic = ticket?.print_method === "static";
+  const isDynamic = ticket?.print_method === "dynamic";
+  const activeDynamicSchedules = schedules
+    .filter((row) => sameId(row.job_ticket, ticket.id) || sameText(row.job_ticket_number, ticket.ticket_number))
+    .filter((row) => ["unscheduled", "scheduled", "ready", "running", "on_hold"].includes(String(row.status || "")));
+  const readyDynamicCount = activeDynamicSchedules.filter((row) => row.dynamic_file_created).length;
+  const missingDynamicCount = activeDynamicSchedules.filter((row) => isDynamic && !row.dynamic_file_created).length;
+  const stationCount = stations.filter((station) => station.is_active !== false).length;
+  const artReady = Boolean(ticket?.art_file_created);
+  const setupTone = !hasPrint
+    ? "neutral"
+    : isDynamic
+      ? (missingDynamicCount ? "needs-file" : (readyDynamicCount || artReady ? "ready" : "needs-file"))
+      : artReady ? "ready" : "needs-file";
+  const setupReady = setupTone === "ready";
+  const setupTitle = !hasPrint
+    ? "No Print"
+    : isDynamic
+      ? missingDynamicCount ? "Files Missing" : activeDynamicSchedules.length ? "Order Files Ready" : "Order File Required"
+      : artReady ? "Base File Ready" : "File Needed";
+
+  return (
+    <div className="job-panel-section job-print-setup-panel">
+      <section className={`job-print-setup-hero ${hasPrint ? ticket.print_method || "static" : "no-print"}`}>
+        <div>
+          <p className="eyebrow">Print Setup</p>
+          <h3>{printMethodLabel(ticket)}</h3>
+          <span>{[ticket.product_code, ticket.recipe_name, ticket.job_name].filter(Boolean).join(" / ") || "No print data"}</span>
+        </div>
+        <div className={`job-print-setup-status ${setupTone}`}>
+          {setupReady ? <CheckCircle2 size={18} /> : <Printer size={18} />}
+          <div>
+            <strong>{setupTitle}</strong>
+            <span>{isDynamic ? `${readyDynamicCount}/${activeDynamicSchedules.length} scheduled file${activeDynamicSchedules.length === 1 ? "" : "s"} ready` : ticket.art_file_created_by || "Art status"}</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="job-print-setup-kpis">
+        <InfoRow label="Print" value={hasPrint ? "Yes" : "No"} />
+        <InfoRow label="Method" value={printMethodLabel(ticket)} />
+        <InfoRow label="Art File" value={artReady ? "Created" : hasPrint ? "Needed" : "Not Required"} />
+        <InfoRow label="Plates / Stations" value={`${plates.length} / ${stationCount}`} />
+      </section>
+
+      {ticket.print_notes && <JobNoteBlock title="Print Notes" value={ticket.print_notes} />}
+
+      {!hasPrint && (
+        <section className="job-ticket-sheet-card job-print-empty-state">
+          <Printer size={22} />
+          <div>
+            <strong>No print setup is marked for this job.</strong>
+            <span>{canEdit ? "Authorized setup changes are available." : "No print data has been entered."}</span>
+          </div>
+        </section>
+      )}
+
+      {hasPrint && isStatic && (
+        <section className="job-ticket-sheet-card job-print-plates-card">
+          <div className="job-ticket-card-head">
+            <strong>Print Plates</strong>
+            <span>{plates.length ? `${plates.length} linked` : "No linked plates"}</span>
+          </div>
+          {plates.length ? (
+            <div className="job-print-plate-grid">
+              {plates.map((plate) => (
+                <article key={plate.id || plate.plate_number}>
+                  <span>Plate</span>
+                  <strong>{plate.plate_number || "--"}</strong>
+                  <em>{[plate.customer_plate_number, plate.description, plate.recipe_name].filter(Boolean).join(" / ") || "No plate note"}</em>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No plates are linked yet.</p>
+          )}
+
+          <div className="job-print-station-table-wrap">
+            <table className="job-ticket-data-table job-print-station-table">
+              <thead>
+                <tr>
+                  <th>Station</th>
+                  <th>Plate #</th>
+                  <th>PMS Color</th>
+                  <th>Anilox</th>
+                  <th>Type</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stations.length ? stations.map((station) => (
+                  <tr key={station.id || `${station.print_plate}-${station.station_number}`}>
+                    <td>{station.station_number || "--"}</td>
+                    <td>{station.station_plate_number || station.print_plate_number || "--"}</td>
+                    <td>{station.pms_color || "--"}</td>
+                    <td>{station.anilox_gear_number || "--"}</td>
+                    <td>{labelize(station.color_type || "spot")}</td>
+                    <td>{station.notes || "--"}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6}>No station information has been linked yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {hasPrint && !isStatic && (
+        <section className="job-ticket-sheet-card job-print-digital-card">
+          <div className="job-ticket-card-head">
+            <strong>{isDynamic ? "Dynamic File Orders" : "Digital Print"}</strong>
+            <span>{isDynamic ? `${missingDynamicCount} missing file${missingDynamicCount === 1 ? "" : "s"}` : artReady ? "File ready" : "File needed"}</span>
+          </div>
+          {isDynamic ? (
+            activeDynamicSchedules.length ? (
+              <div className="job-dynamic-schedule-list">
+                {activeDynamicSchedules.map((row) => (
+                  <article className={row.dynamic_file_created ? "ready" : "hold"} key={row.id}>
+                    <div>
+                      <strong>{row.customer_po || row.customer_order_number || `Schedule ${row.id}`}</strong>
+                      <span>{[labelize(row.status), row.press_name || "Unassigned", row.due_date].filter(Boolean).join(" / ")}</span>
+                    </div>
+                    <em>{row.dynamic_file_created ? dynamicScheduleRange(row) || "File ready" : "Files not created"}</em>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No active dynamic schedules are linked to this job.</p>
+            )
+          ) : (
+            <div className="job-info-list compact">
+              <InfoRow label="Art File" value={artReady ? "Created" : "Needed"} />
+              <InfoRow label="Created By" value={ticket.art_file_created_by} />
+            </div>
+          )}
+        </section>
+      )}
+
+      {canEdit && (
+        <div className="job-print-setup-actions">
+          <button className="primary-btn" type="button" onClick={onEdit}>
+            <Settings2 size={15} /> Edit Print Setup
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function usageDate(row) {
   const raw = row?.used_at || row?.date || row?.used_date;
   return parseDateValue(raw);
@@ -1751,6 +1944,14 @@ export default function JobTicketPanel({
   const recipeOptions = useMemo(
     () => matchingRecipeOptions(ticket, lookups["recipe-options"]),
     [ticket, lookups]
+  );
+  const printPlates = useMemo(
+    () => matchingPrintPlates(ticket, lookups["print-plates"]),
+    [ticket, lookups]
+  );
+  const printStations = useMemo(
+    () => matchingPrintStations(printPlates, lookups["print-stations"]),
+    [printPlates, lookups]
   );
   const boxInventory = useMemo(
     () => matchingBoxInventory(ticket, lookups["box-inventory"]),
@@ -1867,7 +2068,6 @@ export default function JobTicketPanel({
     && (sameRepeatScheduleRecommendations.scheduledRows.length || sameRepeatScheduleRecommendations.jobs.length)
   );
   const image = primaryImage(ticket);
-  const imageIsDocument = image?.isDocument || isPdfUrl(image?.url);
   const partNumber = ticket.job_name || ticket.ticket_number || "--";
   const descriptionText = ticket.description || ticket.job_name || ticket.job_notes || "No description entered.";
   const materialTypeDisplay = ticket.material_master_type_code || ticket.material_spec_master_type_code || ticket.material_master_type_name || ticket.material_spec_master_type_name || "--";
@@ -1970,6 +2170,11 @@ export default function JobTicketPanel({
   function openPendingChanges() {
     setHistoryTab("ticket");
     setActiveTab("history");
+  }
+
+  function openPrintSetupEditor() {
+    onEditorOpen?.();
+    setActiveTab("editor");
   }
 
   function openScheduleWorkflow() {
@@ -2116,16 +2321,7 @@ export default function JobTicketPanel({
           )}
           <section className="job-ticket-sheet-head">
             <div className="job-ticket-sheet-image">
-              {image?.url && !imageIsDocument ? (
-                <AuthenticatedImage src={image.url} alt={image.name || ticket.job_name || "Job image"} />
-              ) : image?.url ? (
-                <PdfPreview url={image.url} title={image.name || ticket.job_name || "Job PDF"} />
-              ) : (
-                <div>
-                  <ImageIcon size={30} />
-                  <span>No job image</span>
-                </div>
-              )}
+              <JobTicketArtworkPreview image={image} title={ticket.job_name || "Job image"} emptyLabel="No job image" />
               {imageSourceLabel(image) && <span className="job-image-source-badge">{imageSourceLabel(image)}</span>}
             </div>
             <div className="job-ticket-title-panel">
@@ -2334,6 +2530,17 @@ export default function JobTicketPanel({
             )}
           </section>
         </div>
+      )}
+
+      {activeTab === "print" && (
+        <PrintSetupPanel
+          ticket={ticket}
+          plates={printPlates}
+          stations={printStations}
+          schedules={scheduleRows}
+          canEdit={canEdit}
+          onEdit={openPrintSetupEditor}
+        />
       )}
 
       {activeTab === "labels" && (

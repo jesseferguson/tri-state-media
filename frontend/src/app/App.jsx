@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import SignInScreen from "./auth/SignInScreen.jsx";
 import UserAdminPanel from "./auth/UserAdminPanel.jsx";
@@ -111,7 +111,7 @@ const barcodeLoadingPages = {
   },
   "job-tickets": {
     eyebrow: "Item library",
-    title: "Loading Items",
+    title: "Loading Job Tickets",
     detail: "Pulling job tickets, artwork, stock counts, and schedule cues.",
     tone: "items",
     lines: ["Tickets", "Artwork", "Stock", "Schedule"],
@@ -124,6 +124,22 @@ const barcodeLoadingPages = {
     lines: ["Presses", "Jobs", "Materials", "Holds"],
   },
 };
+
+function useDebouncedValue(value, delayMs) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    if (!delayMs) {
+      setDebounced(value);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+
+  return debounced;
+}
 
 export default function App() {
   const queryClient = useQueryClient();
@@ -429,6 +445,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const [jobTicketCustomerFilter, setJobTicketCustomerFilter] = useState("");
   const [jobTicketOwnerFilter, setJobTicketOwnerFilter] = useState("");
   const [jobTicketSortMode, setJobTicketSortMode] = useState("usage");
+  const [jobTicketLoadingRequestKey, setJobTicketLoadingRequestKey] = useState("");
   const [selected, setSelected] = useState(null);
   const [formMode, setFormMode] = useState(null); // null | create | edit
   const [jobTicketEditorLookupsNeeded, setJobTicketEditorLookupsNeeded] = useState(false);
@@ -515,8 +532,23 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const showingToolingConfigFormOverlay = Boolean(formMode && isToolingConfigPage);
   const showingPressFormOverlay = Boolean(formMode && resource.key === "presses");
   const showingToolingConfigDetailOverlay = Boolean(selected && !formMode && isToolingConfigPage && resource.key !== "recipes");
-  const serverSearch = resource.searchMode === "flexDie" ? "" : search;
-  const listSearchActive = Boolean(serverSearch.trim());
+  const debouncedSearch = useDebouncedValue(search, resource.key === "job-tickets" ? 280 : 0);
+  const serverSearchValue = resource.key === "job-tickets" ? debouncedSearch : search;
+  const serverSearch = resource.searchMode === "flexDie" ? "" : serverSearchValue;
+  const searchText = search.trim();
+  const debouncedSearchText = debouncedSearch.trim();
+  const listSearchActive = Boolean(searchText);
+  const jobTicketSearchSettling = resource.key === "job-tickets" && searchText !== debouncedSearchText;
+  const jobTicketRequestKey = useMemo(() => {
+    if (resource.key !== "job-tickets") return "";
+    return JSON.stringify({
+      customer: jobTicketCustomerFilter || "",
+      owner: jobTicketOwnerFilter || "",
+      search: debouncedSearchText,
+      sort: jobTicketSortMode || "",
+    });
+  }, [debouncedSearchText, jobTicketCustomerFilter, jobTicketOwnerFilter, jobTicketSortMode, resource.key]);
+  const previousJobTicketRequestKey = useRef(jobTicketRequestKey);
   const listFilters = useMemo(() => {
     const filters = { ...(resource.filters ?? {}) };
     if (resource.key === "job-tickets") {
@@ -660,6 +692,30 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   });
+
+  useEffect(() => {
+    if (resource.key !== "job-tickets") {
+      previousJobTicketRequestKey.current = "";
+      setJobTicketLoadingRequestKey("");
+      return;
+    }
+    if (jobTicketSearchSettling) return;
+    if (!previousJobTicketRequestKey.current) {
+      previousJobTicketRequestKey.current = jobTicketRequestKey;
+      return;
+    }
+    if (previousJobTicketRequestKey.current !== jobTicketRequestKey) {
+      previousJobTicketRequestKey.current = jobTicketRequestKey;
+      setJobTicketLoadingRequestKey(jobTicketRequestKey);
+    }
+  }, [jobTicketRequestKey, jobTicketSearchSettling, resource.key]);
+
+  useEffect(() => {
+    if (resource.key !== "job-tickets") return;
+    if (!listQuery.isFetching && jobTicketLoadingRequestKey) {
+      setJobTicketLoadingRequestKey("");
+    }
+  }, [jobTicketLoadingRequestKey, listQuery.isFetching, resource.key]);
 
   const lookupQuery = useQuery({
     queryKey: ["lookups", resource.key, selected?.id ?? null, formMode ?? "view", jobTicketLookupMode],
@@ -928,6 +984,13 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   const canProcessFlexDieRequests = roleHasResourceAccess(roleDefinitions, viewRoleName, "flex-die-requests");
   const jobTicketScheduleResource = useMemo(() => {
     const schedule = resourceMap["production-schedule"];
+    const isDynamicPrintTicket = selected?.print_method === "dynamic";
+    const dynamicScheduleFields = new Set([
+      "dynamic_file_created",
+      "dynamic_start_number",
+      "dynamic_end_number",
+      "dynamic_file_notes",
+    ]);
     const hiddenOnTicket = new Set([
       "job_ticket",
       "customer",
@@ -948,6 +1011,14 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       hold_notes: { section: "Hold", label: "Hold Notes" },
       held_by: { section: "Hold" },
       held_at: { section: "Hold" },
+      dynamic_file_created: {
+        section: "Dynamic File",
+        label: "File Created For This Order",
+        sectionHint: "Dynamic barcode jobs need an order-specific file and number range before they can run.",
+      },
+      dynamic_start_number: { section: "Dynamic File", label: "Starting Number" },
+      dynamic_end_number: { section: "Dynamic File", label: "Ending Number" },
+      dynamic_file_notes: { section: "Dynamic File", label: "Dynamic File Note", placeholder: "Barcode file, sequence, or art handoff note..." },
       quantity_to_ship: { section: "Quantities", label: "Ship Quantity" },
       quantity_to_stock: { section: "Quantities", label: "Stock Quantity" },
       order_date: { section: "Timing", label: "Date Scheduled" },
@@ -962,9 +1033,10 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
       singular: "Job Schedule",
       fields: (schedule.fields ?? [])
         .filter((field) => !hiddenOnTicket.has(field.name))
+        .filter((field) => isDynamicPrintTicket || !dynamicScheduleFields.has(field.name))
         .map((field) => ({ ...field, ...(scheduleFieldPolish[field.name] ?? {}) })),
     };
-  }, []);
+  }, [selected?.print_method]);
 
   const saveMutation = useMutation({
     mutationFn: async (payload) => {
@@ -2069,6 +2141,12 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
     && listQuery.isLoading
     && !listQuery.data
   );
+  const jobTicketGalleryLoading = Boolean(
+    resource.key === "job-tickets"
+    && !jobTicketSearchSettling
+    && listQuery.isFetching
+    && jobTicketLoadingRequestKey === jobTicketRequestKey
+  );
 
   function closeMobilePageMenu() {
     setMobilePageMenuOpen(false);
@@ -2478,7 +2556,8 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                     ownerFilter={jobTicketOwnerFilter}
                     sortMode={jobTicketSortMode}
                     totalCount={listQuery.data?.count ?? rows.length}
-                    loading={listQuery.isFetching}
+                    loading={jobTicketGalleryLoading}
+                    initialLoading={listQuery.isLoading && !listQuery.data && !jobTicketSearchSettling}
                     onCustomerFilterChange={(value) => {
                       setJobTicketCustomerFilter(value);
                       setJobTicketSortMode(value || jobTicketOwnerFilter ? "runout" : "usage");

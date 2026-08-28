@@ -774,6 +774,298 @@
   overflow-wrap: anywhere;
 }
 
+.job-print-setup-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.job-print-setup-hero {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, .36fr);
+  gap: 10px;
+  align-items: stretch;
+  padding: 12px;
+  border: 1px solid #dbe6f2;
+  border-top: 3px solid #2563eb;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.job-print-setup-hero.static {
+  border-top-color: #2563eb;
+}
+
+.job-print-setup-hero.dynamic {
+  border-top-color: #f97316;
+  background: linear-gradient(180deg, #ffffff, #fff7ed);
+}
+
+.job-print-setup-hero.digital_static {
+  border-top-color: #0f766e;
+  background: linear-gradient(180deg, #ffffff, #f0fdfa);
+}
+
+.job-print-setup-hero.no-print {
+  border-top-color: #94a3b8;
+  background: #ffffff;
+}
+
+.job-print-setup-hero h3 {
+  min-width: 0;
+  margin: 2px 0 0;
+  color: #0f172a;
+  font-size: 1.25rem;
+  font-weight: 950;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-print-setup-hero > div:first-child > span {
+  display: block;
+  min-width: 0;
+  margin-top: 6px;
+  overflow: hidden;
+  color: #475569;
+  font-size: .78rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-print-setup-status {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.job-print-setup-status.ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.job-print-setup-status.needs-file {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.job-print-setup-status.neutral {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.job-print-setup-status div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.job-print-setup-status strong,
+.job-print-setup-status span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-print-setup-status strong {
+  color: currentColor;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.job-print-setup-status span {
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.job-print-setup-kpis {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.job-print-setup-kpis .job-info-row {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.job-print-empty-state {
+  min-height: 110px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: #64748b;
+}
+
+.job-print-empty-state div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.job-print-empty-state strong {
+  color: #0f172a;
+  font-size: .86rem;
+  font-weight: 950;
+}
+
+.job-print-empty-state span {
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.job-print-plates-card,
+.job-print-digital-card {
+  min-height: 0;
+}
+
+.job-print-plate-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.job-print-plate-grid article {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.job-print-plate-grid span,
+.job-print-plate-grid em {
+  min-width: 0;
+  overflow: hidden;
+  color: #475569;
+  font-size: .66rem;
+  font-style: normal;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-print-plate-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: .96rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-print-station-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.job-print-station-table {
+  min-width: 680px;
+}
+
+.job-dynamic-schedule-list {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.job-dynamic-schedule-list article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+}
+
+.job-dynamic-schedule-list article.ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.job-dynamic-schedule-list div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.job-dynamic-schedule-list strong,
+.job-dynamic-schedule-list span,
+.job-dynamic-schedule-list em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-dynamic-schedule-list strong {
+  color: #0f172a;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.job-dynamic-schedule-list span {
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.job-dynamic-schedule-list em {
+  color: #c2410c;
+  font-size: .72rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.job-dynamic-schedule-list article.ready em {
+  color: #15803d;
+}
+
+.job-print-setup-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 860px) {
+  .job-print-setup-hero,
+  .job-print-setup-kpis,
+  .job-dynamic-schedule-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .job-print-setup-status {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
 .job-chart-range.compact {
   flex: 0 1 230px;
   display: grid;

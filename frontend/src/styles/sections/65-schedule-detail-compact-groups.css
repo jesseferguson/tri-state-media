@@ -111,6 +111,55 @@
   line-height: 1.3;
 }
 
+.schedule-dynamic-file-panel {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 7px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.schedule-dynamic-file-panel.hold {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.schedule-dynamic-file-panel.ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.schedule-dynamic-file-panel div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.schedule-dynamic-file-panel strong,
+.schedule-dynamic-file-panel span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-dynamic-file-panel strong {
+  font-size: .74rem;
+  font-weight: 950;
+}
+
+.schedule-dynamic-file-panel span {
+  font-size: .66rem;
+  font-weight: 800;
+}
+
 .schedule-info-group .schedule-material-chart {
   gap: 4px;
 }
@@ -138,6 +187,70 @@
   color: #64748b;
   font-size: .68rem;
   font-weight: 800;
+}
+
+.schedule-print-setup-card .schedule-detail-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+.schedule-print-plate-list {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.schedule-print-plate-list article {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.schedule-print-plate-list header {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.schedule-print-plate-list strong,
+.schedule-print-plate-list span,
+.schedule-print-plate-list em,
+.schedule-print-plate-list p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-print-plate-list strong {
+  color: #0f172a;
+  font-size: .82rem;
+  font-weight: 950;
+}
+
+.schedule-print-plate-list span {
+  color: #475569;
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.schedule-print-plate-list div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.schedule-print-plate-list em,
+.schedule-print-plate-list p {
+  margin: 0;
+  color: #1d4ed8;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 850;
 }
 
 .schedule-product-packet-hero + .schedule-note-grid {

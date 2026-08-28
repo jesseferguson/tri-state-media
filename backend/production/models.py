@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from materials.models import MaterialMasterType, MaterialSpec, MaterialUsage, RawMaterialInventory
-from tooling.models import Press, ToolingLocation, ToolingRecipe, ToolingRecipeOption
+from tooling.models import Press, PrintPlate, ToolingLocation, ToolingRecipe, ToolingRecipeOption
 from users.constants import QUOTE_COMPANY_CHOICES
 
 QUOTE_APPROVAL_STATUS_CHOICES = [
@@ -465,6 +465,13 @@ class JobTicket(models.Model):
         ("camslide", "Camslide"),
     ]
 
+    PRINT_METHOD_CHOICES = [
+        ("none", "No Print"),
+        ("static", "Static Plates"),
+        ("digital_static", "Digital Static"),
+        ("dynamic", "Dynamic / Variable"),
+    ]
+
     WIND_DIRECTION_CHOICES = [
         ("", "Not Set"),
         ("1", "Wind 1"),
@@ -536,6 +543,18 @@ class JobTicket(models.Model):
         blank=True,
         related_name="production_job_tickets",
     )
+    has_print = models.BooleanField(default=False)
+    print_method = models.CharField(max_length=30, choices=PRINT_METHOD_CHOICES, default="none")
+    print_plates = models.ManyToManyField(
+        PrintPlate,
+        blank=True,
+        related_name="job_tickets",
+        help_text="Static print plates tied directly to this job ticket.",
+    )
+    art_file_created = models.BooleanField(default=False)
+    art_file_created_at = models.DateTimeField(null=True, blank=True)
+    art_file_created_by = models.CharField(max_length=120, blank=True)
+    print_notes = models.TextField(blank=True)
 
     requested_quantity = models.DecimalField(max_digits=12, decimal_places=3, default=0)
 
@@ -597,6 +616,17 @@ class JobTicket(models.Model):
         return f"{self.ticket_number} / {self.job_name}"
 
     def save(self, *args, **kwargs):
+        if not self.has_print:
+            self.print_method = "none"
+            self.art_file_created = False
+            self.art_file_created_at = None
+            self.art_file_created_by = ""
+        elif self.print_method == "none":
+            self.print_method = "static"
+        if self.art_file_created and not self.art_file_created_at:
+            self.art_file_created_at = timezone.now()
+        if not self.art_file_created:
+            self.art_file_created_at = None
         if self.material_spec_id and not self.material_master_type_id:
             self.material_master_type = self.material_spec.master_type
         if self.box_id and not self.box_item_number:
@@ -680,6 +710,7 @@ class ProductionSchedule(models.Model):
         ("adhesive", "Adhesive"),
         ("liner", "Liner"),
         ("face", "Face"),
+        ("art_files", "Art / Files"),
     ]
 
     job_ticket = models.ForeignKey(
@@ -742,6 +773,10 @@ class ProductionSchedule(models.Model):
     hold_notes = models.TextField(blank=True)
     held_at = models.DateTimeField(null=True, blank=True)
     held_by = models.CharField(max_length=120, blank=True)
+    dynamic_file_created = models.BooleanField(default=False)
+    dynamic_start_number = models.CharField(max_length=120, blank=True)
+    dynamic_end_number = models.CharField(max_length=120, blank=True)
+    dynamic_file_notes = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -761,6 +796,7 @@ class ProductionSchedule(models.Model):
         previous = None
         if not is_create:
             previous = ProductionSchedule.objects.select_related("press").filter(pk=self.pk).first()
+        dynamic_hold_update_fields = self._apply_dynamic_file_hold()
         hold_update_fields = []
         if self.status == "on_hold":
             if not self.held_at:
@@ -775,11 +811,36 @@ class ProductionSchedule(models.Model):
             self.held_at = None
             self.held_by = ""
             hold_update_fields.extend(["hold_reasons", "hold_notes", "held_at", "held_by"])
-        if hold_update_fields and kwargs.get("update_fields") is not None:
-            kwargs["update_fields"] = set(kwargs["update_fields"]) | set(hold_update_fields)
+        combined_update_fields = [*dynamic_hold_update_fields, *hold_update_fields]
+        if combined_update_fields and kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | set(combined_update_fields)
         super().save(*args, **kwargs)
         CustomerOrder.objects.sync_from_schedule(self, created=is_create)
         self._log_job_ticket_event(previous=previous, created=is_create)
+
+    def _apply_dynamic_file_hold(self):
+        if not self.job_ticket_id:
+            return []
+        ticket = self.job_ticket
+        if not ticket or ticket.print_method != "dynamic":
+            return []
+        if self.dynamic_file_created:
+            return []
+        changed = []
+        if self.status != "on_hold":
+            changed.append("status")
+        self.status = "on_hold"
+        reasons = self.hold_reasons if isinstance(self.hold_reasons, list) else []
+        if "art_files" not in reasons:
+            reasons = [*reasons, "art_files"]
+            changed.append("hold_reasons")
+        self.hold_reasons = reasons
+        note = "Files not created for this dynamic print job."
+        current_notes = str(self.hold_notes or "").strip()
+        if note.lower() not in current_notes.lower():
+            self.hold_notes = "\n".join([part for part in [current_notes, note] if part])
+            changed.append("hold_notes")
+        return changed
 
     def _log_job_ticket_event(self, previous=None, created=False):
         actor = self.last_updated_by or self.scheduled_by or "system"

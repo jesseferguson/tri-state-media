@@ -72,13 +72,16 @@ class JobTicketAdmin(admin.ModelAdmin):
         "repeat_inches",
         "cutting_type",
         "recipe",
+        "has_print",
+        "print_method",
+        "art_file_created",
         "box",
         "core",
         "fanfold_gear",
         "finishing_type",
         "unit_type",
     )
-    list_filter = ("finishing_type", "unit_type", "ribbon", "laminate", "bagged", "cutting_type", "material_master_type", "material_spec", "box", "core")
+    list_filter = ("has_print", "print_method", "art_file_created", "finishing_type", "unit_type", "ribbon", "laminate", "bagged", "cutting_type", "material_master_type", "material_spec", "box", "core")
     search_fields = (
         "ticket_number",
         "customer__name",
@@ -100,10 +103,12 @@ class JobTicketAdmin(admin.ModelAdmin):
         "core__item_number",
         "core__supplier",
         "fanfold_gear",
+        "print_method",
+        "print_notes",
         "job_notes",
         "finishing_notes",
     )
-    autocomplete_fields = ("customer", "material_master_type", "material_spec", "recipe", "box", "core")
+    autocomplete_fields = ("customer", "material_master_type", "material_spec", "recipe", "print_plates", "box", "core")
 
 
 @admin.register(JobTicketEvent)
@@ -152,8 +157,9 @@ class ProductionScheduleAdmin(admin.ModelAdmin):
         "scheduled_date",
         "due_date",
         "material_inventory",
+        "dynamic_file_created",
     )
-    list_filter = ("status", "priority", "customer", "scheduled_date", "due_date")
+    list_filter = ("status", "priority", "dynamic_file_created", "customer", "scheduled_date", "due_date")
     search_fields = (
         "job_ticket__ticket_number",
         "customer__name",
@@ -162,6 +168,10 @@ class ProductionScheduleAdmin(admin.ModelAdmin):
         "job_ticket__job_name",
         "customer_po",
         "notes",
+        "hold_notes",
+        "dynamic_start_number",
+        "dynamic_end_number",
+        "dynamic_file_notes",
     )
     autocomplete_fields = ("job_ticket", "customer", "material_inventory")
     date_hierarchy = "scheduled_date"

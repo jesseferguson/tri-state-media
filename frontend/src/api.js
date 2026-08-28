@@ -30,6 +30,36 @@ function isProtectedFileApiPath(pathname) {
   ].some((pattern) => pattern.test(pathname));
 }
 
+function decodeHtmlText(value) {
+  const text = String(value || "");
+  if (typeof document !== "undefined") {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = text;
+    return textarea.value;
+  }
+  return text
+    .replace(/&quot;/g, "\"")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+function textFromHtmlError(text, response) {
+  const source = String(text || "");
+  if (!/<html[\s>]/i.test(source) && !/<!doctype html/i.test(source)) return "";
+  const title = source.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "";
+  const heading = source.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || "";
+  const exception = source.match(/<pre[^>]*class=["'][^"']*exception_value[^"']*["'][^>]*>([\s\S]*?)<\/pre>/i)?.[1] || "";
+  const summary = [heading || title, exception]
+    .map((part) => decodeHtmlText(part).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" - ");
+  const status = `${response.status} ${response.statusText}`.trim();
+  return summary ? `${status}: ${summary}` : `${status}: The server returned an HTML error page.`;
+}
+
 export function isApiUrl(url) {
   if (!url) return false;
   try {
@@ -53,7 +83,7 @@ async function responseErrorInfo(response) {
   } catch {
     try {
       detail = await response.clone().text();
-      message = detail;
+      message = textFromHtmlError(detail, response) || detail;
     } catch {
       message = `${response.status} ${response.statusText}`;
     }
