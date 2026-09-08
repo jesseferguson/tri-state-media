@@ -421,31 +421,6 @@ function calculateQuoteTierPricing(form, quantity) {
   return calculateQuotePricing(tierForm);
 }
 
-function quoteTierVisiblePriceCents(tier) {
-  if (!tier?.fits) return null;
-  const price = Number(tier.pricePerThousand || 0);
-  if (!Number.isFinite(price) || price <= 0) return null;
-  return Math.round(price * 100);
-}
-
-function quoteVisibleTierRows(tiers = []) {
-  const visible = [];
-  [...tiers]
-    .sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0))
-    .forEach((tier) => {
-      const previous = visible[visible.length - 1];
-      if (previous) {
-        const previousPriceCents = quoteTierVisiblePriceCents(previous);
-        const tierPriceCents = quoteTierVisiblePriceCents(tier);
-        if (previousPriceCents === null && tierPriceCents === null) return;
-        if (previousPriceCents !== null && tierPriceCents === null) return;
-        if (previousPriceCents !== null && tierPriceCents >= previousPriceCents) return;
-      }
-      visible.push(tier);
-    });
-  return visible;
-}
-
 function quoteNormalizeCurrentBracketTiers(tiers = [], form = {}, pricing = {}) {
   if (quoteVolumePricingMode(form) === "custom") return tiers;
 
@@ -472,6 +447,10 @@ function quoteNormalizeCurrentBracketTiers(tiers = [], form = {}, pricing = {}) 
       sellPrice: currentPricePerThousand * (Number(tier.quantity || 0) / 1000),
     };
   });
+}
+
+function quoteSortedTierRows(tiers = []) {
+  return [...tiers].sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
 }
 
 function quoteItemTierRows(item, quote = {}) {
@@ -518,7 +497,7 @@ function quoteItemTierRows(item, quote = {}) {
     return quoteTierRowFromPricing(option, unitType, calculateQuoteTierPricing(form, option.quantity), continuousRoll);
   });
   const normalizedTiers = quoteNormalizeCurrentBracketTiers(tiers, form, item?.pricing || quote?.pricing || {});
-  return quoteVolumePricingMode(form) === "custom" ? normalizedTiers : quoteVisibleTierRows(normalizedTiers);
+  return quoteSortedTierRows(normalizedTiers);
 }
 
 function quoteTierSummaryLines(item, quote = {}) {
