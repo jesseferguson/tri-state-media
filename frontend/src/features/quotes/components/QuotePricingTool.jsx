@@ -25,7 +25,8 @@ const savedQuotesStorageKey = "tsm_quote_records_v1";
 const quotePreferencesStorageKey = "tsm_quote_preferences_v1";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
-const unitCurrencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 });
+const basisCurrencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 5 });
+const unitCurrencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 6 });
 const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
 const percentFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const quoteDefaultExpirationDays = 30;
@@ -40,6 +41,11 @@ const quoteTierQuantityOptions = [
   { quantity: 1000000, label: "1,000,000", plus: true },
 ];
 const quotePdfVolumeTierLimit = 10;
+const quoteCustomVolumeTierLimit = 4;
+const quoteVolumePricingModeOptions = [
+  ["default", "Default Breaks"],
+  ["custom", "Custom Points"],
+];
 const quoteUnitTypeChoices = [
   ["label", "Label"],
   ["tag", "Tag"],
@@ -91,7 +97,9 @@ const initialForm = {
   labelsPerUnit: "",
   labelsPerCarton: "",
   volumePricingEnabled: true,
+  volumePricingMode: "default",
   volumeCustomQuantities: "",
+  volumeCustomTiers: Array.from({ length: quoteCustomVolumeTierLimit }, () => ({ quantity: "", pricePerThousand: "" })),
   continuousRoll: false,
   acrossMode: "auto",
   numberAcross: "",
@@ -181,6 +189,10 @@ function money(value) {
   return currencyFormatter.format(Number.isFinite(value) ? value : 0);
 }
 
+function basisMoney(value) {
+  return basisCurrencyFormatter.format(Number.isFinite(value) ? value : 0);
+}
+
 function unitMoney(value) {
   return unitCurrencyFormatter.format(Number.isFinite(value) ? value : 0);
 }
@@ -229,6 +241,10 @@ function quoteVolumePricingEnabled(form = {}) {
   return form.volumePricingEnabled === true || form.volumePricingEnabled === "true" || form.volumePricingEnabled === 1 || form.volumePricingEnabled === "1";
 }
 
+function quoteVolumePricingMode(form = {}) {
+  return form.volumePricingMode === "custom" ? "custom" : "default";
+}
+
 function quoteContinuousRollEnabled(form = {}) {
   return isContinuousQuoteRoll(form);
 }
@@ -238,10 +254,6 @@ function quoteItemContinuousRoll(item, quote = {}) {
     return quoteContinuousRollEnabled(item.form);
   }
   return quoteContinuousRollEnabled(quote?.form || {});
-}
-
-function quoteItemVolumePricingEnabled(item, quote = {}) {
-  return quoteVolumePricingEnabled(item?.form || quote?.form || {});
 }
 
 function quotePriceBasisLabel(continuousRoll = false, compact = false) {
@@ -303,7 +315,52 @@ function quoteCustomTierQuantityOptions(value = "") {
     });
 }
 
+function quoteVolumeCustomTierRows(value = []) {
+  const sourceRows = Array.isArray(value) ? value : [];
+  const rows = sourceRows.slice(0, quoteCustomVolumeTierLimit).map((row) => ({
+    quantity: row?.quantity ?? "",
+    pricePerThousand: row?.pricePerThousand ?? row?.pricePerM ?? row?.unitPrice ?? "",
+  }));
+  while (rows.length < quoteCustomVolumeTierLimit) {
+    rows.push({ quantity: "", pricePerThousand: "" });
+  }
+  return rows;
+}
+
+function quoteCustomTierPrice(value) {
+  const price = toQuoteNumber(value, NaN);
+  return Number.isFinite(price) && price > 0 ? price : null;
+}
+
+function quoteCustomTierOptionsForForm(form = {}) {
+  const seen = new Set();
+  const rows = quoteVolumeCustomTierRows(form.volumeCustomTiers)
+    .map((row) => {
+      const quantity = toQuoteNumber(row.quantity, NaN);
+      const pricePerThousand = quoteCustomTierPrice(row.pricePerThousand);
+      return {
+        quantity,
+        pricePerThousand,
+        custom: true,
+        manualPrice: pricePerThousand !== null,
+      };
+    })
+    .filter((option) => Number.isFinite(option.quantity) && option.quantity > 0 && option.manualPrice)
+    .filter((option) => {
+      const key = quoteTierQuantityKey(option.quantity);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  return rows;
+}
+
 function quoteTierOptionsForForm(form = {}) {
+  if (quoteVolumePricingMode(form) === "custom") {
+    return quoteCustomTierOptionsForForm(form).sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
+  }
+
   const merged = new Map();
   const addOption = (option) => {
     const key = quoteTierQuantityKey(option?.quantity);
@@ -333,8 +390,17 @@ function quotePdfVolumeLayout(tierCount = 0) {
 }
 
 function quoteTierRowFromPricing(option, unitType, pricing, continuousRoll = false) {
+  const quantity = Math.max(0, toQuoteNumber(option?.quantity));
+  const manualPricePerThousand = quoteCustomTierPrice(option?.pricePerThousand);
+  const pricePerThousand = manualPricePerThousand ?? Number(pricing?.pricePerThousand || 0);
+  const pricePerItem = manualPricePerThousand !== null
+    ? pricePerThousand / 1000
+    : Number(pricing?.pricePerLabel || 0);
+  const sellPrice = manualPricePerThousand !== null
+    ? pricePerThousand * (quantity / 1000)
+    : Number(pricing?.sellPrice || 0);
   return {
-    quantity: Math.max(0, toQuoteNumber(option?.quantity)),
+    quantity,
     quantityLabel: quoteTierQuantityLabel(option, unitType, false, continuousRoll),
     compactQuantityLabel: quoteTierQuantityLabel(option, unitType, true, continuousRoll),
     unitType,
@@ -342,19 +408,17 @@ function quoteTierRowFromPricing(option, unitType, pricing, continuousRoll = fal
     fits: Boolean(pricing?.fits),
     runFootage: Number(pricing?.runFootage || 0),
     wastePercent: Number(pricing?.wastePercent || 0),
-    pricePerThousand: Number(pricing?.pricePerThousand || 0),
-    pricePerItem: Number(pricing?.pricePerLabel || 0),
-    sellPrice: Number(pricing?.sellPrice || 0),
+    pricePerThousand,
+    pricePerItem,
+    sellPrice,
+    custom: Boolean(option?.custom),
+    manualPrice: manualPricePerThousand !== null || Boolean(option?.manualPrice),
   };
 }
 
 function calculateQuoteTierPricing(form, quantity) {
   const tierForm = { ...(form || {}), quantity: String(quantity) };
-  const recommendationPricing = calculateQuotePricing(tierForm);
-  return calculateQuotePricing({
-    ...tierForm,
-    wastePercent: percentInputValue(recommendationPricing.recommendedWastePercent),
-  });
+  return calculateQuotePricing(tierForm);
 }
 
 function quoteTierVisiblePriceCents(tier) {
@@ -382,6 +446,34 @@ function quoteVisibleTierRows(tiers = []) {
   return visible;
 }
 
+function quoteNormalizeCurrentBracketTiers(tiers = [], form = {}, pricing = {}) {
+  if (quoteVolumePricingMode(form) === "custom") return tiers;
+
+  const currentQuantity = toQuoteNumber(form.quantity ?? pricing.quantity, NaN);
+  const currentPricePerThousand = Number(pricing?.pricePerThousand || 0);
+  if (!Number.isFinite(currentQuantity) || currentQuantity <= 0 || !Number.isFinite(currentPricePerThousand) || currentPricePerThousand <= 0) {
+    return tiers;
+  }
+
+  const sorted = [...tiers].sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
+  const activeIndex = sorted.reduce((matchIndex, tier, index) => (
+    Number(tier.quantity || 0) <= currentQuantity ? index : matchIndex
+  ), -1);
+
+  if (activeIndex < 0) return sorted;
+
+  return sorted.map((tier, index) => {
+    if (index !== activeIndex || !tier.fits) return tier;
+    return {
+      ...tier,
+      currentBracket: true,
+      pricePerThousand: currentPricePerThousand,
+      pricePerItem: currentPricePerThousand / 1000,
+      sellPrice: currentPricePerThousand * (Number(tier.quantity || 0) / 1000),
+    };
+  });
+}
+
 function quoteItemTierRows(item, quote = {}) {
   const form = item?.form || quote?.form || {};
   if (!quoteVolumePricingEnabled(form)) return [];
@@ -389,7 +481,8 @@ function quoteItemTierRows(item, quote = {}) {
   const continuousRoll = quoteItemContinuousRoll(item, quote);
   const storedTiers = new Map(
     (Array.isArray(item?.pricing?.tiers) ? item.pricing.tiers : [])
-      .map((tier) => [String(Math.round(toQuoteNumber(tier.quantity, 0))), tier])
+      .map((tier) => [quoteTierQuantityKey(tier.quantity), tier])
+      .filter(([key]) => key)
   );
 
   const tierOptions = quoteTierOptionsForForm(form);
@@ -402,7 +495,7 @@ function quoteItemTierRows(item, quote = {}) {
   tierOptions.sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
 
   const tiers = tierOptions.map((option) => {
-    const stored = storedTiers.get(String(Math.round(toQuoteNumber(option.quantity, 0))));
+    const stored = storedTiers.get(quoteTierQuantityKey(option.quantity));
     if (stored && Number.isFinite(Number(stored.pricePerThousand))) {
       const storedContinuousRoll = stored.continuousRoll === true || stored.continuousRoll === "true" || continuousRoll;
       return {
@@ -417,18 +510,22 @@ function quoteItemTierRows(item, quote = {}) {
         pricePerThousand: Number(stored.pricePerThousand || 0),
         pricePerItem: Number(stored.pricePerItem ?? stored.pricePerLabel ?? 0),
         sellPrice: Number(stored.sellPrice || 0),
+        custom: Boolean(stored.custom),
+        manualPrice: Boolean(stored.manualPrice),
+        currentBracket: Boolean(stored.currentBracket),
       };
     }
     return quoteTierRowFromPricing(option, unitType, calculateQuoteTierPricing(form, option.quantity), continuousRoll);
   });
-  return quoteVisibleTierRows(tiers);
+  const normalizedTiers = quoteNormalizeCurrentBracketTiers(tiers, form, item?.pricing || quote?.pricing || {});
+  return quoteVolumePricingMode(form) === "custom" ? normalizedTiers : quoteVisibleTierRows(normalizedTiers);
 }
 
 function quoteTierSummaryLines(item, quote = {}) {
   const tiers = quoteItemTierRows(item, quote);
   const chunks = tiers.map((tier) => (
     tier.fits
-      ? `${tier.compactQuantityLabel} at ${money(tier.pricePerThousand)}/${quotePriceBasisLabel(tier.continuousRoll, true)}`
+      ? `${tier.compactQuantityLabel} at ${basisMoney(tier.pricePerThousand)}/${quotePriceBasisLabel(tier.continuousRoll, true)}`
       : `${tier.compactQuantityLabel} needs review`
   ));
   return [
@@ -1044,7 +1141,7 @@ function quoteLinePriceSummaryRows(item, quote) {
   if (continuousRoll) {
     const rows = [
       `${quoteCompactUnitMoney(pricePerItem)}/in`,
-      `${money(pricePerThousand)}/${quotePriceBasisLabel(true)}`,
+      `${basisMoney(pricePerThousand)}/${quotePriceBasisLabel(true)}`,
     ];
     if (Number.isFinite(labelsPerCarton) && labelsPerCarton > 0) {
       rows.push(`${money(pricePerItem * labelsPerCarton)}/carton`);
@@ -1053,7 +1150,7 @@ function quoteLinePriceSummaryRows(item, quote) {
   }
   const rows = [
     `${quoteCompactUnitMoney(pricePerItem)}/${quoteUnitLabel(unitType)}`,
-    `${money(pricePerThousand)}/thousand`,
+    `${basisMoney(pricePerThousand)}/thousand`,
   ];
   if (Number.isFinite(labelsPerCarton) && labelsPerCarton > 0) {
     rows.push(`${money(pricePerItem * labelsPerCarton)}/carton`);
@@ -1190,7 +1287,7 @@ function quoteTableQuantity(item, unitOfMeasure = quoteDefaultUnitOfMeasure) {
 
 function quoteTableUnitPrice(item, unitOfMeasure = quoteDefaultUnitOfMeasure) {
   if (quoteItemContinuousRoll(item)) return unitMoney(Number(item.pricing?.pricePerLabel || 0));
-  if (unitOfMeasure === "M") return money(Number(item.pricing?.pricePerThousand || 0));
+  if (unitOfMeasure === "M") return basisMoney(Number(item.pricing?.pricePerThousand || 0));
   return unitMoney(Number(item.pricing?.pricePerLabel || 0));
 }
 
@@ -1263,7 +1360,7 @@ function quoteCustomerPriceRows(quote) {
   const unitTitle = quoteItemUnitTitle(singleItem, quote);
   return [
     ["Quantity", continuousRoll ? quoteContinuousLengthLabel(totals.quantity || quote.form.quantity || 0) : Number(totals.quantity || quote.form.quantity || 0).toLocaleString()],
-    [`Price / ${quotePriceBasisLabel(continuousRoll)}`, money(totals.pricePerThousand)],
+    [`Price / ${quotePriceBasisLabel(continuousRoll)}`, basisMoney(totals.pricePerThousand)],
     [`Price / ${continuousRoll ? "Inch" : unitTitle}`, unitMoney(totals.pricePerLabel)],
     ["Quoted Total", money(totals.sellPrice)],
   ];
@@ -1520,7 +1617,7 @@ function quoteInternalSections(quote) {
           ? [["Core Markup", `+${percent(quoteCoreMarkupSurchargeForQuote(quote))} included for non-3" core`]]
           : []),
         ["Sell Price", money(Number(quote.pricing?.sellPrice || 0))],
-        [`Price / ${quotePriceBasisLabel(continuousRoll)}`, money(Number(quote.pricing?.pricePerThousand || 0))],
+        [`Price / ${quotePriceBasisLabel(continuousRoll)}`, basisMoney(Number(quote.pricing?.pricePerThousand || 0))],
         [`Price / ${continuousRoll ? "Inch" : quoteItemUnitTitle(singleItem, quote)}`, unitMoney(Number(quote.pricing?.pricePerLabel || 0))],
         ["Profit Dollars", money(Number(quote.pricing?.profit || 0))],
         ["Actual Margin", percent(quoteActualMargin(quote))],
@@ -1836,7 +1933,7 @@ function QuoteVolumeOffer({ item, quote }) {
         {tiers.map((tier) => (
           <article key={`${item?.id || quoteLinePartNumber(item, quote)}-${tier.quantity}`}>
             <span>{tier.quantityLabel}</span>
-            <strong>{tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review needed"}</strong>
+            <strong>{tier.fits ? `${basisMoney(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review needed"}</strong>
             <em>{tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier"}</em>
           </article>
         ))}
@@ -1853,7 +1950,7 @@ function quoteVolumeOfferHtml(item, quote) {
   return [
     `<div class="sales-volume-offer"><div class="sales-volume-copy"><span>Volume Savings</span><strong>Better pricing as this order grows</strong><em>${escapeHtml(continuousRoll ? "Optional finished lengths priced from the same approved spec." : `Optional ${quoteUnitLabel(unitType, true)} priced from the same approved spec.`)}</em></div>`,
     `<div class="sales-volume-options">`,
-    tiers.map((tier) => `<article><span>${escapeHtml(tier.quantityLabel)}</span><strong>${escapeHtml(tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review needed")}</strong><em>${escapeHtml(tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier")}</em></article>`).join(""),
+    tiers.map((tier) => `<article><span>${escapeHtml(tier.quantityLabel)}</span><strong>${escapeHtml(tier.fits ? `${basisMoney(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review needed")}</strong><em>${escapeHtml(tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout does not fit this tier")}</em></article>`).join(""),
     `</div></div>`,
   ].join("");
 }
@@ -1911,7 +2008,7 @@ function QuoteDocument({ quote }) {
           </thead>
           <tbody>
           {items.map((item) => {
-            const showVolumePricing = quoteItemVolumePricingEnabled(item, quote);
+            const showVolumePricing = quoteItemTierRows(item, quote).length > 0;
             return (
               <Fragment key={item.id || quoteItemDescription(item, quote)}>
                 <tr>
@@ -2285,13 +2382,19 @@ export default function QuotePricingTool({
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
   const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
   const volumePricingEnabled = quoteVolumePricingEnabled(form);
-  const volumeCustomSummary = form.volumeCustomQuantities
-    .split(/[,\n]/)
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(", ") || "Standard breaks included";
+  const volumePricingMode = quoteVolumePricingMode(form);
+  const volumeCustomRows = quoteVolumeCustomTierRows(form.volumeCustomTiers);
+  const volumeCustomCount = quoteCustomTierOptionsForForm(form).length;
   const continuousRoll = quoteContinuousRollEnabled(form);
+  const currentVolumePreviewItem = useMemo(() => ({
+    id: "current-volume-preview",
+    form: quoteFormSnapshot(form, pricing),
+    pricing,
+  }), [form, pricing]);
+  const currentVolumePreviewTiers = useMemo(() => quoteItemTierRows(currentVolumePreviewItem, { form }), [currentVolumePreviewItem, form]);
+  const volumeCustomSummary = volumePricingMode === "custom"
+    ? `${volumeCustomCount || "No"} custom point${volumeCustomCount === 1 ? "" : "s"}`
+    : "Default breaks";
   const wasteMatchesRecommendation = Math.abs(toQuoteNumber(form.wastePercent) - toQuoteNumber(pricing.recommendedWastePercent)) < 0.01;
   const selectedQuoteIsMine = selectedQuote ? quoteBelongsToPerson(selectedQuote, currentUserQuoteKey(currentUser), currentUser) : false;
   const selectedQuoteWorkflowStatus = selectedQuote ? quoteWorkflowStatus(selectedQuote) : "active";
@@ -2679,6 +2782,26 @@ export default function QuotePricingTool({
         }
       }
       return next;
+    });
+  }
+
+  function updateVolumeTier(index, field, value) {
+    setForm((prev) => {
+      const rows = quoteVolumeCustomTierRows(prev.volumeCustomTiers);
+      rows[index] = { ...rows[index], [field]: value };
+      return {
+        ...prev,
+        volumePricingMode: "custom",
+        volumeCustomTiers: rows,
+      };
+    });
+  }
+
+  function clearVolumeTier(index) {
+    setForm((prev) => {
+      const rows = quoteVolumeCustomTierRows(prev.volumeCustomTiers);
+      rows[index] = { quantity: "", pricePerThousand: "" };
+      return { ...prev, volumeCustomTiers: rows };
     });
   }
 
@@ -3501,7 +3624,7 @@ ${items.map((item) => {
           box(cardX, cardY, cardWidth, cardHeight);
           fillBox(cardX, cardY + cardHeight - 5, cardWidth, 5, tierIndex === visibleTiers.length - 1 ? 0.68 : 0.82);
           text(cardX + 5, cardY + cardHeight - 15, 6.5, tier.quantityLabel, "F2", 0, { maxWidth: cardWidth - 10, minSize: 5.5 });
-          text(cardX + 5, cardY + cardHeight - 26, 6.5, tier.fits ? `${money(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 5.5 });
+          text(cardX + 5, cardY + cardHeight - 26, 6.5, tier.fits ? `${basisMoney(tier.pricePerThousand)} / ${quotePriceBasisLabel(tier.continuousRoll, true)}` : "Quote review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 5.5 });
           text(cardX + 5, cardY + 6, 5.5, tier.fits ? `${unitMoney(tier.pricePerItem)} per ${tier.continuousRoll ? "in" : quoteUnitLabel(tier.unitType)}` : "Layout needs review", "F1", 0, { maxWidth: cardWidth - 10, minSize: 5 });
         });
       }
@@ -4067,24 +4190,57 @@ ${items.map((item) => {
                     <strong>Volume Pricing</strong>
                     <em>{volumePricingEnabled ? "Included on this item" : "Off for this item"}</em>
                   </span>
-                  <b>Standard breaks: 10k, 25k, 100k, 500k, and 1M+. Add customer-requested quantities below.</b>
+                  <b>{volumePricingMode === "custom" ? `${volumeCustomCount || 0} custom price point${volumeCustomCount === 1 ? "" : "s"}` : "Standard breaks: 10k, 25k, 100k, 500k, and 1M+."}</b>
                 </label>
                 {volumePricingEnabled && (
                   <details className="quote-advanced-panel quote-volume-custom-drawer">
                     <summary>
-                      <span>Customer-Specific Quantities</span>
+                      <span>Volume Price Points</span>
                       <em>{volumeCustomSummary}</em>
                     </summary>
                     <div className="quote-volume-custom-body">
-                      <label className="quote-field quote-field-wide">
-                        <span>Requested Quantities</span>
-                        <textarea
-                          value={form.volumeCustomQuantities}
-                          onChange={(event) => updateField("volumeCustomQuantities", event.target.value)}
-                          placeholder={continuousRoll ? "120,000\n300,000\n750,000" : "12,500\n75,000\n250,000"}
-                        />
-                        <em className="quote-volume-custom-note">Enter one per line or separate with commas. The quote skips duplicates and any tier that is not a lower price.</em>
-                      </label>
+                      <div className="quote-segmented compact quote-volume-mode-tabs">
+                        {quoteVolumePricingModeOptions.map(([value, label]) => (
+                          <button className={volumePricingMode === value ? "active" : ""} type="button" key={value} onClick={() => updateField("volumePricingMode", value)}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {volumePricingMode === "custom" ? (
+                        <div className="quote-volume-point-grid">
+                          {volumeCustomRows.map((row, index) => (
+                            <div className="quote-volume-point-row" key={`volume-point-${index}`}>
+                              <Field label={`Point ${index + 1} Qty`} suffix={continuousRoll ? "in" : quoteUnitLabel(form.unitType, true)}>
+                                <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={row.quantity} onChange={(event) => updateVolumeTier(index, "quantity", event.target.value)} />
+                              </Field>
+                              <Field label="Price US$" suffix={`/ ${quotePriceBasisLabel(continuousRoll, true)}`}>
+                                <input type="number" step="0.0001" min="0" value={row.pricePerThousand} onChange={(event) => updateVolumeTier(index, "pricePerThousand", event.target.value)} />
+                              </Field>
+                              <button className="ghost-btn xs" type="button" onClick={() => clearVolumeTier(index)} aria-label={`Clear volume price point ${index + 1}`}>
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ))}
+                          <em className="quote-volume-custom-note">Rows need quantity and price to appear on the quote.</em>
+                        </div>
+                      ) : (
+                        <div className="quote-volume-default-panel">
+                          <div className="quote-volume-default-breaks">
+                            {quoteTierQuantityOptions.map((option) => (
+                              <span key={quoteTierQuantityKey(option.quantity)}>{quoteTierQuantityLabel(option, form.unitType, true, continuousRoll)}</span>
+                            ))}
+                          </div>
+                          <label className="quote-field quote-field-wide">
+                            <span>Extra Quantities</span>
+                            <textarea
+                              value={form.volumeCustomQuantities}
+                              onChange={(event) => updateField("volumeCustomQuantities", event.target.value)}
+                              placeholder={continuousRoll ? "120,000\n300,000\n750,000" : "12,500\n75,000\n250,000"}
+                            />
+                            <em className="quote-volume-custom-note">Optional quantities use this quote's current waste, costs, and pricing method.</em>
+                          </label>
+                        </div>
+                      )}
                     </div>
                   </details>
                 )}
@@ -4293,12 +4449,12 @@ ${items.map((item) => {
               <div className="quote-total-card">
                 <span>Estimated Quote</span>
                 <strong>{money(pricing.sellPrice)}</strong>
-                <em>{money(pricing.pricePerThousand)} / {quotePriceBasisLabel(continuousRoll, true)}</em>
+                <em>{basisMoney(pricing.pricePerThousand)} / {quotePriceBasisLabel(continuousRoll, true)}</em>
               </div>
 
-              {volumePricingEnabled && (
+              {volumePricingEnabled && currentVolumePreviewTiers.length > 0 && (
                 <div className="quote-volume-preview">
-                  <QuoteVolumeOffer item={{ id: "current-volume-preview", form: quoteFormSnapshot(form, pricing), pricing }} quote={{ form }} />
+                  <QuoteVolumeOffer item={currentVolumePreviewItem} quote={{ form }} />
                 </div>
               )}
 

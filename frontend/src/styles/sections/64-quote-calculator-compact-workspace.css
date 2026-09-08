@@ -185,8 +185,39 @@
 }
 
 .quote-volume-custom-body {
+  display: grid;
+  gap: 7px;
   padding: 8px;
   border-top: 1px solid #e5ecea;
+}
+
+.quote-volume-mode-tabs {
+  min-height: 34px;
+}
+
+.quote-volume-default-breaks {
+  grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
+  gap: 5px;
+}
+
+.quote-volume-default-breaks span {
+  min-height: 26px;
+  padding: 4px 5px;
+  font-size: .66rem;
+}
+
+.quote-volume-point-grid {
+  gap: 6px;
+}
+
+.quote-volume-point-row {
+  grid-template-columns: minmax(86px, 1fr) minmax(92px, 1fr) 30px;
+  gap: 5px;
+}
+
+.quote-volume-point-row > button {
+  min-width: 30px;
+  min-height: 34px;
 }
 
 .quote-volume-custom-body textarea {
