@@ -418,7 +418,11 @@ function quoteTierRowFromPricing(option, unitType, pricing, continuousRoll = fal
 
 function calculateQuoteTierPricing(form, quantity) {
   const tierForm = { ...(form || {}), quantity: String(quantity) };
-  return calculateQuotePricing(tierForm);
+  const recommendationPricing = calculateQuotePricing(tierForm);
+  return calculateQuotePricing({
+    ...tierForm,
+    wastePercent: percentInputValue(recommendationPricing.recommendedWastePercent),
+  });
 }
 
 function quoteNormalizeCurrentBracketTiers(tiers = [], form = {}, pricing = {}) {
@@ -475,7 +479,7 @@ function quoteItemTierRows(item, quote = {}) {
 
   const tiers = tierOptions.map((option) => {
     const stored = storedTiers.get(quoteTierQuantityKey(option.quantity));
-    if (stored && Number.isFinite(Number(stored.pricePerThousand))) {
+    if (stored && Number.isFinite(Number(stored.pricePerThousand)) && (stored.manualPrice || option.manualPrice)) {
       const storedContinuousRoll = stored.continuousRoll === true || stored.continuousRoll === "true" || continuousRoll;
       return {
         quantity: option.quantity,
