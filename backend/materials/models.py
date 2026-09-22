@@ -915,7 +915,13 @@ class CoaterRollTag(models.Model):
     class Meta:
         ordering = ["-run_date", "tag_number"]
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = CoaterRollTag.objects.select_for_update(of=("self",)).filter(pk=self.pk).only("logged_inventory_id").first()
+            if persisted and persisted.logged_inventory_id:
+                # A stale print/document/scan request must reuse the same physical roll.
+                self.logged_inventory_id = persisted.logged_inventory_id
         needs_tag_number = not self.tag_number
         needs_lot_number = not self.result_lot_number
         needs_serial_number = not self.result_serial_number

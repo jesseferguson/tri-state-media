@@ -10,9 +10,10 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.renderers import JSONRenderer
 
-from .models import MaterialIntakeReceipt, MaterialMasterType, MaterialRack, MaterialSpec, RawMaterialInventory
+from .models import CoaterRollTag, MaterialIntakeReceipt, MaterialMasterType, MaterialRack, MaterialSpec, RawMaterialInventory
+from .intake_scan import inventory_for_tag, validate_produced_tag
 from .serializers import RawMaterialInventorySerializer
-from .services import MaterialWorkflowError
+from .services import MaterialWorkflowError, roll_location
 
 
 class IntakeMaterialSerializer(serializers.ModelSerializer):
@@ -172,6 +173,91 @@ class MaterialIntakeSerializer(RawMaterialInventorySerializer):
         return created
 
 
+class ProducedRollIntakeSerializer(RawMaterialInventorySerializer):
+    source_roll_tag = serializers.PrimaryKeyRelatedField(queryset=CoaterRollTag.objects.all())
+    length_feet = serializers.DecimalField(max_digits=11, decimal_places=2, min_value=Decimal("0.01"))
+    width_inches = serializers.DecimalField(max_digits=8, decimal_places=3, min_value=Decimal("0.001"))
+    direct_rack = serializers.PrimaryKeyRelatedField(queryset=MaterialRack.objects.filter(status="active"), required=False, allow_null=True)
+
+    class Meta:
+        model = RawMaterialInventory
+        fields = ["source_roll_tag", "length_feet", "width_inches", "lot_number", "received_date", "location", "direct_rack", "notes"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        location = attrs.get("location")
+        rack = attrs.get("direct_rack")
+        if location and rack:
+            raise serializers.ValidationError({"location": "Choose a floor location or a rack, not both."})
+        if location and not location.is_active:
+            raise serializers.ValidationError({"location": "Choose an active location."})
+        if rack and rack.location_id and not rack.location.is_active:
+            raise serializers.ValidationError({"direct_rack": "Choose a rack in an active location."})
+        return attrs
+
+
+class CoaterRollDocumentationSerializer(ProducedRollIntakeSerializer):
+    operator = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    suboperator = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    operator_notes = serializers.CharField(required=False, allow_blank=True)
+    weight_lbs = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0.01"), required=False, allow_null=True)
+
+    class Meta(ProducedRollIntakeSerializer.Meta):
+        fields = ProducedRollIntakeSerializer.Meta.fields + ["operator", "suboperator", "operator_notes", "weight_lbs"]
+
+
+@transaction.atomic
+def finalize_produced_roll(attrs, *, user=None):
+    tag = CoaterRollTag.objects.select_for_update(of=("self",)).get(pk=attrs["source_roll_tag"].pk)
+    validate_produced_tag(tag)
+    if not tag.source_schedule_id:
+        raise MaterialWorkflowError("Select a printed roll from a coater schedule.", code="schedule_not_roll")
+    existing = inventory_for_tag(tag)
+    if existing:
+        return existing, False
+    if tag.status == "complete":
+        raise MaterialWorkflowError("This roll is complete but its inventory record is missing. Have production review it before receiving it again.", code="roll_inventory_missing", status_code=409)
+    material = tag.produced_material or tag.scheduled_material
+    if not material or not material.is_active:
+        raise MaterialWorkflowError("This printed roll needs an active material definition. Have production update the roll first.", code="roll_material_required", status_code=409)
+    for field in ["face_inventory", "liner_inventory", "adhesive_inventory", "silicone_inventory", "coating_inventory"]:
+        component = getattr(tag, field)
+        if component and component.unit != "lf":
+            raise MaterialWorkflowError(
+                "This roll uses a component measured in gallons, pounds, or another non-foot unit. Have production review component consumption before receiving this roll.",
+                code="component_unit_review_required", status_code=409,
+            )
+
+    for field in ["length_feet", "width_inches", "notes", "operator", "suboperator", "operator_notes", "weight_lbs"]:
+        if field in attrs:
+            setattr(tag, field, attrs[field])
+    if "lot_number" in attrs:
+        tag.result_lot_number = attrs["lot_number"]
+    tag.run_date = attrs.get("received_date", tag.run_date) or timezone.localdate()
+    rack = attrs.get("direct_rack")
+    tag.location = None if rack else attrs.get("location", tag.location)
+    tag.status = "complete"
+    tag.log_inventory = True
+    tag.save()
+
+    inventory = tag.logged_inventory
+    inventory.direct_rack = rack
+    inventory.location = tag.location
+    inventory.inventory_origin = "tri_state"
+    if attrs.get("notes"):
+        inventory.notes = "\n".join([inventory.notes, attrs["notes"]])
+    inventory.save(update_fields=["direct_rack", "location", "inventory_origin", "notes"])
+    inventory.movement_history.filter(action_type__in=["roll_registered", "roll_created"]).update(
+        actor_name=(user.name or user.username) if user else tag.operator,
+        actor_user_id=str(user.pk) if user else "",
+        rack=rack,
+        to_location=roll_location(inventory),
+        source="manual",
+        notes=f"Tri-State roll {tag.tag_number} received into inventory.",
+    )
+    return inventory, True
+
+
 def receive_material_inventory(data, *, user, idempotency_key=None):
     """Commit stock and its replay response together; reserve keys using a DB constraint."""
     key = None
@@ -203,13 +289,23 @@ def receive_material_inventory(data, *, user, idempotency_key=None):
                     )
                 return receipt.response
 
-        serializer = MaterialIntakeSerializer(data=data, context={"user": user})
-        serializer.is_valid(raise_exception=True)
-        created = serializer.save()
-        response_data = dict(RawMaterialInventorySerializer(created[0]).data)
+        already_in_inventory = False
+        if isinstance(data, dict) and "source_roll_tag" in data:
+            serializer = ProducedRollIntakeSerializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            inventory, is_new = finalize_produced_roll(serializer.validated_data, user=user)
+            created = [inventory] if is_new else []
+            already_in_inventory = not is_new
+        else:
+            serializer = MaterialIntakeSerializer(data=data, context={"user": user})
+            serializer.is_valid(raise_exception=True)
+            created = serializer.save()
+            inventory = created[0]
+        response_data = dict(RawMaterialInventorySerializer(inventory).data)
         response_data["created_count"] = len(created)
         response_data["created_inventory"] = RawMaterialInventorySerializer(created, many=True).data
-        response_data["total_received"] = created[0].quantity * len(created)
+        response_data["total_received"] = inventory.quantity * len(created)
+        response_data["already_in_inventory"] = already_in_inventory
         if receipt is not None:
             # Store the same JSON values the API renders, including decimal totals.
             receipt.response = json.loads(JSONRenderer().render(response_data))

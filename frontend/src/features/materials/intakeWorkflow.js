@@ -109,6 +109,17 @@ export function intakeRequestKey() {
 }
 
 export function intakePayload(form) {
+  // A scanned production tag must be finalized in place, never cloned as manual stock.
+  if (form.source_roll_tag) {
+    return {
+      source_roll_tag: form.source_roll_tag,
+      width_inches: form.width_inches || null, length_feet: form.amount,
+      lot_number: form.lot_number.trim(), received_date: form.received_date,
+      location: form.storageMode === "floor" ? form.location : null,
+      direct_rack: form.storageMode === "rack" ? form.direct_rack : null,
+      notes: form.notes.trim(),
+    };
+  }
   return {
     material: form.definitionMode === "existing" ? form.material : null,
     create_material: form.definitionMode === "new" ? {
@@ -124,6 +135,22 @@ export function intakePayload(form) {
     length_feet: form.unit === "lf" ? form.amount : null, quantity: form.amount, unit: form.unit,
     roll_count: Number(form.roll_count), location: form.storageMode === "floor" ? form.location : null,
     direct_rack: form.storageMode === "rack" ? form.direct_rack : null, notes: form.notes.trim(),
+  };
+}
+
+export function intakeFromRollTag(match) {
+  const tag = match.roll_tag;
+  const material = match.material;
+  if (match.kind !== "pending_tag" || !tag?.id || !material?.id) throw new Error("This roll tag is missing its material details. Ask production to review the tag.");
+  return {
+    ...initialIntake(), source_roll_tag: tag.id,
+    category: "finished", material_type: "coated_stock", material: String(material.id),
+    inventory_origin: "tri_state", received_date: tag.run_date || initialIntake().received_date,
+    width_inches: tag.width_inches == null ? "" : String(tag.width_inches),
+    amount: tag.length_feet == null ? "" : String(tag.length_feet),
+    lot_number: tag.result_lot_number || "", notes: tag.notes || "",
+    // A tag identifies one roll. The operator still explicitly confirms its destination.
+    roll_count: "1", unit: "lf", location: "", direct_rack: "",
   };
 }
 

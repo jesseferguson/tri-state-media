@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BrowserMultiFormatReader } from "@zxing/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronRight, Factory, History, Layers3, LoaderCircle, MapPin, PackageCheck, PackageOpen, PackagePlus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Factory, History, Layers3, LoaderCircle, MapPin, PackageCheck, PackageOpen, PackagePlus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
 import { fetchCollection, postRecordAction, requestApi, updateRecord } from "../../../api";
 import { formatInches, labelize } from "../../../lib/format";
 import { canDeleteMaterialRoll } from "../../../lib/localAuth";
@@ -106,18 +105,6 @@ function runDateForRolls(rolls) {
     if (date) counts.set(date, (counts.get(date) || 0) + 1);
   });
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0]?.[0] || "";
-}
-
-function extractRollTagId(value) {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  try {
-    const url = new URL(text);
-    return url.searchParams.get("rollTagId") || "";
-  } catch {
-    const match = /(?:rollTagId=)?(\d+)/i.exec(text);
-    return match?.[1] || "";
-  }
 }
 
 const rawComponentChoices = [
@@ -503,7 +490,6 @@ export default function MaterialHandlingView({
   currentUser,
   linkedRollTagId = "",
   linkedInventoryId = "",
-  onLinkedRollTagChange,
   onCloseLinkedRoll,
   onOpenStorage,
 }) {
@@ -513,12 +499,11 @@ export default function MaterialHandlingView({
   const [search, setSearch] = useState("");
   const [activeJob, setActiveJob] = useState(() => readActiveJob());
   const [notice, setNotice] = useState("");
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [cameraError, setCameraError] = useState("");
+  const [scannedInventory, setScannedInventory] = useState(null);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [intakeOpen, setIntakeOpen] = useState(false);
-  const videoRef = useRef(null);
-  const scannerRef = useRef(null);
+  const [initialIntakeScan, setInitialIntakeScan] = useState("");
+  const handledPendingScan = useRef("");
 
   const dataQuery = useQuery({
     queryKey: ["material-handling-data"],
@@ -556,7 +541,7 @@ export default function MaterialHandlingView({
     ? data.inventory.find((row) => sameId(row.source_roll_tag, linkedTag.id) || sameId(row.id, linkedTag.logged_inventory))
     : null;
   const linkedInventoryRecord = data.inventory.find((row) => sameId(row.id, linkedInventoryId)) || null;
-  const selectedRoll = data.inventory.find((row) => sameId(row.id, selectedInventoryId)) || linkedInventory || linkedInventoryRecord || null;
+  const selectedRoll = (sameId(scannedInventory?.id, selectedInventoryId) ? scannedInventory : null) || data.inventory.find((row) => sameId(row.id, selectedInventoryId)) || linkedInventory || linkedInventoryRecord || null;
   const focusMaterialId = linkedTag?.produced_material || linkedTag?.scheduled_material || "";
   const relatedTags = linkedTag
     ? data.tags.filter((tag) => sameId(tag.source_schedule, linkedTag.source_schedule || linkedTag.id))
@@ -586,32 +571,13 @@ export default function MaterialHandlingView({
     if (directInventory) setSelectedInventoryId(String(directInventory.id));
   }, [linkedInventory?.id, linkedInventoryRecord?.id]);
 
-  useEffect(() => () => scannerRef.current?.stop?.(), []);
-
-  async function startScanner() {
-    setCameraError("");
-    setCameraOpen(true);
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    try {
-      const reader = new BrowserMultiFormatReader();
-      const controls = await reader.decodeFromConstraints(
-        { video: { facingMode: { ideal: "environment" } }, audio: false },
-        videoRef.current,
-        (result, _scanError, activeControls) => {
-          const rollId = extractRollTagId(result?.getText?.());
-          if (!rollId) return;
-          activeControls?.stop?.();
-          scannerRef.current = null;
-          setCameraOpen(false);
-          onLinkedRollTagChange?.(rollId);
-        }
-      );
-      scannerRef.current = controls;
-    } catch (error) {
-      setCameraError(error?.message || "Camera scanning is not available. Use the phone camera on the printed QR code.");
-      setCameraOpen(false);
-    }
-  }
+  useEffect(() => {
+    if (!linkedRollTagId) { handledPendingScan.current = ""; return; }
+    if (dataQuery.isLoading || dataQuery.isError || linkedInventory || handledPendingScan.current === String(linkedRollTagId)) return;
+    handledPendingScan.current = String(linkedRollTagId);
+    setInitialIntakeScan(`/?rollTagId=${linkedRollTagId}`);
+    setIntakeOpen(true);
+  }, [linkedRollTagId, linkedInventory, dataQuery.isLoading, dataQuery.isError]);
 
   const editMutation = useMutation({
     mutationFn: async ({ roll, form }) => {
@@ -634,6 +600,7 @@ export default function MaterialHandlingView({
       return saved;
     },
     onSuccess: (saved) => {
+      setScannedInventory(saved);
       setSelectedInventoryId(String(saved.id));
       setNotice(`${saved.serial_number || saved.lot_number} was updated.`);
       queryClient.invalidateQueries({ queryKey: ["material-handling-data"] });
@@ -654,6 +621,7 @@ export default function MaterialHandlingView({
       const remaining = Number(result.remainingFootage || 0);
       setNotice(`${Number(result.deductedFootage || 0).toLocaleString()} ft recorded. ${remaining.toLocaleString()} ft remains active.`);
       setSelectedInventoryId(String(result.inventory.id));
+      setScannedInventory(result.inventory);
       queryClient.invalidateQueries({ queryKey: ["material-handling-data"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "material-usages"] });
@@ -686,7 +654,7 @@ export default function MaterialHandlingView({
       body: JSON.stringify(payload),
     }),
     onSuccess: (saved) => {
-      setNotice(`${saved.created_count || 1} inventory item${saved.created_count === 1 ? "" : "s"} added${saved.lot_number ? ` for lot ${saved.lot_number}` : ""}.`);
+      setNotice(saved.already_in_inventory ? "This roll was already received. Its existing inventory was preserved." : `${saved.created_count || 1} inventory item${saved.created_count === 1 ? "" : "s"} added${saved.lot_number ? ` for lot ${saved.lot_number}` : ""}.`);
       queryClient.invalidateQueries({ queryKey: ["material-handling-data"] });
       queryClient.invalidateQueries({ queryKey: ["material-storage"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
@@ -697,6 +665,7 @@ export default function MaterialHandlingView({
   });
 
   function selectRoll(row) {
+    setScannedInventory(null);
     setSelectedInventoryId(String(row.id));
     setNotice("");
   }
@@ -727,23 +696,15 @@ export default function MaterialHandlingView({
         <>
           <section className="material-workspace-actions">
             {activeJob && <span className="material-active-job"><CheckCircle2 size={14} /> {activeJob.label}</span>}
-            <button className="ghost-btn" type="button" onClick={() => { intakeMutation.reset(); setIntakeOpen(true); }}><PackagePlus size={16} /> Add Material</button>
-            <button className="primary-btn" type="button" onClick={startScanner}><Camera size={16} /> Scan Roll</button>
+            <button className="primary-btn" type="button" onClick={() => { intakeMutation.reset(); setInitialIntakeScan(""); setIntakeOpen(true); }}><PackagePlus size={16} /> Add Material</button>
           </section>
 
           {linkedTag && !linkedInventory && (
             <div className="material-pending-tag">
               <AlertTriangle size={18} />
-              <div><strong>{linkedTag.tag_number} is printed but not documented.</strong><span>The coater operator must enter the actual master-roll footage before this appears in active inventory.</span></div>
+              <div><strong>{linkedTag.tag_number} needs receiving details.</strong><span>Confirm this roll’s measurements and storage in Add Material.</span></div>
             </div>
           )}
-          {cameraOpen && (
-            <section className="material-camera-overlay">
-              <div><video ref={videoRef} playsInline muted /><button className="ghost-btn" type="button" onClick={() => { scannerRef.current?.stop?.(); setCameraOpen(false); }}><X size={16} /> Close Camera</button></div>
-            </section>
-          )}
-          {cameraError && <p className="coater-error">{cameraError}</p>}
-
           <nav className="material-handling-tabs">
             <button className={view === "active" ? "active" : ""} type="button" onClick={() => setView("active")}><PackageCheck size={15} /> Active Inventory</button>
             <button className={view === "history" ? "active" : ""} type="button" onClick={() => setView("history")}><History size={15} /> Usage History</button>
@@ -809,10 +770,25 @@ export default function MaterialHandlingView({
           racks={data.racks}
           locations={data.locations}
           saving={intakeMutation.isPending}
+          initialScan={initialIntakeScan}
+          onScan={(scanValue) => requestApi("raw-materials/intake-scan", { method: "POST", headers: userHeaders(currentUser), body: JSON.stringify({ scan_value: scanValue }) })}
+          onOpenInventory={(roll) => {
+            setScannedInventory(roll);
+            setSelectedInventoryId(String(roll.id));
+            setView("active"); setNotice(""); setIntakeOpen(false); setInitialIntakeScan("");
+            intakeMutation.reset();
+            onCloseLinkedRoll?.();
+          }}
           onClose={() => {
             if (!intakeMutation.isPending) {
-              if (intakeMutation.data?.id) setSelectedInventoryId(String(intakeMutation.data.id));
+              if (intakeMutation.data?.id) {
+                setScannedInventory(intakeMutation.data);
+                setSelectedInventoryId(String(intakeMutation.data.id));
+                setView("active");
+              }
               setIntakeOpen(false);
+              if (initialIntakeScan) onCloseLinkedRoll?.();
+              setInitialIntakeScan("");
               intakeMutation.reset();
             }
           }}

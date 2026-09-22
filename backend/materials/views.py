@@ -16,7 +16,8 @@ from users.auth import company_user_from_request
 from users.models import CompanyUser
 from tooling.models import Press
 
-from .intake import receive_material_inventory
+from .intake import CoaterRollDocumentationSerializer, finalize_produced_roll, receive_material_inventory
+from .intake_scan import lookup_intake_scan
 from .models import (
     CoaterRollTag,
     MaterialMasterType,
@@ -967,6 +968,17 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
             qs = qs.filter(material__master_type_id=master_type)
         return qs
 
+    @action(detail=False, methods=["post"], url_path="intake-scan")
+    def intake_scan(self, request):
+        if not _verified_company_user(request):
+            return Response({"detail": "Sign in as an active user to look up a material roll."}, status=status.HTTP_403_FORBIDDEN)
+        if not isinstance(request.data, dict):
+            return Response({"detail": "Send the scanned roll code as JSON."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            return Response(lookup_intake_scan(request.data.get("scan_value")))
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+
     @action(detail=False, methods=["post"], url_path="intake")
     def intake(self, request):
         user = _verified_company_user(request)
@@ -1526,37 +1538,27 @@ class CoaterRollTagViewSet(BaseMaterialsViewSet):
     @action(detail=True, methods=["post"], url_path="document-roll")
     def document_roll(self, request, pk=None):
         roll = self.get_object()
-        if not roll.source_schedule_id:
-            return Response(
-                {"detail": "Select a printed roll tag from a coater schedule."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if roll.logged_inventory_id or roll.status == "complete":
-            return Response(
-                {"detail": "This master roll has already been documented."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            footage = Decimal(str(request.data.get("length_feet", "")))
-        except Exception:
-            return Response({"length_feet": ["Enter the actual master roll footage."]}, status=status.HTTP_400_BAD_REQUEST)
-        if footage <= 0:
-            return Response({"length_feet": ["Footage must be greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
-
-        for field in ["width_inches", "weight_lbs", "operator", "suboperator", "operator_notes", "notes"]:
+        payload = {
+            "source_roll_tag": roll.pk,
+            "length_feet": request.data.get("length_feet"),
+            "width_inches": request.data.get("width_inches", roll.width_inches),
+        }
+        for field in ["weight_lbs", "operator", "suboperator", "operator_notes", "notes", "location"]:
             if field in request.data:
-                setattr(roll, field, request.data.get(field))
-        if "location" in request.data:
-            roll.location_id = request.data.get("location") or None
-        if request.data.get("result_lot_number"):
-            roll.result_lot_number = str(request.data["result_lot_number"]).strip()
-        roll.length_feet = footage
-        roll.run_date = request.data.get("run_date") or timezone.localdate()
-        roll.status = "complete"
-        roll.log_inventory = True
-        roll.save()
-        return Response(self.get_serializer(roll).data)
+                payload[field] = request.data[field]
+        if "result_lot_number" in request.data:
+            payload["lot_number"] = request.data["result_lot_number"]
+        if "run_date" in request.data:
+            payload["received_date"] = request.data["run_date"]
+        serializer = CoaterRollDocumentationSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        try:
+            inventory, created = finalize_produced_roll(serializer.validated_data, user=_verified_company_user(request))
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
+        if not created:
+            return Response({"detail": "This master roll has already been documented."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(self.get_queryset().get(pk=inventory.source_roll_tag_id)).data)
 
     @staticmethod
     def component_print_text(material, inventory=None, supplier_option=None):

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Factory, Layers3, LoaderCircle, MapPin, PackageCheck, PackagePlus, Plus, Warehouse, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Factory, Layers3, LoaderCircle, MapPin, PackageCheck, PackagePlus, Plus, ScanLine, Warehouse, X } from "lucide-react";
 import IntakeSearchPicker from "./IntakeSearchPicker";
+import IntakeRollScanner from "./IntakeRollScanner";
 import {
   COMPONENTS, INTAKE_STEPS, ORIGINS, UNITS, findById, formatAmount, initialIntake,
-  intakeChoices, intakeErrorMessage, intakePayload, intakeRequestKey, isLiquid, locationLabel, materialLabel,
+  intakeChoices, intakeErrorMessage, intakeFromRollTag, intakePayload, intakeRequestKey, isLiquid, locationLabel, materialLabel,
   needsWidth, rackLabel, resetMaterial, validateIntakeStep,
 } from "../intakeWorkflow";
 import "./MaterialIntakeDialog.css";
@@ -26,12 +27,12 @@ function Option({ selected, onClick, icon: Icon, title, detail }) {
 
 function ReviewCard({ title, onEdit, rows }) {
   return <section className="intake-review-card">
-    <header><h4>{title}</h4><button type="button" className="intake-text-button" onClick={onEdit} aria-label={`Edit ${title.toLowerCase()}`}>Edit</button></header>
+    <header><h4>{title}</h4>{onEdit && <button type="button" className="intake-text-button" onClick={onEdit} aria-label={`Edit ${title.toLowerCase()}`}>Edit</button>}</header>
     <dl>{rows.filter(Boolean).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || "Not provided"}</dd></div>)}</dl>
   </section>;
 }
 
-export default function MaterialIntakeDialog({ materials = [], masterTypes = [], suppliers = [], racks = [], locations = [], saving, onClose, onSave }) {
+export default function MaterialIntakeDialog({ materials = [], masterTypes = [], suppliers = [], racks = [], locations = [], saving, onClose, onSave, onScan, onOpenInventory, initialScan = "" }) {
   const data = { materials, masterTypes, suppliers, racks, locations };
   const [form, setForm] = useState(initialIntake);
   const [step, setStep] = useState(0);
@@ -41,19 +42,32 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
   const [discard, setDiscard] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [scanOpen, setScanOpen] = useState(Boolean(initialScan));
+  const [scanMatch, setScanMatch] = useState(null);
+  const [scanError, setScanError] = useState("");
+  const [lookingUp, setLookingUp] = useState(false);
   const dialogRef = useRef(null);
   const bodyRef = useRef(null);
   const questionRef = useRef(null);
   const submitLock = useRef(false);
   const requestRef = useRef(null);
+  const scanSequence = useRef(0);
+  const lookupLock = useRef(false);
+  const manualDraft = useRef(null);
   const busy = saving || submitting;
+  const scannedTag = scanMatch?.kind === "pending_tag" ? scanMatch.roll_tag : null;
+  const foundInventory = scanMatch?.kind === "inventory" ? scanMatch.inventory : null;
+  const progressSteps = scanOpen || scannedTag
+    ? [{ label: "Scan", step: "scan" }, { label: "Quantity", step: 3 }, { label: "Storage", step: 4 }, { label: "Review", step: 5 }]
+    : INTAKE_STEPS.map((label, index) => ({ label, step: index }));
+  const progressIndex = scanOpen ? 0 : progressSteps.findIndex((item) => item.step === step);
   const choices = intakeChoices(data, form);
   const selectedMaterial = findById(choices.materials, form.material);
   const selectedMaster = findById(choices.masterTypes, form.master_type);
   const selectedSupplier = findById(choices.suppliers, form.supplier);
   const selectedLiner = findById(choices.liners, form.liner_material);
   const selectedAdhesive = findById(choices.adhesives, form.adhesive_material);
-  const materialName = form.definitionMode === "existing" ? materialLabel(selectedMaterial) : [form.name.trim(), form.company.trim(), selectedLiner?.material_family || selectedLiner?.name, selectedAdhesive?.material_family || selectedAdhesive?.name].filter(Boolean).join(" / ");
+  const materialName = scannedTag ? materialLabel(scanMatch.material) : form.definitionMode === "existing" ? materialLabel(selectedMaterial) : [form.name.trim(), form.company.trim(), selectedLiner?.material_family || selectedLiner?.name, selectedAdhesive?.material_family || selectedAdhesive?.name].filter(Boolean).join(" / ");
   const destination = form.storageMode === "rack" ? rackLabel(findById(choices.racks, form.direct_rack)) : locationLabel(findById(choices.locations, form.location));
   const total = Number(form.amount || 0) * Number(form.roll_count || 0);
   const physicalLabel = needsWidth(form) ? "roll" : "container";
@@ -66,6 +80,8 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
     dialog.showModal();
     document.body.style.overflow = "hidden";
     return () => {
+      scanSequence.current += 1;
+      lookupLock.current = false;
       dialog.close();
       document.body.style.overflow = previousOverflow;
       if (previousFocus?.isConnected) previousFocus.focus();
@@ -76,7 +92,7 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
     if (busy) return;
     bodyRef.current?.scrollTo({ top: 0 });
     questionRef.current?.focus({ preventScroll: true });
-  }, [step, discard, result, busy]);
+  }, [step, discard, result, busy, scanOpen, foundInventory]);
 
   useEffect(() => {
     if (saveError && !busy) document.getElementById("intake-save-error")?.focus();
@@ -88,6 +104,49 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
     window.addEventListener("beforeunload", preventLoss);
     return () => window.removeEventListener("beforeunload", preventLoss);
   }, [dirty, result, busy]);
+
+  useEffect(() => {
+    if (initialScan) lookupRoll(initialScan);
+    // A QR link is consumed once when this dialog opens, not on collection refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialScan]);
+
+  function openScanner() {
+    if (busy || submitLock.current) return;
+    if (!scanOpen && !scannedTag) manualDraft.current = { form, step, dirty };
+    scanSequence.current += 1;
+    lookupLock.current = false;
+    setLookingUp(false); setScanMatch(null); setScanError(""); setErrors({}); setSaveError(""); setScanOpen(true);
+  }
+
+  function returnToManual() {
+    scanSequence.current += 1;
+    lookupLock.current = false;
+    setLookingUp(false); setScanOpen(false); setScanMatch(null); setScanError(""); setErrors({}); setSaveError("");
+    const draft = manualDraft.current;
+    setForm(draft?.form || initialIntake()); setStep(draft?.step || 0); setDirty(draft?.dirty || false);
+  }
+
+  async function lookupRoll(value) {
+    if (lookupLock.current || busy) return;
+    const sequence = ++scanSequence.current;
+    lookupLock.current = true;
+    setLookingUp(true); setScanError("");
+    try {
+      const match = await onScan(value);
+      if (sequence !== scanSequence.current) return;
+      if (match.kind === "pending_tag") {
+        setForm(intakeFromRollTag(match)); setStep(3); setScanOpen(false); setDirty(true);
+      } else if (match.kind !== "inventory" || !match.inventory?.id) {
+        throw new Error("This scan did not return a roll. Try the printed roll ID or enter material details manually.");
+      }
+      setScanMatch(match);
+    } catch (error) {
+      if (sequence === scanSequence.current) setScanError(intakeErrorMessage(error));
+    } finally {
+      if (sequence === scanSequence.current) { lookupLock.current = false; setLookingUp(false); }
+    }
+  }
 
   function change(values) {
     if (submitLock.current || busy) return;
@@ -113,6 +172,7 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
 
   function navigate(nextStep) {
     if (submitLock.current || busy) return;
+    if (nextStep === "scan" || (scannedTag && nextStep < 3)) { openScanner(); return; }
     setStep(nextStep); setErrors({}); setSaveError("");
   }
 
@@ -132,7 +192,7 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
 
   async function submit(event) {
     event.preventDefault();
-    if (submitLock.current || busy || result || discard) return;
+    if (submitLock.current || busy || result || discard || scanOpen) return;
     if (step < 5) {
       const nextErrors = validateIntakeStep(step, form, data);
       if (Object.keys(nextErrors).length) showErrors(nextErrors); else navigate(step + 1);
@@ -140,7 +200,7 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
     }
     // Enter in a field must never bypass the deliberate final save button.
     if (event.nativeEvent.submitter?.value !== "save") return;
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = scannedTag ? 3 : 0; index < 5; index += 1) {
       const nextErrors = validateIntakeStep(index, form, data);
       if (Object.keys(nextErrors).length) { showErrors(nextErrors, index); return; }
     }
@@ -190,15 +250,15 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
         <div><span className="intake-eyebrow">Inventory intake</span><h2 id="intake-title">Add material</h2></div>
         <button className="intake-icon-button" type="button" onClick={requestClose} disabled={busy} aria-label="Close material intake"><X size={20} /></button>
       </header>
-      {!result && !discard && <>
+      {!result && !discard && !foundInventory && <>
         <ol className="intake-progress" aria-label="Intake progress">
-          {INTAKE_STEPS.map((label, index) => <li key={label} className={index === step ? "is-current" : index < step ? "is-complete" : ""} aria-current={index === step ? "step" : undefined}>
-            <button type="button" disabled={index >= step || busy} onClick={() => navigate(index)} aria-label={`Step ${index + 1}: ${label}`}>
-              <span className="intake-step-number">{index < step ? <Check size={14} /> : index + 1}</span><span className="intake-step-label">{label}</span>
+          {progressSteps.map(({ label, step: target }, index) => <li key={label} className={index === progressIndex ? "is-current" : index < progressIndex ? "is-complete" : ""} aria-current={index === progressIndex ? "step" : undefined}>
+            <button type="button" disabled={index >= progressIndex || busy} onClick={() => navigate(target)} aria-label={`Step ${index + 1}: ${label}`}>
+              <span className="intake-step-number">{index < progressIndex ? <Check size={14} /> : index + 1}</span><span className="intake-step-label">{label}</span>
             </button>
           </li>)}
         </ol>
-        <p className="intake-progress-caption" aria-live="polite">Step {step + 1} of {INTAKE_STEPS.length} · {INTAKE_STEPS[step]}</p>
+        <p className="intake-progress-caption" aria-live="polite">Step {progressIndex + 1} of {progressSteps.length} · {progressSteps[progressIndex]?.label}</p>
       </>}
       <div className="intake-body" ref={bodyRef} inert={busy || undefined}>
         {discard ? <section className="intake-discard">
@@ -208,15 +268,34 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
           <button className="ghost-btn" type="button" onClick={onClose}>Discard entry</button>
         </section> : result ? <section className="intake-success" role="status">
           <CheckCircle2 size={56} aria-hidden="true" />
-          <h3 ref={questionRef} tabIndex={-1} className="intake-question">Material added</h3>
-          <p><strong>{result.created_count || form.roll_count} {physicalLabel}{Number(result.created_count || form.roll_count) === 1 ? "" : "s"}</strong> · {formatAmount(result.total_received ?? total)} {amountUnit}</p>
-          <p>{materialName}</p><p><MapPin size={16} aria-hidden="true" /> {destination}</p>
+          <h3 ref={questionRef} tabIndex={-1} className="intake-question">{result.already_in_inventory ? "Roll already received" : "Material added"}</h3>
+          {result.already_in_inventory ? <p>This tag was already received. Its existing inventory was kept; no duplicate was added.</p> : <p><strong>{result.created_count || form.roll_count} {physicalLabel}{Number(result.created_count || form.roll_count) === 1 ? "" : "s"}</strong> · {formatAmount(result.total_received ?? total)} {amountUnit}</p>}
+          <p>{materialName}</p><p><MapPin size={16} aria-hidden="true" /> {result.already_in_inventory ? result.current_location_display || result.location_full_path || "See inventory details" : destination}</p>
           {result.serial_number && <p className="intake-hint">First inventory ID: {result.serial_number}</p>}
+        </section> : scanOpen ? <section className="intake-step" key={foundInventory ? "found-roll" : "scan-roll"}>
+          <h3 ref={questionRef} tabIndex={-1} className="intake-question">{foundInventory ? "Roll found" : "Scan a roll"}</h3>
+          <p className="intake-description">{foundInventory ? "This roll is already in inventory. Open it to see its details or update its location." : "Use the QR code on a Tri-State Media roll tag to find its saved details."}</p>
+          {foundInventory ? <>
+            <div className="intake-callout"><CheckCircle2 size={20} /><span>Already received. Scanning this roll will not add more stock.</span></div>
+            <ReviewCard title={foundInventory.serial_number || scanMatch.roll_tag?.tag_number || "Inventory roll"} rows={[
+              ["Material", materialLabel(scanMatch.material || { ...foundInventory, name: foundInventory.material_name || foundInventory.name })],
+              ["Status", String(foundInventory.status || "unknown").replaceAll("_", " ")],
+              ["Remaining", `${formatAmount(foundInventory.length_feet ?? foundInventory.quantity)} ${foundInventory.unit === "lf" ? "ft" : foundInventory.unit || "ft"}`],
+              ["Width", foundInventory.width_inches ? `${foundInventory.width_inches} in` : "Not recorded"],
+              ["Lot", foundInventory.lot_number],
+              ["Location", foundInventory.current_location_display || foundInventory.location_full_path || foundInventory.location_name || "Not recorded"],
+            ]} />
+            {(foundInventory.is_active === false || ["depleted", "scrapped", "on_hold"].includes(foundInventory.status)) && <p className="intake-callout is-warning">Check this roll’s status before using it. Scanning does not restore quantity or release a hold.</p>}
+          </> : <IntakeRollScanner scanning={lookingUp} error={scanError} onScan={lookupRoll} onManual={returnToManual} />}
         </section> : <section className="intake-step" key={step}>
-          <h3 ref={questionRef} tabIndex={-1} className="intake-question">{questions[step]}</h3>
-          <p className="intake-description">{descriptions[step]}</p>
+          <h3 ref={questionRef} tabIndex={-1} className="intake-question">{scannedTag && step === 3 ? "Confirm this roll’s measurements" : questions[step]}</h3>
+          <p className="intake-description">{scannedTag && step === 3 ? "The tag filled in the material and source. Check the actual footage and width of this one roll." : descriptions[step]}</p>
 
           {step === 0 && <>
+            <button className="intake-scan-shortcut" type="button" onClick={openScanner}>
+              <span className="intake-scan-shortcut-icon"><ScanLine size={25} /></span><span><strong>Scan a roll</strong><small>Have a Tri-State tag? Scan it to fill in the details.</small></span><ArrowRight size={19} />
+            </button>
+            <p className="intake-entry-divider">Or enter material details</p>
             <div className="intake-options">
               <Option selected={form.category === "finished"} onClick={() => chooseCategory("finished")} icon={PackageCheck} title="Finished raw material" detail="Coated stock ready for production, such as PM, PMDT, or PET." />
               <Option selected={form.category === "raw"} onClick={() => chooseCategory("raw")} icon={Factory} title="Raw component" detail="Face, liner, adhesive, silicone, or coating used to make material." />
@@ -262,21 +341,22 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
             </Field>
             {picker("supplier", "Supplier", choices.suppliers, (row) => [row.name, row.city, row.state].filter(Boolean).join(" / "), "Search supplier", true)}
             <Field name="received_date" label="Date received" errors={errors}><input {...inputProps("received_date")} type="date" /></Field>
-            {form.inventory_origin === "tri_state" && <p className="intake-callout is-wide">Use manual entry only if these items have not already been added through a production roll tag.</p>}
+            {form.inventory_origin === "tri_state" && <div className="intake-source-scan is-wide"><p>Tri-State rolls have a scannable tag. Use it to check whether the roll is already in inventory.</p><button type="button" className="intake-text-button" onClick={openScanner}><ScanLine size={17} /> Scan the Tri-State tag</button><small>Continue manually only for stock without an existing production tag.</small></div>}
           </div>}
 
           {step === 3 && <>
+            {scannedTag && <div className="intake-callout"><ScanLine size={21} /><span><strong>{scannedTag.tag_number}</strong><br />{materialName}<br /><small>Made by Tri-State Media · One tag, one roll</small></span></div>}
             <div className="intake-fields">
-              <Field name="unit" label="How is the amount measured?" errors={errors} wide><select {...inputProps("unit")} onChange={(event) => change({ unit: event.target.value, amount: "" })}>{UNITS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+              {!scannedTag && <Field name="unit" label="How is the amount measured?" errors={errors} wide><select {...inputProps("unit")} onChange={(event) => change({ unit: event.target.value, amount: "" })}>{UNITS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>}
               <Field name="amount" label={form.unit === "lf" ? "Length per roll (ft)" : `Amount per ${physicalLabel} (${amountUnit})`} errors={errors} hint={`For one ${physicalLabel}, before multiplying by the count.`}>
                 <input {...inputProps("amount", true)} type="number" min={form.unit === "lf" ? "0.01" : "0.001"} step={form.unit === "lf" ? "0.01" : "0.001"} inputMode="decimal" placeholder={form.unit === "lf" ? "Example: 5000" : "Example: 55"} />
               </Field>
-              <Field name="roll_count" label={`Number of ${physicalLabel}s`} errors={errors} hint="One inventory record is created for each item."><input {...inputProps("roll_count", true)} type="number" min="1" max="500" step="1" inputMode="numeric" /></Field>
+              {!scannedTag && <Field name="roll_count" label={`Number of ${physicalLabel}s`} errors={errors} hint="One inventory record is created for each item."><input {...inputProps("roll_count", true)} type="number" min="1" max="500" step="1" inputMode="numeric" /></Field>}
               {needsWidth(form) && <Field name="width_inches" label="Roll width (inches)" errors={errors}><input {...inputProps("width_inches")} type="number" min="0.001" step="0.001" inputMode="decimal" placeholder="Example: 13.5" /></Field>}
               <Field name="lot_number" label="Lot number (optional)" errors={errors}><input {...inputProps("lot_number")} maxLength={80} placeholder="Supplier or internal lot" /></Field>
             </div>
             <div className="intake-total" aria-live="polite"><span>Total to add</span><strong>{formatAmount(total)} {amountUnit}</strong><small>{form.roll_count || 0} {physicalLabel}{Number(form.roll_count) === 1 ? "" : "s"} × {formatAmount(form.amount)} {amountUnit} each</small></div>
-            <p className="intake-callout">All items in this entry share the same amount, width, lot, and destination. Add a separate entry when any of these differ.</p>
+            {!scannedTag && <p className="intake-callout">All items in this entry share the same amount, width, lot, and destination. Add a separate entry when any of these differ.</p>}
             {isLiquid(form.material_type) && ["lf", "roll"].includes(form.unit) && <p className="intake-callout is-warning">This component is usually measured in gallons or pounds. Confirm that a roll unit is appropriate.</p>}
           </>}
 
@@ -293,21 +373,26 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
 
           {step === 5 && <>
             <div className="intake-total"><span>Ready to add</span><strong>{formatAmount(total)} {amountUnit}</strong><small>{form.roll_count} {physicalLabel}{Number(form.roll_count) === 1 ? "" : "s"} × {formatAmount(form.amount)} {amountUnit} each</small></div>
-            <ReviewCard title="Material" onEdit={() => navigate(1)} rows={[
+            <ReviewCard title="Material" onEdit={scannedTag ? undefined : () => navigate(1)} rows={[
+              scannedTag && ["Scanned tag", scannedTag.tag_number],
               ["Category", form.category === "finished" ? "Finished raw material" : `Raw component · ${COMPONENTS.find(([value]) => value === form.material_type)?.[1]}`],
               ["Material", materialName], form.definitionMode === "new" && ["Catalog", "New material will be created"],
               form.definitionMode === "new" && form.category === "finished" && ["Family", form.master_type === "__new__" ? `${form.master_type_code} (new)` : selectedMaster?.code],
             ]} />
-            <ReviewCard title="Source" onEdit={() => navigate(2)} rows={[["Source", ORIGINS.find(([value]) => value === form.inventory_origin)?.[1]], ["Supplier", selectedSupplier?.name], ["Received", form.received_date]]} />
+            <ReviewCard title="Source" onEdit={scannedTag ? undefined : () => navigate(2)} rows={[["Source", ORIGINS.find(([value]) => value === form.inventory_origin)?.[1]], !scannedTag && ["Supplier", selectedSupplier?.name], ["Received", form.received_date]]} />
             <ReviewCard title="Quantity" onEdit={() => navigate(3)} rows={[["Each item", `${formatAmount(form.amount)} ${amountUnit}`], ["Physical items", form.roll_count], needsWidth(form) && ["Width", `${form.width_inches} in`], ["Lot", form.lot_number || "Not provided — can be added later"]]} />
             <ReviewCard title="Storage" onEdit={() => navigate(4)} rows={[["Destination", destination], form.notes.trim() && ["Notes", form.notes]]} />
             {!form.lot_number.trim() && <p className="intake-callout is-warning">No lot number entered. You can add it later from the inventory item.</p>}
+            {scannedTag && <p className="intake-callout">Receiving completes this production tag and records its assigned component usage. The roll stays linked to its original tag.</p>}
             {saveError && <div className="intake-error" id="intake-save-error" role="alert" tabIndex={-1}><strong>Unable to confirm the save</strong><p>{saveError}</p><p>Your entries are still here. You can retry this entry. If you change its details after a connection failure, check inventory first.</p></div>}
           </>}
         </section>}
       </div>
       <footer className="intake-footer">
-        {result ? <><span className="intake-hint">Saved to inventory.</span><button className="primary-btn" type="button" onClick={onClose}><Check size={17} /> Done</button></> : discard ? <span className="intake-hint">Keep editing to return to your entry.</span> : <>
+        {result ? <><span className="intake-hint">{result.already_in_inventory ? "Existing inventory preserved." : "Saved to inventory."}</span><button className="primary-btn" type="button" onClick={onClose}><Check size={17} /> Done</button></> : discard ? <span className="intake-hint">Keep editing to return to your entry.</span> : scanOpen ? <>
+          <button type="button" className="ghost-btn" onClick={foundInventory ? openScanner : returnToManual}><ArrowLeft size={16} /> {foundInventory ? "Scan another" : "Back"}</button>
+          {foundInventory ? <div className="intake-footer-actions"><button type="button" className="primary-btn" onClick={() => onOpenInventory(foundInventory)}><PackageCheck size={17} /> Open inventory</button></div> : <span className="intake-hint">Scan, upload a photo, or enter the tag.</span>}
+        </> : <>
           <button className="ghost-btn" type="button" disabled={busy} onClick={step ? () => navigate(step - 1) : requestClose}>{step ? <><ArrowLeft size={16} /> Back</> : "Cancel"}</button>
           <div className="intake-footer-actions"><button className="primary-btn" type="submit" value={step === 5 ? "save" : "continue"} disabled={busy}>
             {busy ? <><LoaderCircle className="intake-spinner" size={17} /> Adding material…</> : step === 5 ? <><PackagePlus size={17} /> Add to inventory</> : <>{step === 4 ? "Review entry" : "Continue"}<ArrowRight size={17} /></>}
