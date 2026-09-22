@@ -439,7 +439,7 @@ class RawMaterialInventory(models.Model):
             models.Index(fields=["code"]),
         ]
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, inherit_material_supplier=True, **kwargs):
         is_new = self.pk is None
         needs_serial = not self.serial_number
         update_fields = kwargs.get("update_fields")
@@ -455,7 +455,7 @@ class RawMaterialInventory(models.Model):
                 self.code = self.material.code
             if not self.name:
                 self.name = self.material.name
-            if not self.supplier_id:
+            if is_new and inherit_material_supplier and not self.supplier_id:
                 self.supplier = self.material.supplier
         result = super().save(*args, **kwargs)
         if needs_serial:
@@ -484,6 +484,21 @@ class RawMaterialInventory(models.Model):
 
     def __str__(self):
         return f"{self.name} / {self.serial_number or self.lot_number or self.pk}"
+
+
+class MaterialIntakeReceipt(models.Model):
+    """A committed receipt makes retries safe even if the response was lost."""
+
+    user = models.ForeignKey("users.CompanyUser", on_delete=models.CASCADE, related_name="material_intake_receipts")
+    idempotency_key = models.UUIDField()
+    request_hash = models.CharField(max_length=64)
+    response = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "idempotency_key"], name="unique_material_intake_request"),
+        ]
 
 
 class MaterialMovement(models.Model):

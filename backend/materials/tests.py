@@ -1,8 +1,12 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from threading import Barrier
 from unittest.mock import patch
+from uuid import uuid4
 
-from django.test import TestCase
+from django.db import close_old_connections
+from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
 from django.urls import reverse
 
 from production.models import JobTicket, ProductionMaterialAssignment, ProductionSchedule, ProductionShiftReport
@@ -11,6 +15,7 @@ from tooling.models import Press, Supplier, ToolingLocation
 
 from .models import (
     CoaterRollTag,
+    MaterialIntakeReceipt,
     MaterialMasterType,
     MaterialMovement,
     MaterialRack,
@@ -20,6 +25,7 @@ from .models import (
     MaterialUsage,
     RawMaterialInventory,
 )
+from .intake import receive_material_inventory
 from .zpl import STORAGE_QR_COMMAND, STORAGE_QR_ORIGIN, rack_label_zpl, skid_label_zpl
 
 
@@ -475,7 +481,7 @@ class MaterialInventoryDeletionTests(TestCase):
         self.assertLess(MaterialUsage.objects.count(), usage_count)
 
 
-class MaterialInventoryIntakeTests(TestCase):
+class MaterialInventoryIntakeTestCase(TestCase):
     def setUp(self):
         role, _ = CompanyRole.objects.get_or_create(name="Material Handler")
         self.user = CompanyUser.objects.create(
@@ -501,6 +507,8 @@ class MaterialInventoryIntakeTests(TestCase):
         )
         self.ricoh = Supplier.objects.create(name="RICOH")
 
+
+class MaterialInventoryIntakeTests(MaterialInventoryIntakeTestCase):
     def test_purchased_finished_material_can_be_created_directly_in_rack_without_qr(self):
         response = self.client.post(
             reverse("raw-material-intake"),
@@ -575,6 +583,301 @@ class MaterialInventoryIntakeTests(TestCase):
         self.assertIsNone(inventory.current_skid_id)
         self.assertIsNone(inventory.direct_rack_id)
         self.assertEqual(inventory.location, self.location)
+
+
+class MaterialInventoryIntakeValidationTests(MaterialInventoryIntakeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.face = MaterialSpec.objects.create(material_type="face", name="Receiving Face", supplier=self.ricoh)
+        self.payload = {
+            "material": self.face.pk,
+            "length_feet": "1200.25",
+            "width_inches": "12.750",
+            "unit": "lf",
+            "location": self.location.pk,
+        }
+
+    def receive(self, payload):
+        return self.client.post(
+            reverse("raw-material-intake"), payload, content_type="application/json", **self.headers,
+        )
+
+    def new_material_payload(self):
+        return {
+            **self.payload,
+            "material": None,
+            "create_material": {"material_type": "coated_stock", "master_type_code": "NEW-TYPE", "name": "New Stock"},
+        }
+
+    def test_invalid_intake_does_not_create_material_or_master_type(self):
+        for changes in [{"length_feet": "0"}, {"direct_rack": 999999}, {"received_date": "invalid"}]:
+            with self.subTest(changes=changes):
+                response = self.receive({**self.new_material_payload(), **changes})
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertFalse(MaterialSpec.objects.filter(name="New Stock").exists())
+                self.assertFalse(MaterialMasterType.objects.filter(code="NEW-TYPE").exists())
+                self.assertEqual(RawMaterialInventory.objects.count(), 0)
+
+    def test_malformed_identifiers_and_nested_data_return_field_errors(self):
+        cases = [
+            ({"material": "bad-id"}, "material"),
+            ({"direct_rack": "bad-id"}, "direct_rack"),
+            ({"supplier": 999999}, "supplier"),
+            ({"material": None, "create_material": ["invalid"]}, "create_material"),
+            ({"material": None, "create_material": {"material_type": "face", "name": "Face", "supplier": 999999}}, "create_material"),
+        ]
+        for changes, field in cases:
+            with self.subTest(changes=changes):
+                response = self.receive({**self.payload, **changes})
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertIn(field, response.json())
+        self.assertEqual(RawMaterialInventory.objects.count(), 0)
+
+    def test_invalid_amounts_counts_and_dimensions_cannot_create_stock(self):
+        cases = [
+            ("length_feet", "NaN"), ("length_feet", "Infinity"), ("length_feet", "-10"),
+            ("length_feet", "0"), ("length_feet", "0.001"), ("length_feet", "1000000000"),
+            ("roll_count", 1.5), ("roll_count", 0), ("roll_count", 501),
+            ("width_inches", "-2"), ("width_inches", "0"), ("width_inches", None),
+            ("weight_lbs", "-1"),
+        ]
+        for field, value in cases:
+            with self.subTest(field=field, value=value):
+                response = self.receive({**self.payload, field: value})
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertIn(field, response.json())
+        self.assertEqual(RawMaterialInventory.objects.count(), 0)
+
+    def test_inactive_or_finished_product_destinations_are_rejected(self):
+        for scope, active in [("shared", False), ("finished_product", True)]:
+            self.location.inventory_scope = scope
+            self.location.is_active = active
+            self.location.save()
+            for destination in [{"location": self.location.pk}, {"location": None, "direct_rack": self.rack.pk}]:
+                with self.subTest(scope=scope, active=active, destination=destination):
+                    response = self.receive({**self.payload, **destination})
+                    self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(RawMaterialInventory.objects.count(), 0)
+
+    def test_inactive_rack_and_conflicting_destinations_are_rejected(self):
+        response = self.receive({**self.payload, "direct_rack": self.rack.pk})
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("location", response.json())
+        self.rack.status = "inactive"
+        self.rack.save()
+        response = self.receive({**self.payload, "location": None, "direct_rack": self.rack.pk})
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("direct_rack", response.json())
+
+    def test_component_links_must_match_their_material_category(self):
+        payload = self.new_material_payload()
+        payload["create_material"]["liner_material"] = self.face.pk
+        response = self.receive(payload)
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("liner_material", response.json()["create_material"])
+        self.assertFalse(MaterialMasterType.objects.filter(code="NEW-TYPE").exists())
+
+    def test_inactive_materials_and_master_types_cannot_receive_stock(self):
+        self.face.is_active = False
+        self.face.save()
+        response = self.receive(self.payload)
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("material", response.json())
+        MaterialMasterType.objects.create(code="NEW-TYPE", name="New Type", is_active=False)
+        response = self.receive(self.new_material_payload())
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("master_type_code", response.json()["create_material"])
+        self.assertFalse(MaterialSpec.objects.filter(name="New Stock").exists())
+
+    def test_linear_receipt_uses_length_as_the_authoritative_quantity(self):
+        response = self.receive({**self.payload, "quantity": "999"})
+        self.assertEqual(response.status_code, 201, response.content)
+        roll = RawMaterialInventory.objects.get(pk=response.json()["id"])
+        self.assertEqual(roll.quantity, Decimal("1200.25"))
+        self.assertEqual(roll.length_feet, Decimal("1200.25"))
+        self.assertEqual(roll.original_length_feet, Decimal("1200.25"))
+
+    def test_liquid_batch_preserves_per_container_amount_and_audit_history(self):
+        adhesive = MaterialSpec.objects.create(material_type="adhesive", name="Liquid Adhesive")
+        response = self.receive({
+            "material": adhesive.pk, "unit": "gal", "quantity": "12.125", "roll_count": 3,
+            "location": self.location.pk, "inventory_origin": "purchased",
+        })
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["created_count"], 3)
+        self.assertEqual(Decimal(str(response.json()["total_received"])), Decimal("36.375"))
+        rolls = RawMaterialInventory.objects.filter(material=adhesive)
+        self.assertEqual(len(set(rolls.values_list("serial_number", flat=True))), 3)
+        for roll in rolls:
+            self.assertEqual(roll.quantity, Decimal("12.125"))
+            self.assertIsNone(roll.length_feet)
+            event = roll.movement_history.get(action_type="roll_registered")
+            self.assertEqual(event.quantity_after, Decimal("12.125"))
+            self.assertEqual(event.actor_user_id, str(self.user.pk))
+            self.assertEqual(event.source, "manual")
+
+    def test_explicit_unknown_supplier_persists_but_omission_inherits(self):
+        inherited_response = self.receive(self.payload)
+        self.assertEqual(inherited_response.status_code, 201, inherited_response.content)
+        inherited = RawMaterialInventory.objects.get(pk=inherited_response.json()["id"])
+        self.assertEqual(inherited.supplier, self.ricoh)
+        unknown_response = self.receive({**self.payload, "supplier": None})
+        self.assertEqual(unknown_response.status_code, 201, unknown_response.content)
+        unknown = RawMaterialInventory.objects.get(pk=unknown_response.json()["id"])
+        self.assertIsNone(unknown.supplier_id)
+        unknown.notes = "Later inventory edit"
+        unknown.save()
+        unknown.refresh_from_db()
+        self.assertIsNone(unknown.supplier_id)
+        regular = RawMaterialInventory.objects.create(material=self.face, quantity=1)
+        self.assertEqual(regular.supplier, self.ricoh)
+
+    def test_failed_batch_rolls_back_material_master_type_inventory_and_history(self):
+        original_save = RawMaterialInventory.save
+        calls = 0
+
+        def fail_second_roll(instance, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("Simulated failure during receipt")
+            return original_save(instance, *args, **kwargs)
+
+        with patch("materials.intake.RawMaterialInventory.save", new=fail_second_roll):
+            with self.assertRaisesMessage(RuntimeError, "Simulated failure during receipt"):
+                self.receive({**self.new_material_payload(), "roll_count": 2})
+        self.assertFalse(MaterialMasterType.objects.filter(code="NEW-TYPE").exists())
+        self.assertFalse(MaterialSpec.objects.filter(name="New Stock").exists())
+        self.assertEqual(RawMaterialInventory.objects.count(), 0)
+        self.assertEqual(MaterialMovement.objects.count(), 0)
+
+    def test_missing_components_do_not_silently_reuse_a_different_recipe(self):
+        master = MaterialMasterType.objects.create(code="PMDT", name="PMDT")
+        liner = MaterialSpec.objects.create(material_type="liner", name="Special Liner")
+        existing = MaterialSpec.objects.create(
+            material_type="coated_stock", master_type=master, name="PMDT", liner_material=liner,
+        )
+        payload = self.new_material_payload()
+        payload["create_material"] = {"material_type": "coated_stock", "master_type": master.pk, "name": "PMDT"}
+        response = self.receive(payload)
+        self.assertEqual(response.status_code, 201, response.content)
+        roll = RawMaterialInventory.objects.get(pk=response.json()["id"])
+        self.assertNotEqual(roll.material_id, existing.pk)
+        self.assertIsNone(roll.material.liner_material_id)
+
+
+class MaterialInventoryIntakeIdempotencyTests(MaterialInventoryIntakeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.material = MaterialSpec.objects.create(material_type="face", name="Receipt Face")
+        self.payload = {
+            "material": self.material.pk, "unit": "lf", "length_feet": "1200.25",
+            "width_inches": "12.75", "roll_count": 2, "location": self.location.pk,
+        }
+        self.key = str(uuid4())
+
+    def receive(self, payload=None, *, key=None, headers=None):
+        return self.client.post(
+            reverse("raw-material-intake"), self.payload if payload is None else payload,
+            content_type="application/json", HTTP_IDEMPOTENCY_KEY=self.key if key is None else key,
+            **(self.headers if headers is None else headers),
+        )
+
+    def test_retry_replays_original_response_without_duplicate_inventory_or_history(self):
+        first = self.receive()
+        self.assertEqual(first.status_code, 201, first.content)
+        self.material.is_active = False
+        self.material.save()
+        # JSON object ordering is immaterial, and replay survives later catalog changes.
+        retry = self.receive(dict(reversed(list(self.payload.items()))))
+        self.assertEqual(retry.status_code, 201, retry.content)
+        self.assertEqual(retry.json(), first.json())
+        self.assertEqual(RawMaterialInventory.objects.count(), 2)
+        self.assertEqual(MaterialMovement.objects.filter(action_type="roll_registered").count(), 2)
+        self.assertEqual(MaterialIntakeReceipt.objects.count(), 1)
+
+    def test_same_key_with_different_payload_returns_conflict(self):
+        self.assertEqual(self.receive().status_code, 201)
+        response = self.receive({**self.payload, "length_feet": "1000"})
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["code"], "intake_request_conflict")
+        self.assertEqual(RawMaterialInventory.objects.count(), 2)
+
+    def test_key_is_scoped_to_the_verified_user(self):
+        other = CompanyUser.objects.create(
+            username="other-handler", name="Other Handler", password_hash="test", role=self.user.role,
+        )
+        first = self.receive()
+        second = self.receive(headers={
+            "HTTP_X_COMPANY_USER_ID": str(other.pk), "HTTP_X_COMPANY_USERNAME": other.username,
+        })
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(second.status_code, 201, second.content)
+        self.assertNotEqual(first.json()["id"], second.json()["id"])
+        self.assertEqual(RawMaterialInventory.objects.count(), 4)
+        self.assertEqual(MaterialIntakeReceipt.objects.count(), 2)
+
+    def test_invalid_key_does_not_write_any_records(self):
+        for key in ["not-a-uuid", ""]:
+            with self.subTest(key=key):
+                response = self.receive(key=key)
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertIn("idempotency_key", response.json())
+        self.assertEqual(RawMaterialInventory.objects.count(), 0)
+        self.assertEqual(MaterialIntakeReceipt.objects.count(), 0)
+
+    def test_invalid_payload_does_not_reserve_key(self):
+        rejected = self.receive({**self.payload, "width_inches": None})
+        self.assertEqual(rejected.status_code, 400, rejected.content)
+        self.assertEqual(MaterialIntakeReceipt.objects.count(), 0)
+        corrected = self.receive()
+        self.assertEqual(corrected.status_code, 201, corrected.content)
+        self.assertEqual(RawMaterialInventory.objects.count(), 2)
+
+    def test_failure_to_save_replay_response_rolls_back_inventory_and_releases_key(self):
+        original_save = MaterialIntakeReceipt.save
+
+        def fail_response_save(instance, *args, **kwargs):
+            if instance.pk:
+                raise RuntimeError("Simulated receipt persistence failure")
+            return original_save(instance, *args, **kwargs)
+
+        with patch("materials.intake.MaterialIntakeReceipt.save", new=fail_response_save):
+            with self.assertRaisesMessage(RuntimeError, "Simulated receipt persistence failure"):
+                self.receive()
+        self.assertEqual(MaterialIntakeReceipt.objects.count(), 0)
+        self.assertEqual(RawMaterialInventory.objects.count(), 0)
+        self.assertEqual(MaterialMovement.objects.count(), 0)
+        retry = self.receive()
+        self.assertEqual(retry.status_code, 201, retry.content)
+        self.assertEqual(RawMaterialInventory.objects.count(), 2)
+
+
+class MaterialInventoryIntakeConcurrencyTests(TransactionTestCase):
+    @skipUnlessDBFeature("has_select_for_update")
+    def test_concurrent_retries_receive_the_same_committed_batch(self):
+        # SQLite serializes all writes and cannot exercise PostgreSQL's unique-key wait.
+        role, _ = CompanyRole.objects.get_or_create(name="Material Handler")
+        user = CompanyUser.objects.create(username="concurrent-handler", name="Handler", password_hash="test", role=role)
+        material = MaterialSpec.objects.create(material_type="face", name="Concurrent Face")
+        payload = {"material": material.pk, "unit": "lf", "length_feet": "100", "width_inches": "12", "roll_count": 2}
+        key = str(uuid4())
+        start = Barrier(2)
+
+        def receive():
+            close_old_connections()
+            try:
+                start.wait(timeout=10)
+                return receive_material_inventory(payload, user=user, idempotency_key=key)
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(receive)
+            second = executor.submit(receive)
+            self.assertEqual(first.result(timeout=30), second.result(timeout=30))
+        self.assertEqual(RawMaterialInventory.objects.count(), 2)
+        self.assertEqual(MaterialIntakeReceipt.objects.count(), 1)
 
 
 class SkidRackWorkflowTests(TestCase):

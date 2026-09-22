@@ -16,6 +16,7 @@ from users.auth import company_user_from_request
 from users.models import CompanyUser
 from tooling.models import Press
 
+from .intake import receive_material_inventory
 from .models import (
     CoaterRollTag,
     MaterialMasterType,
@@ -975,124 +976,12 @@ class RawMaterialInventoryViewSet(BaseMaterialsViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        payload = request.data.copy()
-        material_id = payload.get("material")
-        create_material = payload.get("create_material")
-        if not material_id and create_material:
-            material_type = str(create_material.get("material_type") or "").strip()
-            if material_type not in dict(MaterialSpec.MATERIAL_TYPE_CHOICES):
-                return Response(
-                    {"create_material": {"material_type": ["Choose a valid material category."]}},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            name = str(create_material.get("name") or "").strip()
-            company = str(create_material.get("company") or "").strip()
-            master_type_id = create_material.get("master_type")
-            master_type = MaterialMasterType.objects.filter(pk=master_type_id).first() if master_type_id else None
-            master_type_code = str(create_material.get("master_type_code") or "").strip().upper()
-            if material_type == "coated_stock" and not master_type and master_type_code:
-                master_type, _ = MaterialMasterType.objects.get_or_create(
-                    code=master_type_code,
-                    defaults={"name": master_type_code},
-                )
-            if material_type == "coated_stock" and not master_type:
-                return Response(
-                    {"create_material": {"master_type": ["Select the finished material type, such as PMDT."]}},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if not name:
-                name = master_type.code if master_type else ""
-            if not name:
-                return Response(
-                    {"create_material": {"name": ["Enter the material name or type."]}},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            lookup = {
-                "material_type": material_type,
-                "name__iexact": name,
-                "company__iexact": company,
-            }
-            if master_type:
-                lookup["master_type"] = master_type
-            if create_material.get("liner_material"):
-                lookup["liner_material_id"] = create_material.get("liner_material")
-            if create_material.get("adhesive_material"):
-                lookup["adhesive_material_id"] = create_material.get("adhesive_material")
-            material = MaterialSpec.objects.filter(**lookup).first()
-            if not material:
-                material = MaterialSpec.objects.create(
-                    material_type=material_type,
-                    name=name,
-                    company=company,
-                    material_family=str(create_material.get("material_family") or name).strip(),
-                    master_type=master_type,
-                    supplier_id=create_material.get("supplier") or None,
-                    liner_material_id=create_material.get("liner_material") or None,
-                    adhesive_material_id=create_material.get("adhesive_material") or None,
-                    code=str(create_material.get("code") or "").strip(),
-                    notes=str(create_material.get("notes") or "").strip(),
-                )
-            material_id = material.pk
-
-        material = MaterialSpec.objects.filter(pk=material_id, is_active=True).first() if material_id else None
-        if not material:
-            return Response({"material": ["Select or create a material."]}, status=status.HTTP_400_BAD_REQUEST)
-
-        direct_rack_id = payload.get("direct_rack")
-        direct_rack = MaterialRack.objects.filter(pk=direct_rack_id, status="active").first() if direct_rack_id else None
-        if direct_rack_id and not direct_rack:
-            return Response({"direct_rack": ["Select an active rack."]}, status=status.HTTP_400_BAD_REQUEST)
-
-        amount = payload.get("length_feet") if str(payload.get("unit") or "lf") == "lf" else payload.get("quantity")
         try:
-            amount_value = Decimal(str(amount))
-        except Exception:
-            amount_value = Decimal("-1")
-        if amount_value <= 0:
-            field = "length_feet" if str(payload.get("unit") or "lf") == "lf" else "quantity"
-            return Response({field: ["Enter an amount greater than zero."]}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            roll_count = int(payload.get("roll_count") or 1)
-        except (TypeError, ValueError):
-            roll_count = 0
-        if roll_count < 1 or roll_count > 500:
-            return Response({"roll_count": ["Enter between 1 and 500 physical rolls or containers."]}, status=status.HTTP_400_BAD_REQUEST)
-
-        inventory_payload = {
-            "material": material.pk,
-            "supplier": payload.get("supplier") or material.supplier_id,
-            "lot_number": str(payload.get("lot_number") or "").strip(),
-            "width_inches": payload.get("width_inches") or None,
-            "length_feet": payload.get("length_feet") if str(payload.get("unit") or "lf") == "lf" else None,
-            "quantity": amount_value,
-            "weight_lbs": payload.get("weight_lbs") or None,
-            "unit": str(payload.get("unit") or "lf"),
-            "status": "available",
-            "inventory_origin": str(payload.get("inventory_origin") or "legacy"),
-            "received_date": payload.get("received_date") or timezone.localdate(),
-            "direct_rack": direct_rack.pk if direct_rack else None,
-            "location": None if direct_rack else (payload.get("location") or None),
-            "notes": str(payload.get("notes") or "").strip(),
-            "is_active": True,
-        }
-        with transaction.atomic():
-            created = []
-            for _index in range(roll_count):
-                serializer = self.get_serializer(data=inventory_payload)
-                serializer.is_valid(raise_exception=True)
-                inventory = serializer.save()
-                inventory.movement_history.filter(action_type="roll_registered").update(
-                    actor_name=user.name or user.username,
-                    actor_user_id=str(user.pk),
-                    source="manual",
-                    notes=f"Material added through manual intake ({inventory.get_inventory_origin_display()}).",
-                )
-                created.append(inventory)
-        response_data = dict(self.get_serializer(created[0]).data)
-        response_data["created_count"] = len(created)
-        response_data["created_inventory"] = self.get_serializer(created, many=True).data
-        response_data["total_received"] = amount_value * roll_count
+            response_data = receive_material_inventory(
+                request.data, user=user, idempotency_key=request.headers.get("Idempotency-Key"),
+            )
+        except MaterialWorkflowError as error:
+            return _workflow_error(error)
         return Response(response_data, status=status.HTTP_201_CREATED)
 
     def perform_update(self, serializer):

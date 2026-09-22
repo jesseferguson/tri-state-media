@@ -88,6 +88,7 @@ CORS_ALLOW_HEADERS = (
     *default_headers,
     "x-company-user-id",
     "x-company-username",
+    "idempotency-key",
     "x-device-token",
 )
 

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test:intake": "node --test src/features/materials/intakeWorkflow.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

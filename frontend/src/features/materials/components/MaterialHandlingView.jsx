@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronRight, Factory, History, Layers3, LoaderCircle, MapPin, PackageCheck, PackageOpen, PackagePlus, Plus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, ChevronRight, Factory, History, Layers3, LoaderCircle, MapPin, PackageCheck, PackageOpen, PackagePlus, Save, Search, Trash2, Warehouse, X } from "lucide-react";
 import { fetchCollection, postRecordAction, requestApi, updateRecord } from "../../../api";
 import { formatInches, labelize } from "../../../lib/format";
 import { canDeleteMaterialRoll } from "../../../lib/localAuth";
+import MaterialIntakeDialog from "./MaterialIntakeDialog";
 import DeleteMaterialRollDialog from "./DeleteMaterialRollDialog";
 import ScanLinkScreen from "../../../shared/components/scanning/ScanLinkScreen";
 
@@ -61,18 +62,6 @@ function locationLabel(row) {
 
 function rackLabel(row) {
   return [row?.rack_code, row?.storage_location_display || row?.location_detail].filter(Boolean).join(" / ");
-}
-
-function locationSearchText(row) {
-  return [locationLabel(row), row?.code, row?.location_type, row?.inventory_scope].filter(Boolean).join(" ");
-}
-
-function findFloorLocation(locations, pattern) {
-  return (locations ?? []).find((row) => (
-    row.is_active !== false
-    && row.inventory_scope !== "finished_product"
-    && pattern.test(`${row.full_path || ""} ${row.name || ""} ${row.code || ""}`)
-  ));
 }
 
 function rollRoute(row) {
@@ -355,390 +344,6 @@ function UsageHistory({ rows, rolls, search }) {
       ))}
       {!filtered.length && <p className="material-handling-empty">No historical usage matches this search.</p>}
     </div>
-  );
-}
-
-function IntakeSearchPicker({ label, options, value, onChange, getLabel, getSearchText = getLabel, placeholder, required = false }) {
-  const selected = options.find((option) => sameId(option.id, value));
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const normalizedQuery = query.trim().toLowerCase();
-  const visible = options
-    .filter((option) => !normalizedQuery || getSearchText(option).toLowerCase().includes(normalizedQuery))
-    .slice(0, 40);
-
-  return (
-    <label className="material-intake-search-picker">
-      <span>{label}</span>
-      <div className={open ? "open" : ""}>
-        <Search size={16} />
-        <input
-          value={open ? query : selected ? getLabel(selected) : query}
-          onFocus={() => {
-            setQuery("");
-            setOpen(true);
-          }}
-          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setOpen(true);
-            if (value) onChange("");
-          }}
-          placeholder={placeholder}
-          required={required && !value}
-          autoComplete="off"
-        />
-        {value && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(""); setQuery(""); setOpen(true); }} aria-label={`Clear ${label}`}><X size={14} /></button>}
-        {open && (
-          <div className="material-intake-search-results">
-            {visible.map((option) => (
-              <button
-                className={sameId(option.id, value) ? "active" : ""}
-                type="button"
-                key={option.id}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  onChange(String(option.id));
-                  setQuery("");
-                  setOpen(false);
-                }}
-              >
-                <strong>{getLabel(option)}</strong>
-              </button>
-            ))}
-            {!visible.length && <p>No matches found.</p>}
-          </div>
-        )}
-      </div>
-    </label>
-  );
-}
-
-function MaterialIntakeDialog({
-  materials,
-  masterTypes,
-  suppliers,
-  racks,
-  locations,
-  saving,
-  error,
-  onClose,
-  onSave,
-}) {
-  const materialLocations = locations.filter((row) => row.is_active !== false && row.inventory_scope !== "finished_product");
-  const activeRacks = racks.filter((row) => row.status === "active" && row.location_inventory_scope !== "finished_product");
-  const plantFloor = findFloorLocation(materialLocations, /wilmington.*plant\s*floor|plant\s*floor/i);
-  const offsiteFloor = findFloorLocation(materialLocations, /off[\s-]*site.*floor/i);
-  const defaultFloor = plantFloor?.id || materialLocations[0]?.id || "";
-  const floorShortcuts = [
-    plantFloor && { key: "plant", label: "Wilmington", detail: "Plant Floor", location: plantFloor },
-    offsiteFloor && { key: "offsite", label: "Wilmington", detail: "Off-Site Floor", location: offsiteFloor },
-  ].filter(Boolean);
-  const [category, setCategory] = useState("finished");
-  const [definitionMode, setDefinitionMode] = useState("existing");
-  const [storageMode, setStorageMode] = useState("floor");
-  const [form, setForm] = useState({
-    material: "",
-    master_type: "",
-    master_type_code: "",
-    material_type: "coated_stock",
-    name: "",
-    company: "",
-    supplier: "",
-    liner_material: "",
-    adhesive_material: "",
-    inventory_origin: "legacy",
-    lot_number: "",
-    width_inches: "",
-    amount: "",
-    roll_count: "1",
-    unit: "lf",
-    received_date: new Date().toISOString().slice(0, 10),
-    direct_rack: "",
-    location: defaultFloor,
-    notes: "",
-  });
-  const availableMaterials = materials.filter((row) => (
-    row.is_active !== false
-    && (category === "finished" ? row.material_type === "coated_stock" : row.material_type !== "coated_stock")
-  ));
-  const selectedMaterial = materials.find((row) => sameId(row.id, form.material));
-  const activeMaterialType = definitionMode === "existing"
-    ? selectedMaterial?.material_type || (category === "finished" ? "coated_stock" : "face")
-    : form.material_type;
-  const liquidMaterial = ["adhesive", "silicone", "coating"].includes(activeMaterialType);
-  const linearTotal = Number(form.amount || 0) * Number(form.roll_count || 0);
-  const finishedLiners = materials.filter((row) => row.is_active !== false && row.material_type === "liner");
-  const finishedAdhesives = materials.filter((row) => row.is_active !== false && row.material_type === "adhesive");
-  const selectedLiner = finishedLiners.find((row) => sameId(row.id, form.liner_material));
-  const selectedAdhesive = finishedAdhesives.find((row) => sameId(row.id, form.adhesive_material));
-  const finishedIdentity = [
-    form.name || masterTypes.find((row) => sameId(row.id, form.master_type))?.code || form.master_type_code,
-    selectedLiner?.material_family || selectedLiner?.name,
-    selectedAdhesive?.material_family || selectedAdhesive?.name,
-  ].filter(Boolean).join("-");
-
-  function update(name, value) {
-    setForm((current) => ({ ...current, [name]: value }));
-  }
-
-  function chooseFloor(locationId) {
-    setStorageMode("floor");
-    setForm((current) => ({ ...current, location: String(locationId || ""), direct_rack: "" }));
-  }
-
-  function chooseRack(rackId) {
-    setStorageMode("rack");
-    setForm((current) => ({ ...current, direct_rack: String(rackId || ""), location: "" }));
-  }
-
-  function chooseCategory(nextCategory) {
-    const finished = nextCategory === "finished";
-    setCategory(nextCategory);
-    setForm((current) => ({
-      ...current,
-      material: "",
-      material_type: finished ? "coated_stock" : "face",
-      unit: finished ? "lf" : "lf",
-      width_inches: "",
-      amount: "",
-    }));
-  }
-
-  function chooseMaterial(value) {
-    const material = materials.find((row) => sameId(row.id, value));
-    const liquid = ["adhesive", "silicone", "coating"].includes(material?.material_type);
-    setForm((current) => ({
-      ...current,
-      material: value,
-      supplier: material?.supplier || current.supplier,
-      unit: liquid ? "gal" : "lf",
-      width_inches: liquid ? "" : current.width_inches,
-    }));
-  }
-
-  function chooseNewMaterialType(value) {
-    const liquid = ["adhesive", "silicone", "coating"].includes(value);
-    setForm((current) => ({
-      ...current,
-      material_type: value,
-      unit: liquid ? "gal" : "lf",
-      width_inches: liquid ? "" : current.width_inches,
-    }));
-  }
-
-  function submit(event) {
-    event.preventDefault();
-    const payload = {
-      material: definitionMode === "existing" ? form.material : null,
-      create_material: definitionMode === "new" ? {
-        material_type: category === "finished" ? "coated_stock" : form.material_type,
-        master_type: category === "finished" && form.master_type !== "__new__" ? form.master_type : null,
-        master_type_code: category === "finished" && form.master_type === "__new__" ? form.master_type_code : "",
-        name: form.name,
-        company: form.company,
-        material_family: form.name,
-        supplier: form.supplier || null,
-        liner_material: category === "finished" ? (form.liner_material || null) : null,
-        adhesive_material: category === "finished" ? (form.adhesive_material || null) : null,
-      } : null,
-      supplier: form.supplier || null,
-      inventory_origin: form.inventory_origin,
-      lot_number: form.lot_number,
-      width_inches: liquidMaterial ? null : (form.width_inches || null),
-      length_feet: form.unit === "lf" ? Number(form.amount) : null,
-      quantity: Number(form.amount),
-      roll_count: Number(form.roll_count),
-      unit: form.unit,
-      received_date: form.received_date,
-      direct_rack: storageMode === "rack" ? form.direct_rack : null,
-      location: storageMode === "floor" ? (form.location || null) : null,
-      notes: form.notes,
-    };
-    onSave(payload);
-  }
-
-  const canSubmit = Number(form.amount) > 0
-    && Number(form.roll_count) >= 1
-    && (definitionMode === "existing" ? Boolean(form.material) : Boolean(form.name || (category === "finished" && form.master_type)))
-    && (definitionMode !== "new" || category !== "finished" || (Boolean(form.master_type) && (form.master_type !== "__new__" || Boolean(form.master_type_code.trim()))))
-    && (storageMode !== "rack" || Boolean(form.direct_rack));
-
-  return (
-    <section className="material-intake-overlay" role="dialog" aria-modal="true" aria-label="Add material without QR">
-      <form className="material-intake-window" onSubmit={submit}>
-        <header>
-          <div><span>Inventory Intake</span><h2>Add Material</h2></div>
-          <button type="button" onClick={onClose} aria-label="Close material intake"><X size={19} /></button>
-        </header>
-        <main>
-          <section className="material-intake-section">
-            <header><strong>Material Category</strong><span>1</span></header>
-            <div className="material-intake-choice-grid">
-              <button className={category === "finished" ? "active" : ""} type="button" onClick={() => chooseCategory("finished")}>
-                <PackageCheck size={21} /><span><strong>Finished Material</strong><small>PM, PMDT, PET, and coated stock</small></span>
-              </button>
-              <button className={category === "raw" ? "active" : ""} type="button" onClick={() => chooseCategory("raw")}>
-                <Factory size={21} /><span><strong>Raw Component</strong><small>Face, liner, adhesive, silicone, or coating</small></span>
-              </button>
-            </div>
-          </section>
-
-          <section className="material-intake-section">
-            <header><strong>Material Identity</strong><span>2</span></header>
-            <div className="material-intake-mode">
-              <button className={definitionMode === "existing" ? "active" : ""} type="button" onClick={() => setDefinitionMode("existing")}>Existing Type</button>
-              <button className={definitionMode === "new" ? "active" : ""} type="button" onClick={() => setDefinitionMode("new")}><Plus size={14} /> New Type</button>
-            </div>
-            <div className="material-intake-fields">
-              {definitionMode === "existing" ? (
-                <div className="wide">
-                  <IntakeSearchPicker
-                    label="Material"
-                    options={availableMaterials}
-                    value={form.material}
-                    onChange={chooseMaterial}
-                    getLabel={(row) => [materialName(row), row.company, row.code].filter(Boolean).join(" / ")}
-                    placeholder="Search material type, name, company, or code"
-                    required
-                  />
-                </div>
-              ) : category === "finished" ? (
-                <>
-                  <IntakeSearchPicker
-                    label="Material Type"
-                    options={masterTypes.filter((row) => row.is_active !== false)}
-                    value={form.master_type === "__new__" ? "" : form.master_type}
-                    onChange={(value) => {
-                      const master = masterTypes.find((row) => sameId(row.id, value));
-                      setForm((current) => ({ ...current, master_type: value, master_type_code: "", name: current.name || master?.code || "" }));
-                    }}
-                    getLabel={(row) => row.code + (row.name && row.name !== row.code ? ` / ${row.name}` : "")}
-                    placeholder="Search PM, PMDT, PET..."
-                  />
-                  <label><span>Company</span><input value={form.company} onChange={(event) => update("company", event.target.value)} placeholder="RICOH" required /></label>
-                  <button className={`material-intake-new-type ${form.master_type === "__new__" ? "active" : ""}`} type="button" onClick={() => setForm((current) => ({ ...current, master_type: current.master_type === "__new__" ? "" : "__new__", master_type_code: "" }))}><Plus size={14} /> {form.master_type === "__new__" ? "Use Existing Type" : "Type Not Listed"}</button>
-                  {form.master_type === "__new__" && <label><span>New Type Code</span><input value={form.master_type_code} onChange={(event) => {
-                    const value = event.target.value.toUpperCase();
-                    setForm((current) => ({ ...current, master_type_code: value, name: current.name || value }));
-                  }} placeholder="PMDT" required /></label>}
-                  <label className="wide"><span>Material Name</span><input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="PMDT" required /></label>
-                  <div className="wide material-intake-component-pickers">
-                    <IntakeSearchPicker label="Liner" options={finishedLiners} value={form.liner_material} onChange={(value) => update("liner_material", value)} getLabel={(row) => [row.material_family || row.name, row.company].filter(Boolean).join(" / ")} placeholder="Search liner type" />
-                    <IntakeSearchPicker label="Adhesive" options={finishedAdhesives} value={form.adhesive_material} onChange={(value) => update("adhesive_material", value)} getLabel={(row) => [row.material_family || row.name, row.company].filter(Boolean).join(" / ")} placeholder="Search adhesive type" />
-                  </div>
-                  {finishedIdentity && <div className="wide material-intake-name-preview"><span>Inventory Material Name</span><strong>{finishedIdentity}</strong></div>}
-                </>
-              ) : (
-                <>
-                  <label>
-                    <span>Component</span>
-                    <select value={form.material_type} onChange={(event) => chooseNewMaterialType(event.target.value)}>
-                      {rawComponentChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                    </select>
-                  </label>
-                  <label><span>Company</span><input value={form.company} onChange={(event) => update("company", event.target.value)} placeholder="Supplier company" /></label>
-                  <label className="wide"><span>Material Name / Type</span><input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Example: 40 SCK liner" required /></label>
-                </>
-              )}
-              <IntakeSearchPicker label="Supplier" options={suppliers.filter((row) => row.is_active !== false)} value={form.supplier} onChange={(value) => update("supplier", value)} getLabel={(row) => [row.name, row.city, row.state].filter(Boolean).join(" / ")} placeholder="Search supplier" />
-              <label>
-                <span>Inventory Origin</span>
-                <select value={form.inventory_origin} onChange={(event) => update("inventory_origin", event.target.value)}>
-                  <option value="legacy">Existing Stock / No QR</option>
-                  <option value="purchased">Purchased / Outsourced</option>
-                  <option value="tri_state">Tri-State Produced / Manual</option>
-                </select>
-              </label>
-            </div>
-          </section>
-
-          <section className="material-intake-section">
-            <header><strong>Physical Inventory</strong><span>3</span></header>
-            <div className="material-intake-fields">
-              <label><span>Lot Number</span><input value={form.lot_number} onChange={(event) => update("lot_number", event.target.value)} placeholder="Supplier or internal lot" /></label>
-              {!liquidMaterial && <label><span>Width</span><input type="number" min="0" step="0.001" inputMode="decimal" value={form.width_inches} onChange={(event) => update("width_inches", event.target.value)} placeholder="inches" /></label>}
-              <label>
-                <span>Unit</span>
-                <select value={form.unit} onChange={(event) => update("unit", event.target.value)}>
-                  <option value="lf">Linear Feet</option>
-                  <option value="gal">Gallons</option>
-                  <option value="lbs">Pounds</option>
-                  <option value="roll">Rolls</option>
-                  <option value="each">Each</option>
-                </select>
-              </label>
-              <label><span>{form.unit === "lf" ? "Length Per Roll" : "Amount Per Container"}</span><input type="number" min="0.001" step="0.001" inputMode="decimal" value={form.amount} onChange={(event) => update("amount", event.target.value)} required /></label>
-              <label><span>{form.unit === "lf" ? "Number of Rolls" : "Number of Containers"}</span><input type="number" min="1" max="500" step="1" inputMode="numeric" value={form.roll_count} onChange={(event) => update("roll_count", event.target.value)} required /></label>
-              <label><span>Received</span><input type="date" value={form.received_date} onChange={(event) => update("received_date", event.target.value)} /></label>
-              <div className="wide material-intake-lot-total">
-                <span>Total Received</span>
-                <strong>{linearTotal.toLocaleString(undefined, { maximumFractionDigits: form.unit === "lf" ? 0 : 2 })} {form.unit}</strong>
-                <small>{Number(form.roll_count || 0).toLocaleString()} x {Number(form.amount || 0).toLocaleString()} {form.unit}</small>
-              </div>
-              <p className="wide material-intake-note">Supplier lot is optional here. For outside material, enter the shipment once with roll count and add the exact lot details later when that process happens.</p>
-            </div>
-          </section>
-
-          <section className="material-intake-section">
-            <header><strong>Storage</strong><span>4</span></header>
-            <div className="material-intake-mode">
-              <button className={storageMode === "floor" ? "active" : ""} type="button" onClick={() => setStorageMode("floor")}><MapPin size={14} /> Plant Floor</button>
-              <button className={storageMode === "rack" ? "active" : ""} type="button" onClick={() => setStorageMode("rack")}><Warehouse size={14} /> Rack Space</button>
-            </div>
-            <div className="material-intake-fields">
-              {storageMode === "rack" ? (
-                <div className="wide">
-                  <IntakeSearchPicker
-                    label="Rack"
-                    options={activeRacks}
-                    value={form.direct_rack}
-                    onChange={chooseRack}
-                    getLabel={rackLabel}
-                    placeholder="Search rack code or location"
-                    required
-                  />
-                </div>
-              ) : (
-                <>
-                  <div className="wide material-floor-shortcuts">
-                    {floorShortcuts.map((shortcut) => (
-                      <button
-                        className={sameId(form.location, shortcut.location.id) ? "active" : ""}
-                        type="button"
-                        key={shortcut.key}
-                        onClick={() => chooseFloor(shortcut.location.id)}
-                      >
-                        <MapPin size={16} />
-                        <span><strong>{shortcut.label}</strong><small>{shortcut.detail}</small></span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="wide">
-                    <IntakeSearchPicker
-                      label="Other Floor Location"
-                      options={materialLocations}
-                      value={form.location}
-                      onChange={chooseFloor}
-                      getLabel={locationLabel}
-                      getSearchText={locationSearchText}
-                      placeholder="Search floor, warehouse, shelf, or code"
-                    />
-                  </div>
-                </>
-              )}
-              <label className="wide"><span>Notes</span><textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Condition, supplier details, or handling notes" /></label>
-            </div>
-          </section>
-
-          {error && <div className="material-intake-error"><AlertTriangle size={17} /><span>{apiErrorMessage(error)}</span></div>}
-        </main>
-        <footer>
-          <button className="ghost-btn" type="button" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="primary-btn" type="submit" disabled={!canSubmit || saving}><PackagePlus size={17} /> {saving ? "Adding Material..." : "Add to Inventory"}</button>
-        </footer>
-      </form>
-    </section>
   );
 }
 
@@ -1075,18 +680,18 @@ export default function MaterialHandlingView({
   });
 
   const intakeMutation = useMutation({
-    mutationFn: (payload) => requestApi("raw-materials/intake", {
+    mutationFn: ({ payload, requestKey }) => requestApi("raw-materials/intake", {
       method: "POST",
-      headers: userHeaders(currentUser),
+      headers: { ...userHeaders(currentUser), "Idempotency-Key": requestKey },
       body: JSON.stringify(payload),
     }),
     onSuccess: (saved) => {
-      setIntakeOpen(false);
-      setSelectedInventoryId(String(saved.id));
       setNotice(`${saved.created_count || 1} inventory item${saved.created_count === 1 ? "" : "s"} added${saved.lot_number ? ` for lot ${saved.lot_number}` : ""}.`);
       queryClient.invalidateQueries({ queryKey: ["material-handling-data"] });
       queryClient.invalidateQueries({ queryKey: ["material-storage"] });
       queryClient.invalidateQueries({ queryKey: ["collection", "raw-materials"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "materials"] });
+      queryClient.invalidateQueries({ queryKey: ["collection", "material-master-types"] });
       queryClient.invalidateQueries({ queryKey: ["lookups"] });
     },
   });
@@ -1111,6 +716,12 @@ export default function MaterialHandlingView({
       {dataQuery.isLoading ? (
         <div className="material-handling-loading-slot">
           <MaterialLoadingScreen title="Loading Material Inventory" detail="Pulling active rolls, supplier names, skids, racks, and plant locations." />
+        </div>
+      ) : dataQuery.isError && !dataQuery.data ? (
+        <div className="material-pending-tag" role="alert">
+          <AlertTriangle size={18} />
+          <div><strong>Inventory could not be loaded.</strong><span>Reload the material catalog and storage locations before adding inventory.</span></div>
+          <button className="ghost-btn" type="button" onClick={() => dataQuery.refetch()} disabled={dataQuery.isFetching}>Try again</button>
         </div>
       ) : (
         <>
@@ -1198,14 +809,14 @@ export default function MaterialHandlingView({
           racks={data.racks}
           locations={data.locations}
           saving={intakeMutation.isPending}
-          error={intakeMutation.error}
           onClose={() => {
             if (!intakeMutation.isPending) {
+              if (intakeMutation.data?.id) setSelectedInventoryId(String(intakeMutation.data.id));
               setIntakeOpen(false);
               intakeMutation.reset();
             }
           }}
-          onSave={(payload) => intakeMutation.mutate(payload)}
+          onSave={(payload, requestKey) => intakeMutation.mutateAsync({ payload, requestKey })}
         />
       )}
     </section>
