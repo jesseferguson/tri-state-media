@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initialIntake, intakeChoices, intakePayload, intakeRequestKey, needsWidth, resetMaterial, validateIntakeStep } from "./intakeWorkflow.js";
+import { initialIntake, intakeChoices, intakeFromRollTag, intakePayload, intakeRequestKey, needsWidth, resetMaterial, validateIntakeStep } from "./intakeWorkflow.js";
 
 const data = {
   materials: [{ id: 1, material_type: "coated_stock", is_active: true }, { id: 2, material_type: "adhesive", is_active: true }, { id: 3, material_type: "liner", is_active: false }],
@@ -109,4 +109,38 @@ test("request keys are distinct valid UUIDs", () => {
   const first = intakeRequestKey();
   assert.match(first, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
   assert.notEqual(first, intakeRequestKey());
+});
+
+test("scanned production tag pre-fills identity and measurements, but needs storage confirmation", () => {
+  const form = intakeFromRollTag({ kind: "pending_tag", material: { id: 1 }, roll_tag: { id: 52, tag_number: "CRT-000052", width_inches: "13.500", length_feet: "6000.25", result_lot_number: "LOT-52", run_date: "2026-09-20" } });
+  assert.equal(form.source_roll_tag, 52);
+  assert.equal(form.category, "finished");
+  assert.equal(form.material, "1");
+  assert.equal(form.inventory_origin, "tri_state");
+  assert.equal(form.received_date, "2026-09-20");
+  assert.equal(form.roll_count, "1");
+  assert.equal(form.unit, "lf");
+  assert.deepEqual(validateIntakeStep(3, form, data), {});
+  assert.ok(validateIntakeStep(4, form, data).location);
+});
+
+test("missing scanned width and footage still require validation", () => {
+  const form = intakeFromRollTag({ kind: "pending_tag", material: { id: 1 }, roll_tag: { id: 52 } });
+  assert.ok(validateIntakeStep(3, form, data).width_inches);
+  assert.ok(validateIntakeStep(3, form, data).amount);
+  assert.throws(() => intakeFromRollTag({ kind: "inventory", inventory: { id: 1 } }));
+  assert.throws(() => intakeFromRollTag({ kind: "pending_tag", roll_tag: { id: 1 } }));
+});
+
+test("tagged receipt payload cannot duplicate its material or create a batch", () => {
+  const form = { ...validForm(), source_roll_tag: 52, storageMode: "rack", direct_rack: "1", lot_number: "LOT-52", notes: " Keep upright " };
+  const payload = intakePayload(form);
+  assert.deepEqual(Object.keys(payload).sort(), ["source_roll_tag", "width_inches", "length_feet", "lot_number", "received_date", "location", "direct_rack", "notes"].sort());
+  assert.equal(payload.source_roll_tag, 52);
+  assert.equal(payload.length_feet, "5000.25");
+  assert.equal(payload.location, null);
+  assert.equal(payload.direct_rack, "1");
+  assert.equal(payload.notes, "Keep upright");
+  assert.equal(intakePayload({ ...form, lot_number: " " }).lot_number, undefined);
+  assert.equal(resetMaterial(form, {}).source_roll_tag, "");
 });

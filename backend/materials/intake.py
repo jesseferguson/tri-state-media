@@ -189,6 +189,8 @@ class ProducedRollIntakeSerializer(RawMaterialInventorySerializer):
         rack = attrs.get("direct_rack")
         if location and rack:
             raise serializers.ValidationError({"location": "Choose a floor location or a rack, not both."})
+        if self.context.get("require_destination") and not location and not rack:
+            raise serializers.ValidationError({"location": "Choose where this roll will be stored."})
         if location and not location.is_active:
             raise serializers.ValidationError({"location": "Choose an active location."})
         if rack and rack.location_id and not rack.location.is_active:
@@ -231,7 +233,7 @@ def finalize_produced_roll(attrs, *, user=None):
     for field in ["length_feet", "width_inches", "notes", "operator", "suboperator", "operator_notes", "weight_lbs"]:
         if field in attrs:
             setattr(tag, field, attrs[field])
-    if "lot_number" in attrs:
+    if attrs.get("lot_number"):
         tag.result_lot_number = attrs["lot_number"]
     tag.run_date = attrs.get("received_date", tag.run_date) or timezone.localdate()
     rack = attrs.get("direct_rack")
@@ -291,7 +293,7 @@ def receive_material_inventory(data, *, user, idempotency_key=None):
 
         already_in_inventory = False
         if isinstance(data, dict) and "source_roll_tag" in data:
-            serializer = ProducedRollIntakeSerializer(data=data)
+            serializer = ProducedRollIntakeSerializer(data=data, context={"require_destination": True})
             serializer.is_valid(raise_exception=True)
             inventory, is_new = finalize_produced_roll(serializer.validated_data, user=user)
             created = [inventory] if is_new else []

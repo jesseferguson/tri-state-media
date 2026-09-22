@@ -20,7 +20,7 @@ export function initialIntake(now = new Date()) {
   // Receiving dates follow the operator's local calendar, including late evenings.
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   return {
-    category: "", definitionMode: "existing", material_type: "", material: "",
+    category: "", definitionMode: "existing", material_type: "", material: "", source_roll_tag: "",
     master_type: "", master_type_code: "", name: "", company: "", liner_material: "", adhesive_material: "",
     supplier: "", inventory_origin: "", received_date: date, lot_number: "", width_inches: "",
     amount: "", roll_count: "1", unit: "lf", storageMode: "floor", location: "", direct_rack: "", notes: "",
@@ -45,7 +45,7 @@ export function intakeChoices(data, form) {
 
 export function resetMaterial(form, changes) {
   return {
-    ...form, material: "", master_type: "", master_type_code: "", name: "", company: "",
+    ...form, material: "", source_roll_tag: "", master_type: "", master_type_code: "", name: "", company: "",
     liner_material: "", adhesive_material: "", supplier: "", width_inches: "", amount: "", roll_count: "1",
     ...changes,
   };
@@ -114,7 +114,7 @@ export function intakePayload(form) {
     return {
       source_roll_tag: form.source_roll_tag,
       width_inches: form.width_inches || null, length_feet: form.amount,
-      lot_number: form.lot_number.trim(), received_date: form.received_date,
+      ...(form.lot_number.trim() ? { lot_number: form.lot_number.trim() } : {}), received_date: form.received_date,
       location: form.storageMode === "floor" ? form.location : null,
       direct_rack: form.storageMode === "rack" ? form.direct_rack : null,
       notes: form.notes.trim(),

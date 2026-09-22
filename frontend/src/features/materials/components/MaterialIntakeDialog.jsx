@@ -353,7 +353,7 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
               </Field>
               {!scannedTag && <Field name="roll_count" label={`Number of ${physicalLabel}s`} errors={errors} hint="One inventory record is created for each item."><input {...inputProps("roll_count", true)} type="number" min="1" max="500" step="1" inputMode="numeric" /></Field>}
               {needsWidth(form) && <Field name="width_inches" label="Roll width (inches)" errors={errors}><input {...inputProps("width_inches")} type="number" min="0.001" step="0.001" inputMode="decimal" placeholder="Example: 13.5" /></Field>}
-              <Field name="lot_number" label="Lot number (optional)" errors={errors}><input {...inputProps("lot_number")} maxLength={80} placeholder="Supplier or internal lot" /></Field>
+              <Field name="lot_number" label="Lot number (optional)" errors={errors} hint={scannedTag ? "Leave blank to keep the tag’s lot number." : undefined}><input {...inputProps("lot_number", Boolean(scannedTag))} maxLength={80} placeholder={scannedTag?.result_lot_number || "Supplier or internal lot"} /></Field>
             </div>
             <div className="intake-total" aria-live="polite"><span>Total to add</span><strong>{formatAmount(total)} {amountUnit}</strong><small>{form.roll_count || 0} {physicalLabel}{Number(form.roll_count) === 1 ? "" : "s"} × {formatAmount(form.amount)} {amountUnit} each</small></div>
             {!scannedTag && <p className="intake-callout">All items in this entry share the same amount, width, lot, and destination. Add a separate entry when any of these differ.</p>}
@@ -380,9 +380,9 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
               form.definitionMode === "new" && form.category === "finished" && ["Family", form.master_type === "__new__" ? `${form.master_type_code} (new)` : selectedMaster?.code],
             ]} />
             <ReviewCard title="Source" onEdit={scannedTag ? undefined : () => navigate(2)} rows={[["Source", ORIGINS.find(([value]) => value === form.inventory_origin)?.[1]], !scannedTag && ["Supplier", selectedSupplier?.name], ["Received", form.received_date]]} />
-            <ReviewCard title="Quantity" onEdit={() => navigate(3)} rows={[["Each item", `${formatAmount(form.amount)} ${amountUnit}`], ["Physical items", form.roll_count], needsWidth(form) && ["Width", `${form.width_inches} in`], ["Lot", form.lot_number || "Not provided — can be added later"]]} />
+            <ReviewCard title="Quantity" onEdit={() => navigate(3)} rows={[["Each item", `${formatAmount(form.amount)} ${amountUnit}`], ["Physical items", form.roll_count], needsWidth(form) && ["Width", `${form.width_inches} in`], ["Lot", form.lot_number.trim() || scannedTag?.result_lot_number || "Not provided — can be added later"]]} />
             <ReviewCard title="Storage" onEdit={() => navigate(4)} rows={[["Destination", destination], form.notes.trim() && ["Notes", form.notes]]} />
-            {!form.lot_number.trim() && <p className="intake-callout is-warning">No lot number entered. You can add it later from the inventory item.</p>}
+            {!form.lot_number.trim() && !scannedTag && <p className="intake-callout is-warning">No lot number entered. You can add it later from the inventory item.</p>}
             {scannedTag && <p className="intake-callout">Receiving completes this production tag and records its assigned component usage. The roll stays linked to its original tag.</p>}
             {saveError && <div className="intake-error" id="intake-save-error" role="alert" tabIndex={-1}><strong>Unable to confirm the save</strong><p>{saveError}</p><p>Your entries are still here. You can retry this entry. If you change its details after a connection failure, check inventory first.</p></div>}
           </>}
