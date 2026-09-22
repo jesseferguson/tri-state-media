@@ -4,9 +4,9 @@ import { formatInches, getRecordTitle, labelize } from "../../../lib/format";
 import { AuthenticatedImage, PdfPreview, isPdfUrl } from "../../../shared/components/FilePreview";
 import RecipeOptionsView from "../../tooling/components/RecipeOptionsView";
 import ScheduleMaterialWorkflow from "./ScheduleMaterialWorkflow";
+import { buildLineupPositions, buildPressScopes, createLineupItems, filterLineupItems, groupLineupItems } from "../utils/scheduleLineup";
+import "./ProductionScheduleView.css";
 
-const productLineupStatuses = new Set(["unscheduled", "scheduled", "ready", "running", "on_hold"]);
-const materialLineupStatuses = new Set(["scheduled", "running", "on_hold"]);
 const schedulePriorityOptions = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
@@ -84,10 +84,6 @@ function schedulePartNumber(row) {
   return row.job_name || row.job_product_code || row.job_ticket_number || getRecordTitle(row);
 }
 
-function orderQuantity(row) {
-  return numeric(row.quantity_to_ship) + numeric(row.quantity_to_stock);
-}
-
 function formatQty(value) {
   const number = numeric(value);
   return number.toLocaleString(undefined, {
@@ -141,50 +137,6 @@ function formatShortDateTime(value) {
   return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function daysOnSchedule(row) {
-  const value = row.order_date || row.scheduled_date || row.created_at;
-  const date = parseLocalDate(value);
-  if (!date) return "--";
-  return Math.max(0, Math.floor((todayStart() - date) / 86_400_000));
-}
-
-function isBusinessDay(date) {
-  const day = date.getDay();
-  return day !== 0 && day !== 6;
-}
-
-function businessDaysBetween(start, end = todayStart()) {
-  if (!start || start >= end) return 0;
-  let days = 0;
-  const cursor = new Date(start);
-  cursor.setHours(0, 0, 0, 0);
-  while (cursor < end) {
-    if (isBusinessDay(cursor)) days += 1;
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return days;
-}
-
-function itemScheduleAgeStart(item) {
-  const row = item.row;
-  const value = item.kind === "material"
-    ? row.run_date || row.created_at
-    : row.scheduled_date || row.created_at || row.order_date;
-  return parseLocalDate(value);
-}
-
-function itemBusinessDaysOnSchedule(item) {
-  return businessDaysBetween(itemScheduleAgeStart(item));
-}
-
-function heldAtDate(item) {
-  return parseLocalDate(item?.row?.held_at || item?.row?.updated_at || item?.row?.created_at);
-}
-
-function itemBusinessDaysHeld(item) {
-  return businessDaysBetween(heldAtDate(item));
-}
-
 function normalizeSchedulePriority(value) {
   const key = String(value || "low").toLowerCase();
   if (schedulePriorityAliases[key]) return schedulePriorityAliases[key];
@@ -193,54 +145,6 @@ function normalizeSchedulePriority(value) {
 
 function schedulePriorityLabel(value) {
   return schedulePriorityLabels[normalizeSchedulePriority(value)] || "Low";
-}
-
-function scheduleAgeGlow(days, priorityValue = "low") {
-  const priority = normalizeSchedulePriority(priorityValue);
-  const classNames = [`schedule-priority-${priority}`];
-  if (days < 7 && priority !== "high") {
-    return {
-      className: classNames.join(" "),
-      style: undefined,
-      title: `${schedulePriorityLabel(priority)} priority`,
-    };
-  }
-  const intensity = Math.max(0, Math.min(1, (days - 7) / 13));
-  const hueRange = {
-    low: [48, 34],
-    medium: [36, 8],
-    high: [0, 0],
-  }[priority];
-  const visualIntensity = priority === "high" ? Math.max(0.7, intensity) : intensity;
-  const boost = priority === "high" ? 0.04 : priority === "medium" ? 0.02 : 0;
-  classNames.push("schedule-age-glow", priority === "high" || (priority !== "low" && days >= 20) ? "critical" : "warning");
-  return {
-    className: classNames.join(" "),
-    style: {
-      "--schedule-age-hue": Math.round(hueRange[0] - visualIntensity * (hueRange[0] - hueRange[1])),
-      "--schedule-age-lightness": `${Math.round(57 - visualIntensity * 5)}%`,
-      "--schedule-age-bg-alpha": (0.05 + visualIntensity * 0.07 + boost).toFixed(2),
-      "--schedule-age-ring-alpha": (0.14 + visualIntensity * 0.1 + boost).toFixed(2),
-      "--schedule-age-glow-alpha": (0.16 + visualIntensity * 0.14 + boost).toFixed(2),
-      "--schedule-age-pulse-alpha": (0.2 + visualIntensity * 0.16 + boost).toFixed(2),
-    },
-    title: `${schedulePriorityLabel(priority)} priority / ${days} business days on schedule`,
-  };
-}
-
-function scheduleStatusAgeCue(days) {
-  if (days < 7) return { className: "", style: undefined, title: "" };
-  const intensity = Math.max(0, Math.min(1, (days - 7) / 13));
-  return {
-    className: `schedule-status-age-cue ${days >= 20 ? "critical" : "warning"}`,
-    style: {
-      "--schedule-status-age-hue": Math.round(34 - intensity * 34),
-      "--schedule-status-age-lightness": `${Math.round(55 - intensity * 7)}%`,
-      "--schedule-status-age-bg-alpha": (0.15 + intensity * 0.14).toFixed(2),
-      "--schedule-status-age-ring-alpha": (0.2 + intensity * 0.2).toFixed(2),
-    },
-    title: `${days} business days on schedule`,
-  };
 }
 
 function normalizeHoldReasons(value) {
@@ -410,56 +314,6 @@ function inventoryLocationSummary(rows) {
     .join(" / ");
 }
 
-function sortScheduleRows(rows) {
-  return [...rows].sort((a, b) => {
-    const aSequence = a.press_sequence ? numeric(a.press_sequence) : Number.MAX_SAFE_INTEGER;
-    const bSequence = b.press_sequence ? numeric(b.press_sequence) : Number.MAX_SAFE_INTEGER;
-    const sequence = aSequence - bSequence;
-    if (sequence) return sequence;
-    return String(a.due_date || a.order_date || "").localeCompare(String(b.due_date || b.order_date || ""));
-  });
-}
-
-function moveToLineup(row, pressId, onUpdate, currentUser) {
-  const nextPress = pressId ? Number(pressId) : null;
-  onUpdate(row.id, {
-    press: nextPress,
-    status: nextPress ? "scheduled" : "unscheduled",
-    last_updated_by: currentUser?.name || "",
-  });
-}
-
-function buildLineupGroups(rows, presses) {
-  const knownPressIds = new Set(presses.map((press) => String(press.id)));
-  const groups = [
-    {
-      key: "unassigned",
-      label: "Unassigned",
-      rows: sortScheduleRows(rows.filter((row) => !row.press)),
-    },
-    ...presses.map((press) => ({
-      key: `press-${press.id}`,
-      label: press.name,
-      rows: sortScheduleRows(rows.filter((row) => String(row.press ?? "") === String(press.id))),
-    })),
-  ];
-
-  const extraPressRows = rows.filter((row) => row.press && !knownPressIds.has(String(row.press)));
-  const extraGroups = new Map();
-  extraPressRows.forEach((row) => {
-    const key = `press-extra-${row.press}`;
-    if (!extraGroups.has(key)) {
-      extraGroups.set(key, { key, label: row.press_name || "Other Press", rows: [] });
-    }
-    extraGroups.get(key).rows.push(row);
-  });
-
-  return [
-    ...groups,
-    ...Array.from(extraGroups.values()).map((group) => ({ ...group, rows: sortScheduleRows(group.rows) })),
-  ];
-}
-
 function schedulePressPreferenceKey(user) {
   return `tsm-main-schedule-press:${user?.id || user?.username || user?.name || "guest"}`;
 }
@@ -468,7 +322,7 @@ function readSchedulePressPreference(user) {
   if (typeof window === "undefined") return "all";
   try {
     const stored = window.localStorage.getItem(schedulePressPreferenceKey(user)) || "all";
-    return stored === "held" ? "all" : stored;
+    return stored === "held" ? "all" : stored.replace(/^press-extra-/, "press-");
   } catch {
     return "all";
   }
@@ -489,19 +343,7 @@ function comparePressNames(a, b) {
 
 function activePressList(presses = []) {
   const active = presses.filter((press) => press?.is_active !== false);
-  return [...(active.length ? active : presses)].sort(comparePressNames);
-}
-
-function isActiveProductSchedule(row) {
-  return productLineupStatuses.has(String(row?.status || "scheduled"));
-}
-
-function isCoaterSchedule(row) {
-  return Boolean(row?.is_schedule) || (!row?.source_schedule && row?.log_inventory === false);
-}
-
-function isActiveMaterialSchedule(row) {
-  return isCoaterSchedule(row) && materialLineupStatuses.has(String(row?.status || "scheduled"));
+  return [...active].sort(comparePressNames);
 }
 
 function coaterScheduleTitle(row) {
@@ -530,23 +372,6 @@ function coaterProgress(row, rolls = []) {
   };
 }
 
-function itemPressId(item) {
-  const value = item?.row?.press;
-  return value === null || value === undefined || value === "" ? "" : String(value);
-}
-
-function itemDate(item) {
-  const row = item.row;
-  return item.kind === "material"
-    ? row.run_date || String(row.created_at || "").slice(0, 10)
-    : row.scheduled_date || row.order_date || row.due_date || String(row.created_at || "").slice(0, 10);
-}
-
-function itemSequence(item) {
-  const sequence = numeric(item?.row?.press_sequence);
-  return sequence > 0 ? sequence : Number.MAX_SAFE_INTEGER;
-}
-
 function itemTitle(item) {
   return item.kind === "material" ? coaterScheduleTitle(item.row) : schedulePartNumber(item.row);
 }
@@ -568,121 +393,6 @@ function itemSpecLine(item) {
   }
   if (isHeldScheduleItem(item)) return holdReasonSummary(row);
   return productMaterialCode(row) || "Material not assigned";
-}
-
-function normalizeProductItem(row) {
-  return {
-    key: `product-${row.id}`,
-    kind: "product",
-    row,
-    pressId: itemPressId({ row }),
-    title: schedulePartNumber(row),
-  };
-}
-
-function normalizeMaterialItem(row) {
-  return {
-    key: `material-${row.id}`,
-    kind: "material",
-    row,
-    pressId: itemPressId({ row }),
-    title: coaterScheduleTitle(row),
-  };
-}
-
-function compareLineupItems(a, b) {
-  const press = String(a.row.press_name || "").localeCompare(String(b.row.press_name || ""), undefined, { numeric: true });
-  if (press) return press;
-  const sequence = itemSequence(a) - itemSequence(b);
-  if (sequence) return sequence;
-  const date = String(itemDate(a) || "").localeCompare(String(itemDate(b) || ""));
-  if (date) return date;
-  if (a.kind !== b.kind) return a.kind === "material" ? -1 : 1;
-  return itemTitle(a).localeCompare(itemTitle(b), undefined, { numeric: true });
-}
-
-function tabMatchesItem(tab, item) {
-  const held = isHeldScheduleItem(item);
-  if (tab.key === "held") return held;
-  if (held) return false;
-  if (tab.key === "all") return true;
-  if (tab.key === "unassigned") return !itemPressId(item);
-  return sameId(itemPressId(item), tab.pressId);
-}
-
-function itemMatchesSearch(item, query) {
-  if (!query) return true;
-  const row = item.row;
-  return [
-    item.kind,
-    itemTitle(item),
-    itemSpecLine(item),
-    dynamicFileLabel(row),
-    dynamicRangeLabel(row),
-    item.kind === "product" ? schedulePriorityLabel(row.priority) : "",
-    row.hold_notes,
-    row.held_by,
-    row.dynamic_file_notes,
-    row.dynamic_start_number,
-    row.dynamic_end_number,
-    row.tag_number,
-    row.cut_description,
-    row.job_ticket_number,
-    row.customer_name,
-    row.customer_po,
-    row.job_name,
-    row.job_product_code,
-    row.status,
-    row.priority,
-    row.operator,
-    row.scheduled_by,
-    row.last_updated_by,
-    row.notes,
-    row.operator_notes,
-  ].some((value) => String(value || "").toLowerCase().includes(query));
-}
-
-function buildPressTabs(productItems, materialItems, presses) {
-  const items = [...productItems, ...materialItems];
-  const heldItems = items.filter(isHeldScheduleItem);
-  const pressRows = activePressList(presses);
-  const knownPressIds = new Set(pressRows.map((press) => String(press.id)));
-  const tabs = [
-    { key: "all", label: "All Work" },
-    { key: "held", label: "Held" },
-    { key: "unassigned", label: "Unassigned" },
-    ...pressRows.map((press) => ({ key: `press-${press.id}`, label: press.name, pressId: String(press.id) })),
-  ];
-  items.forEach((item) => {
-    if (isHeldScheduleItem(item)) return;
-    const pressId = itemPressId(item);
-    if (!pressId || knownPressIds.has(pressId) || tabs.some((tab) => sameId(tab.pressId, pressId))) return;
-    tabs.push({ key: `press-extra-${pressId}`, label: item.row.press_name || "Other Press", pressId });
-  });
-  return tabs.map((tab) => {
-    const tabItems = items.filter((item) => tabMatchesItem(tab, item));
-    return {
-      ...tab,
-      count: tabItems.length,
-      alertCount: tab.key === "held" ? heldItems.filter((item) => itemBusinessDaysHeld(item) >= 20).length : 0,
-      productCount: tabItems.filter((item) => item.kind === "product").length,
-      materialCount: tabItems.filter((item) => item.kind === "material").length,
-    };
-  });
-}
-
-function ScheduleMetric({ label, value, detail, tone = "" }) {
-  return (
-    <article className={`schedule-metric ${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {detail && <em>{detail}</em>}
-    </article>
-  );
-}
-
-function updateOnBlur(event, value, onSave) {
-  if (String(event.target.value ?? "") !== String(value ?? "")) onSave(event.target.value);
 }
 
 function ScheduleThumb({ row }) {
@@ -751,16 +461,6 @@ function ScheduleNoteBlock({ label, value, emptyText }) {
       <span>{label}</span>
       <p>{value || emptyText}</p>
     </article>
-  );
-}
-
-function ScheduleFact({ label, value }) {
-  return (
-    <span className="schedule-qty-line">
-      <em>{label}</em>
-      <i aria-hidden="true" />
-      <strong>{value || "--"}</strong>
-    </span>
   );
 }
 
@@ -1142,205 +842,111 @@ function ScheduleLineupBack({ item }) {
 }
 
 function ScheduleLineupRow({
-  item,
-  index,
-  selectedProduct,
-  selectedMaterial,
-  presses,
-  canMoveUp,
-  canMoveDown,
-  moving,
-  currentUser,
-  onSelect,
-  onEdit,
-  onUpdate,
-  onMaterialUpdate,
-  onRemove,
-  onHold,
-  onUseMaterial,
-  onOpenMaterialRun,
-  onMove,
+  item, position, selectedProduct, selectedMaterial, presses, canMoveUp, canMoveDown,
+  moving, reorderCount, currentUser, onSelect, onEdit, onUpdate, onMaterialUpdate,
+  onRemove, onHold, onUseMaterial, onOpenMaterialRun, onMove, onPositionChange,
 }) {
-  const [cardView, setCardView] = useState("overview");
+  const [showNotes, setShowNotes] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [nextPosition, setNextPosition] = useState(String(position || ""));
   const row = item.row;
   const isMaterial = item.kind === "material";
-  const isHeld = isHeldScheduleItem(item);
+  const isHeld = row.status === "on_hold";
   const active = isMaterial ? sameId(selectedMaterial?.id, row.id) : sameId(selectedProduct?.id, row.id);
   const canUpdate = isMaterial ? Boolean(onMaterialUpdate) : Boolean(onUpdate);
+  const disabled = saving || moving;
   const pressChoices = activePressList(presses);
-  const hasCurrentPress = !row.press || pressChoices.some((press) => sameId(press.id, row.press));
-  const selectChoices = hasCurrentPress
-    ? pressChoices
-    : [{ id: row.press, name: row.press_name || `Press ${row.press}` }, ...pressChoices];
-  const orderValue = row.press_sequence || index + 1;
+  const selectChoices = !row.press || pressChoices.some((press) => sameId(press.id, row.press))
+    ? pressChoices : [{ id: row.press, name: row.press_name || `Press ${row.press}` }, ...pressChoices];
   const priority = normalizeSchedulePriority(row.priority);
-  const businessDaysOnSchedule = itemBusinessDaysOnSchedule(item);
-  const ageGlow = scheduleAgeGlow(businessDaysOnSchedule, priority);
-  const statusAgeCue = scheduleStatusAgeCue(businessDaysOnSchedule);
   const dynamicSchedule = !isMaterial && isDynamicSchedule(row);
 
-  function saveItem(payload) {
-    if (isMaterial) return onMaterialUpdate?.(row.id, payload);
-    return onUpdate?.(row.id, {
-      ...payload,
-      last_updated_by: currentUser?.name || currentUser?.username || "",
-    });
+  useEffect(() => { setNextPosition(String(position || "")); }, [position]);
+
+  async function saveItem(payload) {
+    if (!canUpdate || disabled) return;
+    setSaving(true);
+    setError("");
+    try {
+      if (isMaterial) await onMaterialUpdate(row.id, payload);
+      else await onUpdate(row.id, { ...payload, last_updated_by: currentUser?.name || currentUser?.username || "" });
+    } catch (err) {
+      setError(err.message || "This change could not be saved. Try again.");
+    } finally { setSaving(false); }
   }
 
   function handlePressChange(value) {
     const nextPress = value ? Number(value) : null;
-    if (isMaterial) {
-      return saveItem({
-        press: nextPress,
-        press_sequence: nextPress ? row.press_sequence ?? null : null,
-      });
+    // Unnumbered assignments follow numbered work on the destination press.
+    const payload = { press: nextPress, press_sequence: null };
+    if (!isMaterial && !isHeld && row.status !== "running") {
+      payload.status = nextPress ? (row.status === "unscheduled" || !row.status ? "scheduled" : row.status) : "unscheduled";
     }
-    return saveItem({
-      press: nextPress,
-      press_sequence: nextPress ? row.press_sequence ?? null : null,
-      status: nextPress ? (row.status === "unscheduled" || !row.status ? "scheduled" : row.status) : "unscheduled",
-    });
+    return saveItem(payload);
   }
 
+  const date = isMaterial ? row.run_date : row.due_date;
   return (
-    <article
-      className={`schedule-lineup-row ${isMaterial ? "material" : "product"} ${active ? "active" : ""} ${ageGlow.className}`}
-      style={ageGlow.style}
-      title={ageGlow.title || undefined}
-    >
-      <div className="schedule-card-view-tabs" role="tablist" aria-label={`${itemTitle(item)} card view`}>
-        <button className={cardView === "overview" ? "active" : ""} type="button" role="tab" aria-selected={cardView === "overview"} onClick={() => setCardView("overview")}>
-          <ClipboardList size={12} />
-          Overview
-        </button>
-        <button className={cardView === "notes" ? "active" : ""} type="button" role="tab" aria-selected={cardView === "notes"} onClick={() => setCardView("notes")}>
-          <History size={12} />
-          Notes
-        </button>
-      </div>
-
-      {cardView === "overview" && (
-        <>
+    <article className={`schedule-lineup-row schedule-job-card ${isMaterial ? "material" : "product"} ${active ? "active" : ""}`} role="listitem" aria-label={itemTitle(item)} aria-busy={disabled}>
       <div className="schedule-lineup-position">
-        <strong>{orderValue}</strong>
-        <div className="schedule-move-buttons">
-          <button type="button" title="Move up" aria-label={`Move ${itemTitle(item)} up`} disabled={!canMoveUp || moving} onClick={() => onMove(item, "up")}>
-            <ArrowUp size={14} />
-          </button>
-          <button type="button" title="Move down" aria-label={`Move ${itemTitle(item)} down`} disabled={!canMoveDown || moving} onClick={() => onMove(item, "down")}>
-            <ArrowDown size={14} />
-          </button>
-        </div>
+        <strong title={row.press ? "Position in this press's full lineup" : "No press assigned"}>{row.press ? position : "-"}</strong>
+        {reorderCount > 1 && <div className="schedule-move-buttons">
+          <button type="button" title="Move up" aria-label={`Move ${itemTitle(item)} up`} disabled={!canMoveUp || disabled} onClick={() => onMove(item, "up")}><ArrowUp size={16} /></button>
+          <button type="button" title="Move down" aria-label={`Move ${itemTitle(item)} down`} disabled={!canMoveDown || disabled} onClick={() => onMove(item, "down")}><ArrowDown size={16} /></button>
+        </div>}
       </div>
-
-      <button className="schedule-lineup-main" type="button" onClick={() => onSelect(item)}>
+      <button className="schedule-lineup-main" type="button" onClick={() => onSelect(item)} aria-label={`View details for ${itemTitle(item)}`}>
         {isMaterial ? <MaterialRunThumb row={row} /> : <ScheduleThumb row={row} />}
         <div className="schedule-lineup-title">
-          <span className={`schedule-kind-pill ${isMaterial ? "material" : "product"}`}>
-            {isMaterial ? <Layers3 size={14} /> : <ClipboardList size={14} />}
-            {isMaterial ? "Material Run" : "Job Ticket"}
-          </span>
-          <strong className={isMaterial ? undefined : "schedule-part-number"} title={itemTitle(item)}>{itemTitle(item)}</strong>
-          {dynamicSchedule && (
-            <span className={`schedule-dynamic-pill ${row.dynamic_file_created ? "ready" : "hold"}`} title={dynamicRangeLabel(row) || dynamicFileLabel(row)}>
-              <FileText size={13} />
-              {dynamicFileLabel(row)}
-            </span>
-          )}
+          <span className={`schedule-kind-pill ${isMaterial ? "material" : "product"}`}>{isMaterial ? <Layers3 size={14} /> : <ClipboardList size={14} />}{isMaterial ? "Material run" : "Job ticket"}</span>
+          <strong className={isMaterial ? undefined : "schedule-part-number"}>{itemTitle(item)}</strong>
+          <small>{isMaterial ? row.tag_number : [row.customer_name, row.job_ticket_number].filter(Boolean).join(" / ")}</small>
+          {dynamicSchedule && <span className={`schedule-dynamic-pill ${row.dynamic_file_created ? "ready" : "hold"}`} title={dynamicRangeLabel(row) || dynamicFileLabel(row)}><FileText size={13} />{dynamicFileLabel(row)}</span>}
         </div>
       </button>
-
-      <div className="schedule-lineup-spec" title={itemSpecLine(item)}>
-        <span>{itemSpecLabel(item)}</span>
-        <strong>{itemSpecLine(item)}</strong>
+      <div className="schedule-lineup-spec">
+        <span>{itemSpecLabel(item)}</span><strong>{itemSpecLine(item)}{isMaterial && coaterProgress(row).target ? " ft" : ""}</strong>
+        {!isMaterial && priority !== "low" && <small>{schedulePriorityLabel(row.priority)} priority</small>}
       </div>
-
       <div className="schedule-lineup-meta">
-        <span
-          className={`schedule-status-pill ${row.status || "scheduled"} ${statusAgeCue.className}`}
-          style={statusAgeCue.style}
-          title={statusAgeCue.title || undefined}
-        >
-          {labelize(row.status || "scheduled")}
-        </span>
-        <strong>{formatShortDate(itemDate(item))}</strong>
-        <em>{row.press_name || "Unassigned"}</em>
+        <span className={`schedule-status-pill ${row.status || "scheduled"}`}>{labelize(row.status || "scheduled")}</span>
+        <strong>{isMaterial ? "Run" : "Due"}: {date ? formatShortDate(date) : "Not set"}</strong>
+        <em>Press: {row.press_name || (row.press ? `Press ${row.press}` : "Unassigned")}</em>
       </div>
-
-      <div className={`schedule-lineup-editors ${isMaterial ? "material-editors" : "product-editors"}`}>
-        {!isMaterial && (
-          <select
-            className={`schedule-priority-select ${priority}`}
-            aria-label="Priority"
-            value={priority}
-            disabled={!canUpdate}
-            onChange={(event) => saveItem({ priority: event.target.value })}
-          >
-            {schedulePriorityOptions.map((option) => (
-              <option value={option.value} key={option.value}>{option.label}</option>
-            ))}
-          </select>
-        )}
-        <select aria-label="Press lineup" value={row.press || ""} disabled={!canUpdate} onChange={(event) => handlePressChange(event.target.value)}>
-          <option value="">Unassigned</option>
-          {selectChoices.map((press) => <option value={press.id} key={press.id}>{press.name}</option>)}
-        </select>
-        <input
-          type="number"
-          min="1"
-          placeholder="#"
-          defaultValue={row.press_sequence ?? ""}
-          disabled={!canUpdate}
-          onBlur={(event) => updateOnBlur(event, row.press_sequence, (value) => saveItem({ press_sequence: value ? Number(value) : null }))}
-        />
+      <div className="schedule-job-footer">
+        <button className="ghost-btn xs" type="button" onClick={() => onSelect(item)}>Details</button>
+        <button className="ghost-btn xs" type="button" aria-expanded={showNotes} aria-controls={`schedule-notes-${item.key}`} onClick={() => setShowNotes((value) => !value)}><History size={14} />{showNotes ? "Hide notes" : "Notes"}</button>
+        {saving && <span role="status">Saving...</span>}
       </div>
-        </>
-      )}
-
-      {cardView === "notes" && <ScheduleLineupBack item={item} />}
-
-      <div className="schedule-lineup-actions">
-        {!isMaterial && (
-          <>
-            <button className="ghost-btn xs" type="button" onClick={() => onSelect(item)}>Details</button>
-            <button className="ghost-btn xs" type="button" onClick={() => onEdit?.(row)}>Edit</button>
-            {isHeld ? (
-              <button className="primary-btn xs" type="button" onClick={() => saveItem({ status: row.press ? "scheduled" : "unscheduled" })}>
-                <RotateCcw size={13} /> Resume
-              </button>
-            ) : (
-              <button className="ghost-btn xs" type="button" onClick={() => onHold?.(row)}>
-                <PauseCircle size={13} /> Hold
-              </button>
-            )}
-            {onUseMaterial && (
-              <button className="ghost-btn xs" type="button" onClick={() => onUseMaterial(row)}>
-                <ScanLine size={13} /> Scan Roll
-              </button>
-            )}
-            {onRemove && (
-              <button className="danger-btn xs" type="button" onClick={() => onRemove(row)}>
-                <Trash2 size={12} /> Remove
-              </button>
-            )}
-          </>
-        )}
-        {isMaterial && onOpenMaterialRun && (
-          <button className="primary-btn xs" type="button" onClick={() => onOpenMaterialRun(row)}>
-            <Play size={13} /> Run
-          </button>
-        )}
-        {isMaterial && (
-          <button className="ghost-btn xs" type="button" onClick={() => onSelect(item)}>
-            Details
-          </button>
-        )}
-        {isMaterial && canUpdate && (
-          <button className="danger-btn xs" type="button" onClick={() => saveItem({ status: "void" })}>
-            <Trash2 size={12} /> Remove
-          </button>
-        )}
-      </div>
+      {showNotes && <div className="schedule-job-note-content" id={`schedule-notes-${item.key}`}><ScheduleLineupBack item={item} /></div>}
+      {(canUpdate || onEdit || onOpenMaterialRun || onUseMaterial) && <details className="schedule-job-manage">
+        <summary>{isMaterial ? "Manage run" : "Manage job"}</summary>
+        <div className="schedule-lineup-editors">
+          {!isMaterial && <label><span>Priority</span><select aria-label={`Priority for ${itemTitle(item)}`} value={priority} disabled={!canUpdate || disabled} onChange={(event) => saveItem({ priority: event.target.value })}>{schedulePriorityOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>}
+          <label><span>Assign to press</span><select aria-label={`Assign ${itemTitle(item)} to press`} value={row.press || ""} disabled={!canUpdate || disabled} onChange={(event) => handlePressChange(event.target.value)}>
+            <option value="">Unassigned</option>{selectChoices.map((press) => <option value={press.id} key={press.id}>{press.name}</option>)}
+          </select></label>
+          {reorderCount > 1 && <form className="schedule-position-form" onSubmit={(event) => { event.preventDefault(); onPositionChange(item, Number(nextPosition) - 1); }}>
+            <label><span>Lineup position</span><input aria-label={`Lineup position for ${itemTitle(item)}`} type="number" min="1" max={reorderCount} step="1" required value={nextPosition} disabled={disabled} onChange={(event) => setNextPosition(event.target.value)} /></label>
+            <button className="ghost-btn xs" disabled={disabled || Number(nextPosition) === position} type="submit">Move</button>
+          </form>}
+        </div>
+        <div className="schedule-lineup-actions">
+          {!isMaterial && <>
+            {onEdit && <button className="ghost-btn xs" type="button" disabled={disabled} onClick={() => onEdit(row)}>Edit job</button>}
+            {canUpdate && (isHeld
+              ? <button className="primary-btn xs" type="button" disabled={disabled || (dynamicSchedule && !row.dynamic_file_created)} onClick={() => saveItem({ status: row.press ? "scheduled" : "unscheduled" })}><RotateCcw size={13} />Resume</button>
+              : <button className="ghost-btn xs" type="button" disabled={disabled} onClick={() => onHold?.(row)}><PauseCircle size={13} />Hold</button>)}
+            {onUseMaterial && <button className="ghost-btn xs" type="button" disabled={disabled} onClick={() => onUseMaterial(row)}><ScanLine size={13} />Scan roll</button>}
+            {onRemove && <button className="danger-btn xs" type="button" disabled={disabled} onClick={() => onRemove(row)}><Trash2 size={13} />Remove</button>}
+          </>}
+          {isMaterial && onOpenMaterialRun && <button className="primary-btn xs" type="button" disabled={disabled} onClick={() => onOpenMaterialRun(row)}><Play size={13} />Open run</button>}
+          {isMaterial && canUpdate && <button className="danger-btn xs" type="button" disabled={disabled} onClick={() => saveItem({ status: "void" })}><Trash2 size={13} />Remove</button>}
+        </div>
+        {isHeld && dynamicSchedule && !row.dynamic_file_created && <p className="muted">Create the dynamic print files in Edit job before resuming.</p>}
+      </details>}
+      {error && <p className="schedule-job-error" role="alert">{error}</p>}
     </article>
   );
 }
@@ -1433,264 +1039,136 @@ function MaterialRunDetailOverlay({ row, relatedRolls = [], onClose, onOpenMater
   );
 }
 
-export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, lookups = {}, focusScheduleId = "", onFocusHandled, onSelect, onClose, onEdit, onUpdate, onMaterialUpdate, onOpenMaterialRun, onRemove, onUseMaterial, onFlexDieReorder, onFlexDieCountUpdate }) {
+export default function ProductionScheduleView({ rows, selected, presses = [], currentUser, lookups = {}, loading = false, loadError, refreshing = false, onReload, onReorder, focusScheduleId = "", onFocusHandled, onSelect, onClose, onEdit, onUpdate, onMaterialUpdate, onOpenMaterialRun, onRemove, onUseMaterial, onFlexDieReorder, onFlexDieCountUpdate }) {
   const [removeRow, setRemoveRow] = useState(null);
   const [holdRow, setHoldRow] = useState(null);
-  const [selectedMaterialRun, setSelectedMaterialRun] = useState(null);
-  const [activeTabKey, setActiveTabKey] = useState(() => readSchedulePressPreference(currentUser));
+  const [selectedMaterialId, setSelectedMaterialId] = useState(null);
+  const [activeScopeKey, setActiveScopeKey] = useState(() => readSchedulePressPreference(currentUser));
   const [lineupType, setLineupType] = useState("all");
+  const [lineupStatus, setLineupStatus] = useState("all");
   const [lineupSearch, setLineupSearch] = useState("");
   const [movingItemKey, setMovingItemKey] = useState("");
-  const productItems = useMemo(
-    () => (rows ?? []).filter(isActiveProductSchedule).map(normalizeProductItem),
-    [rows]
-  );
-  const materialRows = useMemo(
-    () => (lookups?.["coater-roll-tags"] ?? []).filter(isActiveMaterialSchedule),
-    [lookups]
-  );
-  const materialItems = useMemo(
-    () => materialRows.map(normalizeMaterialItem),
-    [materialRows]
-  );
-  const lineupItems = useMemo(
-    () => [...productItems, ...materialItems].sort(compareLineupItems),
-    [materialItems, productItems]
-  );
-  const tabs = useMemo(() => buildPressTabs(productItems, materialItems, presses), [materialItems, presses, productItems]);
-  const selectedTab = tabs.find((tab) => tab.key === activeTabKey) ?? tabs[0] ?? { key: "all", label: "All Work" };
-  const searchQuery = lineupSearch.trim().toLowerCase();
-  const visibleItems = useMemo(() => lineupItems
-    .filter((item) => tabMatchesItem(selectedTab, item))
-    .filter((item) => selectedTab.key === "held" || lineupType === "all" || item.kind === lineupType)
-    .filter((item) => itemMatchesSearch(item, searchQuery))
-    .sort(compareLineupItems),
-  [lineupItems, lineupType, searchQuery, selectedTab]);
-  const reorderableItems = useMemo(() => {
-    if (!selectedTab.pressId || lineupType !== "all" || searchQuery) return [];
-    return lineupItems
-      .filter((item) => sameId(itemPressId(item), selectedTab.pressId))
-      .sort(compareLineupItems);
-  }, [lineupItems, lineupType, searchQuery, selectedTab]);
-  const reorderIndexByKey = useMemo(
-    () => new Map(reorderableItems.map((item, index) => [item.key, index])),
-    [reorderableItems]
-  );
-  const selectedTabItems = useMemo(() => lineupItems.filter((item) => tabMatchesItem(selectedTab, item)), [lineupItems, selectedTab]);
-  const scheduleSummary = useMemo(() => {
-    const productCount = selectedTabItems.filter((item) => item.kind === "product").length;
-    const materialCount = selectedTabItems.filter((item) => item.kind === "material").length;
-    const runningCount = selectedTabItems.filter((item) => item.row.status === "running").length;
-    const priorityCount = selectedTabItems.filter((item) => item.kind === "product" && ["medium", "high"].includes(normalizeSchedulePriority(item.row.priority))).length;
-    const lateCount = selectedTabItems.filter((item) => item.kind === "product" && daysUntil(item.row.due_date) < 0).length;
-    const materialFeet = selectedTabItems
-      .filter((item) => item.kind === "material")
-      .reduce((sum, item) => sum + coaterProgress(item.row).target, 0);
-    return { productCount, materialCount, runningCount, priorityCount, lateCount, materialFeet };
-  }, [selectedTabItems]);
-  const selectedMaterialRolls = useMemo(() => {
-    if (!selectedMaterialRun) return [];
-    return (lookups?.["coater-roll-tags"] ?? [])
-      .filter((tag) => sameId(tag.source_schedule, selectedMaterialRun.id) && tag.status !== "void")
-      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-  }, [lookups, selectedMaterialRun]);
+  const [saveError, setSaveError] = useState("");
+  const lineupItems = useMemo(() => createLineupItems(rows ?? [], lookups["coater-roll-tags"] ?? []), [rows, lookups]);
+  const scopes = useMemo(() => buildPressScopes(lineupItems, presses), [lineupItems, presses]);
+  const scope = scopes.find((candidate) => candidate.key === activeScopeKey) || scopes[0];
+  const scopedItems = useMemo(() => filterLineupItems(lineupItems, { scope }), [lineupItems, scope]);
+  const visibleItems = useMemo(() => filterLineupItems(lineupItems, { scope, status: lineupStatus, workType: lineupType, query: lineupSearch }), [lineupItems, scope, lineupStatus, lineupType, lineupSearch]);
+  const hasFilters = lineupType !== "all" || lineupStatus !== "all" || Boolean(lineupSearch.trim());
+  const reorderableItems = scope.pressId && !hasFilters && onReorder && !loading && !loadError ? scopedItems : [];
+  const positions = useMemo(() => buildLineupPositions(lineupItems), [lineupItems]);
+  const groups = useMemo(() => scope.key === "all" ? groupLineupItems(visibleItems, scopes) : [{ ...scope, items: visibleItems }], [scope, scopes, visibleItems]);
+  const lateCount = scopedItems.filter((item) => item.kind === "product" && item.row.due_date && daysUntil(item.row.due_date) < 0).length;
+  const selectedMaterialRun = (lookups["coater-roll-tags"] ?? []).find((row) => sameId(row.id, selectedMaterialId)) || null;
+  const selectedMaterialRolls = useMemo(() => (lookups["coater-roll-tags"] ?? []).filter((tag) => selectedMaterialId && sameId(tag.source_schedule, selectedMaterialId) && tag.status !== "void"), [lookups, selectedMaterialId]);
+  const selectedProduct = (rows ?? []).find((row) => sameId(row.id, selected?.id)) || selected;
 
+  useEffect(() => { setActiveScopeKey(readSchedulePressPreference(currentUser)); }, [currentUser?.id, currentUser?.username, currentUser?.name]);
   useEffect(() => {
-    setActiveTabKey(readSchedulePressPreference(currentUser));
-  }, [currentUser?.id, currentUser?.username, currentUser?.name]);
-
-  useEffect(() => {
-    if (tabs.some((tab) => tab.key === activeTabKey)) return;
-    setActiveTabKey("all");
+    if (loading || loadError || scopes.some((candidate) => candidate.key === activeScopeKey)) return;
+    setActiveScopeKey("all");
     saveSchedulePressPreference(currentUser, "all");
-  }, [activeTabKey, currentUser, tabs]);
-
+  }, [activeScopeKey, currentUser, scopes, loading, loadError]);
   useEffect(() => {
-    if (!focusScheduleId) return;
-    const item = productItems.find((candidate) => sameId(candidate.row.id, focusScheduleId));
+    if (!focusScheduleId || loading) return;
+    const item = lineupItems.find((candidate) => candidate.kind === "product" && sameId(candidate.row.id, focusScheduleId));
     if (!item) return;
-    const tabKey = isHeldScheduleItem(item) ? "held" : item.pressId ? `press-${item.pressId}` : "unassigned";
-    const nextTabKey = tabs.some((tab) => tab.key === tabKey) ? tabKey : "all";
-    setActiveTabKey(nextTabKey);
-    if (nextTabKey !== "held") saveSchedulePressPreference(currentUser, nextTabKey);
-    setLineupType(tabKey === "held" ? "product" : "all");
-    setLineupSearch("");
-    setSelectedMaterialRun(null);
+    const key = item.pressId ? `press-${item.pressId}` : "unassigned";
+    setActiveScopeKey(key);
+    saveSchedulePressPreference(currentUser, key);
+    setLineupType("all"); setLineupStatus("all"); setLineupSearch("");
+    setSelectedMaterialId(null);
     onSelect?.(item.row);
     onFocusHandled?.();
-  }, [currentUser, focusScheduleId, onFocusHandled, onSelect, productItems, tabs]);
+  }, [currentUser, focusScheduleId, lineupItems, loading, onFocusHandled, onSelect]);
 
-  function selectTab(key) {
-    setActiveTabKey(key);
-    if (key !== "held") saveSchedulePressPreference(currentUser, key);
-    setLineupType(key === "held" ? "product" : "all");
-    setSelectedMaterialRun(null);
-    onClose?.();
+  function clearFilters() { setLineupType("all"); setLineupStatus("all"); setLineupSearch(""); }
+  function selectScope(key) {
+    setActiveScopeKey(key); saveSchedulePressPreference(currentUser, key);
+    clearFilters(); setSaveError(""); setSelectedMaterialId(null); onClose?.();
   }
-
   function selectLineupItem(item) {
-    if (item.kind === "material") {
-      setSelectedMaterialRun(item.row);
-      onClose?.();
-      return;
-    }
-    setSelectedMaterialRun(null);
-    onSelect?.(item.row);
+    if (item.kind === "material") { setSelectedMaterialId(item.row.id); onClose?.(); }
+    else { setSelectedMaterialId(null); onSelect?.(item.row); }
   }
-
-  async function saveSequence(item, sequence) {
-    if (item.kind === "material") return onMaterialUpdate?.(item.row.id, { press_sequence: sequence });
-    return onUpdate?.(item.row.id, {
-      press_sequence: sequence,
-      last_updated_by: currentUser?.name || currentUser?.username || "",
-    });
-  }
-
   async function moveProductToHeld(row, payload) {
-    await onUpdate?.(row.id, {
-      ...payload,
-      last_updated_by: currentUser?.name || currentUser?.username || "",
-    });
-    setSelectedMaterialRun(null);
-    if (selected?.id && sameId(selected.id, row.id)) onClose?.();
+    await onUpdate?.(row.id, { ...payload, last_updated_by: currentUser?.name || currentUser?.username || "" });
   }
-
-  async function moveLineupItem(item, direction) {
+  async function moveLineupItemToPosition(item, targetIndex) {
+    if (movingItemKey || !onReorder) return;
     const index = reorderableItems.findIndex((candidate) => candidate.key === item.key);
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (index < 0 || targetIndex < 0 || targetIndex >= reorderableItems.length) return;
+    if (index < 0 || !Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= reorderableItems.length || targetIndex === index) return;
     const reordered = [...reorderableItems];
-    const [picked] = reordered.splice(index, 1);
-    reordered.splice(targetIndex, 0, picked);
-    setMovingItemKey(item.key);
+    reordered.splice(targetIndex, 0, ...reordered.splice(index, 1));
+    const reference = (entry) => ({ kind: entry.kind, id: entry.row.id });
+    setMovingItemKey(item.key); setSaveError("");
     try {
-      const saves = reordered
-        .map((entry, entryIndex) => ({ entry, nextSequence: entryIndex + 1 }))
-        .filter(({ entry, nextSequence }) => numeric(entry.row.press_sequence) !== nextSequence)
-        .map(({ entry, nextSequence }) => saveSequence(entry, nextSequence))
-        .filter(Boolean);
-      await Promise.all(saves);
-    } finally {
-      setMovingItemKey("");
-    }
+      await onReorder({ press: Number(scope.pressId), items: reordered.map(reference), expected_items: reorderableItems.map((entry) => ({ ...reference(entry), press_sequence: entry.row.press_sequence ?? null })) });
+    } catch (err) {
+      setSaveError(err.message || "The lineup could not be saved. Refresh and try again.");
+    } finally { setMovingItemKey(""); }
+  }
+  function moveLineupItem(item, direction) {
+    const index = reorderableItems.findIndex((candidate) => candidate.key === item.key);
+    return moveLineupItemToPosition(item, index + (direction === "up" ? -1 : 1));
+  }
+  function scopeStatus(candidate) {
+    if (candidate.key === "all") return "Every active job and material run";
+    if (candidate.key === "unassigned") return "Work waiting for a press";
+    if (candidate.runningCount) return `${candidate.runningCount} running${candidate.heldCount ? ` / ${candidate.heldCount} on hold` : ""}`;
+    if (candidate.heldCount) return `${candidate.heldCount} on hold / none running`;
+    return candidate.count ? "Queued / none marked running" : "No active work";
   }
 
   return (
-    <section className="schedule-board schedule-workspace">
-      <section className="schedule-command-bar">
-        <div>
-          <p className="eyebrow">Main Scheduling</p>
-          <h2>{selectedTab.label}</h2>
-          <span>
-            {selectedTab.count} {selectedTab.key === "held" ? "held job" : "active scheduled item"}{selectedTab.count === 1 ? "" : "s"} in this lineup
-          </span>
-        </div>
-        <div className="schedule-command-actions">
-          <label className="schedule-lineup-search">
-            <Search size={15} />
-            <input value={lineupSearch} onChange={(event) => setLineupSearch(event.target.value)} placeholder="Search ticket, customer, material, PO, press..." />
-            {lineupSearch && (
-              <button type="button" onClick={() => setLineupSearch("")} title="Clear search" aria-label="Clear schedule search">
-                <X size={14} />
-              </button>
-            )}
-          </label>
-          <div className="schedule-type-tabs" role="tablist" aria-label="Scheduled work type">
-            <button className={lineupType === "all" ? "active" : ""} type="button" role="tab" aria-selected={lineupType === "all"} onClick={() => setLineupType("all")}>All</button>
-            <button className={lineupType === "product" ? "active product" : "product"} type="button" role="tab" aria-selected={lineupType === "product"} onClick={() => setLineupType("product")}>Tickets</button>
-            <button className={lineupType === "material" ? "active material" : "material"} type="button" role="tab" aria-selected={lineupType === "material"} onClick={() => setLineupType("material")}>Material</button>
+    <section className="schedule-board schedule-workspace schedule-press-workspace">
+      <header className="schedule-workspace-heading">
+        <div><p className="eyebrow">Production schedule</p><h2>Press lineups</h2><p>Choose a press to see its jobs in order.</p></div>
+        <div className="schedule-workspace-key"><span><ClipboardList size={15} />Job tickets</span><span><Layers3 size={15} />Material runs</span></div>
+      </header>
+      <div className="schedule-workspace-layout">
+        <nav className="schedule-press-navigation" aria-label="Press lineups">
+          <div className="schedule-nav-heading"><h3>View a press</h3><p>Counts include work on hold.</p></div>
+          <label className="schedule-mobile-press-picker"><span>View a press</span><select value={scope.key} disabled={loading || Boolean(movingItemKey)} onChange={(event) => selectScope(event.target.value)}>
+            {scopes.map((candidate) => <option key={candidate.key} value={candidate.key}>{candidate.label} ({candidate.count}){candidate.isInactive ? " / Inactive" : ""}</option>)}
+          </select></label>
+          <div className="schedule-press-menu">
+            {scopes.map((candidate) => <button className={`schedule-press-option ${candidate.key === scope.key ? "is-selected" : ""}`} type="button" key={candidate.key} aria-pressed={candidate.key === scope.key} disabled={loading || Boolean(movingItemKey)} onClick={() => selectScope(candidate.key)}>
+              <span className="schedule-press-option-heading"><span>{candidate.label}</span><strong>{candidate.count}</strong></span>
+              <span className="schedule-press-option-status"><i className={candidate.runningCount ? "is-running" : candidate.heldCount ? "is-held" : ""} aria-hidden="true" />{scopeStatus(candidate)}</span>
+              {candidate.pressId && <small className="schedule-press-option-detail">{candidate.isInactive ? "Inactive press / assigned work" : candidate.isOrphan ? "Assigned press / details unavailable" : `${candidate.productCount} tickets / ${candidate.materialCount} material runs`}</small>}
+            </button>)}
           </div>
-        </div>
-      </section>
-
-      <nav className="schedule-press-tabs" aria-label="Press schedule tabs">
-        {tabs.map((tab) => (
-          <button className={tab.key === selectedTab.key ? "active" : ""} type="button" key={tab.key} onClick={() => selectTab(tab.key)}>
-            <span>{tab.label}</span>
-            <strong>{tab.count}</strong>
-            {tab.alertCount > 0 && <em className="schedule-tab-alert">{tab.alertCount}</em>}
-          </button>
-        ))}
-      </nav>
-
-      <section className="schedule-metric-row">
-        <ScheduleMetric label="Job Tickets" value={scheduleSummary.productCount} detail={`${scheduleSummary.priorityCount} medium / high`} tone="product" />
-        <ScheduleMetric label="Material Runs" value={scheduleSummary.materialCount} detail={`${formatNumber(scheduleSummary.materialFeet, " ft")} target`} tone="material" />
-        <ScheduleMetric label="Running Now" value={scheduleSummary.runningCount} detail="Active press work" tone="running" />
-        <ScheduleMetric label="Late Ship Dates" value={scheduleSummary.lateCount} detail="Needs attention" tone={scheduleSummary.lateCount ? "late" : "ok"} />
-      </section>
-
-      <section className="schedule-lineup-panel">
-        <header className="schedule-lineup-head">
-          <div>
-            <span><CalendarDays size={14} /> Lineup</span>
-            <strong>{visibleItems.length} shown</strong>
+        </nav>
+        <div className="schedule-lineup-content" aria-busy={loading || Boolean(movingItemKey)}>
+          <header className="schedule-scope-heading"><div><span>{scope.key === "all" ? "Shop overview" : scope.key === "unassigned" ? "Needs a press" : "Selected press"}</span><h3>{scope.label}</h3><p>{scope.key === "all" ? "Active work grouped by press. Select a press to manage its order." : scope.key === "unassigned" ? "Open Manage job or Manage run to assign this work to a press." : "Only work assigned to this press appears here, including jobs on hold."}</p></div><span className="schedule-scope-count">{loading ? "..." : scope.count} active</span></header>
+          <div className="schedule-activity-summary"><span><Play size={14} /><strong>{scope.runningCount}</strong> running</span><span><PauseCircle size={14} /><strong>{scope.heldCount}</strong> on hold</span><span><CalendarDays size={14} /><strong>{lateCount}</strong> past due</span></div>
+          <div className="schedule-lineup-controls">
+            <label className="schedule-lineup-search"><Search size={17} /><input aria-label="Search this lineup" value={lineupSearch} disabled={Boolean(movingItemKey)} onChange={(event) => setLineupSearch(event.target.value)} placeholder="Search ticket, customer, material..." />{lineupSearch && <button type="button" disabled={Boolean(movingItemKey)} onClick={() => setLineupSearch("")} aria-label="Clear schedule search"><X size={16} /></button>}</label>
+            <label className="schedule-work-type"><span>Work type</span><select value={lineupType} disabled={Boolean(movingItemKey)} onChange={(event) => setLineupType(event.target.value)}><option value="all">All work</option><option value="product">Job tickets</option><option value="material">Material runs</option></select></label>
           </div>
-          <em>{reorderableItems.length ? "Order saves to the selected press lineup." : "Choose a press tab with all work visible to reorder."}</em>
-        </header>
-
-        <div className="schedule-lineup-table" role="list">
-          {visibleItems.map((item, index) => {
-            const reorderIndex = reorderIndexByKey.get(item.key);
-            return (
-              <ScheduleLineupRow
-                item={item}
-                index={index}
-                selectedProduct={selected}
-                selectedMaterial={selectedMaterialRun}
-                presses={presses}
-                canMoveUp={reorderIndex !== undefined && reorderIndex > 0}
-                canMoveDown={reorderIndex !== undefined && reorderIndex < reorderableItems.length - 1}
-                moving={movingItemKey === item.key}
-                currentUser={currentUser}
-                key={item.key}
-                onSelect={selectLineupItem}
-                onEdit={onEdit}
-                onUpdate={onUpdate}
-                onMaterialUpdate={onMaterialUpdate}
-                onRemove={setRemoveRow}
-                onHold={setHoldRow}
-                onUseMaterial={onUseMaterial}
-                onOpenMaterialRun={onOpenMaterialRun}
-                onMove={moveLineupItem}
-              />
-            );
-          })}
-          {!visibleItems.length && (
-            <div className="schedule-lineup-empty">
-              <Factory size={28} />
-              <strong>{selectedTab.key === "held" ? "No held jobs here." : "No scheduled work here."}</strong>
-              <span>{selectedTab.key === "held" ? "Clear the search to see held jobs." : "Switch presses or clear the search to see the rest of the lineup."}</span>
+          <div className="schedule-status-filters" role="group" aria-label="Filter by status">
+            {[{ value: "all", label: "All active", count: scope.count }, { value: "running", label: "Running", count: scope.runningCount }, { value: "on_hold", label: "On hold", count: scope.heldCount }].map((status) => <button type="button" key={status.value} className={lineupStatus === status.value ? "is-selected" : ""} aria-pressed={lineupStatus === status.value} disabled={Boolean(movingItemKey)} onClick={() => setLineupStatus(status.value)}>{status.label}<span>{status.count}</span></button>)}
+          </div>
+          <div className="schedule-filter-summary"><p role="status">{loading ? "Loading press lineups..." : movingItemKey ? "Saving lineup order..." : `Showing ${visibleItems.length} of ${scope.count} active items${refreshing ? " / Updating..." : ""}`}</p>{hasFilters && <button className="ghost-btn xs" type="button" disabled={Boolean(movingItemKey)} onClick={clearFilters}>Clear filters</button>}</div>
+          {scope.pressId && <p className="schedule-reorder-hint">{hasFilters ? "Clear filters to change lineup order. Numbers show positions in the full lineup." : "Use the arrows to change lineup order. Open Manage for assignment and job actions."}</p>}
+          {(loadError || saveError) && <div className="schedule-save-error" role="alert"><p>{loadError ? "The complete schedule could not be loaded. Refresh before changing the lineup." : saveError}</p>{onReload && <button className="ghost-btn xs" type="button" disabled={refreshing} onClick={() => onReload()}>Refresh lineup</button>}</div>}
+          {!loading && groups.map((group) => group.items.length > 0 && <section className="schedule-press-group" key={group.key} aria-label={`${group.label} jobs`}>
+            {scope.key === "all" && <header className="schedule-press-group-heading"><h4>{group.label}</h4><span>{group.items.length} {group.items.length === 1 ? "item" : "items"}</span><button className="ghost-btn xs" type="button" onClick={() => selectScope(group.key)}>{group.pressId ? "View press" : "View unassigned"}</button></header>}
+            <div className="schedule-lineup-table" role="list" aria-label={`${group.label} lineup`}>
+              {group.items.map((item) => {
+                const index = reorderableItems.findIndex((candidate) => candidate.key === item.key);
+                return <ScheduleLineupRow key={item.key} item={item} position={positions.get(item.key)} selectedProduct={selectedProduct} selectedMaterial={selectedMaterialRun} presses={presses} canMoveUp={index > 0} canMoveDown={index >= 0 && index < reorderableItems.length - 1} reorderCount={reorderableItems.length} moving={Boolean(movingItemKey) || Boolean(loadError)} currentUser={currentUser} onSelect={selectLineupItem} onEdit={onEdit} onUpdate={onUpdate} onMaterialUpdate={onMaterialUpdate} onRemove={onRemove ? setRemoveRow : undefined} onHold={setHoldRow} onUseMaterial={onUseMaterial} onOpenMaterialRun={onOpenMaterialRun} onMove={moveLineupItem} onPositionChange={moveLineupItemToPosition} />;
+              })}
             </div>
-          )}
+          </section>)}
+          {!loading && !loadError && !visibleItems.length && <div className="schedule-lineup-empty"><Factory size={28} /><strong>{hasFilters ? "No work matches these filters." : scope.key === "unassigned" ? "No work waiting for a press." : scope.key === "all" ? "No active work scheduled." : `No active work assigned to ${scope.label}.`}</strong><span>{hasFilters ? "Clear the filters to see the full lineup." : "Completed and removed work is not shown in active lineups."}</span></div>}
         </div>
-      </section>
-
-      <ScheduleDetailOverlay
-        row={selected}
-        lookups={lookups}
-        currentUser={currentUser}
-        onClose={onClose}
-        onFlexDieReorder={onFlexDieReorder}
-        onFlexDieCountUpdate={onFlexDieCountUpdate}
-      />
-      <MaterialRunDetailOverlay
-        row={selectedMaterialRun}
-        relatedRolls={selectedMaterialRolls}
-        onClose={() => setSelectedMaterialRun(null)}
-        onOpenMaterialRun={onOpenMaterialRun}
-      />
-      <RemoveScheduleDialog
-        row={removeRow}
-        onClose={() => setRemoveRow(null)}
-        onConfirm={onRemove}
-      />
-      <HoldScheduleDialog
-        row={holdRow}
-        currentUser={currentUser}
-        onClose={() => setHoldRow(null)}
-        onConfirm={moveProductToHeld}
-      />
+      </div>
+      <ScheduleDetailOverlay row={selectedProduct} lookups={lookups} currentUser={currentUser} onClose={onClose} onFlexDieReorder={onFlexDieReorder} onFlexDieCountUpdate={onFlexDieCountUpdate} />
+      <MaterialRunDetailOverlay row={selectedMaterialRun} relatedRolls={selectedMaterialRolls} onClose={() => setSelectedMaterialId(null)} onOpenMaterialRun={onOpenMaterialRun} />
+      {removeRow && <RemoveScheduleDialog key={removeRow.id} row={removeRow} onClose={() => setRemoveRow(null)} onConfirm={onRemove} />}
+      {holdRow && <HoldScheduleDialog key={holdRow.id} row={holdRow} currentUser={currentUser} onClose={() => setHoldRow(null)} onConfirm={moveProductToHeld} />}
     </section>
   );
 }

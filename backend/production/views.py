@@ -82,9 +82,10 @@ from .serializers import (
     QuoteRawMaterialSerializer,
     QuoteRecordSerializer,
 )
-from users.auth import company_user_from_request, request_user_has_resource_access, request_user_is_admin, resource_access_denied_response
+from users.auth import HasCompanyResourceAccess, company_user_from_request, request_user_has_resource_access, request_user_is_admin, resource_access_denied_response
 from .file_responses import private_file_response
 from .upload_security import validate_upload
+from .schedule_lineup import ReorderLineupSerializer, reorder_press_lineup, verified_lineup_user
 
 
 logger = logging.getLogger(__name__)
@@ -2728,6 +2729,15 @@ class ProductionScheduleViewSet(BaseProductionViewSet):
         "press_sequence",
         "operator",
     ]
+
+    @action(detail=False, methods=["post"], url_path="reorder-lineup", permission_classes=[HasCompanyResourceAccess])
+    def reorder_lineup(self, request):
+        user = verified_lineup_user(request)
+        if not user:
+            return Response({"detail": "Sign in as an active user to arrange a press lineup."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = ReorderLineupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(reorder_press_lineup(serializer.validated_data, user=user))
 
     def perform_create(self, serializer):
         ticket = serializer.validated_data.get("job_ticket")

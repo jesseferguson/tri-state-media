@@ -170,7 +170,11 @@ async function loadScopedLookups({ resource, selected, isMaterialTypePage, formM
           fetchAll: spec.fetchAll,
         })
           .then((payload) => [spec.key, payload.results])
-          .catch(() => [spec.key, []])
+          .catch((error) => {
+            // Missing lineup data must not look like an empty press or allow a partial reorder.
+            if (resource.key === "production-schedule" && ["presses", "coater-roll-tags"].includes(spec.key)) throw error;
+            return [spec.key, []];
+          })
       )
     ),
   ]);

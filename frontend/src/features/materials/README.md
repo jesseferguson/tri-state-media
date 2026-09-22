@@ -3,6 +3,20 @@
 The operator entry point is **Material → Add Material** in `MaterialHandlingView`.
 Catalog setup's **Add Material** still creates a material specification; it does not receive physical stock.
 
+## Scanning in Add Material
+
+The material workspace has one **Add Material** button. Its first screen offers **Scan a roll** alongside manual material categories. Selecting **Made by Tri-State** during manual entry also offers a scan shortcut, and returning from it restores the manual draft.
+
+Scan with the camera, upload a label photo, or type/paste the exact printed roll ID or QR URL. Camera and photo decoding use the installed ZXing reader. Camera tracks are stopped after a result, on Back/Close, and when a late permission request resolves after leaving the scanner. Camera access may need HTTPS; photo and text entry remain available.
+
+`POST /raw-materials/intake-scan/` is a read-only lookup. It distinguishes a tag ID from an inventory ID and accepts exact serial/tag text; it never guesses from shared lots, material names, or partial digits. URL origins must be in `FRONTEND_PUBLIC_URL` or `CORS_ALLOWED_ORIGINS`; relative roll links also work. Unrecognized supplier labels use manual entry.
+
+- **Already received:** show the existing roll, its remaining amount/status/location, and **Open inventory**. Scanning never duplicates stock, restores consumed quantity, or silently moves a roll.
+- **Pending Tri-State roll:** skip category, material, and source. The shortened flow is Scan → Quantity → Storage → Review. Require actual footage and roll width, receive exactly one roll, and explicitly choose storage. Tag material and source stay fixed. An empty lot input preserves the tag's existing lot.
+- **Unusable tag:** show a specific error for an invalid, ambiguous, wrong-purpose, void/held, or incomplete tag; do not convert it to manual stock automatically.
+
+Pending receipts send `source_roll_tag` to `/raw-materials/intake/`. The backend completes that original production tag and creates its linked inventory and component usage atomically. The same idempotency receipt mechanism protects network retries. A row lock also protects different users/keys and existing production-documentation entry points; an already received tag returns its existing inventory with `created_count: 0`. Receiving a tag with assigned non-foot component stock is blocked for production review until chemical consumption rules are defined.
+
 ## Flow and business rules
 
 1. Choose finished raw material or a raw component; neither is preselected.
@@ -18,9 +32,11 @@ Every item in one entry has the same amount, width, lot, and destination. Split 
 
 - `components/MaterialIntakeDialog.jsx`: step navigation, draft state, save lifecycle, confirmation, and accessible native modal.
 - `components/IntakeSearchPicker.jsx`: keyboard/touch selection; free text never substitutes for a selected record ID.
+- `components/IntakeRollScanner.jsx`: camera/photo/text input and camera lifecycle.
 - `intakeWorkflow.js`: validation, defaults, dependent-field resets, choices, and payload shaping.
 - `components/MaterialIntakeDialog.css`: scoped responsive layout, subtle transitions, and reduced-motion support.
 - `backend/materials/intake.py`: server validation, atomic receipt, and retry protection.
+- `backend/materials/intake_scan.py`: exact read-only scan identification.
 
 Submitting locks navigation and closes; failed requests retain the entry. An unchanged retry in the open dialog reuses its `Idempotency-Key`. The server scopes receipts to the authenticated user and returns the original result for an identical request. Changed payloads receive a new key; reopening or refreshing the page starts a new entry. Check inventory before recreating an entry after an interrupted save.
 

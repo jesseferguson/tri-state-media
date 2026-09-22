@@ -187,6 +187,9 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
 
   function requestClose() {
     if (submitLock.current || busy) return;
+    scanSequence.current += 1;
+    lookupLock.current = false;
+    setLookingUp(false);
     if (dirty && !result) setDiscard(true); else onClose();
   }
 
@@ -271,10 +274,10 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
           <h3 ref={questionRef} tabIndex={-1} className="intake-question">{result.already_in_inventory ? "Roll already received" : "Material added"}</h3>
           {result.already_in_inventory ? <p>This tag was already received. Its existing inventory was kept; no duplicate was added.</p> : <p><strong>{result.created_count || form.roll_count} {physicalLabel}{Number(result.created_count || form.roll_count) === 1 ? "" : "s"}</strong> · {formatAmount(result.total_received ?? total)} {amountUnit}</p>}
           <p>{materialName}</p><p><MapPin size={16} aria-hidden="true" /> {result.already_in_inventory ? result.current_location_display || result.location_full_path || "See inventory details" : destination}</p>
-          {result.serial_number && <p className="intake-hint">First inventory ID: {result.serial_number}</p>}
+          {result.serial_number && <p className="intake-hint">{scannedTag ? "Inventory ID" : "First inventory ID"}: {result.serial_number}</p>}
         </section> : scanOpen ? <section className="intake-step" key={foundInventory ? "found-roll" : "scan-roll"}>
           <h3 ref={questionRef} tabIndex={-1} className="intake-question">{foundInventory ? "Roll found" : "Scan a roll"}</h3>
-          <p className="intake-description">{foundInventory ? "This roll is already in inventory. Open it to see its details or update its location." : "Use the QR code on a Tri-State Media roll tag to find its saved details."}</p>
+          <p className="intake-description">{foundInventory ? "This roll is already in inventory. Open it to see its details or update its location." : "A Tri-State roll tag fills in the material, size, and lot. Scan it below or enter its printed ID."}</p>
           {foundInventory ? <>
             <div className="intake-callout"><CheckCircle2 size={20} /><span>Already received. Scanning this roll will not add more stock.</span></div>
             <ReviewCard title={foundInventory.serial_number || scanMatch.roll_tag?.tag_number || "Inventory roll"} rows={[
@@ -348,7 +351,7 @@ export default function MaterialIntakeDialog({ materials = [], masterTypes = [],
             {scannedTag && <div className="intake-callout"><ScanLine size={21} /><span><strong>{scannedTag.tag_number}</strong><br />{materialName}<br /><small>Made by Tri-State Media · One tag, one roll</small></span></div>}
             <div className="intake-fields">
               {!scannedTag && <Field name="unit" label="How is the amount measured?" errors={errors} wide><select {...inputProps("unit")} onChange={(event) => change({ unit: event.target.value, amount: "" })}>{UNITS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>}
-              <Field name="amount" label={form.unit === "lf" ? "Length per roll (ft)" : `Amount per ${physicalLabel} (${amountUnit})`} errors={errors} hint={`For one ${physicalLabel}, before multiplying by the count.`}>
+              <Field name="amount" label={form.unit === "lf" ? "Length per roll (ft)" : `Amount per ${physicalLabel} (${amountUnit})`} errors={errors} hint={scannedTag ? "Confirm the actual measured footage for this roll." : `For one ${physicalLabel}, before multiplying by the count.`}>
                 <input {...inputProps("amount", true)} type="number" min={form.unit === "lf" ? "0.01" : "0.001"} step={form.unit === "lf" ? "0.01" : "0.001"} inputMode="decimal" placeholder={form.unit === "lf" ? "Example: 5000" : "Example: 55"} />
               </Field>
               {!scannedTag && <Field name="roll_count" label={`Number of ${physicalLabel}s`} errors={errors} hint="One inventory record is created for each item."><input {...inputProps("roll_count", true)} type="number" min="1" max="500" step="1" inputMode="numeric" /></Field>}

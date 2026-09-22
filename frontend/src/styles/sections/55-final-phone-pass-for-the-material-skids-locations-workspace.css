@@ -301,4 +301,13 @@
   .app-shell.material-workspace-shell .material-handling-view > .material-handling-toolbar {
     order: -10;
   }
+
+  .app-shell.material-workspace-shell .material-handling-view > .material-workspace-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell.material-workspace-shell .material-handling-view > .material-workspace-actions > button {
+    min-height: 44px;
+    font-size: .8rem;
+  }
 }

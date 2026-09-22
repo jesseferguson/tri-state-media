@@ -917,11 +917,18 @@ class CoaterRollTag(models.Model):
 
     @transaction.atomic
     def save(self, *args, **kwargs):
+        documented_elsewhere = False
         if self.pk:
             persisted = CoaterRollTag.objects.select_for_update(of=("self",)).filter(pk=self.pk).only("logged_inventory_id").first()
             if persisted and persisted.logged_inventory_id:
-                # A stale print/document/scan request must reuse the same physical roll.
-                self.logged_inventory_id = persisted.logged_inventory_id
+                documented_elsewhere = self.logged_inventory_id != persisted.logged_inventory_id
+                if documented_elsewhere:
+                    # Keep confirmed footage and component consumption when a stale
+                    # print/scan request finishes after another handler received the roll.
+                    requested_print_status = self.print_status
+                    self.refresh_from_db()
+                    if requested_print_status in {"queued", "printed", "reprint"}:
+                        self.print_status = requested_print_status
         needs_tag_number = not self.tag_number
         needs_lot_number = not self.result_lot_number
         needs_serial_number = not self.result_serial_number
@@ -931,6 +938,9 @@ class CoaterRollTag(models.Model):
             self.result_lot_number = f"LOT-{self.tag_number}"
 
         super().save(*args, **kwargs)
+
+        if documented_elsewhere:
+            return
 
         if needs_tag_number:
             prefix = "CRS" if not self.source_schedule_id and not self.log_inventory else "CRT"

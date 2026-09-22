@@ -202,7 +202,6 @@ export default function IntakeRollScanner({ onScan, scanning = false, error = ""
   const status = scanning || findingRoll ? "Finding the roll…" : readingPhoto ? "Reading the photo…" : camera?.phase === "starting" ? "Waiting for camera access…" : camera ? "Camera is on. Hold the complete QR code or barcode inside the frame." : "";
 
   return <div className="intake-scan">
-    <p className="intake-scan-description">A Tri-State QR label finds the material, size, and lot saved with that roll. For an unrecognized supplier label, enter the material manually.</p>
     <div className="intake-scan-methods">
       {camera ? <button className="intake-scan-button is-stop" type="button" onClick={() => cancelMedia()}><Square size={17} aria-hidden="true" /> Stop camera</button>
         : <button className="intake-scan-button is-camera" type="button" onClick={startCamera} disabled={busy}><Camera size={19} aria-hidden="true" /> Start camera</button>}

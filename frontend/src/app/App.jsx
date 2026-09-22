@@ -718,7 +718,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
   }, [jobTicketLoadingRequestKey, listQuery.isFetching, resource.key]);
 
   const lookupQuery = useQuery({
-    queryKey: ["lookups", resource.key, selected?.id ?? null, formMode ?? "view", jobTicketLookupMode],
+    queryKey: ["lookups", resource.key, resource.viewMode === "productionSchedule" ? null : selected?.id ?? null, resource.viewMode === "productionSchedule" ? "schedule" : formMode ?? "view", jobTicketLookupMode],
     queryFn: () => loadScopedLookups({
       resource,
       selected,
@@ -1680,20 +1680,42 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
 
   const scheduleUpdateMutation = useMutation({
     mutationFn: ({ id, payload }) => updateRecord("production-schedule", id, payload),
-    onSuccess: (saved) => {
-      queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] });
-      queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    onSuccess: async (saved) => {
       setSelected((current) => (current?.id && saved?.id && String(current.id) === String(saved.id) ? saved : current));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] }),
+        queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["lookups"] }),
+      ]);
     },
   });
 
   const coaterScheduleUpdateMutation = useMutation({
     mutationFn: ({ id, payload }) => updateRecord("coater-roll-tags", id, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] });
-      queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] });
-      queryClient.invalidateQueries({ queryKey: ["lookups"] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] }),
+        queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] }),
+        queryClient.invalidateQueries({ queryKey: ["lookups"] }),
+      ]);
+    },
+  });
+
+  const scheduleReorderMutation = useMutation({
+    mutationFn: (payload) => requestApi("production-schedule/reorder-lineup", {
+      method: "POST",
+      headers: companyUserHeaders(currentUserForView),
+      body: JSON.stringify(payload),
+    }),
+    onSettled: async () => {
+      // Keep editing locked until the full lineup has refreshed, including on conflicts.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["collection", "production-schedule"] }),
+        queryClient.invalidateQueries({ queryKey: ["collection", "coater-roll-tags"] }),
+        queryClient.invalidateQueries({ queryKey: ["collection", "customer-orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["coater-operator-data"] }),
+        queryClient.invalidateQueries({ queryKey: ["lookups"] }),
+      ]);
     },
   });
 
@@ -2448,7 +2470,7 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
 
             <section className={`content-grid ${["customers", "job-tickets", "production-schedule", "material-coated-stock", "suppliers", "presses", "flex-dies"].includes(resource.key) || isMaterialTypePage || isToolingConfigPage ? "wide-list" : ""}`}>
               <div className={`list-panel compact-card ${resource.viewMode === "customers" ? "customer-shell-panel" : ""}`}>
-                {resource.viewMode !== "customers" && <div className="panel-head thin">
+                {!["customers", "productionSchedule"].includes(resource.viewMode) && <div className="panel-head thin">
                   <div>
                     <p className="eyebrow">Records</p>
                     <h2>{listQuery.isLoading ? "Loading..." : `${visibleRows.length} shown`}</h2>
@@ -2497,11 +2519,16 @@ function SignedInApp({ currentUser, users = [], roleDefinitions, canManageUsers,
                   />
                 ) : resource.viewMode === "productionSchedule" ? (
                   <ProductionScheduleView
-                    rows={tableRows}
+                    rows={listQuery.isPlaceholderData ? [] : rows}
                     selected={selected}
                     presses={lookupQuery.data?.presses ?? []}
                     currentUser={currentUserForView}
                     lookups={lookupQuery.data ?? {}}
+                    loading={listQuery.isLoading || listQuery.isPlaceholderData || lookupQuery.isLoading}
+                    refreshing={listQuery.isFetching || lookupQuery.isFetching}
+                    loadError={listQuery.error || lookupQuery.error}
+                    onReload={() => Promise.all([listQuery.refetch(), lookupQuery.refetch()])}
+                    onReorder={(payload) => scheduleReorderMutation.mutateAsync(payload)}
                     focusScheduleId={scheduleFocusId}
                     onFocusHandled={() => setScheduleFocusId("")}
                     onSelect={(row) => { setSelected(row); setFormMode(null); }}

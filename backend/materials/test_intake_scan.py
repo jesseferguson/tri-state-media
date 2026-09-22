@@ -36,7 +36,7 @@ class ProducedRollFixtures:
             result_lot_number="PRINTED-LOT", width_inches=12, length_feet=100,
             run_date="2026-06-30", **components,
         )
-        self.location = ToolingLocation.objects.create(name="Receiving Floor", inventory_scope="raw_material")
+        self.location = ToolingLocation.objects.create(name="Receiving Floor", code="RECEIVING-FLOOR", inventory_scope="raw_material")
         self.rack = MaterialRack.objects.create(rack_code="RECEIVING-RACK", location=self.location)
         self.payload = {"source_roll_tag": self.tag.pk, "length_feet": "150.25", "width_inches": "13.125", "direct_rack": self.rack.pk}
 
@@ -121,6 +121,13 @@ class IntakeScanLookupTests(ProducedRollFixtures, TestCase):
         self.user.save()
         self.assertEqual(self.lookup(self.tag_url()).status_code, 403)
 
+    def test_lookup_reports_missing_active_material_before_receiving_steps(self):
+        self.material.is_active = False
+        self.material.save()
+        response = self.lookup(self.tag_url())
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["code"], "roll_material_required")
+
 
 class ProducedRollIntakeTests(ProducedRollFixtures, TestCase):
     def test_confirmed_tag_uses_actual_dimensions_original_identity_and_selected_rack(self):
@@ -201,6 +208,9 @@ class ProducedRollIntakeTests(ProducedRollFixtures, TestCase):
         component = RawMaterialInventory.objects.create(material=self.tag.adhesive, quantity=50, unit="gal")
         self.tag.adhesive_inventory = component
         self.tag.save()
+        lookup = self.lookup(self.tag_url())
+        self.assertEqual(lookup.status_code, 409, lookup.content)
+        self.assertEqual(lookup.json()["code"], "component_unit_review_required")
         response = self.receive()
         self.assertEqual(response.status_code, 409, response.content)
         self.assertEqual(response.json()["code"], "component_unit_review_required")
@@ -224,14 +234,28 @@ class ProducedRollIntakeTests(ProducedRollFixtures, TestCase):
         self.assertEqual(RawMaterialInventory.objects.count(), 0)
 
     def test_stale_tag_save_cannot_create_a_second_inventory_record(self):
+        component = RawMaterialInventory.objects.create(material=self.tag.face, quantity=1000, length_feet=1000, unit="lf")
+        self.tag.face_inventory = component
+        self.tag.save()
         stale = CoaterRollTag.objects.get(pk=self.tag.pk)
         first = self.receive()
         self.assertEqual(first.status_code, 201, first.content)
         stale.log_inventory = True
         stale.status = "complete"
+        stale.print_status = "queued"
         stale.save()
         self.assertEqual(stale.logged_inventory_id, first.json()["id"])
         self.assertEqual(RawMaterialInventory.objects.filter(source_roll_tag=self.tag).count(), 1)
+        self.tag.refresh_from_db()
+        self.assertEqual(self.tag.length_feet, Decimal("150.25"))
+        self.assertEqual(self.tag.print_status, "queued")
+        component.refresh_from_db()
+        self.assertEqual(component.quantity, Decimal("849.75"))
+        self.assertEqual(MaterialUsage.objects.filter(coater_roll_tag=self.tag).count(), 1)
+        duplicate = self.receive()
+        self.assertTrue(duplicate.json()["already_in_inventory"])
+        component.refresh_from_db()
+        self.assertEqual(component.quantity, Decimal("849.75"))
 
     def test_document_roll_and_intake_share_duplicate_protection(self):
         documented = self.client.post(

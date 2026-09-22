@@ -1198,7 +1198,7 @@ export const resources = [
   {
     key: "production-schedule",
     endpoint: "production-schedule",
-    label: "Main Scheduling",
+    label: "Production Schedule",
     singular: "Schedule Entry",
     group: "schedule",
     icon: Factory,
@@ -1208,7 +1208,7 @@ export const resources = [
     defaultOrdering: "status,press__name,press_sequence,due_date,job_ticket__ticket_number",
     pageSize: 1000,
     fetchAll: true,
-    tagline: "Manage scheduled jobs by status, press assignment, ship date, and operator progress.",
+    tagline: "View each press’s lineup, running jobs, and work on hold.",
     columns: [
       "order_number",
       "order_date",

@@ -58,6 +58,21 @@ def validate_produced_tag(tag):
         raise MaterialWorkflowError("This roll is void or on hold. Have production review it before receiving material.", code="roll_unavailable", status_code=409)
 
 
+def validate_pending_tag(tag):
+    if tag.status == "complete":
+        raise MaterialWorkflowError("This roll is complete but its inventory record is missing. Have production review it before receiving it again.", code="roll_inventory_missing", status_code=409)
+    material = tag.produced_material or tag.scheduled_material
+    if not material or not material.is_active:
+        raise MaterialWorkflowError("This printed roll needs an active material definition. Have production update the roll first.", code="roll_material_required", status_code=409)
+    for field in ["face_inventory", "liner_inventory", "adhesive_inventory", "silicone_inventory", "coating_inventory"]:
+        component = getattr(tag, field)
+        if component and component.unit != "lf":
+            raise MaterialWorkflowError(
+                "This roll uses a component measured in gallons, pounds, or another non-foot unit. Have production review component consumption before receiving this roll.",
+                code="component_unit_review_required", status_code=409,
+            )
+
+
 def lookup_intake_scan(value):
     kind, identifier = parse_intake_scan(value)
     inventory = None
@@ -93,8 +108,8 @@ def lookup_intake_scan(value):
         if inventory and linked and inventory.pk != linked.pk:
             raise _ambiguous()
         inventory = inventory or linked
-        if not inventory and tag.status == "complete":
-            raise MaterialWorkflowError("This roll is marked complete but its inventory record is missing. Have production review it before receiving it again.", code="roll_inventory_missing", status_code=409)
+        if not inventory:
+            validate_pending_tag(tag)
 
     material = inventory.material if inventory else (tag.produced_material or tag.scheduled_material)
     return {
