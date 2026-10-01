@@ -457,6 +457,22 @@
   box-shadow: inset 0 0 0 1px #0f766e;
 }
 
+.schedule-press-workspace .schedule-status-filters > button > span {
+  min-width: 18px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #eef3f6;
+  color: #556d80;
+  font-size: .625rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.schedule-press-workspace .schedule-status-filters > button.is-selected > span {
+  background: #d8ede4;
+  color: #17634f;
+}
+
 .schedule-press-workspace .schedule-filter-summary {
   display: flex;
   flex-wrap: wrap;
@@ -470,6 +486,13 @@
 .schedule-press-workspace .schedule-filter-summary p {
   margin: 0;
   color: #65778a;
+  font-size: .75rem;
+  line-height: 1.6;
+}
+
+.schedule-press-workspace .schedule-reorder-hint {
+  margin: 0 0 16px;
+  color: #60778b;
   font-size: .75rem;
   line-height: 1.6;
 }
@@ -509,6 +532,18 @@
 .schedule-press-workspace .schedule-job-error p {
   margin: 0;
   color: inherit;
+}
+
+.schedule-press-workspace .schedule-save-error > button {
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid #d9b8b2;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #8e3e31;
+  font-size: .75rem;
+  font-weight: 650;
 }
 
 .schedule-press-workspace .schedule-press-group {
@@ -780,6 +815,17 @@
   -webkit-line-clamp: unset;
 }
 
+.schedule-press-workspace .schedule-lineup-spec > small {
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #fff8ec;
+  color: #846031;
+  font-size: .6875rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
 .schedule-press-workspace .schedule-lineup-meta {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
@@ -837,7 +883,7 @@
   color: #865b1a;
 }
 
-.schedule-press-workspace .schedule-dynamic-pill {
+.schedule-press-workspace .schedule-lineup-title .schedule-dynamic-pill {
   min-height: 24px;
   padding: 4px 6px;
   border-radius: 5px;
@@ -874,10 +920,16 @@
   font-weight: 650;
 }
 
-.schedule-press-workspace .schedule-job-footer > .schedule-job-details {
+.schedule-press-workspace .schedule-job-footer > .schedule-job-details,
+.schedule-press-workspace .schedule-job-footer > button:first-child {
   border-color: #c5dfd6;
   background: #f0f8f4;
   color: #1b6c59;
+}
+
+.schedule-press-workspace .schedule-job-footer > span {
+  color: #60778b;
+  font-size: .75rem;
 }
 
 .schedule-press-workspace .schedule-job-footer > button:hover:not(:disabled),
@@ -924,6 +976,33 @@
 
 .schedule-press-workspace .schedule-lineup-editors.material-editors {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.schedule-press-workspace .schedule-position-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.schedule-press-workspace .schedule-position-form > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.schedule-press-workspace .schedule-position-form > button {
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid #c4dacf;
+  border-radius: 7px;
+  background: #f0f8f4;
+  color: #1b6c59;
+  font-size: .75rem;
+  font-weight: 650;
 }
 
 .schedule-press-workspace .schedule-lineup-editors select.schedule-priority-select {

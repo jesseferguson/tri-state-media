@@ -90,6 +90,7 @@ const initialForm = {
   repeat: "2.125",
   quantity: "10000",
   materialWidth: "8.75",
+  materialWidthMode: "auto",
   gap: "0.125",
   sideTrim: "0.325",
   finishingType: "rolls",
@@ -105,10 +106,13 @@ const initialForm = {
   numberAcross: "",
   wastePercent: "7",
   msiCost: "0.443",
+  msiCostMode: "auto",
   colorCount: "0",
   coatingCount: "0",
   colorMsiCost: "0.03",
+  colorMsiCostMode: "auto",
   coatingMsiCost: "0",
+  coatingMsiCostMode: "auto",
   setupCost: "0",
   printCost: "0",
   finishingCost: "0",
@@ -2363,7 +2367,8 @@ export default function QuotePricingTool({
   const currentProfitHealth = useMemo(() => profitHealth(pricing, selectedMaterial, form.pricingMode), [pricing, selectedMaterial, form.pricingMode]);
   const fitTone = pricing.fits ? "ready" : "bad";
   const FitIcon = pricing.fits ? CheckCircle2 : AlertTriangle;
-  const manualMaterialWidth = !materialWidthPresets.includes(form.materialWidth);
+  const manualMaterialWidth = form.materialWidthMode === "manual"
+    || (!form.materialWidthMode && !materialWidthPresets.includes(form.materialWidth));
   const volumePricingEnabled = quoteVolumePricingEnabled(form);
   const volumePricingMode = quoteVolumePricingMode(form);
   const volumeCustomRows = quoteVolumeCustomTierRows(form.volumeCustomTiers);
@@ -2453,7 +2458,7 @@ export default function QuotePricingTool({
   useEffect(() => {
     if (!bestPresetWidth || manualMaterialWidth) return;
     setForm((prev) => prev.materialWidth === bestPresetWidth ? prev : { ...prev, materialWidth: bestPresetWidth });
-  }, [bestPresetWidth, manualMaterialWidth]);
+  }, [bestPresetWidth, manualMaterialWidth, form.materialWidth]);
 
   useEffect(() => {
     if (wasteManuallyEdited || pricing.recommendedWastePercent <= 0) return;
@@ -2626,18 +2631,22 @@ export default function QuotePricingTool({
     if (!selectedMaterial) return;
     setForm((prev) => ({
       ...prev,
-      msiCost: String(selectedMaterial.calculatedMsiCost),
       unitType: selectedMaterial.unitType || prev.unitType,
     }));
   }, [selectedMaterial?.id, selectedMaterial?.calculatedMsiCost, selectedMaterial?.unitType, selectedMaterial?.width_inches]);
 
   useEffect(() => {
+    if (!selectedMaterial || form.msiCostMode === "manual") return;
+    setForm((prev) => ({ ...prev, msiCost: String(selectedMaterial.calculatedMsiCost) }));
+  }, [selectedMaterial?.id, selectedMaterial?.calculatedMsiCost, form.msiCostMode]);
+
+  useEffect(() => {
     setForm((prev) => ({
       ...prev,
-      colorMsiCost: String(rateCost(quoteRates, "color")),
-      coatingMsiCost: String(rateCost(quoteRates, "coating")),
+      colorMsiCost: prev.colorMsiCostMode === "manual" ? prev.colorMsiCost : String(rateCost(quoteRates, "color")),
+      coatingMsiCost: prev.coatingMsiCostMode === "manual" ? prev.coatingMsiCost : String(rateCost(quoteRates, "coating")),
     }));
-  }, [quoteRates]);
+  }, [quoteRates, form.colorMsiCostMode, form.coatingMsiCostMode]);
 
   useEffect(() => {
     const recipeId = jobTicketRecipeId(selectedJobTicket);
@@ -2678,6 +2687,7 @@ export default function QuotePricingTool({
     const quantity = jobTicketQuoteQuantity(selectedJobTicket);
     const material = jobTicketMaterialMatch;
     setForm((prev) => {
+      const materialChanged = Boolean(material) && String(material.id) !== String(prev.selectedMaterialId);
       const nextCoreSize = dimensionInputValue(selectedJobTicket.core_size_inches) || prev.coreSize;
       const materialTargetPercent = material ? materialTargetPricingPercent(material, prev.pricingMode) : "";
       return {
@@ -2693,7 +2703,8 @@ export default function QuotePricingTool({
         labelsPerUnit: quantityInputValue(selectedJobTicket.labels_per_unit) || prev.labelsPerUnit,
         labelsPerCarton: quantityInputValue(selectedJobTicket.labels_per_carton || selectedJobTicket.units_per_carton) || prev.labelsPerCarton,
         selectedMaterialId: material?.id || prev.selectedMaterialId,
-        msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
+        msiCost: material && (materialChanged || prev.msiCostMode !== "manual") ? String(material.calculatedMsiCost) : prev.msiCost,
+        msiCostMode: materialChanged ? "auto" : prev.msiCostMode,
         pricingPercent: material && materialTargetPercent
           ? pricingPercentWithCoreSurcharge(materialTargetPercent, prev.pricingMode, nextCoreSize)
           : applyMarkupPointDelta(prev.pricingPercent, prev.pricingMode, coreMarkupDelta(prev.coreSize, nextCoreSize)),
@@ -2747,6 +2758,12 @@ export default function QuotePricingTool({
     }
     setForm((prev) => {
       const next = { ...prev, [name]: value };
+      if (["materialWidth", "msiCost", "colorMsiCost", "coatingMsiCost"].includes(name)) {
+        next[`${name}Mode`] = "manual";
+      }
+      if (name === "acrossMode" && value === "manual" && !prev.numberAcross) {
+        next.numberAcross = String(pricing.numberAcross || 1);
+      }
       if (name === "pricingMode") {
         next.pricingPercent = convertPricingPercent(prev.pricingPercent, prev.pricingMode, value);
       }
@@ -2923,6 +2940,7 @@ export default function QuotePricingTool({
     setForm((prev) => ({
       ...prev,
       selectedMaterialId: value,
+      msiCostMode: "auto",
       unitType: material?.unitType || prev.unitType,
       msiCost: material ? String(material.calculatedMsiCost) : prev.msiCost,
       pricingPercent: material && materialTargetPercent
@@ -3269,6 +3287,7 @@ export default function QuotePricingTool({
     const nextForm = {
       ...initialForm,
       ...sourceForm,
+      materialWidthMode: sourceForm.materialWidthMode || (materialWidthPresets.includes(sourceForm.materialWidth ?? initialForm.materialWidth) ? "auto" : "manual"),
       selectedMaterialId: sourceForm.selectedMaterialId || primaryItem?.materialId || "manual",
       labelLength: sourceContinuousRoll ? sourceForm.labelLength || "" : sourceForm.labelLength || initialForm.labelLength,
       repeat: sourceContinuousRoll ? "" : sourceForm.repeat || initialForm.repeat,
@@ -3788,6 +3807,7 @@ ${items.map((item) => {
       return {
         ...prev,
         selectedMaterialId: saved.id,
+        msiCostMode: "auto",
         unitType: saved.unitType || prev.unitType,
         msiCost: String(calculateFinishedMaterialMsiCost(saved, rawMaterials, quoteRates)),
         pricingPercent: materialTargetPercent
@@ -3834,6 +3854,7 @@ ${items.map((item) => {
       return {
         ...prev,
         selectedMaterialId: material.id,
+        msiCostMode: "auto",
         unitType: material.unitType || prev.unitType,
         msiCost: String(material.calculatedMsiCost),
         pricingPercent: materialTargetPercent
@@ -4011,6 +4032,117 @@ ${items.map((item) => {
           )}
           <div className="quote-layout">
             <form className="quote-panel quote-input-panel" onSubmit={(event) => event.preventDefault()}>
+              <section className="quote-section quote-primary-section quote-pricing-section quote-focused-pricing">
+                <div className="quote-section-head">
+                  <CircleDollarSign size={16} />
+                  <strong>Pricing inputs</strong>
+                </div>
+                <p className="quote-section-description">Start with the material, size, and packaging. Production settings are calculated below and can be adjusted when needed.</p>
+
+                <fieldset className="quote-input-group">
+                  <legend><span>01</span> Material &amp; pricing</legend>
+                  <div className="quote-simple-grid quote-material-inputs">
+                    <Field label="Finished Material">
+                      <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>
+                        <option value="manual">Manual MSI Cost</option>
+                        {materialOptions.map((material) => (
+                          <option value={material.id} key={material.id}>{material.name} - {unitMoney(material.calculatedMsiCost)}/MSI</option>
+                        ))}
+                      </select>
+                    </Field>
+                    {form.selectedMaterialId === "manual" && (
+                      <Field label="Manual MSI Cost" suffix="/ MSI">
+                        <input type="number" step="0.0001" value={form.msiCost} onChange={(event) => updateField("msiCost", event.target.value)} />
+                      </Field>
+                    )}
+                    <Field label={continuousRoll ? "Finished Length" : "Quantity"} suffix={continuousRoll ? "in" : quoteUnitLabel(form.unitType, true)}>
+                      <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.quantity} onChange={(event) => updateField("quantity", event.target.value)} />
+                    </Field>
+                  </div>
+                  <div className="quote-simple-grid quote-price-inputs">
+                    <div className="quote-field-with-help">
+                      <Field label="Waste" suffix="%">
+                        <input type="number" step="0.01" value={form.wastePercent} onChange={(event) => updateField("wastePercent", event.target.value)} />
+                      </Field>
+                      <div className="quote-field-help">
+                        <span>{wasteManuallyEdited ? "Custom" : "Auto"} · {percent(pricing.recommendedWastePercent)} recommended</span>
+                        {(wasteManuallyEdited || !wasteMatchesRecommendation) && <button type="button" onClick={applyRecommendedWaste}>Use auto waste</button>}
+                      </div>
+                    </div>
+                    <div className="quote-field-with-help">
+                      <Field label={form.pricingMode === "markup" ? "Markup" : "Margin"} suffix="%">
+                        <input type="number" step="0.01" value={form.pricingPercent} onChange={(event) => updateField("pricingPercent", event.target.value)} />
+                      </Field>
+                      <div className="quote-field-help">{selectedMaterial ? "Defaults from the selected material." : "Enter your pricing percentage."}</div>
+                    </div>
+                    <div className="quote-control-block quote-mode-compact">
+                      <span>Pricing Mode</span>
+                      <div className="quote-segmented compact" role="group" aria-label="Pricing Mode">
+                        <button aria-pressed={form.pricingMode === "margin"} className={form.pricingMode === "margin" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "margin")}>Margin</button>
+                        <button aria-pressed={form.pricingMode === "markup"} className={form.pricingMode === "markup" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "markup")}>Markup</button>
+                      </div>
+                    </div>
+                  </div>
+                </fieldset>
+
+                <fieldset className="quote-input-group">
+                  <legend><span>02</span> Size &amp; format</legend>
+                  <div className="quote-simple-grid quote-size-inputs">
+                    <label className={`quote-continuous-control ${continuousRoll ? "active" : ""}`}>
+                      <input type="checkbox" checked={continuousRoll} onChange={(event) => updateField("continuousRoll", event.target.checked)} />
+                      <span>
+                        <strong>Continuous Roll</strong>
+                        <em>{continuousRoll ? "Priced by finished inches" : "Standard labels or tags"}</em>
+                      </span>
+                    </label>
+                    {!continuousRoll && (
+                      <Field label="Item Type">
+                        <select value={form.unitType} onChange={(event) => updateField("unitType", event.target.value)}>
+                          {quoteUnitTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                        </select>
+                      </Field>
+                    )}
+                    <Field label={continuousRoll ? "Lane Width" : `${quoteUnitTitle(form.unitType)} Width`} suffix="in">
+                      <input type="number" step="0.0001" value={form.labelWidth} onChange={(event) => updateField("labelWidth", event.target.value)} />
+                    </Field>
+                    {!continuousRoll && (
+                      <Field label={`${quoteUnitTitle(form.unitType)} Length`} suffix="in">
+                        <input type="number" step="0.0001" value={form.labelLength} onChange={(event) => updateField("labelLength", event.target.value)} />
+                      </Field>
+                    )}
+                    <Field label={continuousRoll ? "Lane Gap" : "Gap"} suffix="in">
+                      <input type="number" step="0.0001" value={form.gap} onChange={(event) => updateField("gap", event.target.value)} />
+                    </Field>
+                  </div>
+                </fieldset>
+
+                <fieldset className="quote-input-group">
+                  <legend><span>03</span> Finishing &amp; packaging</legend>
+                  <div className="quote-simple-grid quote-packaging-inputs">
+                    {!continuousRoll && (
+                      <Field label="Finishing">
+                        <select value={form.finishingType} onChange={(event) => updateField("finishingType", event.target.value)}>
+                          {quoteFinishingTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                        </select>
+                      </Field>
+                    )}
+                    <Field label="Core Size">
+                      <select value={form.coreSize} onChange={(event) => updateField("coreSize", event.target.value)}>
+                        {quoteCoreSizeChoices.map((size) => <option value={size} key={size || "none"}>{size ? `${size}"` : "No core"}</option>)}
+                      </select>
+                    </Field>
+                    <Field label={continuousRoll ? "Inches / Roll" : `${quoteUnitTitle(form.unitType, true)} / ${quoteItemContainerLabel(form)}`} suffix={continuousRoll ? "in" : ""}>
+                      <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.labelsPerUnit} onChange={(event) => updateField("labelsPerUnit", event.target.value)} />
+                    </Field>
+                    <Field label={continuousRoll ? "Inches / Carton" : `${quoteUnitTitle(form.unitType, true)} / Carton`} suffix={continuousRoll ? "in" : ""}>
+                      <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.labelsPerCarton} onChange={(event) => updateField("labelsPerCarton", event.target.value)} />
+                    </Field>
+                  </div>
+                  {continuousRoll && <p className="quote-field-help">Roll finishing · enter quantity and packaging as finished inches.</p>}
+                  {pricing.coreMarkupSurchargePercent > 0 && <p className="quote-field-help">This core adds 15 percentage points to markup, already included above.</p>}
+                </fieldset>
+              </section>
+
               <section className="quote-section quote-primary-section quote-setup-section">
                 <div className="quote-section-head">
                   <FileText size={16} />
@@ -4133,54 +4265,177 @@ ${items.map((item) => {
                 </details>
               </section>
 
-              <section className="quote-section quote-primary-section quote-pricing-section">
-                <div className="quote-section-head">
-                  <CircleDollarSign size={16} />
-                  <strong>Quote Details</strong>
-                </div>
-                <div className="quote-identity-grid quote-item-identity-grid">
-                  <Field label="Quoted Item / Part #">
-                    <input value={quoteInfo.itemName} onChange={(event) => updateQuoteInfo("itemName", event.target.value)} placeholder="DTT-4-8-F-BLS" />
-                  </Field>
-                </div>
-                <details className="quote-link-window quote-quote-options">
-                  <summary className="quote-link-window-head">
-                    <strong>Quote Options</strong>
-                    <span>{[quoteInfo.clientPo ? `PO ${quoteInfo.clientPo}` : "", visibleQuoteExpirationDate ? `Expires ${visibleQuoteExpirationDate}` : "", quoteInfo.unitOfMeasure || quoteDefaultUnitOfMeasure].filter(Boolean).join(" / ") || "PO, expiration, and UoM"}</span>
-                  </summary>
-                  <div className="quote-simple-grid quote-info-grid quote-options-grid">
-                    <Field label="Client P.O.">
-                      <input value={quoteInfo.clientPo} onChange={(event) => updateQuoteInfo("clientPo", event.target.value)} />
+              <details className="quote-advanced-panel quote-settings-panel">
+                <summary>
+                  <span>Production layout</span>
+                  <em>{manualMaterialWidth ? "Custom" : "Auto"} {number(pricing.materialWidth, '"')} web · {pricing.numberAcross} across</em>
+                </summary>
+                <div className="quote-settings-body">
+                  <div className="quote-settings-toolbar">
+                    <strong>Material width</strong>
+                    <div className="quote-segmented compact" role="group" aria-label="Material width mode">
+                      <button type="button" className={!manualMaterialWidth ? "active" : ""} aria-pressed={!manualMaterialWidth} onClick={() => updateField("materialWidthMode", "auto")}>Automatic</button>
+                      <button type="button" className={manualMaterialWidth ? "active" : ""} aria-pressed={manualMaterialWidth} onClick={() => updateField("materialWidthMode", "manual")}>Custom</button>
+                    </div>
+                  </div>
+                  <p className="quote-setting-note">{manualMaterialWidth ? "Your width stays in place as other inputs change." : `Automatically selects the best preset width: ${number(toQuoteNumber(bestPresetWidth), '"')}. Choose Custom to set your own.`}</p>
+                  {manualMaterialWidth && (
+                    <>
+                      <Field label="Material Width" suffix="in">
+                        <input type="number" step="0.0001" value={form.materialWidth} onChange={(event) => updateField("materialWidth", event.target.value)} />
+                      </Field>
+                      <div className="quote-chip-row" role="group" aria-label="Material width presets">
+                        {materialWidthPresets.map((width) => (
+                          <button className={form.materialWidth === width ? "active" : ""} aria-pressed={form.materialWidth === width} type="button" key={width} onClick={() => updateField("materialWidth", width)}>{width}"</button>
+                        ))}
+                        <button type="button" onClick={() => updateField("materialWidth", "")}>Manual</button>
+                      </div>
+                    </>
+                  )}
+                  <div className="quote-field-grid">
+                    <Field label="Side Trim" suffix="in">
+                      <input type="number" step="0.0001" value={form.sideTrim} onChange={(event) => updateField("sideTrim", event.target.value)} />
                     </Field>
-                    <Field label="Quote Expiration">
-                      <input type="date" value={visibleQuoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
+                    <div className="quote-control-block">
+                      <span>Lane Mode</span>
+                      <div className="quote-segmented compact" role="group" aria-label="Lane Mode">
+                        <button className={form.acrossMode === "auto" ? "active" : ""} aria-pressed={form.acrossMode === "auto"} type="button" onClick={() => updateField("acrossMode", "auto")}>Auto</button>
+                        <button className={form.acrossMode === "manual" ? "active" : ""} aria-pressed={form.acrossMode === "manual"} type="button" onClick={() => updateField("acrossMode", "manual")}>Manual</button>
+                      </div>
+                    </div>
+                    {form.acrossMode === "manual" && (
+                      <Field label="Number Across">
+                        <input type="number" step="1" min="1" value={form.numberAcross} onChange={(event) => updateField("numberAcross", event.target.value)} />
+                      </Field>
+                    )}
+                  </div>
+                  <div className="quote-auto-repeat">
+                    <Ruler size={15} />
+                    <span>{continuousRoll ? "Continuous roll uses the finished inch total directly." : `Repeat = ${quoteUnitLabel(form.unitType)} length + gap. Edit either in Size & format.`}</span>
+                    <strong>{continuousRoll ? quoteContinuousLengthLabel(pricing.quantity) : number(pricing.repeat, '"')}</strong>
+                  </div>
+                  <p className="quote-setting-note">Waste is recommended from {number(pricing.runFootage, " ft")} of run footage{pricing.colorWastePercentPerColor > 0 ? ` plus ${percent(pricing.colorWastePercentPerColor)} per color` : ""}. Editing quantity, dimensions, layout, or colors reapplies the recommendation.</p>
+                  <section className="quote-panel quote-candidates" aria-label="Compare lane layouts">
+                    <div className="quote-section-head">
+                      <Ruler size={16} />
+                      <strong>Lane Options</strong>
+                    </div>
+                    {candidates.length ? (
+                      <div className="quote-candidate-table">
+                        <div className="quote-candidate-head">
+                          <span>Across</span>
+                          <span>Layout Width</span>
+                          <span>Unused</span>
+                          <span>Web Usage</span>
+                          <span>Material Cost</span>
+                          <span />
+                        </div>
+                        {candidates.map((candidate) => (
+                          <div className={candidate.numberAcross === pricing.numberAcross ? "active" : ""} key={candidate.numberAcross}>
+                            <strong>{candidate.numberAcross}</strong>
+                            <span>{number(candidate.totalLayoutWidth, '"')}</span>
+                            <span>{number(candidate.widthDelta, '"')}</span>
+                            <span>{percentFormatter.format(candidate.widthUsagePercent)}%</span>
+                            <span>{money(candidate.materialCost)}</span>
+                            <button type="button" onClick={() => useCandidate(candidate.numberAcross)}>Use</button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="quote-empty">No lane option fits the current item and material width.</p>
+                    )}
+                  </section>
+                </div>
+              </details>
+
+              <details className="quote-advanced-panel quote-settings-panel">
+                <summary>
+                  <span>Material &amp; print costs</span>
+                  <em>{unitMoney(toQuoteNumber(form.msiCost))}/MSI{form.msiCostMode === "manual" ? " (custom)" : ""} · {form.colorCount || 0} colors · {form.coatingCount || 0} coatings{form.colorMsiCostMode === "manual" || form.coatingMsiCostMode === "manual" ? " · custom rates" : ""}</em>
+                </summary>
+                <div className="quote-settings-body">
+                  {selectedMaterial && (
+                    <>
+                      <div className="quote-material-targets">
+                        <Metric label="Library MSI" value={`${unitMoney(selectedMaterial.calculatedMsiCost)} / MSI`} />
+                        <Metric label="Minimum Markup" value={`${percentFormatter.format(Number(selectedMaterial.baseMarkupPercent || 0))}%`} />
+                        <Metric label="Target Markup" value={`${percentFormatter.format(Number((selectedMaterial.targetMarkupPercent ?? selectedMaterial.targetMarginPercent) || 0))}%`} />
+                      </div>
+                      <div className="quote-setting-field">
+                        <label className="quote-inline-toggle">
+                          <input type="checkbox" checked={form.msiCostMode === "manual"} onChange={(event) => updateField("msiCostMode", event.target.checked ? "manual" : "auto")} />
+                          Use a custom material cost for this item
+                        </label>
+                        {form.msiCostMode === "manual" && (
+                          <Field label="MSI Cost" suffix="/ MSI">
+                            <input type="number" step="0.0001" value={form.msiCost} onChange={(event) => updateField("msiCost", event.target.value)} />
+                          </Field>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  <div className="quote-field-grid">
+                    <Field label="Colors">
+                      <input type="number" step="1" min="0" value={form.colorCount} onChange={(event) => updateField("colorCount", event.target.value)} />
                     </Field>
-                    <Field label="UoM">
-                      <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
-                        <option value="M">M - per 1,000 {continuousRoll ? "inches" : quoteUnitLabel(form.unitType, true)}</option>
-                        <option value="EA">EA - each {continuousRoll ? "inch" : quoteUnitLabel(form.unitType)}</option>
-                      </select>
+                    <Field label="Coatings">
+                      <input type="number" step="1" min="0" value={form.coatingCount} onChange={(event) => updateField("coatingCount", event.target.value)} />
                     </Field>
                   </div>
-                </details>
-                <label className={`quote-volume-control ${volumePricingEnabled ? "active" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={volumePricingEnabled}
-                    onChange={(event) => updateField("volumePricingEnabled", event.target.checked)}
-                  />
-                  <span>
-                    <strong>Volume Pricing</strong>
-                    <em>{volumePricingEnabled ? "Included on this item" : "Off for this item"}</em>
-                  </span>
-                  <b>{volumePricingMode === "custom" ? `${volumeCustomCount || 0} custom price point${volumeCustomCount === 1 ? "" : "s"}` : "Standard breaks: 10k, 25k, 100k, 500k, and 1M+."}</b>
-                </label>
-                {volumePricingEnabled && (
-                  <details className="quote-advanced-panel quote-volume-custom-drawer">
-                    <summary>
-                      <span>Volume Price Points</span>
-                      <em>{volumeCustomSummary}</em>
-                    </summary>
+                  {[{ name: "colorMsiCost", label: "Color / Ink Rate", mode: "colorMsiCostMode" }, { name: "coatingMsiCost", label: "Coating Rate", mode: "coatingMsiCostMode" }].map((rate) => (
+                    <div className="quote-setting-field" key={rate.name}>
+                      <div className="quote-settings-toolbar">
+                        <span>{rate.label} · {unitMoney(toQuoteNumber(form[rate.name]))}/MSI</span>
+                        <label className="quote-inline-toggle">
+                          <input type="checkbox" checked={form[rate.mode] === "manual"} onChange={(event) => updateField(rate.mode, event.target.checked ? "manual" : "auto")} />
+                          Customize {rate.name === "colorMsiCost" ? "color" : "coating"} rate
+                        </label>
+                      </div>
+                      {form[rate.mode] === "manual" && (
+                        <Field label={rate.label} suffix="/ MSI">
+                          <input type="number" step="0.0001" min="0" value={form[rate.name]} onChange={(event) => updateField(rate.name, event.target.value)} />
+                        </Field>
+                      )}
+                    </div>
+                  ))}
+                  <p className="quote-setting-note">Custom costs apply to this item. Turn off a custom cost to use the library rate again. Selecting another material restores its material cost.</p>
+                </div>
+              </details>
+
+              <details className="quote-advanced-panel quote-settings-panel">
+                <summary>
+                  <span>Added costs</span>
+                  <em>{money(pricing.extraCost)} · setup, finishing, packaging &amp; services</em>
+                </summary>
+                <div className="quote-field-grid compact-costs">
+                  {quoteExtraCostFields.map((field) => (
+                    <Field label={field.label} suffix="$" key={field.name}>
+                      <input type="number" step="0.01" value={form[field.name]} onChange={(event) => updateField(field.name, event.target.value)} />
+                    </Field>
+                  ))}
+                  <p className="quote-pass-through-note">Added costs are included in the cost base before markup or margin.</p>
+                </div>
+              </details>
+
+              <details className="quote-advanced-panel quote-settings-panel">
+                <summary>
+                  <span>Volume pricing</span>
+                  <em>{volumePricingEnabled ? `Included · ${volumeCustomSummary}` : "Off for this item"}</em>
+                </summary>
+                <div className="quote-settings-body">
+                  <label className={`quote-volume-control ${volumePricingEnabled ? "active" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked={volumePricingEnabled}
+                      onChange={(event) => updateField("volumePricingEnabled", event.target.checked)}
+                    />
+                    <span>
+                      <strong>Volume Pricing</strong>
+                      <em>{volumePricingEnabled ? "Included on this item" : "Off for this item"}</em>
+                    </span>
+                    <b>{volumePricingMode === "custom" ? `${volumeCustomCount || 0} custom price point${volumeCustomCount === 1 ? "" : "s"}` : "Standard breaks: 10k, 25k, 100k, 500k, and 1M+."}</b>
+                  </label>
+                  {volumePricingEnabled && (
                     <div className="quote-volume-custom-body">
                       <div className="quote-segmented compact quote-volume-mode-tabs">
                         {quoteVolumePricingModeOptions.map(([value, label]) => (
@@ -4225,193 +4480,38 @@ ${items.map((item) => {
                         </div>
                       )}
                     </div>
-                  </details>
-                )}
-                <div className="quote-top-grid quote-main-input-grid">
-                  <Field label="Finished Material">
-                    <select value={form.selectedMaterialId} onChange={(event) => updateMaterialSelection(event.target.value)}>
-                      <option value="manual">Manual MSI Cost</option>
-                      {materialOptions.map((material) => (
-                        <option value={material.id} key={material.id}>{material.name} - {unitMoney(material.calculatedMsiCost)}/MSI</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label={continuousRoll ? "Finished Length" : "Quantity"} suffix={continuousRoll ? "in" : quoteUnitLabel(form.unitType, true)}>
-                    <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.quantity} onChange={(event) => updateField("quantity", event.target.value)} />
-                  </Field>
-                  <Field label="Waste" suffix="%">
-                    <input type="number" step="0.01" value={form.wastePercent} onChange={(event) => updateField("wastePercent", event.target.value)} />
-                  </Field>
-                  <Field label={form.pricingMode === "markup" ? "Markup" : "Margin"} suffix="%">
-                    <input type="number" step="0.01" value={form.pricingPercent} onChange={(event) => updateField("pricingPercent", event.target.value)} />
-                  </Field>
-                  <div className="quote-control-block quote-mode-compact">
-                    <span>Pricing Mode</span>
-                    <div className="quote-segmented compact">
-                      <button className={form.pricingMode === "margin" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "margin")}>Margin</button>
-                      <button className={form.pricingMode === "markup" ? "active" : ""} type="button" onClick={() => updateField("pricingMode", "markup")}>Markup</button>
-                    </div>
-                  </div>
-                </div>
-
-                {selectedMaterial && (
-                  <div className="quote-material-targets">
-                    <Metric label="Material MSI" value={`${unitMoney(selectedMaterial.calculatedMsiCost)} / MSI`} />
-                    <Metric label="Minimum Markup" value={`${percentFormatter.format(Number(selectedMaterial.baseMarkupPercent || 0))}%`} />
-                    <Metric label="Target Markup" value={`${percentFormatter.format(Number((selectedMaterial.targetMarkupPercent ?? selectedMaterial.targetMarginPercent) || 0))}%`} />
-                  </div>
-                )}
-
-                <div className="quote-simple-grid quote-secondary-input-grid">
-                  <label className={`quote-continuous-control ${continuousRoll ? "active" : ""}`}>
-                    <input
-                      type="checkbox"
-                      checked={continuousRoll}
-                      onChange={(event) => updateField("continuousRoll", event.target.checked)}
-                    />
-                    <span>
-                      <strong>Continuous Roll</strong>
-                      <em>{continuousRoll ? "Priced by finished inches" : "Standard labels or tags"}</em>
-                    </span>
-                    <b>No repeat or label length; quantity and packaging are entered as finished inches.</b>
-                  </label>
-                  {!continuousRoll && (
-                    <Field label="Item Type">
-                      <select value={form.unitType} onChange={(event) => updateField("unitType", event.target.value)}>
-                        {quoteUnitTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                      </select>
-                    </Field>
-                  )}
-                  <Field label={continuousRoll ? "Lane Width" : `${quoteUnitTitle(form.unitType)} Width`} suffix="in">
-                    <input type="number" step="0.0001" value={form.labelWidth} onChange={(event) => updateField("labelWidth", event.target.value)} />
-                  </Field>
-                  {!continuousRoll && (
-                    <Field label={`${quoteUnitTitle(form.unitType)} Length`} suffix="in">
-                      <input type="number" step="0.0001" value={form.labelLength} onChange={(event) => updateField("labelLength", event.target.value)} />
-                    </Field>
-                  )}
-                  <Field label={continuousRoll ? "Lane Gap" : "Gap"} suffix="in">
-                    <input type="number" step="0.0001" value={form.gap} onChange={(event) => updateField("gap", event.target.value)} />
-                  </Field>
-                  {!continuousRoll && (
-                    <Field label="Finishing">
-                      <select value={form.finishingType} onChange={(event) => updateField("finishingType", event.target.value)}>
-                        {quoteFinishingTypeChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                      </select>
-                    </Field>
-                  )}
-                  <Field label="Core Size">
-                    <select value={form.coreSize} onChange={(event) => updateField("coreSize", event.target.value)}>
-                      {quoteCoreSizeChoices.map((size) => (
-                        <option value={size} key={size || "none"}>{size ? `${size}"` : "No core"}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label={continuousRoll ? "Inches / Roll" : `${quoteUnitTitle(form.unitType, true)} / ${quoteItemContainerLabel(form)}`} suffix={continuousRoll ? "in" : ""}>
-                    <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.labelsPerUnit} onChange={(event) => updateField("labelsPerUnit", event.target.value)} />
-                  </Field>
-                  <Field label={continuousRoll ? "Inches / Carton" : `${quoteUnitTitle(form.unitType, true)} / Carton`} suffix={continuousRoll ? "in" : ""}>
-                    <input type="number" step={continuousRoll ? "0.01" : "1"} min="0" value={form.labelsPerCarton} onChange={(event) => updateField("labelsPerCarton", event.target.value)} />
-                  </Field>
-                  <label className="quote-field quote-field-wide">
-                    <span>Proof Note</span>
-                    <input value={form.itemNote} onChange={(event) => updateField("itemNote", event.target.value)} placeholder="Yellow border" />
-                  </label>
-                  {manualMaterialWidth && (
-                    <Field label="Material Width" suffix="in">
-                      <input type="number" step="0.0001" value={form.materialWidth} onChange={(event) => updateField("materialWidth", event.target.value)} />
-                    </Field>
-                  )}
-                  <Field label="MSI Cost" suffix="/ MSI">
-                    <input type="number" step="0.0001" value={form.msiCost} readOnly={form.selectedMaterialId !== "manual"} onChange={(event) => updateField("msiCost", event.target.value)} />
-                  </Field>
-                  <Field label="Colors">
-                    <input type="number" step="1" min="0" value={form.colorCount} onChange={(event) => updateField("colorCount", event.target.value)} />
-                  </Field>
-                  <Field label="Coatings">
-                    <input type="number" step="1" min="0" value={form.coatingCount} onChange={(event) => updateField("coatingCount", event.target.value)} />
-                  </Field>
-                </div>
-
-                <div className="quote-chip-row">
-                  {materialWidthPresets.map((width) => (
-                    <button className={form.materialWidth === width ? "active" : ""} type="button" key={width} onClick={() => updateField("materialWidth", width)}>
-                      {width}"
-                    </button>
-                  ))}
-                  <button className={!materialWidthPresets.includes(form.materialWidth) ? "active" : ""} type="button" onClick={() => updateField("materialWidth", "")}>
-                    Manual
-                  </button>
-                </div>
-
-                <div className="quote-pricing-insights">
-                  <div className="quote-auto-repeat">
-                    <Ruler size={15} />
-                    <span>
-                      {continuousRoll
-                        ? "Continuous roll uses the finished inch total directly; no repeat is calculated."
-                        : `Repeat is calculated automatically from ${quoteUnitLabel(form.unitType)} length plus gap.`}
-                    </span>
-                    <strong>{continuousRoll ? quoteContinuousLengthLabel(pricing.quantity) : number(pricing.repeat, '"')}</strong>
-                  </div>
-                  <div className="quote-waste-recommendation">
-                    <CheckCircle2 size={15} />
-                    <div>
-                      <span>Recommended waste</span>
-                      <strong>{percent(pricing.recommendedWastePercent)}</strong>
-                      <em>
-                        {number(pricing.runFootage, " ft")} run / {percent(pricing.baseWastePercent)} base
-                        {pricing.colorWastePercentPerColor > 0 && (pricing.colorCount > 0
-                          ? ` + ${percent(pricing.colorWastePercentPerColor)} per color (${pricing.colorCount} color${pricing.colorCount === 1 ? "" : "s"} = ${percent(pricing.colorWastePercent)})`
-                          : ` + ${percent(pricing.colorWastePercentPerColor)} per color`)}
-                      </em>
-                      {pricing.coreMarkupSurchargePercent > 0 && (
-                        <em className="quote-core-surcharge-note">Core markup +15%: non-3" cores add 15% to markup.</em>
-                      )}
-                    </div>
-                    {!wasteMatchesRecommendation && (
-                      <button type="button" onClick={applyRecommendedWaste}>Use</button>
-                    )}
-                  </div>
-                </div>
-              </section>
-
-              <details className="quote-advanced-panel">
-                <summary>
-                  <span>Layout Options</span>
-                  <em>Side trim, lanes, margin mode</em>
-                </summary>
-                <div className="quote-field-grid">
-                  <Field label="Side Trim" suffix="in">
-                    <input type="number" step="0.0001" value={form.sideTrim} onChange={(event) => updateField("sideTrim", event.target.value)} />
-                  </Field>
-                  <div className="quote-control-block">
-                    <span>Lane Mode</span>
-                    <div className="quote-segmented compact">
-                      <button className={form.acrossMode === "auto" ? "active" : ""} type="button" onClick={() => updateField("acrossMode", "auto")}>Auto</button>
-                      <button className={form.acrossMode === "manual" ? "active" : ""} type="button" onClick={() => updateField("acrossMode", "manual")}>Manual</button>
-                    </div>
-                  </div>
-                  {form.acrossMode === "manual" && (
-                    <Field label="Number Across">
-                      <input type="number" step="1" min="1" value={form.numberAcross} onChange={(event) => updateField("numberAcross", event.target.value)} />
-                    </Field>
                   )}
                 </div>
               </details>
 
-              <details className="quote-advanced-panel">
+              <details className="quote-advanced-panel quote-settings-panel">
                 <summary>
-                  <span>Added Costs</span>
-                  <em>Setup, print, finishing, packaging, outside service</em>
+                  <span>Quote details &amp; notes</span>
+                  <em>{quoteInfo.itemName || "Part number, proof note, PO & terms"}</em>
                 </summary>
-                <div className="quote-field-grid compact-costs">
-                  {quoteExtraCostFields.map((field) => (
-                    <Field label={field.label} suffix="$" key={field.name}>
-                      <input type="number" step="0.01" value={form[field.name]} onChange={(event) => updateField(field.name, event.target.value)} />
+                <div className="quote-settings-body">
+                  <div className="quote-identity-grid quote-item-identity-grid">
+                    <Field label="Quoted Item / Part #">
+                      <input value={quoteInfo.itemName} onChange={(event) => updateQuoteInfo("itemName", event.target.value)} placeholder="DTT-4-8-F-BLS" />
                     </Field>
-                  ))}
-                  <p className="quote-pass-through-note">Added costs are included in the cost base before markup or margin.</p>
+                  </div>
+                  <div className="quote-simple-grid quote-info-grid quote-options-grid">
+                    <Field label="Client P.O.">
+                      <input value={quoteInfo.clientPo} onChange={(event) => updateQuoteInfo("clientPo", event.target.value)} />
+                    </Field>
+                    <Field label="Quote Expiration">
+                      <input type="date" value={visibleQuoteExpirationDate} onChange={(event) => updateQuoteInfo("quoteExpirationDate", event.target.value)} />
+                    </Field>
+                    <Field label="UoM">
+                      <select value={quoteInfo.unitOfMeasure} onChange={(event) => updateQuoteInfo("unitOfMeasure", event.target.value)}>
+                        <option value="M">M - per 1,000 {continuousRoll ? "inches" : quoteUnitLabel(form.unitType, true)}</option>
+                        <option value="EA">EA - each {continuousRoll ? "inch" : quoteUnitLabel(form.unitType)}</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <Field label="Proof Note">
+                    <input value={form.itemNote} onChange={(event) => updateField("itemNote", event.target.value)} placeholder="Yellow border" />
+                  </Field>
                   <label className="quote-field quote-field-wide">
                     <span>Quote Notes</span>
                     <textarea value={quoteInfo.notes} onChange={(event) => updateQuoteInfo("notes", event.target.value)} />
@@ -4492,36 +4592,6 @@ ${items.map((item) => {
             </aside>
           </div>
 
-          <section className="quote-panel quote-candidates">
-            <div className="quote-section-head">
-              <Ruler size={16} />
-              <strong>Lane Options</strong>
-            </div>
-            {candidates.length ? (
-              <div className="quote-candidate-table">
-                <div className="quote-candidate-head">
-                  <span>Across</span>
-                  <span>Layout Width</span>
-                  <span>Unused</span>
-                  <span>Web Usage</span>
-                  <span>Material Cost</span>
-                  <span />
-                </div>
-                {candidates.map((candidate) => (
-                  <div className={candidate.numberAcross === pricing.numberAcross ? "active" : ""} key={candidate.numberAcross}>
-                    <strong>{candidate.numberAcross}</strong>
-                    <span>{number(candidate.totalLayoutWidth, '"')}</span>
-                    <span>{number(candidate.widthDelta, '"')}</span>
-                    <span>{percentFormatter.format(candidate.widthUsagePercent)}%</span>
-                    <span>{money(candidate.materialCost)}</span>
-                    <button type="button" onClick={() => useCandidate(candidate.numberAcross)}>Use</button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="quote-empty">No lane option fits the current item and material width.</p>
-            )}
-          </section>
         </>
       )}
 
