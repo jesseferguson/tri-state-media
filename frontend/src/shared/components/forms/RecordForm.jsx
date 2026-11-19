@@ -978,7 +978,22 @@ export default function RecordForm({
   submitLabel = "Save",
   submittingLabel = "Saving...",
 }) {
-  const fields = resource.fields ?? [];
+  const fields = useMemo(() => {
+    if (resource.key !== "job-tickets") return resource.fields ?? [];
+    const groups = [
+      ["Job Information", ["customer", "customer_name", "job_name", "product_code", "description"]],
+      ["Reference Images", ["general_image", "general_image_description", "spec_image", "spec_image_description", "finishing_image", "finishing_image_description"]],
+      ["Material", ["material_master_type"]],
+      ["Packaging", ["box_item_number", "box", "core"]],
+      ["Finishing", ["finishing_type", "unit_type", "labels_per_unit", "units_per_carton", "core_size_inches", "wind_direction", "fanfold_gear", "labels_per_fold", "ribbon", "laminate", "bagged", "finishing_notes"]],
+      ["Operator Notes", ["job_notes"]],
+      ["Carton Label", ["carton_label_part_number", "carton_label_description_a", "carton_label_description_b", "carton_label_description_c", "carton_label_finishing_1", "carton_label_finishing_2", "carton_label_is_unique", "carton_label_format"]],
+    ];
+    return (resource.fields ?? []).map((field) => {
+      const section = groups.find(([, names]) => names.includes(field.name))?.[0];
+      return section && !field.section ? { ...field, section } : field;
+    });
+  }, [resource.key, resource.fields]);
   const [form, setForm] = useState(() => normalizeInitial(fields, record, defaults));
   const [activeFormTab, setActiveFormTab] = useState("");
 
